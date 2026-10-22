@@ -4,18 +4,18 @@
 
 | | |
 |---|---|
-| Dokument | AQT-VAL-TRAIL-01 (Übung), Version 0.1 |
-| Prüfgegenstand | aqt-trail 0.1.0 mit aqt-spec 0.1.0 (Bibliothek `aqt_evidence`), Git-Commit `917db6e` (`917db6e058ce9cf8e7da85837f48a0037fc17892`) |
+| Dokument | AQT-VAL-TRAIL-01 (Übung), Version 0.2 (Wiederholung auf `eb920b1`) |
+| Prüfgegenstand | aqt-trail 0.1.0 mit aqt-spec 0.1.0 (Bibliothek `aqt_evidence`), Git-Commit `eb920b1` (`eb920b161c7efa1138b1a11410484750fbd793bb`) |
 | Autor | Benedikt Neumayer |
 | Durchführung | KI-Agent im Auftrag des Autors; Review: Benedikt Neumayer, ausstehend |
 | Aufbau | Validierungsplan, URS, Risikoanalyse, Testspezifikation, Testprotokoll und Bericht wären real getrennte, einzeln freigegebene Dokumente; hier sind sie zusammengefasst. |
-| Protokollstand | Kapitel 1–6 festgelegt am 2026-10-22, 19:52 MESZ, vor der Durchführung (Kapitel 7); danach nur redaktionell gekürzt und umformatiert. |
+| Protokollstand | Kapitel 1–6 festgelegt am 2026-10-22, 19:52 MESZ, vor der Erstdurchführung auf `917db6e`; danach nur redaktionell gekürzt. Für die Wiederholung auf `eb920b1` (Kapitel 7) inhaltlich unverändert übernommen; angepasst wurden nur die Commit-Angaben. |
 
 ## 1. Zweck und Geltungsbereich
 
 **Zweck:** an einer Funktion zeigen, wie eine risikobasierte Validierung nach GAMP 5 (2. Ausgabe, 2022) dokumentiert wird.
 
-**Prüfgegenstand:** die Manipulationserkennung (tamper evidence) des Audit Trails in aqt-trail, Commit `917db6e`: separater Writer mit Writer-Zeit, laufender Nummer, beobachtetem Absender, Spool und Lückenmarkern (`server.py`, `writer.py`, `observe.py`, `client.py`); Hash-Kette und Ed25519-Signatur (`chain.py`, `crypto.py` in aqt-spec); signierte Checkpoints, Kopfkopien und RFC-3161-Zeitstempel (`anchors.py`, `tsa.py`, `der.py`); `aqt-trail verify` und Export-Bundle (`verify.py`, `export.py`).
+**Prüfgegenstand:** die Manipulationserkennung (tamper evidence) des Audit Trails in aqt-trail, Commit `eb920b1`: separater Writer mit Writer-Zeit, laufender Nummer, beobachtetem Absender, Spool und Lückenmarkern (`server.py`, `writer.py`, `observe.py`, `client.py`); Hash-Kette und Ed25519-Signatur (`chain.py`, `crypto.py` in aqt-spec); signierte Checkpoints, Kopfkopien und RFC-3161-Zeitstempel (`anchors.py`, `tsa.py`, `der.py`); `aqt-trail verify` und Export-Bundle (`verify.py`, `export.py`).
 
 **Nicht Gegenstand:** die übrigen sechs Pakete; in aqt-trail Importer, Hook, Audit-Trail-Review, ALCOA++-Bericht und Ansichten; der Betrieb unter separatem Systembenutzer (`aqt-trail/scripts/setup-system-user.sh`, von der Testsuite nie ausgeführt); RFC 3161 mit einem echten Zeitstempeldienst (TSA; getestet wird nur die eingebaute TEST-ONLY-Instanz `test:`); andere Betriebssysteme, Last, Archivierung, Backup/Restore, IQ einer Produktivinstallation, Code-Review.
 
@@ -90,7 +90,7 @@ R-06 ist nach dem ungünstigeren Teil bewertet: Writer-Felder werden abgewiesen 
 
 ### 5.2 Testumgebung
 
-Linux-Arbeitsplatz des Autors (Ubuntu 24.04.5 LTS, Kernel 7.0.0-31-generic, OpenSSL 3.0.13); Python 3.13 in `aqt-trail/.venv` bzw. `aqt-spec/.venv` (editierbare Installation aus dem Repository); Commit `917db6e`, `aqt-trail/` und `aqt-spec/` ohne lokale Änderungen; TSA nur `test:` (offline). Ausführender ist ein KI-Agent (Claude Code), alle Clients laufen also unterhalb eines Agentenprozesses; für TC-01 ist das beabsichtigt. Isolation (echte `~/.config/aqt` und `~/.local/state/aqt` werden vorher und nachher geprüft):
+Linux-Arbeitsplatz des Autors (Ubuntu 24.04.5 LTS, Kernel 7.0.0-31-generic, OpenSSL 3.0.13); Python 3.13 in `aqt-trail/.venv` bzw. `aqt-spec/.venv` (editierbare Installation aus dem Repository); Commit `eb920b1`, Arbeitsverzeichnis ohne lokale Änderungen; TSA nur `test:` (offline). Ausführender ist ein KI-Agent (Claude Code), alle Clients laufen also unterhalb eines Agentenprozesses; für TC-01 ist das beabsichtigt. Isolation (echte `~/.config/aqt` und `~/.local/state/aqt` werden vorher und nachher geprüft):
 
 ```sh
 export R=<Repository> V=/tmp/aqtval          # kurzer Pfad: AF_UNIX erlaubt etwa 104 Byte
@@ -156,47 +156,48 @@ Pfade relativ zu `aqt-trail/tests/`, sofern nicht `aqt-spec/tests/` genannt ist;
 
 | | |
 |---|---|
-| Datum, Zeit | 2026-10-22, 19:54–19:57 MESZ |
+| Datum, Zeit | 2026-10-22, 21:00–21:02 MESZ |
 | Durchführung | KI-Agent im Auftrag des Autors; Review: Benedikt Neumayer, ausstehend |
 | Umgebung | Ubuntu 24.04.5 LTS, Kernel 7.0.0-31-generic; Python 3.13.13; pytest 9.1.1; cryptography 50.0.2; OpenSSL 3.0.13 |
-| Software-Stand | Commit `917db6e`; `aqt-trail/` sowie `src`, `tests`, `vectors`, `spec`, `schemas` von aqt-spec vorher und nachher ohne lokale Änderungen (`git status`); siehe A-02 |
+| Software-Stand | Commit `eb920b1`; gesamtes Arbeitsverzeichnis vorher und nachher ohne lokale Änderungen (`git status` leer) |
+| Änderung gegenüber `917db6e` | `aqt-trail/src/`: 9 Dateien, zusammen 12 geänderte Zeilen, nur Kommentare und Docstrings; `aqt-trail/tests/`, `aqt-spec/src/`, `aqt-spec/vectors/`, `spec/`, `schemas/` unverändert; Katalogtexte überarbeitet, drei Annex-22-Einträge ergänzt (`annex22-2025d:3`, `:4`, `:7`; nicht zitiert); interne Entwurfsdateien aus dem Repository entfernt (hier nie zitiert). Alle Referenzen dieses Dokuments wurden erneut geprüft. |
 | Isolation | wie 5.2; `~/.config/aqt` und `~/.local/state/aqt` fehlten vorher und nachher (**AK-4 erfüllt**) |
-| Rohdaten | `/tmp/aqtval/log/TC-xx.txt` (Konsole), `/tmp/aqtval/results/` (pytest, JUnit-XML); temporär (O-4) |
+| Rohdaten | `/tmp/aqtval/log/TC-xx.txt` (Konsole), `/tmp/aqtval/results/` (pytest, JUnit-XML); Erstdurchführung auf `917db6e` in `/tmp/aqtval/run-917db6e/`; temporär (O-4) |
 
 ### 7.2 Automatisierte Tests
 
 | Suite | Ergebnis |
 |---|---|
-| aqt-trail, vollständig: `python -m pytest -p no:cacheprovider -v -rA` (19:55:14) | **70 passed**, 0 failed, 0 skipped |
-| aqt-spec: `test_vectors.py::test_library_agrees` und die zwei `test_evidence.py`-Tests aus TC-06 (19:55:20) | **59 passed** (57 Vektoren + 2) |
+| aqt-trail, vollständig: `python -m pytest -p no:cacheprovider -v -rA` (21:00:52) | **70 passed**, 0 failed, 0 skipped |
+| aqt-spec: `test_vectors.py::test_library_agrees` und die zwei `test_evidence.py`-Tests aus TC-06 (21:00:54) | **59 passed** (57 Vektoren + 2) |
 
 Kapitel 6 referenziert 44 Testfunktionen (41 aqt-trail, 3 aqt-spec) mit 101 Instanzen; ein Skript hat jede Referenz gegen die pytest-Ausgabe abgeglichen: alle vorhanden, alle „passed“ (**AK-1 erfüllt**). Präzisierung zu 5.1: `test_writer.py` und `test_tamper.py` übergeben ein festes `observed` (`observed_stub`); die echte Beobachtung prüfen die Server-Tests und TC-01. `test_cli.py::test_end_to_end` ersetzt zusätzlich Agentenprüfung und Passphrase, nur für das Signieren des Reviews (nicht Prüfgegenstand).
 
-### 7.3 Ergebnisse je Testfall (N = 14; Ausgaben wörtlich, Hashes gekürzt)
+### 7.3 Ergebnisse je Testfall auf `eb920b1` (N = 14; Ausgaben wörtlich, Hashes gekürzt)
 
 | TC | Zeit | Ist-Ergebnis | Bewertung |
 |---|---|---|---|
-| 01 | 19:55:33 | `600`, `600`; „stored 1, spooled 0, refused 0“; seq 1: `time` 2026-10-22T17:55:33.760779Z, `client_time` 2020-01-01T00:00:00.000000Z, uid/gid 1000, `via` socket, `process_chain` aqt-trail ← bash ← claude ← … ← systemd, `harness` claude-code, `actor.id` human:val-tester | bestanden |
-| 02 | 19:55:47 | „invalid_record: writer-owned field(s) set by the client: chain“ (ebenso observed, sig); „… a human decision (meaning set) needs a reason“; je Exit 1. `val.base` zweimal Exit 0, einmal im Trail (seq 6); dann „duplicate_id: a different record with id … is already stored“, Exit 1. Fünf `trail.refused` (seq 2–5, 7), Akteur human:val-tester | bestanden |
-| 03 | 19:55:57 | „rec_… spooled“; seq 8 `service.stop`, 9 `log.repaired` (`removed_bytes` 12), 10 `service.start`, 11 `trail.gap` (`count` 1), 12 `val.while-down` mit `observed` {`via` spool, `process_chain` [], `harness` null, `client_time`}; „spool is empty“; „intact: 13 records“, Exit 0 | bestanden |
-| 04 | 19:56:04 | `val.a`, `val.b`, `clock.jump` {forward, 3600000 ms Wanduhr, 1000 ms monoton}, `val.c`; „intact: 4 records“, Exit 0 | bestanden |
-| 05 | 19:56:14 | „checkpoint seq 15 …“, „anchor rec_… (RFC 3161 2026-10-22T17:56:14.387211Z)“; `ok` true, `anchors` 1, `anchors_verified` 1, Exit 0; ohne CA Warnung „anchor seq 16: TSA certificate chain not checked (no --tsa-ca)“; OpenSSL „Verification: OK“; fremder Digest „message imprint mismatch … Verification: FAILED“ | bestanden |
-| 06 | 19:56:21 | Kopf seq 16 exportiert; „intact: 18 records, head seq 17“, `checkpoints` 2, `heads` 1, `anchors_verified` 1, keine Probleme, Exit 0; „L3 reached (target L3), 18 records“; „57 of 57 vectors agree“ | bestanden |
-| 07 | 19:56:27 | „broken from seq 14: invalid signature“, Exit 1; nur Kette „broken from seq 15: prev does not match the previous record hash“; Signatur „broken from seq 14: invalid signature“, Exit 1; Original weiter „intact“ | bestanden |
-| 08 | 19:56:31 | „broken from seq 14: expected seq 14, found 15“ / „… found 13“ / „… found 15“; je Exit 1 | bestanden |
-| 09 | 19:56:38 | ohne Checkpoints „intact: 14 records“, Exit 0; `--heads` „external head at seq 16 is beyond the head: the trail was truncated“, Exit 1; Original-Checkpoints „checkpoint at seq 15 …“, „… seq 16 … truncated“, Exit 1 | bestanden |
-| 10 | 19:56:45 | ohne Pinning „intact: 16 records“ + „warning: service key not pinned …“, Exit 0; `--pin-key` „broken from seq 0: no valid signature from a known key“, Exit 1; `--heads` „external head at seq 16: signature invalid or key unknown“, Exit 1 | bestanden |
-| 11 | 19:56:53 | `--pin-key --test-tsa` „intact: 16 records“, Exit 0, seq 14 mit „nachträglich geändert“ – **nicht erkannt**, wie erwartet; `--heads` „external head at seq 16 is beyond the head: the trail was truncated“, Exit 1; mit Ankern „anchor checkpoint at seq 15 does not match the record: the trail was rewritten“, Exit 1 | bestanden (Grenze bestätigt) |
-| 12 | 19:57:04 | sechs erwartete Dateien (`head_seq` 17); `ok` true, `heads` 1, `anchors_verified` 1, Exit 0; `aqt-evidence` „intact: 18 records“; nach Änderung „broken from seq 14: invalid signature“, „trail.jsonl does not match MANIFEST.json“, „the trail head differs from MANIFEST.json“, Exit 1 | bestanden |
+| 01 | 21:01:00 | `600`, `600`; „stored 1, spooled 0, refused 0“; seq 1: `time` 2026-10-22T19:01:00.771776Z, `client_time` 2020-01-01T00:00:00.000000Z, uid/gid 1000, `via` socket, `process_chain` aqt-trail ← bash ← claude ← … ← systemd, `harness` claude-code, `actor.id` human:val-tester | bestanden |
+| 02 | 21:01:05 | „invalid_record: writer-owned field(s) set by the client: chain“ (ebenso observed, sig); „… a human decision (meaning set) needs a reason“; je Exit 1. `val.base` zweimal Exit 0, einmal im Trail (seq 6); dann „duplicate_id: a different record with id … is already stored“, Exit 1. Fünf `trail.refused` (seq 2–5, 7), Akteur human:val-tester | bestanden |
+| 03 | 21:01:13 | „rec_… spooled“; seq 8 `service.stop`, 9 `log.repaired` (`removed_bytes` 12), 10 `service.start`, 11 `trail.gap` (`count` 1), 12 `val.while-down` mit `observed` {`via` spool, `process_chain` [], `harness` null, `client_time`}; „spool is empty“; „intact: 13 records“, Exit 0 | bestanden |
+| 04 | 21:01:22 | `val.a`, `val.b`, `clock.jump` {forward, 3600000 ms Wanduhr, 1000 ms monoton}, `val.c`; „intact: 4 records“, Exit 0 | bestanden |
+| 05 | 21:01:22 | „checkpoint seq 15 …“, „anchor rec_… (RFC 3161 2026-10-22T19:01:22.878801Z)“; `ok` true, `anchors` 1, `anchors_verified` 1, Exit 0; ohne CA Warnung „anchor seq 16: TSA certificate chain not checked (no --tsa-ca)“; OpenSSL „Verification: OK“; fremder Digest „message imprint mismatch … Verification: FAILED“ | bestanden |
+| 06 | 21:01:28 | Kopf seq 16 exportiert; „intact: 18 records, head seq 17“, `checkpoints` 2, `heads` 1, `anchors_verified` 1, keine Probleme, Exit 0; „L3 reached (target L3), 18 records“; „57 of 57 vectors agree“ | bestanden |
+| 07 | 21:01:35 | „broken from seq 14: invalid signature“, Exit 1; nur Kette „broken from seq 15: prev does not match the previous record hash“; Signatur „broken from seq 14: invalid signature“, Exit 1; Original weiter „intact“ | bestanden |
+| 08 | 21:01:35 | „broken from seq 14: expected seq 14, found 15“ / „… found 13“ / „… found 15“; je Exit 1 | bestanden |
+| 09 | 21:01:35 | ohne Checkpoints „intact: 14 records“, Exit 0; `--heads` „external head at seq 16 is beyond the head: the trail was truncated“, Exit 1; Original-Checkpoints „checkpoint at seq 15 …“, „… seq 16 … truncated“, Exit 1 | bestanden |
+| 10 | 21:01:45 | ohne Pinning „intact: 16 records“ + „warning: service key not pinned …“, Exit 0; `--pin-key` „broken from seq 0: no valid signature from a known key“, Exit 1; `--heads` „external head at seq 16: signature invalid or key unknown“, Exit 1 | bestanden |
+| 11 | 21:01:46 | `--pin-key --test-tsa` „intact: 16 records“, Exit 0, seq 14 mit „nachträglich geändert“ – **nicht erkannt**, wie erwartet; `--heads` „external head at seq 16 is beyond the head: the trail was truncated“, Exit 1; mit Ankern „anchor checkpoint at seq 15 does not match the record: the trail was rewritten“, Exit 1 | bestanden (Grenze bestätigt) |
+| 12 | 21:01:46 | sechs erwartete Dateien (`head_seq` 17); `ok` true, `heads` 1, `anchors_verified` 1, Exit 0; `aqt-evidence` „intact: 18 records“; nach Änderung „broken from seq 14: invalid signature“, „trail.jsonl does not match MANIFEST.json“, „the trail head differs from MANIFEST.json“, Exit 1 | bestanden |
 
-Abschluss 19:57:13: Writer beendet (`service.stop`, seq 18); Original-Trail mit Pinning, Kopfkopie und TEST-CA „intact: 19 records“. **AK-2 und AK-3 erfüllt.**
+Abschluss 21:01:50: Writer beendet (`service.stop`, seq 18); Original-Trail mit Pinning, Kopfkopie und TEST-CA „intact: 19 records“. **AK-2 und AK-3 erfüllt.** Die Erstdurchführung auf `917db6e` (19:54–19:57 MESZ) ergab in allen 12 Testfällen dieselben Meldungen, Exit-Codes und seq-Nummern; abweichend waren nur Zeiten, Schlüssel-IDs und Hashes.
 
 ### 7.4 Abweichungen
 
 | Nr. | Beschreibung | Bewertung | Entscheidung |
 |---|---|---|---|
-| A-01 | Kapitel 1–6 wurden vor der Durchführung festgelegt, aber nicht vorab geprüft und freigegeben. | formal; real sind freigegebene Pläne vor der Durchführung nötig (`annex11-2025d:9.4`); Ergebnisse unberührt | für die Übung akzeptiert; Review nachholen (O-1) |
-| A-02 | 5.2 forderte `aqt-spec/` ohne lokale Änderungen; es lagen dort nicht committete, fremde Textänderungen in `catalogues/*.yaml`, `catalogues.json`, `crosswalk.md` (Paraphrasen, keine geänderten IDs). | aqt-trail liest die Kataloge nicht; die aqt-spec-Tests prüfen Vektoren und Kette; alle zitierten IDs bestehen in beiden Fassungen; keine Auswirkung auf eine URS | akzeptiert; real einen sauberen Checkout bzw. ein Release-Archiv prüfen |
+| A-01 | Kapitel 1–6 wurden vor der Erstdurchführung festgelegt, aber weder vor ihr noch vor der Wiederholung geprüft und freigegeben. | formal; real sind freigegebene Pläne vor der Durchführung nötig (`annex11-2025d:9.4`); Ergebnisse unberührt | für die Übung akzeptiert; Review nachholen (O-1) |
+| A-02 | Bei der Erstdurchführung auf `917db6e` enthielt `aqt-spec/` nicht committete, fremde Textänderungen (`catalogues/`, `crosswalk.md`), obwohl 5.2 ein unverändertes Arbeitsverzeichnis forderte. | damals bewertet ohne Auswirkung (aqt-trail liest die Kataloge nicht). Die Änderungen sind in `eb920b1` committet; die Wiederholung lief auf sauberem Arbeitsverzeichnis. | **geschlossen** durch die Wiederholung auf `eb920b1` |
 
 ### 7.5 Beobachtungen und nicht Getestetes
 
@@ -211,7 +212,7 @@ Abschluss 19:57:13: Writer beendet (`service.stop`, seq 18); Original-Trail mit 
 
 ## 8. Rückverfolgbarkeitsmatrix
 
-| URS | Risiko | Testfall | Ergebnis |
+| URS | Risiko | Testfall | Ergebnis auf `eb920b1` |
 |---|---|---|---|
 | URS-01 Writer-Zeit, seq, Zeitsprünge | R-05 | TC-01, TC-04 | bestanden |
 | URS-02 beobachteter Absender | R-06 | TC-01 | bestanden |
@@ -227,9 +228,9 @@ Abschluss 19:57:13: Writer beendet (`service.stop`, seq 18); Original-Trail mit 
 
 ## 9. Validierungsbericht (Zusammenfassung)
 
-**Gesamtbewertung.** Im Geltungsbereich aus Kapitel 1 sind alle 12 Testfälle, alle 101 referenzierten Testinstanzen und die vollständige Suite von aqt-trail (70/70) bestanden; AK-1 bis AK-4 sind erfüllt, A-01 und A-02 bewertet ohne Auswirkung auf eine URS (AK-5). Für Commit `917db6e` ist gezeigt: `verify` erkennt Änderung, Einfügen, Löschen und Umordnen mit der ersten betroffenen seq, Abschneiden und Neuschreiben unter neuem Schlüssel bei gepinntem Schlüssel bzw. externer Kopfkopie; Token werden geprüft (nur TEST-TSA); Bundles sind anderswo prüfbar. Ebenso gezeigt ist die Grenze: Eine Neuschreibung mit dem echten Schlüssel erkennen nur Aufzeichnungen außerhalb.
+**Gesamtbewertung.** Im Geltungsbereich aus Kapitel 1 sind alle 12 Testfälle, alle 101 referenzierten Testinstanzen und die vollständige Suite von aqt-trail (70/70) bestanden; AK-1 bis AK-4 sind erfüllt; A-01 ist bewertet ohne Auswirkung auf eine URS, A-02 ist geschlossen (AK-5). Für Commit `eb920b1` ist gezeigt (Wiederholung mit gleichem Ergebnis wie die Erstdurchführung auf `917db6e`): `verify` erkennt Änderung, Einfügen, Löschen und Umordnen mit der ersten betroffenen seq, Abschneiden und Neuschreiben unter neuem Schlüssel bei gepinntem Schlüssel bzw. externer Kopfkopie; Token werden geprüft (nur TEST-TSA); Bundles sind anderswo prüfbar. Ebenso gezeigt ist die Grenze: Eine Neuschreibung mit dem echten Schlüssel erkennen nur Aufzeichnungen außerhalb.
 
-**Offene Punkte:** O-1 Review und Freigabe dieses Dokuments (Autor); O-2 README zu Zeitstempeln präzisieren (Entwickler); O-3 Test für den Vorwärtssprung der Uhr (Entwickler); O-4 Rohdaten und Hilfsskripte aus `/tmp/aqtval` kontrolliert ablegen (Autor); O-5 unabhängiges Code- und Security-Review der Signatur- und Prüflogik (offen); O-6 nach der Durchführung (ab 20:08) wurden in `aqt-trail/src/` Kommentare und Docstrings geändert (laut Diff keine Logikänderung) – der Nachweis gilt für `917db6e`, auf dem nächsten Commit sind die Tests zu wiederholen (Autor).
+**Offene Punkte:** O-1 Review und Freigabe dieses Dokuments (Autor); O-2 README zu Zeitstempeln präzisieren (Entwickler); O-3 Test für den Vorwärtssprung der Uhr (Entwickler); O-4 Rohdaten und Hilfsskripte aus `/tmp/aqtval` kontrolliert ablegen (Autor); O-5 unabhängiges Code- und Security-Review der Signatur- und Prüflogik (offen). Erledigt: O-6 aus der Erstdurchführung (Wiederholung nach den Kommentaränderungen in `aqt-trail/src/`) durch diese Durchführung auf `eb920b1`; jede weitere Änderung von aqt-trail oder aqt-spec erfordert eine erneute Durchführung (Änderungskontrolle).
 
 **Akzeptierte Restrisiken** (Maßnahmen in 4.2): R-04 Schlüsselverwahrung und Neuschreibung mit echtem Schlüssel, R-05 Uhrzeit, R-07 Spool, R-08 Ereignisse ohne Writer, R-09 fehlende Sperrprüfung und ungetestete echte TSA.
 
