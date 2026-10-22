@@ -245,7 +245,7 @@ class TrailWriter:
             return self._write(record, observed, now, client_time=record["time"]), True
 
     def drain(self, records: list, *, source: str, drainer: dict | None = None) -> DrainResult:
-        """Append spooled records after one ``trail.gap`` marker (INTERFACES I3)."""
+        """Append spooled records after one ``trail.gap`` marker (aqt-spec spec §10.4)."""
         result = DrainResult()
         with self.lock:
             fresh = []

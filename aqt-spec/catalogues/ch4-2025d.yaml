@@ -14,21 +14,18 @@ items:
     paraphrase: The regulated user is accountable for the integrity of documents, records and data produced or processed with AI or other automated means such as validation scripts. Such automated support belongs in the pharmaceutical quality system, whether it runs on premises or as a hosted service.
     supported_by: [spec.envelope, trail.writer, signoff.signature, change.review, sensei.advice-ledger]
     user_must: Inventory the AI tools you use and name the accountable human for each record they produce.
-    r3: [R-22]
     verified: true
   - id: ch4-2025d:4.63
     clause: "4.63, Table 1"
     title: ALCOA++ data integrity principles
     paraphrase: Paper and electronic records follow the ALCOA++ principles of Table 1, which add Traceable to ALCOA+. Attributable includes knowing who or which system performed a task and, for changes to records, who made them, when and why.
     supported_by: [spec.envelope, trail.alcoa]
-    r3: [R-02, R-03, R-21]
     verified: true
   - id: ch4-2025d:4.64
     clause: "4.64-4.75"
     title: Signatures in GMP relevant documentation
     paraphrase: Signatures, on paper or electronic, identify the signer, carry date and time and a clear meaning such as review or approval, and are indisputable and traceable to the signer and the signed record. A signature policy names the authorised signers, and their role and qualification match the meaning of what they sign.
     supported_by: [signoff.signature, spec.signature, signoff.invalidation]
-    r3: [R-10, R-11]
     verified: true
   - id: ch4-2025d:4.70
     clause: "4.70"
@@ -36,7 +33,6 @@ items:
     paraphrase: Records that exist electronically are signed electronically, and hybrid signing is to be avoided. Where paper and electronic signatures exist in parallel, the regulated user defines which one is the regulatory relevant signature.
     supported_by: [signoff.signature, spec.signature]
     user_must: Sign electronic records electronically; where a paper signature remains, define which signature counts and bind the paper page to the record (see annex11-2025d:13.9).
-    r3: [R-13]
     verified: true
   - id: ch4-2025d:4.77
     clause: "4.77"
@@ -44,5 +40,4 @@ items:
     paraphrase: Batch documentation is kept for at least one year after the batch expires or five years after QP certification, whichever is longer, and for investigational products five years after the last trial that used the batch. Product-specific legislation may require longer periods.
     supported_by: [spec.checkpoint, trail.anchor]
     user_must: Set retention periods and reconcile them with data-protection minimisation.
-    r3: [R-27]
     verified: true

@@ -1,4 +1,4 @@
-"""Shared fixtures: isolated XDG dirs, synthetic evidence (INTERFACES I5/I6), a temp git repo, a CAPA instance."""
+"""Shared fixtures: isolated XDG dirs, synthetic evidence (aqt-spec record types), a temp git repo, a CAPA instance."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ def rec(type_, action, *, data=None, who=AGENT, **kw):
 
 
 def synthetic_evidence() -> list[dict]:
-    """One record per scanned source, with the I6 field names."""
+    """One record per scanned source, with the minimal payload fields of aqt-spec."""
     receipt = rec("change.receipt", "run", data={
         "argv": ["pytest", "-q"], "exit_code": 1, "passed": False, "plan_basis_hash": "sha256:" + "1" * 64,
         "tree_fingerprint": "sha256:" + "2" * 64, "counts": {"failed": 2}})

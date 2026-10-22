@@ -27,7 +27,7 @@ HUMAN = dict(environ={}, chain=[], stdin=FakeTTY())  # simulated human at a term
 
 @pytest.fixture(autouse=True)
 def isolated_state(tmp_path, monkeypatch):
-    """Every test gets its own XDG state/config folders (INTERFACES I13); nothing touches ~/.local/state/aqt."""
+    """Every test gets its own XDG state/config folders; nothing touches ~/.local/state/aqt."""
     for key in ("AQT_EVIDENCE", "AQT_VALIDATE_CONFIG", "AQT_VALIDATE_STATE", "AQT_SINK", "AQT_ACTOR"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))

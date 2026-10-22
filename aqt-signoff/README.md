@@ -156,15 +156,15 @@ Features are designed along these concepts and support them; they do not replace
 
 | Feature | Concept |
 |---|---|
-| Statement with printed name, role, meaning, time with zone, inside the signed bytes | `part11:11.50`; `annex11-2011:14`; `annex11-2025d:13.4`–`13.6` |
+| Statement with printed name, role, meaning, time with zone, inside the signed bytes | `part11:11.50(a)`; `annex11-2011:14`; `annex11-2025d:13.3` (§13.3–13.6) |
 | Signature bound to the content hash; changed content shows `invalidated` | `part11:11.70`; `annex11-2011:14`; `annex11-2025d:13.8` |
-| Passphrase re-authentication at every signing (id + secret) | `part11:11.200`; `annex11-2025d:13.3` |
-| Unique, never reused signer ids; revocation records | `part11:11.100`, `part11:11.300` |
+| Passphrase re-authentication at every signing (id + secret) | `part11:11.200(a)(1)`; `annex11-2025d:13.3` |
+| Unique, never reused signer ids; revocation records | `part11:11.100(a)`, `part11:11.300(a)` |
 | Reason required for every human decision | `annex11-2025d:12.2`; `alcoa:attributable` |
-| Two-person rule, roles per meaning, approver ≠ preparer | `part11:11.10` (g) authority checks; segregation of duties |
-| prepare → approve → claim → outcome sequence | `part11:11.10` (f) operational checks; `annex22-2025d:1` human in the loop; `euaiact:14` |
+| Two-person rule, roles per meaning, approver ≠ preparer | `part11:11.10(g)` authority checks; segregation of duties |
+| prepare → approve → claim → outcome sequence | `part11:11.10(f)` operational checks; `annex22-2025d:1` human in the loop; `euaiact:14(1)` |
 | Unknown outcomes never retried; signed human resolution | deviation practice; `alcoa:accurate`, `alcoa:complete` |
-| Every step recorded; undelivered records kept and synced | `part11:11.10` (e); `annex11-2025d:12.1`; `alcoa:contemporaneous`, `alcoa:enduring` |
+| Every step recorded; undelivered records kept and synced | `part11:11.10(e)`; `annex11-2025d:12.1`; `alcoa:contemporaneous`, `alcoa:enduring` |
 | Manifestation prints the content hash | `annex11-2025d:13.9` (hybrid signing) |
 | AI-produced content signed by an accountable human | `ch4-2025d:4.24`–`4.25` |
 

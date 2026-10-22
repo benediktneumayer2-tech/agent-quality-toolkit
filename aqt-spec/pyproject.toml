@@ -29,7 +29,7 @@ packages = ["src/aqt_evidence"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src", "schemas", "vectors", "catalogues", "spec", "scripts", "tests", "docs", "examples",
-           "crosswalk.md", "README.md", "Design.md", "CHANGELOG.md", "NOTICE", "LICENSE"]
+           "crosswalk.md", "README.md", "CHANGELOG.md", "NOTICE", "LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -57,7 +57,7 @@ Deviation categories: `instructions`, `missing-context`, `tool`, `model`, `task-
 
 ## Source rules
 
-| Rule | Record (INTERFACES I5/I6 fields) | Suggested |
+| Rule | Record (fields from the [aqt-spec registry](../../aqt-spec/spec/evidence-records-0.1.md#11-record-type-registry)) | Suggested |
 |---|---|---|
 | `quarantine-held` | `quarantine.held` (skipped when the same `case_id` was declared a threat) | minor / security |
 | `quarantine-threat` | `quarantine.threat.declared` | major / security |

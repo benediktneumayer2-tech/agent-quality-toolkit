@@ -1,4 +1,4 @@
-"""Additive library features of wave 2: strict parsing, spooling, conformance, CLI."""
+"""Additive library features: strict parsing, spooling, conformance, CLI."""
 
 import json
 import os

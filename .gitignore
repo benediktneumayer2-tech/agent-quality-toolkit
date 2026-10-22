@@ -9,4 +9,6 @@ examples/demo/output/
 
 # Internal planning and tracker records stay local.
 planning/
+/*/Design.md
 docs/implementations/
+aqt-ui/.codex-ui/

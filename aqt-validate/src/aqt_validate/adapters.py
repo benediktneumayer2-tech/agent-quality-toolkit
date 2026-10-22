@@ -6,7 +6,7 @@
   ``batch = false`` runs the command once per item with one JSON object on stdin and
   reads one JSON object (``score_ppm`` or ``score``) on stdout;
 - ``callable``: ``module:function`` called with the item text;
-- ``plugin``: a detector from the ``aqt.detectors`` entry-point group (INTERFACES I8):
+- ``plugin``: a detector from the ``aqt.detectors`` entry-point group (aqt-quarantine docs/detectors.md):
   an object with ``name``, ``version`` and ``score(text) -> DetectorResult(score_ppm, spans)``;
   a class or factory is called with the spec's ``options`` table (e.g. ``model_dir``).
 

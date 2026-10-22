@@ -37,7 +37,7 @@ aqt-trail review sign <worksheet.json> --reviewer human:dora \
     --reason "weekly audit-trail review"
 ```
 
-- Dispositions per INTERFACES I6: `ok`, `explained` or `deviation`; the last two need a `--note`. Every
+- Dispositions: `ok`, `explained` or `deviation`; the last two need a `--note`. Every
   finding needs one (`all=` sets a default).
 - The key: `--key PEM`, or the reviewer's key in the shared key directory `$XDG_CONFIG_HOME/aqt/keys/` (as
   enrolled by aqt-signoff). An encrypted key asks for its passphrase at the terminal (re-authentication). When

@@ -1,6 +1,6 @@
 """ALCOA++ report: what the trail demonstrates per attribute, and where it falls short.
 
-Each result cites catalogue IDs per INTERFACES I11 (``alcoa:<attribute>`` plus
+Each result cites catalogue IDs (aqt-spec spec §13: ``alcoa:<attribute>`` plus
 related clauses). ``pass`` means the check found nothing; it does not mean any
 process is compliant.
 """

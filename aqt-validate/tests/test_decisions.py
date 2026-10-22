@@ -57,8 +57,8 @@ def test_human_approval_record(qualified_run, aqt_env):
     assert record["type"] == "validate.qualification" and record["action"] == "approve"
     assert record["meaning"] == "approved" and record["actor"] == HUMAN_ACTOR
     data = record["data"]
-    assert data["configuration_hash"] == result.run_record["data"]["configuration_hash"]  # I6
-    assert data["valid_until"] == "2026-10-31T12:00:00Z"  # I6
+    assert data["configuration_hash"] == result.run_record["data"]["configuration_hash"]
+    assert data["valid_until"] == "2026-10-31T12:00:00Z"
     assert data["thresholds_sha256"] == result.report_record["data"]["thresholds_sha256"]
     assert data["expected_fpr_upper_ppm"] == result.results["bands"][-1]["fpr_heldout"]["upper1_ppm"]
     assert {l["rel"] for l in record["links"]} == {"report", "run"}

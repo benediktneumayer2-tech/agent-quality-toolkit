@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run every package's offline test suite (each in its own .venv), then the integration demo test,
-# and print a summary table. Missing virtual environments are created with uv
-# (SUITE_ARCHITECTURE §1.3). All runs see throw-away HOME and XDG directories, so nothing is
+# and print a summary table. Missing virtual environments are created with uv.
+# All runs see throw-away HOME and XDG directories, so nothing is
 # written to the real ~/.local/state/aqt or ~/.config/aqt.
 #
 # Usage: scripts/test_all.sh [PACKAGE...]      e.g. scripts/test_all.sh aqt-trail aqt-signoff
@@ -9,7 +9,7 @@
 set -uo pipefail
 
 SUITE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PACKAGES=(aqt-spec aqt-trail aqt-signoff aqt-change aqt-sensei aqt-quarantine aqt-validate aqt-capa)
+PACKAGES=(aqt-spec aqt-trail aqt-signoff aqt-change aqt-sensei aqt-quarantine aqt-validate aqt-capa aqt-ui)
 [ $# -gt 0 ] && PACKAGES=("$@")
 REAL_HOME="$HOME"
 REAL_DIRS=("$REAL_HOME/.local/state/aqt" "$REAL_HOME/.config/aqt")
@@ -26,6 +26,8 @@ ensure_venv() {   # $1 = package directory name
     case "$pkg" in
         aqt-spec) ;;
         aqt-validate) extra=(-e ../aqt-spec -e ../aqt-quarantine) ;;   # detector plug-in tests
+        aqt-ui) extra=(-e ../aqt-spec -e ../aqt-trail -e ../aqt-quarantine -e ../aqt-signoff -e ../aqt-change
+                       -e ../aqt-capa -e ../aqt-validate) ;;                  # every view
         *) extra=(-e ../aqt-spec) ;;
     esac
     (cd "$dir" && uv venv -q .venv && uv pip install -q --python .venv/bin/python "${extra[@]}" -e ".[test]")

@@ -13,21 +13,18 @@ items:
     title: Automatic recording of events
     paraphrase: High-risk AI systems are technically able to record events (logs) automatically throughout their lifetime.
     supported_by: [trail.writer, trail.import, spec.envelope]
-    r3: [R-27]
     verified: true
   - id: euaiact:12(2)
     clause: Art. 12(2)
     title: Purpose of logging
     paraphrase: Logging records events relevant to identifying risk situations or substantial modifications, to post-market monitoring and to the deployer's monitoring of operation.
     supported_by: [trail.review, capa.intake, quarantine.cases]
-    r3: [R-27]
     verified: true
   - id: euaiact:14(1)
     clause: Art. 14(1)
     title: Human oversight by design
     paraphrase: High-risk AI systems are built, with suitable human-machine interfaces where needed, so that people can oversee them effectively while they are in use.
     supported_by: [quarantine.release, signoff.approved-actions, sensei.owner-control, spec.human-check]
-    r3: [R-27]
     verified: true
   - id: euaiact:14(4)
     clause: Art. 14(4)
@@ -48,12 +45,10 @@ items:
     paraphrase: Providers keep the automatically generated logs under their control for a period suited to the intended purpose, at least six months unless other Union or national law provides otherwise.
     supported_by: [spec.checkpoint, trail.verify-export]
     user_must: Configure retention; GMP retention periods are usually longer.
-    r3: [R-27]
     verified: true
   - id: euaiact:26(6)
     clause: Art. 26(6)
     title: Log retention by deployers
     paraphrase: Deployers keep the automatically generated logs under their control for a period suited to the intended purpose, at least six months unless other Union or national law provides otherwise.
     supported_by: [spec.checkpoint, trail.verify-export]
-    r3: [R-27]
     verified: true

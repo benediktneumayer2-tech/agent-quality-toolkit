@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Reports cite only catalogue IDs that exist: `annex22-2025d:6.2` and `annex22-2025d:10` instead of
+  sub-clauses that the catalogue groups, and `iso9001-2015:7.1.5` instead of 7.1.5.1/7.1.5.2.
+
 ## 0.1.0 — 2026-10-21
 
 First MVP.

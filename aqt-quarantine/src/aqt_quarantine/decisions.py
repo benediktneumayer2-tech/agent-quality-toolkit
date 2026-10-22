@@ -4,8 +4,8 @@ Layer 1 (``aqt_evidence.require_human``): refuse when the caller looks like an
 agent (environment markers, agent process in the parent chain) or has no
 terminal. Layer 2 (the real control): the decision is signed with the
 responsible person's passphrase-protected Ed25519 key, as a detached statement
-in ``data.signature`` (INTERFACES.md I1). The hooks honour only decisions whose
-statement verifies against the signer registry (I9), so a record an agent
+in ``data.signature`` (aqt-spec spec §6.3). The hooks honour only decisions whose
+statement verifies against the signer registry (spec §12.2), so a record an agent
 appends to the journal, or a command it types into the owner's terminal
 without the passphrase, has no effect. Every refusal is recorded as
 ``quarantine.refused``.
@@ -63,7 +63,7 @@ def slug(signer_id: str) -> str:
     return re.sub(r"[^a-z0-9._-]", "_", signer_id.replace(":", "-"))
 
 
-# -- signer registry (owned by aqt-signoff; read directly, I9) ----------------------------------------------
+# -- signer registry (owned by aqt-signoff; read directly, spec §12.2) --------------------------------------
 def load_registry(path: Path) -> dict[str, dict]:
     try:
         doc = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -318,7 +318,7 @@ def _reason(reason: str | None) -> str:
 
 def create_identity(config: Config, *, signer_id: str, name: str, role: str,
                     passphrase: Callable[[str], str] | None = None) -> tuple[str, Path]:
-    """Create the responsible person's key (I9 paths) and enrol it in the registry."""
+    """Create the responsible person's key (spec §12.2 paths) and enrol it in the registry."""
     if not SIGNER_ID.match(signer_id):
         raise DecisionError("signer ids look like human:<id> (lower case letters, digits, . _ -)", 2)
     ask = passphrase or (lambda prompt: getpass.getpass(prompt))

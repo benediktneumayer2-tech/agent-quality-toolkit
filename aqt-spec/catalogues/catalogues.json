@@ -312,11 +312,11 @@
    "title": "ALCOA++ data-integrity attributes",
    "licence": "CC-BY-4.0",
    "source": {
-    "document": "EU GMP Chapter 4 consultation draft (July 2025), Table 1 and glossary; PIC/S PI 041-1 (2021); MHRA GxP Data Integrity Guidance and Definitions (2018)",
-    "version": "Chapter 4 consultation draft, July 2025 (\"Traceable\" added to ALCOA+)",
-    "status": "draft (Chapter 4); guidance (PIC/S, MHRA)",
+    "document": "EU GMP Chapter 4 consultation draft (July 2025), Table 1 and glossary; EMA Guideline on computerised systems and electronic data in clinical trials (EMA/INS/GCP/112288/2023), section 4.5; PIC/S PI 041-1 (2021), section 7.5; MHRA GxP Data Integrity Guidance and Definitions (2018), section 6.1",
+    "version": "Chapter 4 consultation draft, July 2025, and EMA guideline of 9 March 2023 (both list \"Traceable\" as the extra ALCOA++ attribute)",
+    "status": "draft (Chapter 4); guidance (EMA, PIC/S, MHRA)",
     "consulted": "2026-10-22",
-    "basis": "Attribute meanings checked against Table 1 of the Chapter 4 consultation draft https://health.ec.europa.eu/document/download/fa336a6e-753b-46fc-b53b-9178bacd8878_en?filename=mp_vol4_chap4_consultation_guideline_en.pdf; paraphrased in own words. The PIC/S and MHRA definitions were not re-checked in this pass."
+    "basis": "Attribute meanings checked against Table 1 of the Chapter 4 consultation draft https://health.ec.europa.eu/document/download/fa336a6e-753b-46fc-b53b-9178bacd8878_en?filename=mp_vol4_chap4_consultation_guideline_en.pdf; compared with PIC/S PI 041-1 section 7.5 (same table, without Traceable), MHRA 2018 section 6.1 (ALCOA+, short definitions) and EMA/INS/GCP/112288/2023 section 4.5 (ALCOA++, there 'Available when needed'); paraphrased in own words."
    },
    "items": [
     {
@@ -330,11 +330,6 @@
       "signoff.identity"
      ],
      "user_must": "Give every person and agent session its own identity; do not share accounts or keys.",
-     "r3": [
-      "R-02",
-      "R-08",
-      "R-21"
-     ],
      "verified": true
     },
     {
@@ -347,10 +342,6 @@
       "trail.verify-export"
      ],
      "user_must": "Keep the export and report tools available for the retention period.",
-     "r3": [
-      "R-05",
-      "R-21"
-     ],
      "verified": true
     },
     {
@@ -364,9 +355,6 @@
       "trail.alcoa"
      ],
      "user_must": "Route tool records to the trail service as they happen; review gap markers.",
-     "r3": [
-      "R-02"
-     ],
      "verified": true
     },
     {
@@ -380,9 +368,6 @@
       "trail.import"
      ],
      "user_must": "Keep the original session logs where they matter; the trail stores hashes and excerpts, not full content.",
-     "r3": [
-      "R-21"
-     ],
      "verified": true
     },
     {
@@ -397,9 +382,6 @@
       "change.receipts"
      ],
      "user_must": "Verify the trail regularly and investigate any break.",
-     "r3": [
-      "R-21"
-     ],
      "verified": true
     },
     {
@@ -413,9 +395,6 @@
       "spec.checkpoint"
      ],
      "user_must": "Send all relevant tool output to the trail; keep external checkpoints to detect truncation.",
-     "r3": [
-      "R-21"
-     ],
      "verified": true
     },
     {
@@ -429,9 +408,6 @@
       "trail.alcoa"
      ],
      "user_must": "Keep host clocks synchronised; use one trail per scope of records.",
-     "r3": [
-      "R-21"
-     ],
      "verified": true
     },
     {
@@ -444,10 +420,6 @@
       "trail.anchor"
      ],
      "user_must": "Back up the trail and its keys; define and follow a retention period.",
-     "r3": [
-      "R-20",
-      "R-21"
-     ],
      "verified": true
     },
     {
@@ -460,10 +432,6 @@
       "spec.conformance"
      ],
      "user_must": "Test export and restore periodically.",
-     "r3": [
-      "R-05",
-      "R-20"
-     ],
      "verified": true
     },
     {
@@ -477,10 +445,6 @@
       "capa.action"
      ],
      "user_must": "Link records (links) when a decision depends on earlier evidence.",
-     "r3": [
-      "R-21",
-      "R-22"
-     ],
      "verified": true
     }
    ]
@@ -504,9 +468,6 @@
      "paraphrase": "Risk management is applied throughout the system life cycle, taking patient safety, data integrity and product quality into account; the extent of validation and data-integrity controls follows a justified, documented risk assessment.",
      "supported_by": [],
      "user_must": "Perform and document the risk assessment for your use of agents and of AQT.",
-     "r3": [
-      "R-16"
-     ],
      "verified": true
     },
     {
@@ -520,10 +481,6 @@
       "validate.detector"
      ],
      "user_must": "Keep the validation documentation of your system.",
-     "r3": [
-      "R-15",
-      "R-17"
-     ],
      "verified": true
     },
     {
@@ -535,9 +492,6 @@
       "change.trace-report"
      ],
      "user_must": "Maintain the user requirements and their IDs.",
-     "r3": [
-      "R-14"
-     ],
      "verified": true
     },
     {
@@ -550,9 +504,6 @@
       "validate.protocol-lock"
      ],
      "user_must": "Define the tests that make up your evidence.",
-     "r3": [
-      "R-15"
-     ],
      "verified": true
     },
     {
@@ -578,9 +529,6 @@
       "trail.anchor"
      ],
      "user_must": "Check stored trails periodically.",
-     "r3": [
-      "R-20"
-     ],
      "verified": true
     },
     {
@@ -592,9 +540,6 @@
       "trail.verify-export"
      ],
      "user_must": "Make backups and run restore tests.",
-     "r3": [
-      "R-20"
-     ],
      "verified": true
     },
     {
@@ -613,7 +558,7 @@
      "id": "annex11-2011:9",
      "clause": "9",
      "title": "Audit trails",
-     "paraphrase": "Based on risk, a system-generated record of all GMP-relevant changes and deletions is kept; the reason for a change or deletion is documented; audit trails are available in intelligible form and reviewed regularly.",
+     "paraphrase": "Based on a risk assessment, consideration is given to building in a system-generated audit trail of all GMP-relevant changes and deletions, and the reason for changing or deleting GMP-relevant data is documented. Audit trails can be made available and converted into a generally intelligible form, and they are reviewed regularly.",
      "supported_by": [
       "trail.writer",
       "spec.envelope",
@@ -621,11 +566,6 @@
       "trail.verify-export"
      ],
      "user_must": "Decide what is GMP-relevant and review the trail at a defined frequency.",
-     "r3": [
-      "R-01",
-      "R-03",
-      "R-06"
-     ],
      "verified": true
     },
     {
@@ -639,9 +579,6 @@
       "capa.action"
      ],
      "user_must": "Put agent instructions, hooks and thresholds under your change procedure.",
-     "r3": [
-      "R-17"
-     ],
      "verified": true
     },
     {
@@ -655,9 +592,6 @@
       "capa.trends"
      ],
      "user_must": "Plan and perform periodic reviews.",
-     "r3": [
-      "R-19"
-     ],
      "verified": true
     },
     {
@@ -670,9 +604,6 @@
       "spec.human-check"
      ],
      "user_must": "Configure OS users, permissions and network exposure.",
-     "r3": [
-      "R-08"
-     ],
      "verified": true
     },
     {
@@ -683,9 +614,6 @@
      "supported_by": [
       "spec.envelope",
       "trail.writer"
-     ],
-     "r3": [
-      "R-02"
      ],
      "verified": true,
      "user_must": ""
@@ -701,9 +629,6 @@
       "capa.action"
      ],
      "user_must": "Define what counts as a critical incident.",
-     "r3": [
-      "R-18"
-     ],
      "verified": true
     },
     {
@@ -717,10 +642,6 @@
       "spec.signature"
      ],
      "user_must": "State in your procedures that electronic signatures are binding.",
-     "r3": [
-      "R-10",
-      "R-11"
-     ],
      "verified": true
     },
     {
@@ -734,9 +655,6 @@
       "spec.checkpoint"
      ],
      "user_must": "Archive trails with keys and checkpoints and test retrieval.",
-     "r3": [
-      "R-20"
-     ],
      "verified": true
     }
    ]
@@ -757,15 +675,12 @@
      "id": "annex11-2025d:2.4",
      "clause": "2.4",
      "title": "Data integrity",
-     "paraphrase": "Data captured, analysed and reported by systems used in GMP activities must be trustworthy; data integrity, as defined by the ALCOA+ principles, spans data handling, identity and access management, audit trails, electronic signatures and security.",
+     "paraphrase": "Data captured, analysed and reported by systems used in GMP activities must be trustworthy; data integrity, as defined by the ALCOA+ principles, spans many topics, among them data handling, identity and access management, audit trails, electronic signatures and security.",
      "supported_by": [
       "spec.envelope",
       "trail.alcoa"
      ],
      "user_must": "Apply the principles to your whole process, not only to the tools.",
-     "r3": [
-      "R-21"
-     ],
      "verified": true
     },
     {
@@ -781,41 +696,31 @@
       "validate.qualification"
      ],
      "user_must": "Decide which deviations and changes are significant.",
-     "r3": [
-      "R-17",
-      "R-18"
-     ],
      "verified": true
     },
     {
      "id": "annex11-2025d:6.1",
      "clause": "6.1-6.5, 9.5",
      "title": "Requirements and traceability",
-     "paraphrase": "Approved system requirements describe the GMP functionality relied on, are kept current over the life cycle and are traceable to design specifications and test cases. Test cases that do not trace to a requirement or specification do not count as qualification or validation.",
+     "paraphrase": "The regulated user approves and owns system requirements describing the GMP functionality it relies on, in detail matching risk and complexity (also when a vendor supplies them), keeps them current over the life cycle and traces them to design specifications and test cases. Test cases that do not trace to a requirement or specification do not count as qualification or validation.",
      "supported_by": [
       "change.trace-report",
       "change.plan-ledger"
      ],
      "user_must": "Maintain requirement IDs and link them in plans.",
-     "r3": [
-      "R-14"
-     ],
      "verified": true
     },
     {
      "id": "annex11-2025d:9.4",
      "clause": "9.4, 9.7, 9.8",
      "title": "Test evidence and approved plans",
-     "paraphrase": "Qualification and validation follow approved plans, protocols and test scripts and give evidence as executed test scripts and, where relevant, screen captures. They are completed and reported before use, and a conditional approval needs a documented impact assessment stated in the validation report.",
+     "paraphrase": "Qualification and validation follow approved plans, protocols and test scripts, are evidenced by executed scripts and, where relevant, screen captures, and are completed and reported before use. Conditional go-live with unmet criteria or open deviations needs a documented assessment that the gaps do not affect product quality, patient safety or data integrity, stated in the validation report.",
      "supported_by": [
       "change.receipts",
       "change.finish",
       "validate.protocol-lock"
      ],
      "user_must": "Approve plans before execution and keep screenshots where needed.",
-     "r3": [
-      "R-15"
-     ],
      "verified": true
     },
     {
@@ -830,9 +735,6 @@
       "sensei.read-only-advisor"
      ],
      "user_must": "Give each agent session and each person its own identity; review access periodically.",
-     "r3": [
-      "R-08"
-     ],
      "verified": true
     },
     {
@@ -844,9 +746,6 @@
       "trail.import"
      ],
      "user_must": "Import session start and end events; host logins remain an OS matter.",
-     "r3": [
-      "R-07"
-     ],
      "verified": true
     },
     {
@@ -860,9 +759,6 @@
       "spec.envelope"
      ],
      "user_must": "Connect every tool and hook that makes such changes to the trail.",
-     "r3": [
-      "R-01"
-     ],
      "verified": true
     },
     {
@@ -875,10 +771,6 @@
       "trail.writer"
      ],
      "user_must": "Require reasons in your tools' configuration where they are optional.",
-     "r3": [
-      "R-02",
-      "R-03"
-     ],
      "verified": true
     },
     {
@@ -893,9 +785,6 @@
       "trail.anchor"
      ],
      "user_must": "Run the writer as a separate user administered by someone who does not do the work being recorded.",
-     "r3": [
-      "R-04"
-     ],
      "verified": true
     },
     {
@@ -907,9 +796,6 @@
       "trail.verify-export",
       "spec.conformance"
      ],
-     "r3": [
-      "R-05"
-     ],
      "verified": true,
      "user_must": ""
     },
@@ -917,15 +803,12 @@
      "id": "annex11-2025d:12.5",
      "clause": "12.5-12.8, 12.10",
      "title": "Audit-trail review",
-     "paraphrase": "Audit trails are reviewed under a documented procedure by people not directly involved, targeted by risk, in time for the decision (before batch release unless justified) and available to the QP at release. Review tools are encouraged, and significant variations are fully investigated and recorded.",
+     "paraphrase": "Audit trails are reviewed under a documented procedure by people not involved in the work, targeted by risk at changes to critical data and their reasons, and in good time (before batch release unless a later review is justified); reviews bearing on release are available to the QP. Review tools are encouraged, and significant variations are fully investigated and recorded.",
      "supported_by": [
       "trail.review",
       "capa.intake"
      ],
      "user_must": "Write the review procedure, set its frequency and assign independent reviewers.",
-     "r3": [
-      "R-06"
-     ],
      "verified": true
     },
     {
@@ -936,9 +819,6 @@
      "supported_by": [
       "trail.verify-export",
       "spec.conformance"
-     ],
-     "r3": [
-      "R-05"
      ],
      "verified": true,
      "user_must": ""
@@ -952,22 +832,16 @@
       "trail.anchor"
      ],
      "user_must": "Use qualified trust services where your context requires them.",
-     "r3": [
-      "R-12"
-     ],
      "verified": true
     },
     {
      "id": "annex11-2025d:13.3",
      "clause": "13.3-13.6",
      "title": "Re-authentication, date and time, meaning and manifestation",
-     "paraphrase": "Signing enforces a full re-authentication at least as strong as login (password or biometrics alone suffice for further signatures in immediate sequence), logs date, time and zone, and prompts for the meaning. The displayed or printed manifestation shows full name, username, role where applicable, meaning, and date and time of signing.",
+     "paraphrase": "Signing requires full re-authentication at least as strong as login; a password or biometrics alone suffices for further signatures in immediate sequence, but a smart card, PIN or the existing session does not. The system logs date, time and zone where applicable and prompts for the meaning; displayed or printed signatures show full name, username, role where applicable, meaning, date and time.",
      "supported_by": [
       "signoff.signature",
       "signoff.reauth"
-     ],
-     "r3": [
-      "R-10"
      ],
      "verified": true,
      "user_must": ""
@@ -980,9 +854,6 @@
      "supported_by": [
       "spec.signature",
       "signoff.invalidation"
-     ],
-     "r3": [
-      "R-11"
      ],
      "verified": true,
      "user_must": ""
@@ -997,9 +868,6 @@
       "spec.canonical-hash"
      ],
      "user_must": "Print the content hash on any paper signature page you still use.",
-     "r3": [
-      "R-13"
-     ],
      "verified": true
     },
     {
@@ -1013,9 +881,6 @@
       "capa.trends"
      ],
      "user_must": "Schedule periodic reviews and act on unapproved changes.",
-     "r3": [
-      "R-19"
-     ],
      "verified": true
     },
     {
@@ -1029,9 +894,6 @@
       "spec.canonical-hash"
      ],
      "user_must": "Back up, archive and test restores.",
-     "r3": [
-      "R-20"
-     ],
      "verified": true
     }
    ]
@@ -1060,25 +922,18 @@
       "validate.detector"
      ],
      "user_must": "Validate your own system for its intended use; AQT itself is not a validated system.",
-     "r3": [
-      "R-15",
-      "R-16"
-     ],
      "verified": true
     },
     {
      "id": "part11:11.10(b)",
      "clause": "11.10(b)",
      "title": "Accurate and complete copies",
-     "paraphrase": "The system can produce accurate and complete copies in human-readable and electronic form for inspection.",
+     "paraphrase": "The system can produce accurate and complete copies of records, in human-readable and electronic form, that the agency can inspect, review and copy.",
      "supported_by": [
       "trail.verify-export",
       "spec.conformance"
      ],
      "user_must": "Define how copies are provided to inspectors.",
-     "r3": [
-      "R-05"
-     ],
      "verified": true
     },
     {
@@ -1092,9 +947,6 @@
       "trail.verify-export"
      ],
      "user_must": "Back up records and keys; define retention.",
-     "r3": [
-      "R-20"
-     ],
      "verified": true
     },
     {
@@ -1107,9 +959,6 @@
       "sensei.read-only-advisor"
      ],
      "user_must": "Run agents and the trail writer under separate OS users where possible; manage accounts and file permissions.",
-     "r3": [
-      "R-08"
-     ],
      "verified": true
     },
     {
@@ -1125,11 +974,6 @@
       "trail.verify-export"
      ],
      "user_must": "Route all relevant actions to the trail and keep it for the retention period of the records.",
-     "r3": [
-      "R-01",
-      "R-02",
-      "R-04"
-     ],
      "verified": true
     },
     {
@@ -1143,9 +987,6 @@
       "signoff.approved-actions"
      ],
      "user_must": "Define which sequences are mandatory in your procedures.",
-     "r3": [
-      "R-30"
-     ],
      "verified": true
     },
     {
@@ -1160,9 +1001,6 @@
       "quarantine.self-trust-guard"
      ],
      "user_must": "Decide who is authorised for which meaning; the agent-context check is a guard, not a security boundary.",
-     "r3": [
-      "R-30"
-     ],
      "verified": true
     },
     {
@@ -1175,9 +1013,6 @@
       "trail.import"
      ],
      "user_must": "Review observed process attribution for unexpected sources.",
-     "r3": [
-      "R-02"
-     ],
      "verified": true
     },
     {
@@ -1189,9 +1024,6 @@
       "validate.reviewer"
      ],
      "user_must": "Keep training records for people; AI reviewer qualification is an analogy and does not replace them.",
-     "r3": [
-      "R-23"
-     ],
      "verified": true
     },
     {
@@ -1212,9 +1044,6 @@
       "change.plan-ledger"
      ],
      "user_must": "Keep system documentation under change control.",
-     "r3": [
-      "R-17"
-     ],
      "verified": true
     },
     {
@@ -1227,9 +1056,6 @@
       "trail.anchor"
      ],
      "user_must": "Use encrypted transport and qualified trust services where your context requires them.",
-     "r3": [
-      "R-12"
-     ],
      "verified": true
     },
     {
@@ -1241,9 +1067,6 @@
       "signoff.signature"
      ],
      "user_must": "Define the meanings used in your process.",
-     "r3": [
-      "R-10"
-     ],
      "verified": true
     },
     {
@@ -1256,9 +1079,6 @@
       "spec.signature"
      ],
      "user_must": "Use the rendered signature block whenever a signed record is displayed or printed.",
-     "r3": [
-      "R-10"
-     ],
      "verified": true
     },
     {
@@ -1272,9 +1092,6 @@
       "signoff.invalidation"
      ],
      "user_must": "Verify signatures against pinned keys, not against whatever key a record names.",
-     "r3": [
-      "R-11"
-     ],
      "verified": true
     },
     {
@@ -1286,9 +1103,6 @@
       "signoff.identity"
      ],
      "user_must": "Never share signing keys or passphrases.",
-     "r3": [
-      "R-08"
-     ],
      "verified": true
     },
     {
@@ -1319,9 +1133,6 @@
       "signoff.identity"
      ],
      "user_must": "Choose strong passphrases and protect key files.",
-     "r3": [
-      "R-10"
-     ],
      "verified": true
     },
     {
@@ -1388,9 +1199,6 @@
       "trail.review"
      ],
      "user_must": "Review failed-authentication findings and act on them.",
-     "r3": [
-      "R-09"
-     ],
      "verified": true
     },
     {
@@ -1429,9 +1237,6 @@
       "sensei.advice-ledger"
      ],
      "user_must": "Inventory the AI tools you use and name the accountable human for each record they produce.",
-     "r3": [
-      "R-22"
-     ],
      "verified": true
     },
     {
@@ -1442,11 +1247,6 @@
      "supported_by": [
       "spec.envelope",
       "trail.alcoa"
-     ],
-     "r3": [
-      "R-02",
-      "R-03",
-      "R-21"
      ],
      "verified": true,
      "user_must": ""
@@ -1461,10 +1261,6 @@
       "spec.signature",
       "signoff.invalidation"
      ],
-     "r3": [
-      "R-10",
-      "R-11"
-     ],
      "verified": true,
      "user_must": ""
     },
@@ -1478,9 +1274,6 @@
       "spec.signature"
      ],
      "user_must": "Sign electronic records electronically; where a paper signature remains, define which signature counts and bind the paper page to the record (see annex11-2025d:13.9).",
-     "r3": [
-      "R-13"
-     ],
      "verified": true
     },
     {
@@ -1493,9 +1286,6 @@
       "trail.anchor"
      ],
      "user_must": "Set retention periods and reconcile them with data-protection minimisation.",
-     "r3": [
-      "R-27"
-     ],
      "verified": true
     }
    ]
@@ -1516,7 +1306,7 @@
      "id": "annex22-2025d:1",
      "clause": "1",
      "title": "Scope and human in the loop",
-     "paraphrase": "The annex covers static, deterministic AI/ML models in critical GMP applications; generative AI and large language models are outside it and should not be used in critical GMP applications. In non-critical uses, qualified and trained people remain responsible for checking that their output suits the intended use (human in the loop).",
+     "paraphrase": "The annex covers static AI/ML models with deterministic output in critical GMP uses (direct impact on patient safety, product quality or data integrity); self-learning or probabilistic-output models, generative AI and LLMs are outside it and should not be used there. In non-critical uses, qualified, trained staff stay responsible for checking the output fits its intended use (human in the loop).",
      "supported_by": [
       "quarantine.release",
       "signoff.signature",
@@ -1525,9 +1315,30 @@
       "spec.human-check"
      ],
      "user_must": "Classify each agent use as critical or non-critical and keep agents out of critical GMP decisions.",
-     "r3": [
-      "R-23"
+     "verified": true
+    },
+    {
+     "id": "annex22-2025d:3",
+     "clause": "3.1-3.3",
+     "title": "Intended use",
+     "paraphrase": "The model's intended use is described in detail from process knowledge, including the input sample space with its common and rare variations, limitations, erroneous or biased inputs and any subgroups. A process expert is responsible for the description and approves it before acceptance testing; for a human-in-the-loop use with reduced testing it also states the operator's responsibility.",
+     "supported_by": [
+      "validate.protocol-lock"
      ],
+     "user_must": "Write and approve the intended use of each detector or AI reviewer; aqt-validate only locks the text you give it in the protocol.",
+     "verified": true
+    },
+    {
+     "id": "annex22-2025d:4",
+     "clause": "4.1-4.3",
+     "title": "Acceptance criteria",
+     "paraphrase": "A process expert defines case-specific test metrics (for example a confusion matrix, sensitivity, specificity or F1 score) and acceptance criteria for them, possibly per subgroup, and approves them before acceptance testing. The criteria must be at least as demanding as the known performance of the process the model replaces.",
+     "supported_by": [
+      "validate.protocol-lock",
+      "validate.detector",
+      "validate.reviewer"
+     ],
+     "user_must": "Know the performance of the process the model replaces and set criteria at least that high.",
      "verified": true
     },
     {
@@ -1540,9 +1351,19 @@
       "validate.detector"
      ],
      "user_must": "Keep test sets separate from training and tuning data.",
-     "r3": [
-      "R-25"
+     "verified": true
+    },
+    {
+     "id": "annex22-2025d:7",
+     "clause": "7.1-7.4",
+     "title": "Test execution",
+     "paraphrase": "The test follows a plan approved beforehand (intended use, metrics and criteria, test data, test script, calculation of metrics) and shows that the model generalises to new data from its intended use, without over- or underfitting. Deviations from the plan, failed criteria or unused test data are documented, investigated and justified, and test documentation, data and access records are kept.",
+     "supported_by": [
+      "validate.protocol-lock",
+      "validate.detector",
+      "validate.reviewer"
      ],
+     "user_must": "Investigate and justify every deviation the report lists, and retain the test data and documentation.",
      "verified": true
     },
     {
@@ -1554,9 +1375,6 @@
       "quarantine.cases"
      ],
      "user_must": "Treat detector evidence spans as triage aids, not as a full explanation.",
-     "r3": [
-      "R-26"
-     ],
      "verified": true
     },
     {
@@ -1568,9 +1386,6 @@
       "quarantine.hold",
       "validate.detector"
      ],
-     "r3": [
-      "R-26"
-     ],
      "verified": true,
      "user_must": ""
     },
@@ -1578,7 +1393,7 @@
      "id": "annex22-2025d:10",
      "clause": "10.1-10.5",
      "title": "Operation (change and configuration control, monitoring, human review)",
-     "paraphrase": "Before deployment the model, its system and the process are put under change and configuration control, with justified retest decisions and detection of unauthorised change. Performance and input-data drift are monitored regularly, and where a human decides on the model's input, records of that review are kept.",
+     "paraphrase": "Before deployment the model, its system and the process come under change and configuration control; each change is assessed for retesting, a decision not to retest is fully justified, and unauthorised changes are detected. Performance and input-data drift are monitored regularly, and where the model feeds a human operator's decision and testing was reduced, records of that human review are kept.",
      "supported_by": [
       "validate.qualification",
       "spec.envelope",
@@ -1587,9 +1402,6 @@
       "capa.action"
      ],
      "user_must": "Record model and configuration versions and requalify after changes.",
-     "r3": [
-      "R-24"
-     ],
      "verified": true
     }
    ]
@@ -1631,10 +1443,6 @@
       "change.plan-ledger"
      ],
      "user_must": "Document your quality system and appoint the person responsible for it.",
-     "r3": [
-      "R-17",
-      "R-18"
-     ],
      "verified": true
     },
     {
@@ -1937,9 +1745,6 @@
       "trail.import",
       "spec.envelope"
      ],
-     "r3": [
-      "R-27"
-     ],
      "verified": true,
      "user_must": ""
     },
@@ -1952,9 +1757,6 @@
       "trail.review",
       "capa.intake",
       "quarantine.cases"
-     ],
-     "r3": [
-      "R-27"
      ],
      "verified": true,
      "user_must": ""
@@ -1969,9 +1771,6 @@
       "signoff.approved-actions",
       "sensei.owner-control",
       "spec.human-check"
-     ],
-     "r3": [
-      "R-27"
      ],
      "verified": true,
      "user_must": ""
@@ -2013,9 +1812,6 @@
       "trail.verify-export"
      ],
      "user_must": "Configure retention; GMP retention periods are usually longer.",
-     "r3": [
-      "R-27"
-     ],
      "verified": true
     },
     {
@@ -2026,9 +1822,6 @@
      "supported_by": [
       "spec.checkpoint",
       "trail.verify-export"
-     ],
-     "r3": [
-      "R-27"
      ],
      "verified": true,
      "user_must": ""

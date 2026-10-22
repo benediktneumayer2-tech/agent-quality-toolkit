@@ -10,8 +10,8 @@ Licensing
   (full text in LICENSES/CC-BY-4.0.txt).
 
 Origin
-- Concepts are derived from the author's private Agent Platform Next (design of a
-  tamper-evident agent audit trail). No code, data or private content was copied.
+- Concepts are derived from the author's private Agent Platform Next (its concept of
+  a tamper-evident agent audit trail). No code, data or private content was copied.
 
 Third-party material
 - vectors/keys.json contains the Ed25519 test keys published in RFC 8032,

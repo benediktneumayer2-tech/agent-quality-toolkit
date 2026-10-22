@@ -29,7 +29,7 @@ sh examples/quickstart.sh      # offline demo in a temporary Git repository
 In your own repository:
 
 ```sh
-aqt-change plan new plans/s01.md --id s01 --title "Subtraction"   # PTN-compatible template
+aqt-change plan new plans/s01.md --id s01 --title "Subtraction"   # Project Tracker Next-compatible template
 # edit: tasks "- [ ] [T01] …", checks "- [ ] [V01] Tests pass `$ python -m pytest -q`", aqt.paths
 aqt-change reconcile plans/s01.md --kind semantic --reason "define the work"
 aqt-change begin plans/s01.md                          # baseline + Git base commit
@@ -59,7 +59,7 @@ flowchart LR
     H["Claude Code hooks<br/>git commit-msg"] -->|read| L & R
 ```
 
-- **Plan format:** Project Tracker Next sprint files (front matter `tracker:`, `## Tasks`, `## Verification`, event sections, `## Completion`), plus an optional `aqt:` block that PTN ignores. Details are in [docs/usage.md](docs/usage.md).
+- **Plan format:** Project Tracker Next sprint files (front matter `tracker:`, `## Tasks`, `## Verification`, event sections, `## Completion`), plus an optional `aqt:` block that Project Tracker Next ignores. Details are in [docs/usage.md](docs/usage.md).
 - **Freshness:** the receipt stores the plan's *basis hash* and the *tree fingerprint*. The basis hash covers the plan without check marks, lifecycle fields, the completion section or event entries. The tree fingerprint hashes the working-tree content, excluding the plan file and ignored files. Because both hash content, committing the same code at finish does not make a receipt stale; any later code edit does. The rule is strict: any *untracked, non-ignored* file that appears after a run (a coverage file, a report, a scratch note) also makes the receipt stale. Write tool outputs to paths covered by `.gitignore`, or list them in `fingerprint_exclude` in `change.toml` (for example `["build/**", "coverage.xml"]`). A JUnit file passed with `--junit` is excluded automatically.
 - **Ledger:** working state lives in `<git-dir>/aqt-change/` and never shows up in diffs. The evidence sink is authoritative.
 - **Approval for QM use:** the library default is `require_signed_approval = false`, so a solo developer can start without aqt-signoff. For QM use, enable it (as in `examples/change.toml`). Then a plan done entirely by an agent cannot reach GO until a person has signed the approved plan version.
@@ -69,15 +69,15 @@ flowchart LR
 
 | Feature | Concept | Clauses (paraphrased) |
 |---|---|---|
-| Hash-reconciled plans, editorial/semantic + reason | Control of changes; revision and change control documentation | `iso9001-2015:8.5.6`, `iso9001-2015:8.3.6`, `annex11-2011:10`, `annex11-2025d:12.2`, `part11:11.10(k)` |
+| Hash-reconciled plans, editorial/semantic + reason | Control of changes; revision and change control documentation | `iso9001-2015:8.5.6`, `iso9001-2015:7.5.3`, `annex11-2011:10`, `annex11-2025d:12.2`, `part11:11.10(k)` |
 | Append-only plan history; follow-up plans for terminal plans | Changes must not obscure earlier entries | `part11:11.10(e)`, `alcoa:original`, `alcoa:enduring` |
 | Runner-captured receipts | Objective evidence of verification; executed test evidence | `iso9001-2015:8.6`, `annex11-2025d:9.4`, `alcoa:attributable`, `alcoa:contemporaneous`, `alcoa:accurate` |
-| Staleness after change | Retest after change | `annex11-2025d:3.1`, `annex22-2025d:10.1` |
+| Staleness after change | Retest after change | `annex11-2025d:3.1`, `annex22-2025d:10` (§10.1) |
 | Finish preflight and order begin → run → finish | Operational sequence checks | `part11:11.10(f)` |
 | Waivers and override reasons visible | Concession, documented deviation | `iso9001-2015:8.7` |
-| Reviews with independence class | Independent review; human review of AI output | `iso9001-2015:8.3.4`, `annex22-2025d:10.5` |
-| Approved scope versus actual diff | Detection of unapproved changes | `annex11-2025d:14.2` |
-| Trailers and trace report | Traceability | `alcoa:traceable`, `annex11-2025d:6` |
+| Reviews with independence class | Independent review; human review of AI output | `iso9001-2015:8.5.6`, `annex22-2025d:10` (§10.5) |
+| Approved scope versus actual diff | Detection of unapproved changes | `annex11-2025d:14.1` (§14.2) |
+| Trailers and trace report | Traceability | `alcoa:traceable`, `annex11-2025d:6.1` |
 
 These are concepts the tool *supports*. Procedures, validation of your own process and human accountability remain with you.
 

@@ -1,4 +1,4 @@
-"""Thresholds file (aqt-validate Design §2.2, in ppm; INTERFACES.md I7/I8).
+"""Thresholds file (aqt-spec spec §12.1, written by aqt-validate; values in ppm).
 
 A band fires when a detector's score is strictly greater than its threshold.
 ``rule`` is ``"any"`` (one detector is enough) or ``{"at_least": k}``.

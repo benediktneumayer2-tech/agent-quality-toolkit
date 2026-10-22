@@ -14,7 +14,6 @@ items:
     paraphrase: Risk management is applied throughout the system life cycle, taking patient safety, data integrity and product quality into account; the extent of validation and data-integrity controls follows a justified, documented risk assessment.
     supported_by: []
     user_must: Perform and document the risk assessment for your use of agents and of AQT.
-    r3: [R-16]
     verified: true
   - id: annex11-2011:4.1
     clause: "4.1-4.2"
@@ -22,7 +21,6 @@ items:
     paraphrase: Validation documentation and reports cover the relevant life-cycle steps, with standards, protocols, acceptance criteria and records justified by risk assessment. They include change control records where applicable and reports on deviations observed during validation.
     supported_by: [change.plan-ledger, capa.intake, validate.detector]
     user_must: Keep the validation documentation of your system.
-    r3: [R-15, R-17]
     verified: true
   - id: annex11-2011:4.4
     clause: "4.4"
@@ -30,7 +28,6 @@ items:
     paraphrase: User requirements specifications describe the required functions, are based on documented risk assessment and GMP impact, and are traceable throughout the life cycle.
     supported_by: [change.trace-report]
     user_must: Maintain the user requirements and their IDs.
-    r3: [R-14]
     verified: true
   - id: annex11-2011:4.7
     clause: "4.7"
@@ -38,7 +35,6 @@ items:
     paraphrase: Evidence of appropriate test methods and test scenarios is demonstrated, considering parameter limits, data limits and error handling. Automated test tools and test environments have documented assessments of their adequacy.
     supported_by: [change.receipts, validate.protocol-lock]
     user_must: Define the tests that make up your evidence.
-    r3: [R-15]
     verified: true
   - id: annex11-2011:5
     clause: "5"
@@ -53,7 +49,6 @@ items:
     paraphrase: Physical and electronic measures protect data from damage; stored data is checked for accessibility, readability and accuracy and stays accessible for the whole retention period.
     supported_by: [spec.checkpoint, trail.verify-export, trail.anchor]
     user_must: Check stored trails periodically.
-    r3: [R-20]
     verified: true
   - id: annex11-2011:7.2
     clause: "7.2"
@@ -61,7 +56,6 @@ items:
     paraphrase: All relevant data is backed up regularly; backup integrity and accuracy and the ability to restore are verified during validation and then monitored periodically.
     supported_by: [trail.verify-export]
     user_must: Make backups and run restore tests.
-    r3: [R-20]
     verified: true
   - id: annex11-2011:8.1
     clause: "8.1"
@@ -72,10 +66,9 @@ items:
   - id: annex11-2011:9
     clause: "9"
     title: Audit trails
-    paraphrase: Based on risk, a system-generated record of all GMP-relevant changes and deletions is kept; the reason for a change or deletion is documented; audit trails are available in intelligible form and reviewed regularly.
+    paraphrase: Based on a risk assessment, consideration is given to building in a system-generated audit trail of all GMP-relevant changes and deletions, and the reason for changing or deleting GMP-relevant data is documented. Audit trails can be made available and converted into a generally intelligible form, and they are reviewed regularly.
     supported_by: [trail.writer, spec.envelope, trail.review, trail.verify-export]
     user_must: Decide what is GMP-relevant and review the trail at a defined frequency.
-    r3: [R-01, R-03, R-06]
     verified: true
   - id: annex11-2011:10
     clause: "10"
@@ -83,7 +76,6 @@ items:
     paraphrase: Changes to a computerised system, including its configuration, are made only in a controlled manner under a defined procedure.
     supported_by: [change.plan-ledger, change.reconcile-diff, capa.action]
     user_must: Put agent instructions, hooks and thresholds under your change procedure.
-    r3: [R-17]
     verified: true
   - id: annex11-2011:11
     clause: "11"
@@ -91,7 +83,6 @@ items:
     paraphrase: Systems are evaluated periodically to confirm they remain in a valid state and continue to meet GMP, considering for example functionality, deviations, incidents, upgrades, performance, security and validation status.
     supported_by: [validate.qualification, trail.review, capa.trends]
     user_must: Plan and perform periodic reviews.
-    r3: [R-19]
     verified: true
   - id: annex11-2011:12.1
     clause: "12.1"
@@ -99,14 +90,12 @@ items:
     paraphrase: Physical and/or logical controls restrict access to the computerised system to authorised persons.
     supported_by: [trail.writer, spec.human-check]
     user_must: Configure OS users, permissions and network exposure.
-    r3: [R-08]
     verified: true
   - id: annex11-2011:12.4
     clause: "12.4"
     title: Identity of operators
     paraphrase: Data and document management systems capture who entered, changed, confirmed or deleted data, and when.
     supported_by: [spec.envelope, trail.writer]
-    r3: [R-02]
     verified: true
   - id: annex11-2011:13
     clause: "13"
@@ -114,7 +103,6 @@ items:
     paraphrase: Every incident, including but not limited to system failures and data errors, is reported and assessed; for a critical incident the root cause is determined and drives corrective and preventive actions.
     supported_by: [capa.intake, capa.investigation, capa.action]
     user_must: Define what counts as a critical incident.
-    r3: [R-18]
     verified: true
   - id: annex11-2011:14
     clause: "14"
@@ -122,7 +110,6 @@ items:
     paraphrase: Within the company, electronic signatures carry the same weight as handwritten ones, stay permanently linked to their record and show the time and date they were applied.
     supported_by: [signoff.signature, signoff.invalidation, spec.signature]
     user_must: State in your procedures that electronic signatures are binding.
-    r3: [R-10, R-11]
     verified: true
   - id: annex11-2011:17
     clause: "17"
@@ -130,5 +117,4 @@ items:
     paraphrase: Archived data is checked for accessibility, readability and integrity; before relevant changes to the system, the ability to retrieve the data is ensured and tested.
     supported_by: [trail.verify-export, spec.conformance, spec.checkpoint]
     user_must: Archive trails with keys and checkpoints and test retrieval.
-    r3: [R-20]
     verified: true

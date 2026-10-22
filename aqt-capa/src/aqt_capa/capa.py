@@ -64,7 +64,7 @@ class Capa:
             raise CapaError(str(error)) from error
 
     def readable_paths(self) -> list[Path]:
-        """Configured (or default, INTERFACES I4) evidence files that exist; resolved on every read."""
+        """Configured (or default, aqt-spec spec §10.5) evidence files that exist; resolved on every read."""
         configured = [Path(p) for p in (self.evidence_paths if self.evidence_paths is not None
                                         else evidence_sources())]
         self.missing_paths = [p for p in configured if not p.exists()]
@@ -397,7 +397,7 @@ class Capa:
 
     # -------------------------------------------------------------- approval
     def approval(self, act, records: list[dict] | None = None) -> dict:
-        """How (and whether) the implemented change was approved. See INTERFACES I1 and I10."""
+        """How (and whether) the implemented change was approved. See aqt-spec spec §6.3 and the aqt-signoff Python API."""
         if act["state"] in ("planned", "cancelled") or not act["implemented_hash"]:
             return {"approved": False, "status": "not-implemented"}
         if act["approved_record"]:

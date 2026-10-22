@@ -4,8 +4,7 @@
 
 - Fix: `data.peer` leaves out `client_time` and unknown process start times instead of writing `null`, as the
   trail's `observed` does; records with a peer now pass the aqt-spec payload schemas.
-- Design: the sandbox runs without `bwrap --new-session` (the advisor keeps its pane's terminal); the design text
-  said otherwise.
+- Sandbox: runs without `bwrap --new-session`, so the advisor keeps its pane's terminal.
 
 ## 0.1.0 — 2026-10-21
 

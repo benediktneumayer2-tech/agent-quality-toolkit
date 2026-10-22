@@ -77,15 +77,15 @@ The features are designed along these concepts and support them. Clause IDs foll
 
 | Feature | Concept |
 |---|---|
-| Intake from evidence and by hand | `iso9001-2015:10.2.1` a; `annex11-2011:13` incident management; `annex11-2025d:3.1`; `gdp-2013:1.2` |
-| Severity, category, recurrence links | `iso9001-2015:10.2.1` b; `ichq9` risk-based effort |
-| Structured investigation | `iso9001-2015:10.2.1` b 2; `ichq10:3.2.2` |
-| Hash-bound change of agent controls, approval | `iso9001-2015:8.5.6`, `7.5.3`, `10.2.1` c/f; `annex22-2025d:10`; `part11:11.50`/`11.70` via aqt-signoff |
-| Effectiveness criterion fixed in advance, evaluated from evidence | `iso9001-2015:10.2.1` d; `ichq10:3.2.2` |
-| Gated closure, no reopening | `iso9001-2015:10.2.2` |
+| Intake from evidence and by hand | `iso9001-2015:10.2` (10.2.1 a); `annex11-2011:13` incident management; `annex11-2025d:3.1`; `gdp-2013:1.2` |
+| Severity, category, recurrence links | `iso9001-2015:10.2` (10.2.1 b); `ichq9:5.1` risk-based effort |
+| Structured investigation | `iso9001-2015:10.2` (10.2.1 b 2); `ichq10:3.2.2` |
+| Hash-bound change of agent controls, approval | `iso9001-2015:8.5.6`, `7.5.3`, `10.2` (10.2.1 c, f); `annex22-2025d:10`; `part11:11.50(a)`, `11.70` via aqt-signoff |
+| Effectiveness criterion fixed in advance, evaluated from evidence | `iso9001-2015:10.2` (10.2.1 d); `ichq10:3.2.2` |
+| Gated closure, no reopening | `iso9001-2015:10.2` (10.2.2) |
 | Every step a record with who / role / when / why | `alcoa:attributable`, `contemporaneous`, `original`, `complete`, `traceable` |
 | Human in the loop for decisions | `annex22-2025d:1` |
-| Trend report | `iso9001-2015:9.1.3`, `9.3.2`, `10.3`; `gdp-2013:1.4`; `annex11-2025d:14` |
+| Trend report | `iso9001-2015:9.1.3`, `9.3`; ISO 9001 10.3; `gdp-2013:1.4`; `annex11-2025d:14.1` |
 
 ## Threat model and limits
 

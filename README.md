@@ -1,4 +1,5 @@
 # Agent Quality Toolkit
+**Deutsch:** [Überblick für Qualitätsfachleute](docs/de/ueberblick.md)
 
 **Eight small command-line tools for Linux that put AI coding agents under the quality controls of medicine manufacturing, so that developers and quality managers can check what an agent did instead of taking its word for it.**
 
@@ -27,7 +28,7 @@ examples/demo/.venv/bin/python examples/demo/run_demo.py
 The demo prints each check as `[ok  ]` while it runs. Each line is one control doing its job, for example "the agent's release attempt is refused" or "the gate turns NO-GO after an unverified edit". It ends like this:
 
 ```text
-== Summary: 41/41 expected outcomes, 5.2 s, outputs in …/agent-quality-toolkit/examples/demo/output
+== Summary: 42/42 expected outcomes, 5.2 s, outputs in …/agent-quality-toolkit/examples/demo/output
 ```
 
 After the install it runs offline, with made-up data, in a temporary folder, and never touches your own settings. [The worked example](#the-worked-example-one-poisoned-web-page) explains what you just saw.
@@ -46,6 +47,7 @@ Seven habits of a medicine plant became seven tools; the eighth is the shared fo
 | [aqt-capa](aqt-capa/README.md) | Deviation and CAPA (corrective and preventive action) | Turns an agent failure into a deviation (a recorded "this should not have happened"), finds the root cause, gets a fix to the agent's instruction file (`AGENTS.md`) approved, then checks that the fix worked. | A mistake must not happen again. |
 | [aqt-trail](aqt-trail/README.md) | The bound logbook nobody can secretly edit | The audit trail. A separate writer program stores every record and links it to the one before. Unlike most agent logs, it does not just keep what the sender claims: it asks the Linux kernel which program sent the record. It checks the trail against ALCOA++, the pharma checklist for trustworthy records, and supports a signed review. | Always, to show later what happened. |
 | [aqt-spec](aqt-spec/README.md) | The standard form and the rulebook | One record format for all tools (who did what, when, why, to which exact content), plus catalogues of the regulations and a crosswalk from each rule to the tool that supports it. | You build a tool or check the regulations. |
+| [aqt-ui](aqt-ui/README.md) (optional) | The quality desk | One local web page that shows the state of all tools, lists what needs you, and lets you release a quarantined page or approve a prepared action with your passphrase. Refuses decisions from agents. | You prefer a page to many commands. |
 
 **Each part works on its own, needing only the shared `aqt-spec` library; together they form a loop.** All of them write the same kind of record into the same trail, so they use each other's evidence: aqt-capa finds a refused release, aqt-validate's approved thresholds drive the quarantine, and the trail review checks every signature.
 
@@ -87,7 +89,7 @@ The demo follows one change from start to finish. A simulated agent works; a sim
 
    | Printed name | Role | Meaning | Date and time | Status |
    |---|---|---|---|---|
-   | Quinn Example (DEMO) | quality-manager | released | 2026-10-22 18:55:13 CEST (Europe/Vienna) | valid |
+   | Quinn Example (DEMO) | quality-manager | released | 2026-10-22 20:16:21 CEST (Europe/Vienna) | valid |
 
 **The most telling result.** ALCOA++ asks that records be Attributable (to a person), Legible, Contemporaneous (made at the time), Original and Accurate, and also complete, consistent, enduring, available and traceable. Start the demo from inside an AI agent session, and the report **fails "attributable"**: the logbook saw that an AI agent, not a person, sent the "human" decisions. That is the control working. From your own terminal, all ten pass; the demo expects either result.
 
@@ -133,8 +135,8 @@ For readers from quality and validation. "Supports" never means "meets".
 
 | Practice | Reference (examples) | Part |
 |---|---|---|
-| Data integrity, ALCOA++ | MHRA and PIC/S data-integrity guidance | aqt-trail |
-| Audit trail and its regular review | Part 11 §11.10(e); Annex 11 §9 | aqt-trail |
+| Data integrity, ALCOA++ | ALCOA+: MHRA (2018), PIC/S PI 041-1 (2021); ALCOA++: EMA guideline on computerised systems in clinical trials (2023) | aqt-trail |
+| Audit trail; its regular review | Audit trail: Part 11 §11.10(e), Annex 11 §9; review: Annex 11 §9 | aqt-trail |
 | Electronic signatures: meaning, printed form, link to the record | Part 11 §11.50, §11.70; Annex 11 §14 | aqt-signoff |
 | Change control, approved versus actual | Annex 11 §10; ICH Q10 §3.2.3 | aqt-change |
 | Risk-based validation and qualification of a control | Annex 11 §4; GAMP 5 | aqt-validate |
@@ -143,7 +145,7 @@ For readers from quality and validation. "Supports" never means "meets".
 
 Annex 11 is the EU GMP annex for computer systems, and GDP (Good Distribution Practice) covers storing and shipping medicines. GxP is the umbrella term for these "good practice" rules.
 
-The [catalogues](aqt-spec/catalogues/) hold 118 paraphrased requirements from 11 sources, including the 2025 drafts of Annex 11, Chapter 4 and Annex 22 (AI), ISO 9001 and the EU AI Act. All were checked against the official texts on 22 October 2026, ISO 9001 only against public outlines because its text is paywalled. The [crosswalk](aqt-spec/crosswalk.md) has the clause-by-clause detail.
+The [catalogues](aqt-spec/catalogues/) hold 121 paraphrased requirements from 11 sources, including the 2025 drafts of Annex 11, Chapter 4 and Annex 22 (AI), ISO 9001 and the EU AI Act. All were checked against the official texts on 22 October 2026, ISO 9001 only against public outlines because its text is paywalled. The [crosswalk](aqt-spec/crosswalk.md) has the clause-by-clause detail.
 
 ## Status and limits
 
@@ -154,7 +156,7 @@ The [catalogues](aqt-spec/catalogues/) hold 118 paraphrased requirements from 11
 - **Some checks are manual.** The Claude Code hooks, a live advisor pairing and the AI-reviewer command lines have documented manual checks, not automated tests. The trail's separate-user mode is not yet tested.
 - **Demo shortcuts.** The demo's people use fixed passphrases (DEMO ONLY), and its time stamps come from a local test authority (TEST ONLY).
 - **Preview.** Version 0.1; interfaces may change before 1.0. Linux only. Not on PyPI (the Python package index) yet: install from this repository. Ready-made hooks exist for Claude Code only; with Codex or pi you run the commands yourself, and aqt-trail imports their session logs.
-- **Tests.** `scripts/test_all.sh` runs 525 offline package tests and the demo with a throw-away home folder; GitHub's automatic checks (CI) run it on Python 3.11, 3.12 and 3.13.
+- **Tests.** `scripts/test_all.sh` runs 551 offline tests (550 in the nine packages, including the optional aqt-ui, and one for the demo) with a throw-away home folder; GitHub's automatic checks (CI) run it on Python 3.11, 3.12 and 3.13.
 
 ## Privacy and security
 

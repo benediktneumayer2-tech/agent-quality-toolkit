@@ -1,6 +1,6 @@
 # `aqt_evidence` API
 
-The wave-0 API (0.1.0) is stable; later changes are additive and backwards compatible. Everything below is importable from `aqt_evidence` unless a module is named.
+The 0.1.0 API is stable; later changes are additive and backwards compatible. Everything below is importable from `aqt_evidence` unless a module is named.
 
 ## Records
 

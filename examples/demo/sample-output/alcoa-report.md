@@ -8,5 +8,5 @@
 | complete | `alcoa:complete` | pass | sequence continuous; 0 gap marker(s), 0 spooled record(s) |
 | consistent | `alcoa:consistent` | pass | 1 service key(s); writer time went backwards 0 time(s) |
 | enduring | `alcoa:enduring` | pass | 2 anchor(s), 1 RFC 3161 token(s) verified to a CA; newest record is 0 h after the last anchor |
-| available | `alcoa:available` | pass | export bundle re-verifies: intact: 51 records, head seq 50 sha256:2f2fcbe36a534237ce75e7e4531b27fd3a589586a47b9684d32ec28da9e6df9d |
+| available | `alcoa:available` | pass | export bundle re-verifies: intact: 51 records, head seq 50 sha256:1fc21a26f84d2a386e98e4ab5694aa4f844215f586d4d149222e823cd04522f0 |
 | traceable | `alcoa:traceable` | pass | 0 record link(s) point outside this trail; 13 external reference(s) |

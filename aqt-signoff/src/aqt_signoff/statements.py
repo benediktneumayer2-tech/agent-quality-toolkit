@@ -1,6 +1,6 @@
 """Detached signed statements (``data.signature``) and their verification.
 
-Shape (INTERFACES I1, aqt-spec ``schemas/signature.schema.json``)::
+Shape (aqt-spec spec §6.3, ``schemas/signature.schema.json``)::
 
     "signature": {"statement": {...}, "alg": "ed25519", "key": "ed25519:<16 hex>", "value": "<base64>"}
 

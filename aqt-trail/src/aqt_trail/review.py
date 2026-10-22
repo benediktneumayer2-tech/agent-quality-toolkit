@@ -2,7 +2,7 @@
 
 A review covers a scope (a seq range of one log, bound to the head hash at its
 end). Queries flag records a reviewer should look at; the reviewer gives each
-finding a disposition (``ok`` | ``explained`` | ``deviation``, INTERFACES I6)
+finding a disposition (``ok`` | ``explained`` | ``deviation``)
 and signs. Signing is refused when the reviewer was an actor in the scope, is
 not a human identity, or the trail changed since the worksheet was made.
 """
@@ -356,7 +356,7 @@ def build_review(sheet: dict, records: list[dict], *, reviewer_id: str, signer: 
 
 
 def refusal_record(reviewer_id: str, code: str, message: str, markers: list[str] | None = None) -> dict:
-    """``trail.refused`` (INTERFACES I5) for a refused review signature."""
+    """``trail.refused`` (aqt-spec spec §11) for a refused review signature."""
     who = actor("human", reviewer_id) if reviewer_id.startswith("human:") else actor("agent", reviewer_id or "unknown")
     return new_record("trail.refused", who, "refused", data={
         "attempted_action": "review.sign", "reason_code": code, "message": message[:500],

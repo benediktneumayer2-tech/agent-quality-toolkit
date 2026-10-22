@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>AQT quality desk</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/app.css">
+<script type="module" src="/static/app.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="shell">
+  <div class="top-stack">
+    <div class="ribbon" id="ribbon" role="status" hidden></div>
+    <div class="broken-bar" id="broken" role="alert" hidden></div>
+    <header class="topbar">
+      <button class="btn small menu-btn" id="menu-btn" aria-expanded="false" aria-controls="nav">Views</button>
+      <h1 id="title">Overview</h1>
+      <span class="pill" id="trail-pill">Trail: loading</span>
+      <span class="spacer"></span>
+      <span class="badge" id="mode-badge">Mode: loading</span>
+      <button class="btn small ghost" id="refresh" type="button">Refresh</button>
+    </header>
+  </div>
+  <nav class="rail" id="rail" aria-label="Views">
+    <div class="brand">Agent Quality Toolkit<small>quality desk, this machine only</small></div>
+    <ul class="nav" id="nav"></ul>
+    <div class="rail-foot" id="railfoot"></div>
+  </nav>
+  <main class="center" id="main" tabindex="-1"></main>
+  <aside class="inspector" id="inspector" aria-label="Inspector"></aside>
+</div>
+<div class="sr-only" id="live" aria-live="polite"></div>
+</body>
+</html>

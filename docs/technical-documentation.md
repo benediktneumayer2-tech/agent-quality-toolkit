@@ -30,7 +30,7 @@ Paths in this document use the XDG base directories. `$XDG_CONFIG_HOME` defaults
 
 ### 1.1 The eight packages
 
-The repository is a monorepo of eight Python packages. Each package has its own `pyproject.toml`, `README.md`, `Design.md`, `docs/`, `examples/` and an offline test suite. All need Python 3.11 or later and run on Linux.
+The repository is a monorepo of eight Python packages, plus the optional local web interface `aqt-ui` (see its README). Each package has its own `pyproject.toml`, `README.md`, `CHANGELOG.md`, `docs/`, `examples/` and an offline test suite. All need Python 3.11 or later and run on Linux.
 
 | Package | Import name | Command | Role | Runtime dependencies |
 |---|---|---|---|---|
@@ -526,7 +526,7 @@ The API is listed in [`aqt-spec/docs/api.md`](../aqt-spec/docs/api.md); it is st
 
 **Generated files.** `schemas/` and `schemas/registry.json` come from `scripts/build_schemas.py`; `vectors/` from `scripts/gen_vectors.py`; `crosswalk.md` and `catalogues/catalogues.json` from `scripts/build_crosswalk.py`. The tests fail when a generated file is out of date. Wheels package the schemas, vectors and `catalogues.json` under `aqt_evidence/_data/`.
 
-**Catalogues.** `catalogues/*.yaml` hold 118 paraphrased items in 11 catalogues (ALCOA++, Annex 11 2011 and 2025 draft, Part 11, Chapter 4 draft, Annex 22 draft, GDP 2013, ISO 9001:2015, EU AI Act, ICH Q10, ICH Q9). `catalogues/features.yaml` names the AQT features each item is `supported_by`, and the record types that evidence each feature.
+**Catalogues.** `catalogues/*.yaml` hold 121 paraphrased items in 11 catalogues (ALCOA++, Annex 11 2011 and 2025 draft, Part 11, Chapter 4 draft, Annex 22 draft, GDP 2013, ISO 9001:2015, EU AI Act, ICH Q10, ICH Q9). `catalogues/features.yaml` names the AQT features each item is `supported_by`, and the record types that evidence each feature.
 
 ### 5.2 aqt-trail
 
@@ -922,7 +922,7 @@ Each package has an offline pytest suite in `<package>/tests/` with synthetic fi
 
 | Suite | Passed | Skipped | Notes |
 |---|---|---|---|
-| aqt-spec | 100 | 0 | Vectors, schemas, catalogues, spec documents agree with the code |
+| aqt-spec | 101 | 0 | Vectors, schemas, catalogues (every cited catalogue ID exists), spec documents agree with the code |
 | aqt-trail | 70 | 0 | Writer, server, tamper cases, TSA, importers, review, ALCOA++ |
 | aqt-signoff | 34 | 0 | Signatures, statuses, actions, CLI, L1 conformance of its records |
 | aqt-change | 71 | 0 | Plan format, reconciliation, receipts, finish, gate, hooks, quick start |
@@ -930,9 +930,9 @@ Each package has an offline pytest suite in `<package>/tests/` with synthetic fi
 | aqt-quarantine | 65 | 0 | Detectors, engine, decisions, Claude Code adapter, payload conformance of every record type |
 | aqt-validate | 110 | 0 | Statistics against reference values, loaders, detector and reviewer runs |
 | aqt-capa | 20 | 0 | Units, CLI, end to end |
-| demo | 1 | 0 | `examples/demo/test_demo.py`: the full story, 41 expected outcomes |
+| demo | 1 | 0 | `examples/demo/test_demo.py`: the full story, 42 expected outcomes |
 
-In total 525 package tests plus the demo test. Some tests skip themselves when a tool is missing: `openssl` (aqt-trail token cross-check) and `git` (aqt-change quick start).
+In total 551 tests pass: 550 package tests (including the optional aqt-ui) plus the demo test. Some tests skip themselves when a tool is missing: `openssl` (aqt-trail token cross-check) and `git` (aqt-change quick start).
 
 ### 9.2 Running them
 

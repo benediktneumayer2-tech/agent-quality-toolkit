@@ -3,7 +3,7 @@
 The bridge never trusts a pane id or role that a caller declares. It reads the
 peer's pid, uid and gid from the kernel, walks the process ancestry in /proc,
 and compares it with the root processes and terminals of the paired panes.
-The description uses the field names of the AQT `observed` object (I2) and goes
+The description uses the field names of the AQT `observed` object (aqt-spec spec §3.2) and goes
 into `data.peer` of the records, because `observed` belongs to the trail writer.
 """
 
@@ -35,7 +35,7 @@ class Peer:
     agent_markers: list[str] | None = None
 
     def describe(self) -> dict:
-        """`data.peer`: same field names as the trail's `observed` object (I2). As there, fields without a
+        """`data.peer`: same field names as the trail's `observed` object (spec §3.2). As there, fields without a
         value are left out: the peer sends no client time, and a process may be gone before its start time
         is read."""
         processes = [{"pid": pid, "comm": name} if start is None else {"pid": pid, "comm": name, "start_time": start}

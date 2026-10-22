@@ -1,4 +1,4 @@
-"""Recurrence: explainable lexical similarity between deviations, in ppm (INTERFACES I7)."""
+"""Recurrence: explainable lexical similarity between deviations, in ppm (aqt-spec spec §3.5)."""
 
 from __future__ import annotations
 

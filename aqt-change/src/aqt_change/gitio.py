@@ -1,6 +1,6 @@
 """Git access through the ``git`` CLI with argument lists (no shell, no remotes).
 
-Exact-path commit rules adapted from Project Tracker Next (``services/git_control.py``):
+Exact-path commit rules adapted from the author's Project Tracker Next (see NOTICE):
 files only, unrelated staged paths abort, hooks and identity are never bypassed.
 """
 

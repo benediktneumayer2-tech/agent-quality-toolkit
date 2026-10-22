@@ -1,6 +1,6 @@
 """``finish``: one checked, idempotent, crash-resumable completion.
 
-Phase machine adapted from Project Tracker Next (``services/implementation_work.py``):
+Phase machine adapted from the author's Project Tracker Next (see NOTICE):
 
     preflight (nothing written on failure)
       -> prepared                        attempt stored with the exact final plan

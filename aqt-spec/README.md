@@ -66,7 +66,7 @@ flowchart LR
 | Open spec, schemas, JSONL export | Part 11 §11.10(b); Annex 11 draft §12.4, §12.9; ALCOA++ Available, Legible |
 | `links` between records | ALCOA++ Traceable |
 
-The full mapping for the whole suite, including what each clause still requires from you, is in [crosswalk.md](crosswalk.md) (118 items in 11 catalogues).
+The full mapping for the whole suite, including what each clause still requires from you, is in [crosswalk.md](crosswalk.md) (121 items in 11 catalogues).
 
 ## Threat model and limits
 

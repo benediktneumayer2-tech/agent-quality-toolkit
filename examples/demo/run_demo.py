@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Agent Quality Toolkit integration demo (wave 3): one offline story across all eight packages.
+"""Agent Quality Toolkit integration demo: one offline story across all eight packages.
 
     examples/demo/.venv/bin/python examples/demo/run_demo.py [--keep] [--out DIR] [--quiet]
 
@@ -582,7 +582,13 @@ class Demo:
                                                     "approved; the guard worked as intended")
         from aqt_capa import render_markdown, trends
         self.save("capa-trends.md", render_markdown(trends(qm)))
-        show = self.capa_cli("show", dev_id, "--markdown", codes=None)
+        # The saved report is aqt-capa's human-readable Markdown view (no --json).
+        show = self.run("aqt-capa", "show", dev_id, "--markdown", env=self.agent_env(), cwd=self.project,
+                        what="aqt-capa show --markdown")
+        self.expect(show.stdout.startswith(f"# {dev_id}:") and all(part in show.stdout for part in
+                    ("**Root cause**", "## Actions", "## Timeline")),
+                    f"capa-{dev_id}.md is a Markdown report with root cause, actions and timeline",
+                    show.stdout[:200])
         self.save(f"capa-{dev_id}.md", show.stdout)
         self.note(f"outputs: output/capa-trends.md, output/capa-{dev_id}.md")
         self.facts["capa_dev"] = dev_id

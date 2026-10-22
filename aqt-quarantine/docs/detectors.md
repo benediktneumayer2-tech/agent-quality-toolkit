@@ -53,7 +53,7 @@ The ONNX detector loads a local export (`model.onnx` and `tokenizer.json`) of a 
 
 ## Thresholds file
 
-The format is defined by aqt-validate (its `Design.md` §2.2), with ppm values:
+The format is written by aqt-validate and specified in aqt-spec ([spec §12.1](../../aqt-spec/spec/evidence-records-0.1.md#121-thresholds-file), [aqt-validate's description](../../aqt-validate/docs/thresholds-file.md)), with ppm values:
 
 ```json
 {"aqt_thresholds": "0.1", "protocol": {"id": "...", "sha256": "sha256:..."}, "run": "rec_...",

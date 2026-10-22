@@ -68,7 +68,7 @@ def harness_of(chain: list[dict]) -> str | None:
 
 def observe(pid: int | None, uid: int | None, gid: int | None, *, via: str = "socket",
             proc: Path = Path("/proc")) -> dict:
-    """Build the writer-owned ``observed`` object (INTERFACES I2); ``client_time`` is added on append."""
+    """Build the writer-owned ``observed`` object (aqt-spec spec §3.2); ``client_time`` is added on append."""
     chain, complete = processes(pid, proc=proc) if pid else ([], False)
     observed = {
         "pid": pid, "uid": uid, "gid": gid,

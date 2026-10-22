@@ -72,12 +72,12 @@ Records: `validate.run` (`protocol-locked` | `completed`), `validate.report`, `v
 | Feature | Supports | Reference (drafts as of July 2025 where marked) |
 |---|---|---|
 | Protocol with intended use and acceptance criteria, hash-locked before the test | Pre-defined validation protocol | annex22-2025d:3, annex22-2025d:4; annex11-2011:4.7 |
-| Session/goal-disjoint splits, overlap check, test-readout counter | Test-data independence and record of use | annex22-2025d:6.2, annex22-2025d:6.3 |
-| TPR/FPR with exact bounds, hard-benign row, latency | Method performance with measurement uncertainty | iso9001-2015:7.1.5.1; ICH Q2(R2) by analogy |
+| Session/goal-disjoint splits, overlap check, test-readout counter | Test-data independence and record of use | annex22-2025d:6.2 (§6.2–6.3) |
+| TPR/FPR with exact bounds, hard-benign row, latency | Method performance with measurement uncertainty | iso9001-2015:7.1.5; ICH Q2(R2) by analogy |
 | Deviations section (overlaps, contamination, errors, inconclusive criteria) | Documented test execution | annex22-2025d:7 |
-| `thresholds.json` bound by hash to a qualification | Calibration status identifiable and protected | iso9001-2015:7.1.5.2 |
-| Human qualification with reason, meaning, validity | Release of a qualified method | part11:11.50 (meaning); human only via `require_human` |
-| `check`: configuration, thresholds, expiry, drift | Change control, periodic requalification, monitoring | annex22-2025d:10.1–10.4; annex11-2011:11 |
+| `thresholds.json` bound by hash to a qualification | Calibration status identifiable and protected | iso9001-2015:7.1.5 |
+| Human qualification with reason, meaning, validity | Release of a qualified method | part11:11.50(a) (meaning); human only via `require_human` |
+| `check`: configuration, thresholds, expiry, drift | Change control, periodic requalification, monitoring | annex22-2025d:10 (§10.1–10.4); annex11-2011:11 |
 | Reviewer qualification | Qualifying an AI tool used with a human in the loop | annex22-2025d:1; iso9001-2015:7.1.5 |
 
 ## Threat model and limits

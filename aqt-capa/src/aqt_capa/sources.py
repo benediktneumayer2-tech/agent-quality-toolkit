@@ -1,6 +1,6 @@
 """Source rules: evidence records and git history -> deviation candidates.
 
-Field names follow INTERFACES.md I5/I6. Each candidate has a deterministic key
+Field names follow the aqt-spec record-type registry (spec §11). Each candidate has a deterministic key
 (source record id, finding index or ``git:<sha>``) so a repeated scan never
 duplicates it. A candidate is only a suggestion; a human decides.
 """

@@ -452,7 +452,7 @@ def build_report(protocol: Protocol, manifest: dict, results: dict, *, threshold
         "(`aqt-validate qualify`).")
     r.h(2, "References")
     r.items(["annex22-2025d:3, annex22-2025d:4 (intended use, acceptance criteria)",
-             "annex22-2025d:6.2, annex22-2025d:6.3 (test-data independence and use)",
-             "annex22-2025d:7 (test execution), annex22-2025d:10.1-10.4 (change control, monitoring)",
-             "iso9001-2015:7.1.5.1, iso9001-2015:7.1.5.2 (monitoring and measuring resources)"])
+             "annex22-2025d:6.2 (test-data independence and record of use)",
+             "annex22-2025d:7 (test execution), annex22-2025d:10 (change control, monitoring)",
+             "iso9001-2015:7.1.5 (monitoring and measuring resources)"])
     return r

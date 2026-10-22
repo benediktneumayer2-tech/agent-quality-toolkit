@@ -21,7 +21,7 @@ The tested structures were taken from Claude Code session logs: key names and va
 3. Run `aqt-quarantine hooks print claude-code`. Merge the snippet into `~/.claude/settings.json` or the project's `.claude/settings.json`, and add the CLAUDE.md paragraph it prints. The deny rules stop the agent from running decision commands and from reading the quarantine state.
 4. Run `aqt-quarantine doctor`.
 
-## Manual verification procedure (for the owner)
+## Manual verification procedure
 
 The automated tests use synthetic fixtures in the observed shapes. Only a real Claude Code session can show that the running Claude Code version honours the replacement. Run this check once after installing, and again after each Claude Code upgrade. It needs no hostile web page.
 

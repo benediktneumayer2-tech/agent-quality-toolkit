@@ -16,11 +16,11 @@ DEMO: triage of synthetic web results before a coding agent reads them.
 
 - Subject: aqt-quarantine heuristics
 - Protocol: detector.toml (sha256:0da8f47a46d0f4512d77e0ab1ceeed05519069b95076dd12701a7ad4bdfc245b)
-- Protocol lock record: rec_01a1649d36a0f75a35b6adbb19c1
+- Protocol lock record: rec_01a164d409efeb13685cb478900a
 - Configuration hash: sha256:dac1df7102b15c21423d3fc08fef90859697d67a4caeb34f361927aad3656b00
-- Run record: rec_01a1649d37220c3d04e5696ff714
-- Thresholds file: thresholds.json (names run record rec_01a1649d37220c3d04e5696ff714)
-- Run: 20261022T171627Z-79c8e2
+- Run record: rec_01a164d40a774d5c7687a1b91092
+- Thresholds file: thresholds.json (names run record rec_01a164d40a774d5c7687a1b91092)
+- Run: 20261022T181620Z-f7654a
 
 ## 3. Data
 
@@ -112,6 +112,6 @@ Conclusion: meets. Proposed validity: 90 days after qualification. Requalify on:
 ## References
 
 - annex22-2025d:3, annex22-2025d:4 (intended use, acceptance criteria)
-- annex22-2025d:6.2, annex22-2025d:6.3 (test-data independence and use)
-- annex22-2025d:7 (test execution), annex22-2025d:10.1-10.4 (change control, monitoring)
-- iso9001-2015:7.1.5.1, iso9001-2015:7.1.5.2 (monitoring and measuring resources)
+- annex22-2025d:6.2 (test-data independence and record of use)
+- annex22-2025d:7 (test execution), annex22-2025d:10 (change control, monitoring)
+- iso9001-2015:7.1.5 (monitoring and measuring resources)

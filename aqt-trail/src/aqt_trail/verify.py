@@ -1,5 +1,5 @@
 """Verify a trail: chain, service signatures, checkpoints, anchors, external heads
-and detached signatures in ``data.signature`` (INTERFACES I1)."""
+and detached signatures in ``data.signature`` (aqt-spec spec §6.3)."""
 
 from __future__ import annotations
 

@@ -1,6 +1,6 @@
 """aqt-signoff: signatures with meaning bound to exact content, and approved actions.
 
-Functions used by other AQT tools (INTERFACES I10)::
+Functions used by other AQT tools (see README, Python API)::
 
     verify_subject(sha256, *, meaning=None, sources=None) -> list[SignatureStatus]
     is_approved(sha256, *, meaning="approved", policy=None, sources=None) -> bool

@@ -38,6 +38,7 @@ The examples use two people: `human:alice` (quality manager) and `human:dave` (d
    - 4.6 [Deviations and CAPA (aqt-capa)](#46-deviations-and-capa-aqt-capa)
    - 4.7 [The audit trail (aqt-trail)](#47-the-audit-trail-aqt-trail)
    - 4.8 [Combining the Claude Code hooks](#48-combining-the-claude-code-hooks)
+   - 4.9 [The local web page (aqt-ui)](#49-the-local-web-page-aqt-ui)
 5. [Putting it together](#5-putting-it-together)
 6. [Troubleshooting and FAQ](#6-troubleshooting-and-faq)
 7. [Glossary](#7-glossary)
@@ -136,7 +137,7 @@ uv pip install --python examples/demo/.venv/bin/python -e "aqt-spec[schema]" -e 
 examples/demo/.venv/bin/python examples/demo/run_demo.py
 ```
 
-It ends with `== Summary: 41/41 expected outcomes`. `examples/demo/README.md` explains each step; the demo is the reference for the order used in this manual. All package test suites run with `scripts/test_all.sh`.
+It ends with `== Summary: 42/42 expected outcomes`. `examples/demo/README.md` explains each step; the demo is the reference for the order used in this manual. All package test suites run with `scripts/test_all.sh`.
 
 ### 1.7 Update
 
@@ -1313,6 +1314,29 @@ The hooks of aqt-trail (record everything), aqt-quarantine (scan web results) an
 - The deny rules use the default folders. Adjust them if you moved `XDG_CONFIG_HOME` or `XDG_STATE_HOME`.
 - Restart Claude Code after editing. `aqt-quarantine doctor` reports whether its hook is found.
 - If you use aqt-sensei with tmux, also merge `aqt-sensei/examples/claude-code-hooks.json` in the worker's project.
+
+### 4.9 The local web page (aqt-ui)
+
+`aqt-ui` is an optional web page on your own machine that shows the state of all tools in one place and lets you make the most frequent decisions without remembering commands. It reads the same files and settings as the commands above and writes decisions through the same package code into the same trail.
+
+Add it to the environment of section 1.3 and start it yourself in a terminal, not from an agent:
+
+```bash
+uv pip install --python .venv/bin/python -e aqt-ui
+aqt-ui
+# aqt-ui: decisions are on (each one asks for your passphrase)
+# aqt-ui 0.1.0 on http://127.0.0.1:41377/
+# login link (works once): http://127.0.0.1:41377/login?t=…
+```
+
+The browser opens with the login link. Press Enter in the terminal for a fresh link, Ctrl+C to stop the server.
+
+- **Overview** answers "Is everything in order, and what needs me?": trail status, ALCOA++ per attribute, and the "Needs you" queue (held cases, prepared actions, gates that are not GO, refused attempts, a review that is due, qualifications about to expire).
+- **Decisions in the page:** release a quarantine case or declare it a threat, and approve or reject a prepared action. Each one shows who signs, with which meaning, over which content, and asks for your passphrase again. If the content changed since you opened it, nothing is signed.
+- **Read-only views:** Trail, Changes (add your repositories under `[changes] projects` in `~/.config/aqt/ui.toml`), Signatures, CAPA and Qualifications. The other decisions stay in the terminal for now.
+- **Started by an agent, it is read-only.** A ribbon names the agent markers found, and decision requests are refused and recorded as `<tool>.refused`. A decision request sent by a program that runs under an agent (for example `curl` started by Claude Code) is refused the same way, even when you started the page yourself.
+
+The page listens on `127.0.0.1` only. Its security model and limits are in the [aqt-ui README](../aqt-ui/README.md).
 
 ## 5. Putting it together
 

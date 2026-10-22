@@ -55,7 +55,7 @@ class FakeProc:
 
 @pytest.fixture(autouse=True)
 def isolated_xdg(tmp_path_factory, monkeypatch):
-    """INTERFACES I13: never touch the real ~/.local/state/aqt or ~/.config/aqt."""
+    """Test isolation: never touch the real ~/.local/state/aqt or ~/.config/aqt."""
     base = tmp_path_factory.mktemp("xdg")
     for name in ("XDG_STATE_HOME", "XDG_CONFIG_HOME"):
         monkeypatch.setenv(name, str(base / name.lower()))

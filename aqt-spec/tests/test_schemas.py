@@ -50,7 +50,7 @@ EXAMPLES = {
 def test_examples_match_and_required_fields_are_enforced(type_):
     assert schemas.validate_payload({"type": type_, "data": EXAMPLES[type_]}) == []
     required = schemas.schema_for(type_).get("required", [])
-    assert required, f"{type_} should fix its minimal fields (INTERFACES I6/I5)"
+    assert required, f"{type_} should fix its minimal fields (spec §11)"
     broken = {k: v for k, v in EXAMPLES[type_].items() if k != required[0]}
     assert schemas.validate_payload({"type": type_, "data": broken})
 

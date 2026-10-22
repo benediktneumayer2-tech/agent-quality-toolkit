@@ -548,6 +548,6 @@ def build_report(protocol: Protocol, manifest: dict, results: dict, run_record_i
         f"Requalify on: {', '.join(protocol.triggers)}. Qualification is a separate, human decision.")
     r.h(2, "References")
     r.items(["annex22-2025d:1 (human in the loop)", "annex22-2025d:4 (acceptance criteria)",
-             "iso9001-2015:7.1.5.1 (resources fit for the monitoring purpose)",
-             "annex22-2025d:10.1 (change control of the AI configuration)"])
+             "iso9001-2015:7.1.5 (resources fit for the monitoring purpose)",
+             "annex22-2025d:10 (change control of the AI configuration)"])
     return r

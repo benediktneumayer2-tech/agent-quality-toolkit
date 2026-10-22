@@ -1,10 +1,10 @@
 """Reviewer identities: the shared signer registry and detached statements.
 
-Reads ``$XDG_CONFIG_HOME/aqt/signers.json`` (INTERFACES I9, owned by
+Reads ``$XDG_CONFIG_HOME/aqt/signers.json`` (aqt-spec spec §12.2, owned by
 aqt-signoff) without importing aqt-signoff. ``AQT_SIGNERS`` and ``AQT_KEYS_DIR``
 override the registry and the key directory, as in aqt-signoff and
 aqt-quarantine. Statements follow the shape of
-aqt-spec ``schemas/signature.schema.json`` (INTERFACES I1): ``{"aqt_signature": "0.1",
+aqt-spec ``schemas/signature.schema.json`` (spec §6.3): ``{"aqt_signature": "0.1",
 "signer", "key", "meaning", "reason", "signed_at", "tz", "record_type", "nonce",
 "subject"}``, signed over ``canonical_json(statement)``.
 """

@@ -14,15 +14,13 @@ items:
     paraphrase: Systems are validated for accuracy, reliability and consistent intended performance, and can discern invalid or altered records.
     supported_by: [spec.chain, spec.conformance, trail.verify-export, validate.detector]
     user_must: Validate your own system for its intended use; AQT itself is not a validated system.
-    r3: [R-15, R-16]
     verified: true
   - id: part11:11.10(b)
     clause: 11.10(b)
     title: Accurate and complete copies
-    paraphrase: The system can produce accurate and complete copies in human-readable and electronic form for inspection.
+    paraphrase: The system can produce accurate and complete copies of records, in human-readable and electronic form, that the agency can inspect, review and copy.
     supported_by: [trail.verify-export, spec.conformance]
     user_must: Define how copies are provided to inspectors.
-    r3: [R-05]
     verified: true
   - id: part11:11.10(c)
     clause: 11.10(c)
@@ -30,7 +28,6 @@ items:
     paraphrase: Records are protected so that they can be retrieved accurately and readily throughout the retention period.
     supported_by: [spec.checkpoint, trail.anchor, trail.verify-export]
     user_must: Back up records and keys; define retention.
-    r3: [R-20]
     verified: true
   - id: part11:11.10(d)
     clause: 11.10(d)
@@ -38,7 +35,6 @@ items:
     paraphrase: Access to the system is limited to authorised individuals.
     supported_by: [trail.writer, sensei.read-only-advisor]
     user_must: Run agents and the trail writer under separate OS users where possible; manage accounts and file permissions.
-    r3: [R-08]
     verified: true
   - id: part11:11.10(e)
     clause: 11.10(e)
@@ -46,7 +42,6 @@ items:
     paraphrase: The system keeps secure, computer-generated, time-stamped audit trails that independently capture when operators enter data or create, modify or delete records, and changes never obscure earlier information. The trail is kept at least as long as the records and is available for agency review and copying.
     supported_by: [trail.writer, spec.envelope, spec.chain, trail.spool-gap, trail.verify-export]
     user_must: Route all relevant actions to the trail and keep it for the retention period of the records.
-    r3: [R-01, R-02, R-04]
     verified: true
   - id: part11:11.10(f)
     clause: 11.10(f)
@@ -54,7 +49,6 @@ items:
     paraphrase: Checks enforce the permitted sequence of steps and events where sequencing matters.
     supported_by: [change.finish, change.plan-ledger, signoff.approved-actions]
     user_must: Define which sequences are mandatory in your procedures.
-    r3: [R-30]
     verified: true
   - id: part11:11.10(g)
     clause: 11.10(g)
@@ -62,7 +56,6 @@ items:
     paraphrase: Authority checks let only authorised individuals use the system, sign electronically, reach the operation or its input and output devices, alter records or carry out the operation in question.
     supported_by: [signoff.identity, signoff.policy, spec.human-check, quarantine.self-trust-guard]
     user_must: Decide who is authorised for which meaning; the agent-context check is a guard, not a security boundary.
-    r3: [R-30]
     verified: true
   - id: part11:11.10(h)
     clause: 11.10(h)
@@ -70,7 +63,6 @@ items:
     paraphrase: Device (for example terminal) checks determine, as appropriate, the validity of the source of data input or operational instructions.
     supported_by: [trail.writer, trail.import]
     user_must: Review observed process attribution for unexpected sources.
-    r3: [R-02]
     verified: true
   - id: part11:11.10(i)
     clause: 11.10(i)
@@ -78,7 +70,6 @@ items:
     paraphrase: People who develop, maintain or use the system have the education, training and experience for their tasks.
     supported_by: [validate.reviewer]
     user_must: Keep training records for people; AI reviewer qualification is an analogy and does not replace them.
-    r3: [R-23]
     verified: true
   - id: part11:11.10(j)
     clause: 11.10(j)
@@ -93,7 +84,6 @@ items:
     paraphrase: Distribution of, access to and use of system operation and maintenance documentation are controlled, and revision and change control keeps a time-sequenced audit trail of its changes.
     supported_by: [change.plan-ledger]
     user_must: Keep system documentation under change control.
-    r3: [R-17]
     verified: true
   - id: part11:11.30
     clause: "11.30"
@@ -101,7 +91,6 @@ items:
     paraphrase: Open systems ensure authenticity, integrity and, as appropriate, confidentiality from creation to receipt, using the closed-system controls where appropriate plus measures such as document encryption and digital signature standards.
     supported_by: [spec.signature, trail.anchor]
     user_must: Use encrypted transport and qualified trust services where your context requires them.
-    r3: [R-12]
     verified: true
   - id: part11:11.50(a)
     clause: 11.50(a)
@@ -109,7 +98,6 @@ items:
     paraphrase: Signed electronic records show the printed name of the signer, the date and time of signing and the meaning of the signature (such as review, approval, responsibility or authorship).
     supported_by: [signoff.signature]
     user_must: Define the meanings used in your process.
-    r3: [R-10]
     verified: true
   - id: part11:11.50(b)
     clause: 11.50(b)
@@ -117,7 +105,6 @@ items:
     paraphrase: Name, date and time and meaning are controlled like the record itself and appear in every human-readable form of it.
     supported_by: [signoff.signature, spec.signature]
     user_must: Use the rendered signature block whenever a signed record is displayed or printed.
-    r3: [R-10]
     verified: true
   - id: part11:11.70
     clause: "11.70"
@@ -125,7 +112,6 @@ items:
     paraphrase: Electronic signatures, and handwritten signatures applied to electronic records, are bound to their records so that ordinary means cannot cut, copy or move them to falsify a record.
     supported_by: [spec.signature, signoff.signature, signoff.invalidation]
     user_must: Verify signatures against pinned keys, not against whatever key a record names.
-    r3: [R-11]
     verified: true
   - id: part11:11.100(a)
     clause: 11.100(a)
@@ -133,7 +119,6 @@ items:
     paraphrase: Each electronic signature belongs to one individual and is never reused by or reassigned to anyone else.
     supported_by: [signoff.identity]
     user_must: Never share signing keys or passphrases.
-    r3: [R-08]
     verified: true
   - id: part11:11.100(b)
     clause: 11.100(b)
@@ -155,7 +140,6 @@ items:
     paraphrase: Signatures not based on biometrics use at least two distinct identification components, such as an ID code and a password. Within one continuous period of controlled access the first signing uses all components and later ones at least one owner-only component; otherwise every signing uses all components.
     supported_by: [signoff.reauth, signoff.identity]
     user_must: Choose strong passphrases and protect key files.
-    r3: [R-10]
     verified: true
   - id: part11:11.200(a)(2)
     clause: 11.200(a)(2)
@@ -198,7 +182,6 @@ items:
     paraphrase: Transaction safeguards prevent unauthorised use of passwords or ID codes, detect attempts and report them at once to the security function and, where appropriate, to management.
     supported_by: [signoff.reauth, trail.review]
     user_must: Review failed-authentication findings and act on them.
-    r3: [R-09]
     verified: true
   - id: part11:11.300(e)
     clause: 11.300(e)

@@ -1,4 +1,4 @@
-"""Detector plugin interface (INTERFACES.md I8).
+"""Detector plugin interface (see docs/detectors.md).
 
 A detector has a ``name``, a ``version`` and ``score(text) -> DetectorResult``.
 Scores are integers in parts per million (0 = no sign of injection,

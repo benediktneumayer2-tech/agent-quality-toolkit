@@ -1,4 +1,4 @@
-"""Approval state of a plan from aqt-signoff signatures (INTERFACES.md I1, I4, I10).
+"""Approval state of a plan from aqt-signoff signatures (aqt-spec spec §6.3 and §10.5; aqt-signoff Python API).
 
 The approval target is the latest baseline/begin/semantic reconciliation record.
 A signature subject is ``{kind: record, ref: <id>, sha256: record_content_hash(record)}``.

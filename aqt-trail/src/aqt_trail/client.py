@@ -1,6 +1,6 @@
 """Client side: send records to the writer, spool them when it is down.
 
-The spool is the shared file of INTERFACES I3,
+The spool is the shared file of aqt-spec spec §10.4,
 ``$XDG_STATE_HOME/aqt/spool/spool.jsonl`` (locked, mode 0600), so records
 spooled by ``aqt_evidence.SocketSink`` and by this client are drained together.
 """

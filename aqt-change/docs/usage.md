@@ -86,13 +86,13 @@ The approval target is the latest `baseline`/`begin`/semantic `reconcile` record
 
 `aqt-change hooks print` prints a snippet for `TaskCompleted`, `Stop` and `SubagentStop`; merge it into `.claude/settings.json`. On `Stop`, the hook blocks while a plan is unreconciled or a *ticked* verification item has no fresh passing receipt. When `stop_hook_active` is true it reports the problem without blocking a second time, and `finish` still refuses. On `TaskCompleted`, it blocks when the task text names a verification ID (`[V01]`) that has no fresh passing receipt. The hook never runs tests.
 
-## Working with Project Tracker Next
+## Working with Project Tracker Next (PTN)
 
 The files are the same. With the default `lifecycle_owner = "aqt-change"`, use aqt-change's `begin`/`finish` *instead of* PTN's for that plan. With `lifecycle_owner = "external"`, PTN keeps `begin_work`/`finish_work`. aqt-change then records the baseline, receipts, reviews, scope checks and a record-only `change.finish` (no plan write, no commit), and lifecycle field changes count as status-neutral.
 
 ## Records
 
-| Type | Action | Fixed `data` fields (INTERFACES.md I6) |
+| Type | Action | Fixed `data` fields ([aqt-spec §11](../../aqt-spec/spec/evidence-records-0.1.md#11-record-type-registry)) |
 |---|---|---|
 | `change.plan.reconciled` | `baseline`, `begin`, `reconcile` | `plan_id`, `kind`, `basis_before/after`, `items` |
 | `change.receipt` | `run`, `attest` | `argv`, `exit_code`, `passed`, `plan_basis_hash`, `tree_fingerprint`, `counts` |

@@ -54,7 +54,7 @@ def default_state() -> Path:
 
 
 def spool_path() -> Path:
-    """The shared client spool (INTERFACES I3), the same file ``aqt_evidence.SocketSink`` uses."""
+    """The shared client spool (aqt-spec spec §10.4), the same file ``aqt_evidence.SocketSink`` uses."""
     return spool_file()
 
 

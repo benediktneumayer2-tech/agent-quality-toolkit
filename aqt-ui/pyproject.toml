@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aqt-ui"
+version = "0.1.0"
+description = "Local web page for the responsible person: trail status, quarantine cases, change gates, signatures, CAPA and qualifications, with signed human decisions"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [{ name = "Benedikt Neumayer" }]
+dependencies = ["aqt-spec>=0.1", "aqt-trail>=0.1"]
+
+[project.optional-dependencies]
+# Every view imports its package lazily; a missing one shows "not installed".
+all = ["aqt-quarantine>=0.1", "aqt-signoff>=0.1", "aqt-change>=0.1", "aqt-capa>=0.1", "aqt-validate>=0.1"]
+test = ["pytest>=8"]
+
+[project.scripts]
+aqt-ui = "aqt_ui.cli:main"
+
+[tool.uv.sources]
+aqt-spec = { path = "../aqt-spec", editable = true }
+aqt-trail = { path = "../aqt-trail", editable = true }
+aqt-quarantine = { path = "../aqt-quarantine", editable = true }
+aqt-signoff = { path = "../aqt-signoff", editable = true }
+aqt-change = { path = "../aqt-change", editable = true }
+aqt-capa = { path = "../aqt-capa", editable = true }
+aqt-validate = { path = "../aqt-validate", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aqt_ui"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

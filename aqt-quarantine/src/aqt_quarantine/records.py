@@ -1,4 +1,4 @@
-"""Builders for the ``quarantine.*`` evidence records (aqt-spec 0.1, INTERFACES.md I5/I6)."""
+"""Builders for the ``quarantine.*`` evidence records (aqt-spec 0.1, spec §11)."""
 
 from __future__ import annotations
 

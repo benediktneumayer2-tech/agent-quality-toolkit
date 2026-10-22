@@ -62,15 +62,15 @@ More usage: [docs/usage.md](docs/usage.md). A live check with real advisor CLIs:
 
 | Feature | QM concept | Reference (paraphrased) |
 |---|---|---|
-| Worker performs, advisor cannot write, owner releases | Segregation of duties, four-eyes principle | GMP "performed / checked / approved"; `iso9001-2015:8.5.1` |
+| Worker performs, advisor cannot write, owner releases | Segregation of duties, four-eyes principle | GMP "performed / checked / approved"; `iso9001-2015:8.6` |
 | Read-only enforced by the OS | Technical rather than procedural access control | `annex11-2011:12.1`; `part11:11.10(d)` |
 | Owner authentication; refusals recorded | Authority checks | `part11:11.10(g)` |
 | Ledger of every message, decision and refusal | Audit trail: who, what, when, why | `annex11-2011:9`; `part11:11.10(e)`; `alcoa:attributable`, `alcoa:contemporaneous`, `alcoa:complete` |
 | Edits keep the original and the released hash | Changes do not obscure the original | `part11:11.10(e)`; `alcoa:original` |
-| Decisions carry meaning and reason | Meaning of a signature-like act (not an e-signature) | `part11:11.50` (concept) |
-| Modes, budgets with fallback, pause, end | Human oversight and the ability to intervene | `euaiact:14`; `annex22-2025d` (human in the loop) |
+| Decisions carry meaning and reason | Meaning of a signature-like act (not an e-signature) | `part11:11.50(a)` (concept) |
+| Modes, budgets with fallback, pause, end | Human oversight and the ability to intervene | `euaiact:14(1)`, `euaiact:14(4)`; `annex22-2025d:1` (human in the loop) |
 | `doctor` proves the sandbox | Verifying that a control works | `iso9001-2015:7.1.5` |
-| Independence class per pair | Reviewer independence | `iso9001-2015:9.2.2` (by analogy) |
+| Independence class per pair | Reviewer independence | `iso9001-2015:9.2` (by analogy) |
 
 ## Threat model and limits
 
@@ -87,7 +87,7 @@ More usage: [docs/usage.md](docs/usage.md). A live check with real advisor CLIs:
 ## Prior art
 
 Advisor pairing is a crowded niche, and `aqt-sensei` learns from it openly:
-- **crew** (MIT): refuses same-model pairs, caps rounds, keeps the lead's records outside the workspace. We record an independence class per pair.
+- **crew** (MIT): refuses same-model pairs, caps rounds, keeps the lead agent's records outside the workspace. We record an independence class per pair.
 - **pi-blanche** and **pi-meta-harness** (MIT): escalate to an expensive advisor only when stuck.
 - **codex-plugin-cc** (Apache-2.0): read-only Codex reviews and a Stop-hook gate.
 - **Anthropic's advisor tool**: executor-chosen timing, client-side budgets.

@@ -21,7 +21,6 @@ items:
     paraphrase: The quality system is fully documented and its effectiveness monitored, with a risk-based change control system. It ensures among other things that records are made contemporaneously, deviations are documented and investigated, and corrective and preventive actions are taken.
     supported_by: [trail.writer, capa.intake, capa.action, capa.effectiveness, change.plan-ledger]
     user_must: Document your quality system and appoint the person responsible for it.
-    r3: [R-17, R-18]
     verified: true
   - id: gdp-2013:1.4
     clause: "1.4"

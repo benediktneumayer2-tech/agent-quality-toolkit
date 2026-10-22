@@ -28,7 +28,7 @@ Always record the benchmark version (`--dataset-version <commit>`). Payload text
 In `[[detectors]]`, give exactly one of:
 - `command = [argv]`: no shell. Batch mode (the default) sends JSONL `{id, text, context}` on stdin and reads JSONL `{id, score_ppm}` (or `score` in [0, 1]) on stdout; it may add `latency_ms` and `error`. With `batch = false` the command runs once per item.
 - `callable = "module:function"`: the function takes the text and returns ppm or a probability. The protocol's folder is put on `sys.path`.
-- `plugin = "name"`: a detector from the `aqt.detectors` entry-point group (INTERFACES I8), with `name`, `version` and `score(text) -> DetectorResult(score_ppm, spans)`. A class or factory is called with the `options` table, for example `options = {model_dir = "models/horizon"}` for aqt-quarantine's `onnx` detector. Install `aqt-validate[quarantine]` for aqt-quarantine's detectors. `aqt-validate detector plugins` lists what is installed.
+- `plugin = "name"`: a detector from the `aqt.detectors` entry-point group (see [aqt-quarantine's detector interface](../../aqt-quarantine/docs/detectors.md)), with `name`, `version` and `score(text) -> DetectorResult(score_ppm, spans)`. A class or factory is called with the `options` table, for example `options = {model_dir = "models/horizon"}` for aqt-quarantine's `onnx` detector. Install `aqt-validate[quarantine]` for aqt-quarantine's detectors. `aqt-validate detector plugins` lists what is installed.
 - `scores = "file.jsonl"`: precomputed scores.
 
 Add `model_file = "path"` so that a swapped model changes the configuration hash.

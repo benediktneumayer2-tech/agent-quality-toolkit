@@ -1,6 +1,6 @@
 # Thresholds file (`thresholds.json`, schema 0.1)
 
-Written by `aqt-validate detector run` into the run directory; read by aqt-quarantine. The shared contract is INTERFACES I8; aqt-spec publishes it as `schemas/thresholds.schema.json`. All scores and thresholds are integers in parts per million (ppm, 0–1,000,000), per INTERFACES I7.
+Written by `aqt-validate detector run` into the run directory; read by aqt-quarantine. The shared contract is [aqt-spec §12.1](../../aqt-spec/spec/evidence-records-0.1.md#121-thresholds-file); aqt-spec publishes it as `schemas/thresholds.schema.json`. All scores and thresholds are integers in parts per million (ppm, 0–1,000,000), as everywhere in aqt-spec.
 
 ```json
 {

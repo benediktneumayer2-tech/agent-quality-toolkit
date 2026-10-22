@@ -1,9 +1,9 @@
 """``aqt-trail serve``: the writer behind a Unix socket.
 
 Protocol (one JSON request per connection, client closes its write side):
-``append`` (INTERFACES / aqt-spec), ``drain`` (spooled records), ``checkpoint``
+``append`` (aqt-spec spec §10.2), ``drain`` (spooled records), ``checkpoint``
 (signed head, optional RFC 3161 anchor or external-head note), ``head``, ``ping``.
-Errors use the I3 codes ``invalid_record``, ``unauthorized``, ``duplicate_id``,
+Errors use the spec §10.2 codes ``invalid_record``, ``unauthorized``, ``duplicate_id``,
 ``unavailable`` and ``internal``.
 """
 

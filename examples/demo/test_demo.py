@@ -16,8 +16,8 @@ REAL_HOME = Path(os.path.expanduser("~"))
 REAL_DIRS = (REAL_HOME / ".local" / "state" / "aqt", REAL_HOME / ".config" / "aqt")
 
 OUTPUTS = ("alcoa-report.md", "review-worksheet.md", "review-worksheet-full-trail.md", "review-signed.json",
-           "trace-report.md", "capa-trends.md", "validation-report.md", "thresholds.json", "release-manifest.md",
-           "trail-report.md", "bundle-MANIFEST.json", "gate-after-edit.json", "record-types.json")
+           "trace-report.md", "capa-trends.md", "capa-DEV-0001.md", "validation-report.md", "thresholds.json",
+           "release-manifest.md", "trail-report.md", "bundle-MANIFEST.json", "gate-after-edit.json", "record-types.json")
 
 
 def test_demo_runs_offline_and_reaches_every_expected_outcome(tmp_path):
@@ -34,6 +34,7 @@ def test_demo_runs_offline_and_reaches_every_expected_outcome(tmp_path):
         assert (out / name).is_file() and (out / name).stat().st_size > 0, name
 
     assert "Conclusion: MEETS" in (out / "validation-report.md").read_text()
+    assert (out / "capa-DEV-0001.md").read_text().startswith("# DEV-0001:")
     manifest = (out / "release-manifest.md").read_text()
     assert "| released |" in manifest and "human:qm-demo" in manifest and "valid" in manifest
     review = json.loads((out / "review-signed.json").read_text())

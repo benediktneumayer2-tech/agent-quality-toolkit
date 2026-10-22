@@ -1,7 +1,7 @@
 """Who is acting: an agent (detected by the shared aqt-spec markers) or a human.
 
 ``AQT_ACTOR`` may set the identity but never turns an agent context into a
-human one (INTERFACES.md I9/I12). Tests replace ``agent_context``.
+human one. Tests replace ``agent_context``.
 """
 
 from __future__ import annotations
