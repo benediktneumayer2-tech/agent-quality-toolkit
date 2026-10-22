@@ -1,0 +1,81 @@
+"""User configuration: ``$XDG_CONFIG_HOME/aqt/change.toml`` (or ``AQT_CHANGE_CONFIG``)."""
+
+from __future__ import annotations
+
+import os
+import tomllib
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from aqt_evidence import content_hash
+
+from .errors import usage
+
+INDEPENDENCE = ("same-session", "fresh-context", "different-model", "human")
+LIFECYCLE_OWNERS = ("aqt-change", "external")
+
+
+@dataclass
+class GatePolicy:
+    require_signed_approval: bool = False
+    min_review_independence: str = "none"
+    warnings_block: bool = False
+    always_allowed_paths: list[str] = field(default_factory=list)
+
+    def as_dict(self) -> dict:
+        return {"require_signed_approval": self.require_signed_approval,
+                "min_review_independence": self.min_review_independence,
+                "warnings_block": self.warnings_block,
+                "always_allowed_paths": list(self.always_allowed_paths)}
+
+    def sha256(self) -> str:
+        return content_hash(self.as_dict())
+
+
+@dataclass
+class Config:
+    actor: str | None = None
+    excerpt_lines: int = 20
+    timeout_seconds: int = 1800
+    fingerprint_exclude: list[str] = field(default_factory=list)
+    lifecycle_owner: str = "aqt-change"
+    gate: GatePolicy = field(default_factory=GatePolicy)
+    source: str | None = None
+
+
+def config_path() -> Path:
+    if os.environ.get("AQT_CHANGE_CONFIG"):
+        return Path(os.environ["AQT_CHANGE_CONFIG"])
+    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    return Path(base) / "aqt" / "change.toml"
+
+
+def load_config(path: str | os.PathLike | None = None) -> Config:
+    target = Path(path) if path else config_path()
+    if not target.exists():
+        return Config()
+    try:
+        raw = tomllib.loads(target.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as error:
+        raise usage("config_invalid", f"cannot read config {target}: {error}") from error
+    gate_raw = raw.get("gate", {}) or {}
+    gate = GatePolicy(
+        require_signed_approval=bool(gate_raw.get("require_signed_approval", False)),
+        min_review_independence=str(gate_raw.get("min_review_independence", "none")),
+        warnings_block=bool(gate_raw.get("warnings_block", False)),
+        always_allowed_paths=[str(p) for p in gate_raw.get("always_allowed_paths", [])],
+    )
+    if gate.min_review_independence not in ("none", *INDEPENDENCE):
+        raise usage("config_invalid", "gate.min_review_independence must be none or an independence class")
+    config = Config(
+        actor=raw.get("actor"),
+        excerpt_lines=int(raw.get("excerpt_lines", 20)),
+        timeout_seconds=int(raw.get("timeout_seconds", 1800)),
+        fingerprint_exclude=[str(p) for p in raw.get("fingerprint_exclude", [])],
+        lifecycle_owner=str(raw.get("lifecycle_owner", "aqt-change")),
+        gate=gate,
+        source=str(target),
+    )
+    if config.lifecycle_owner not in LIFECYCLE_OWNERS:
+        raise usage("config_invalid", "lifecycle_owner must be 'aqt-change' or 'external'")
+    return config

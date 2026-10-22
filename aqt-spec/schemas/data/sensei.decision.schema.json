@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:sensei.decision",
+  "title": "sensei.decision data",
+  "description": "Owner decision on a message",
+  "type": "object",
+  "properties": {
+    "decision": {
+      "enum": [
+        "approve",
+        "edit",
+        "discard",
+        "forward"
+      ]
+    },
+    "message_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "pair_id": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "decision",
+    "message_id",
+    "pair_id"
+  ]
+}

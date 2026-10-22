@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:sensei.budget",
+  "title": "sensei.budget data",
+  "description": "Budget consumption and limits",
+  "type": "object",
+  "properties": {
+    "pair": {
+      "type": "string"
+    },
+    "messages_used": {
+      "type": "integer"
+    },
+    "exchanges_used": {
+      "type": "integer"
+    },
+    "fallback_mode": {
+      "type": "string"
+    }
+  }
+}

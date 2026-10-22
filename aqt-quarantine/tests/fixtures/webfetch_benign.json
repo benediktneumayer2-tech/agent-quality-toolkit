@@ -1,0 +1,7 @@
+{"session_id": "sess-test-1", "transcript_path": "/tmp/transcript.jsonl", "cwd": "/tmp/project",
+ "permission_mode": "default", "hook_event_name": "PostToolUse", "tool_name": "WebFetch",
+ "tool_input": {"url": "https://docs.example.org/guide/install", "prompt": "How do I install it?"},
+ "tool_response": {"bytes": 18234, "code": 200, "codeText": "OK", "durationMs": 812,
+                   "result": "To install the example package, run the package manager with the package name. The guide recommends a virtual environment and lists the supported Python versions.",
+                   "url": "https://docs.example.org/guide/install"},
+ "tool_use_id": "toolu_test_0001", "duration_ms": 815}

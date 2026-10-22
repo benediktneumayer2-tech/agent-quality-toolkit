@@ -1,0 +1,22 @@
+name: aqt-capa
+on:
+  push:
+    paths: ["aqt-capa/**", "aqt-spec/**"]
+  pull_request:
+    paths: ["aqt-capa/**", "aqt-spec/**"]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    defaults:
+      run:
+        working-directory: aqt-capa
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv venv --python ${{ matrix.python }} .venv
+      - run: uv pip install --python .venv/bin/python -e ../aqt-spec -e ".[test]"
+      - run: git config --global init.defaultBranch main
+      - run: .venv/bin/python -m pytest -q

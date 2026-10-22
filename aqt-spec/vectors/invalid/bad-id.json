@@ -1,0 +1,26 @@
+{
+  "name": "bad-id",
+  "category": "invalid",
+  "kind": "record",
+  "description": "id is rec_ plus 28 lower-case hex digits.",
+  "input": {
+    "aqt": "0.1",
+    "id": "rec_123",
+    "type": "trail.event",
+    "time": "2026-10-21T12:00:05.000000Z",
+    "actor": {
+      "kind": "agent",
+      "id": "agent:claude-code:s-0001",
+      "agent": {
+        "harness": "claude-code",
+        "model": "example-model",
+        "session": "s-0001"
+      }
+    },
+    "action": "step-5"
+  },
+  "expect": {
+    "valid": false,
+    "schema_valid": false
+  }
+}

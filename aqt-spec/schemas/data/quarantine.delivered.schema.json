@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:quarantine.delivered",
+  "title": "quarantine.delivered data",
+  "description": "Released content delivered to the agent",
+  "type": "object",
+  "properties": {
+    "case_id": {
+      "type": "string"
+    },
+    "harness": {
+      "type": "string"
+    },
+    "session": {
+      "type": "string"
+    },
+    "mode": {
+      "enum": [
+        "inline",
+        "pointer"
+      ]
+    },
+    "content_sha256": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:signoff.invalidation",
+  "title": "signoff.invalidation data",
+  "description": "A signature stopped applying (content changed or withdrawn)",
+  "type": "object",
+  "properties": {
+    "cause": {
+      "enum": [
+        "content-changed",
+        "withdrawn",
+        "key-revoked"
+      ]
+    },
+    "signed_sha256": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+    },
+    "observed_sha256": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+    }
+  },
+  "required": [
+    "cause"
+  ]
+}

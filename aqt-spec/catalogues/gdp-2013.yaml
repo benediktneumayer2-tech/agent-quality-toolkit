@@ -1,0 +1,86 @@
+catalogue: gdp-2013
+title: EU Guidelines on Good Distribution Practice of medicinal products for human use (2013/C 343/01)
+licence: CC-BY-4.0
+source:
+  document: Commission Guidelines of 5 November 2013 on Good Distribution Practice of medicinal products for human use, OJ C 343, 23.11.2013
+  version: 2013/C 343/01
+  status: in force
+  consulted: "2026-10-22"
+  basis: "Checked against the Official Journal text as served by the EU Publications Office (http://publications.europa.eu/resource/celex/52013XC1123%2801%29; EUR-Lex https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:52013XC1123(01)). Paraphrased in own words. AQT applies these concepts to agent inputs by analogy; it does not distribute medicinal products."
+items:
+  - id: gdp-2013:1.1
+    clause: "1.1"
+    title: Quality management — principle
+    paraphrase: Wholesale distributors keep a quality system that sets out responsibilities, processes and risk management; critical steps and significant changes are justified and, where relevant, validated, under management's responsibility and leadership.
+    supported_by: [change.plan-ledger, validate.qualification]
+    user_must: Take management responsibility for the quality system around agent work.
+    verified: true
+  - id: gdp-2013:1.2
+    clause: "1.2"
+    title: Quality system
+    paraphrase: The quality system is fully documented and its effectiveness monitored, with a risk-based change control system. It ensures among other things that records are made contemporaneously, deviations are documented and investigated, and corrective and preventive actions are taken.
+    supported_by: [trail.writer, capa.intake, capa.action, capa.effectiveness, change.plan-ledger]
+    user_must: Document your quality system and appoint the person responsible for it.
+    r3: [R-17, R-18]
+    verified: true
+  - id: gdp-2013:1.4
+    clause: "1.4"
+    title: Management review and monitoring
+    paraphrase: Management formally reviews the quality system periodically, including objectives and performance indicators such as complaints, deviations, CAPA and process changes, and documents and communicates the outcome.
+    supported_by: [capa.trends, trail.review]
+    user_must: Hold and record management reviews.
+    verified: true
+  - id: gdp-2013:2.2
+    clause: "2.2"
+    title: Responsible person
+    paraphrase: The distributor designates a responsible person whose duties include deciding on the final disposition of returned, rejected, recalled or falsified products and approving any return to saleable stock.
+    supported_by: [quarantine.release, quarantine.self-trust-guard]
+    user_must: Designate the responsible person for releasing held agent inputs; agents never take this role.
+    verified: true
+  - id: gdp-2013:3.2
+    clause: "3.2"
+    title: Premises — segregation of products pending disposition
+    paraphrase: Products awaiting a disposition decision or removed from saleable stock are segregated physically or by an equivalent electronic system; falsified, expired, recalled and rejected products are physically segregated at once.
+    supported_by: [quarantine.hold, quarantine.cases]
+    user_must: Make sure held content cannot reach the agent by another path.
+    verified: true
+  - id: gdp-2013:3.3.1
+    clause: "3.3.1"
+    title: Computerised systems
+    paraphrase: Before use, validation or verification shows a computerised system achieves the desired results accurately, consistently and reproducibly, and only authorised persons enter or amend data. Data is protected against accidental or unauthorised change, checked periodically for accessibility and backed up regularly.
+    supported_by: [spec.chain, trail.writer, spec.conformance]
+    user_must: Validate your configuration and back up the trail.
+    verified: true
+  - id: gdp-2013:4.2
+    clause: "4.2"
+    title: Documentation — general
+    paraphrase: Documentation, paper or electronic, is readily retrievable, sufficiently comprehensive, clear and free from errors; alterations are signed, dated and keep the original readable, and records are made at the time of each operation.
+    supported_by: [trail.verify-export, change.trace-report]
+    verified: true
+  - id: gdp-2013:6.1
+    clause: "6.1"
+    title: Complaints, returns, falsified products and recalls — principle
+    paraphrase: Complaints, returns, suspected falsified products and recalls are all recorded and handled under written procedures, and returned products are assessed before any resale is approved.
+    supported_by: [quarantine.cases, capa.intake]
+    user_must: Write the procedure for handling held agent inputs.
+    verified: true
+  - id: gdp-2013:6.2
+    clause: "6.2"
+    title: Complaints
+    paraphrase: Complaints are recorded with all original details; quality complaints go to the manufacturer or marketing authorisation holder without delay, and distribution complaints are investigated for their cause. Follow-up actions, including CAPA and notification of authorities where required, are taken as needed.
+    supported_by: [capa.intake, capa.investigation, capa.action]
+    verified: true
+  - id: gdp-2013:6.3
+    clause: "6.3"
+    title: Returned medicinal products
+    paraphrase: Returned products are handled by a written, risk-based process and go back to saleable stock only when defined conditions are confirmed, including examination and assessment by a trained, competent and authorised person.
+    supported_by: [quarantine.release, quarantine.hold]
+    user_must: Define the checks a responsible person applies before releasing held content.
+    verified: true
+  - id: gdp-2013:6.4
+    clause: "6.4"
+    title: Falsified medicinal products
+    paraphrase: Identified or suspected falsified products are reported immediately to the competent authority and the marketing authorisation holder, recorded with all original details and investigated. Falsified products found in the supply chain are physically segregated at once in a dedicated area.
+    supported_by: [quarantine.release, quarantine.cases, capa.intake]
+    user_must: Report declared threats to whoever must know (for example the maintainer of a compromised source).
+    verified: true

@@ -1,0 +1,7 @@
+{
+  "hooks": {
+    "TaskCompleted": [{"hooks": [{"type": "command", "command": "aqt-change hook claude-code"}]}],
+    "Stop": [{"hooks": [{"type": "command", "command": "aqt-change hook claude-code"}]}],
+    "SubagentStop": [{"hooks": [{"type": "command", "command": "aqt-change hook claude-code"}]}]
+  }
+}

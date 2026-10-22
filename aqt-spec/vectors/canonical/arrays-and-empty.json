@@ -1,0 +1,12 @@
+{
+  "name": "arrays-and-empty",
+  "category": "canonical",
+  "kind": "canonical",
+  "description": "Array order is kept; empty objects and arrays stay.",
+  "input_text": "{\"a\": [3, 1, 2], \"e\": {}, \"l\": []}",
+  "expect": {
+    "error": false,
+    "canonical": "{\"a\":[3,1,2],\"e\":{},\"l\":[]}",
+    "sha256": "sha256:27bbca7090048a1bbf4f3b5283940d7f056bf052c1e74b2a885d990fd05296fa"
+  }
+}

@@ -1,0 +1,55 @@
+# aqt-validate reviewer qualification protocol.
+# Build cases first:  aqt-validate reviewer build-cases --repo REPO --out cases
+# Lock before the test run:  aqt-validate protocol lock protocol.toml --reason "..."
+# Paths are relative to this file.
+
+[protocol]
+id = "claude-review-2026-10"
+kind = "reviewer"
+subject = "claude review profile"
+intended_use = """
+First-pass review of agent diffs in this repository before a human review.
+The reviewer flags likely defects; a human decides. Not a replacement for tests.
+"""
+confidence = 0.95
+validity_days = 60
+requalify_on = ["configuration-changed", "expired"]
+max_errors = 0
+
+[reviewer]
+id = "claude-review"
+harness = "claude-code"
+model = "set-the-model-id"
+version = "set-the-cli-version"
+# argv placeholders: {diff} {workdir} {prompt} (file paths); no shell is used
+argv = ["claude", "-p", "--output-format", "json"]
+stdin = "prompt"                           # prompt | diff | none
+# prompt_template = "review_prompt.md"     # placeholders ${diff_text} ${diff_path} ${workdir}
+runs = 3                                   # runs per case
+timeout_s = 900
+min_severity = "medium"                    # findings below this are ignored
+line_tolerance = 3                         # finding line within the defect's lines +- 3
+# detect_min_runs = 2                      # default: half of the runs, rounded up
+# knowledge_cutoff = "2025-06-01"          # report results before/after the model's cutoff
+
+[cases]
+dir = "cases"                              # from reviewer build-cases
+repo = "."                                 # the repository the cases come from
+
+[[criteria]]
+id = "R1"
+metric = "detection_rate"
+op = ">="
+target = 0.5
+
+[[criteria]]
+id = "R2"
+metric = "false_alarm_rate"
+op = "<="
+target = 0.5
+
+[[criteria]]
+id = "R3"
+metric = "agreement"
+op = ">="
+target = 0.7

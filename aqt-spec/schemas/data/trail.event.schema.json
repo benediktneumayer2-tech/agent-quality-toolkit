@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:trail.event",
+  "title": "trail.event data",
+  "description": "Generic event (service start/stop, clock jump, user events)",
+  "type": "object"
+}

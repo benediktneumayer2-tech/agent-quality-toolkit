@@ -1,0 +1,10 @@
+{
+  "name": "float",
+  "category": "canonical",
+  "kind": "canonical",
+  "description": "Floats are not allowed (use integers such as *_ppm or *_ms).",
+  "input_text": "{\"score\": 1.5}",
+  "expect": {
+    "error": true
+  }
+}

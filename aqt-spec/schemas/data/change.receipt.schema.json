@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:change.receipt",
+  "title": "change.receipt data",
+  "description": "Runner-captured verification receipt",
+  "type": "object",
+  "properties": {
+    "argv": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "exit_code": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "passed": {
+      "type": "boolean"
+    },
+    "plan_basis_hash": {
+      "type": "string"
+    },
+    "tree_fingerprint": {
+      "type": "string"
+    },
+    "counts": {
+      "type": "object"
+    },
+    "plan_id": {
+      "type": "string"
+    },
+    "item": {
+      "type": "string"
+    },
+    "outcome": {
+      "type": "string"
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "stdout": {
+      "type": "object"
+    },
+    "stderr": {
+      "type": "object"
+    },
+    "git": {
+      "type": "object"
+    },
+    "env": {
+      "type": "object"
+    },
+    "warnings": {
+      "type": "array"
+    }
+  },
+  "required": [
+    "argv",
+    "exit_code",
+    "passed",
+    "plan_basis_hash",
+    "tree_fingerprint",
+    "counts"
+  ]
+}

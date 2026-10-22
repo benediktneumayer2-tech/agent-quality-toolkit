@@ -1,0 +1,14 @@
+aqt-signoff
+Copyright 2026 Benedikt Neumayer
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The approved-action mechanism (prepare, exact-version approval, claim before the
+external effect, unknown outcomes that are never retried and are closed only by
+an owner decision) is derived from the author's private Agent Platform Next
+(Personal Desk helpers). No code or data from that project is included.
+
+Design ideas (no code) from eLabFTW (signatures with a chosen meaning) and
+minisign (signed trusted comments).
+
+Depends on: aqt-spec (Apache-2.0), cryptography (Apache-2.0 OR BSD-3-Clause).

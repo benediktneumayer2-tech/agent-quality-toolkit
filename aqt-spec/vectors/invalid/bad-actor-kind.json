@@ -1,0 +1,21 @@
+{
+  "name": "bad-actor-kind",
+  "category": "invalid",
+  "kind": "record",
+  "description": "actor.kind is human, agent or service.",
+  "input": {
+    "aqt": "0.1",
+    "id": "rec_019a0f3c2b000000000000000009",
+    "type": "trail.event",
+    "time": "2026-10-21T12:00:09.000000Z",
+    "actor": {
+      "kind": "robot",
+      "id": "x"
+    },
+    "action": "step-9"
+  },
+  "expect": {
+    "valid": false,
+    "schema_valid": false
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:validate.run",
+  "title": "validate.run data",
+  "description": "Validation run lifecycle",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "enum": [
+        "detector",
+        "reviewer"
+      ]
+    },
+    "protocol": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "sha256": {
+          "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+        }
+      },
+      "required": [
+        "sha256"
+      ]
+    },
+    "datasets": {
+      "type": "array"
+    },
+    "results_sha256": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+    },
+    "headline": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "protocol"
+  ]
+}

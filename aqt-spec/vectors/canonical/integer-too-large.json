@@ -1,0 +1,10 @@
+{
+  "name": "integer-too-large",
+  "category": "canonical",
+  "kind": "canonical",
+  "description": "Integers beyond 2^53-1 are refused.",
+  "input_text": "{\"n\": 9007199254740992}",
+  "expect": {
+    "error": true
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "WebFetch|WebSearch|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "aqt-quarantine hook claude-code"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "aqt-quarantine hook claude-code"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "deny": [
+      "Bash(aqt-quarantine release:*)",
+      "Bash(aqt-quarantine trust-source:*)",
+      "Bash(aqt-quarantine declare-threat:*)",
+      "Bash(aqt-quarantine init:*)",
+      "Read(~/.local/state/aqt/quarantine/**)",
+      "Edit(~/.local/state/aqt/**)",
+      "Edit(~/.config/aqt/**)"
+    ]
+  }
+}

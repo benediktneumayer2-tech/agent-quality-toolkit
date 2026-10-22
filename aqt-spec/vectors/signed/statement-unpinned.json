@@ -1,0 +1,39 @@
+{
+  "name": "statement-unpinned",
+  "category": "signed",
+  "kind": "statement",
+  "description": "Signed by a key that is not pinned: unknown (null).",
+  "pinned_keys": [
+    "rfc8032-test1"
+  ],
+  "input": {
+    "signature": {
+      "statement": {
+        "aqt_signature": "0.1",
+        "signer": {
+          "id": "human:alice",
+          "name": "Alice Example",
+          "role": "quality-manager"
+        },
+        "key": "ed25519:39f713d0a644253f",
+        "meaning": "approved",
+        "reason": "Receipts and review checked",
+        "signed_at": "2026-10-21T12:00:55.000000Z",
+        "tz": "Europe/Vienna",
+        "record_type": "change.finish",
+        "subject": {
+          "kind": "record",
+          "ref": "rec_019a0f3c2b000000000000000032",
+          "sha256": "sha256:2d61838d09f460e3f4a65f79094f5c15bfbcca2c6d69c99ef90340bc22bc7706"
+        },
+        "nonce": "0123456789abcdef"
+      },
+      "alg": "ed25519",
+      "key": "ed25519:39f713d0a644253f",
+      "value": "MTPwU4vlr/oGcr7VNawrcZP7Z0wJ/D76VfNybFTBjT3cHOIhoTbJSU8vnFQWAq6tKKzRkZ47UsWN/+co5q0WCg=="
+    }
+  },
+  "expect": {
+    "valid": null
+  }
+}

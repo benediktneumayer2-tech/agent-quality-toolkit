@@ -1,0 +1,136 @@
+{
+  "name": "checkpoint-unpinned-key",
+  "category": "signed",
+  "kind": "checkpoint",
+  "description": "A checkpoint signed by a key that is not pinned is not valid.",
+  "pinned_keys": [
+    "rfc8032-test1"
+  ],
+  "input": {
+    "checkpoint": {
+      "aqt_checkpoint": "0.1",
+      "log": "example-log",
+      "seq": 3,
+      "head": "sha256:b3bb8f3aff482ec7fdc28b3e5a851af25d3efcab94c3b9cb4a975d3696204630",
+      "time": "2026-10-21T12:00:31.000000Z",
+      "sig": {
+        "alg": "ed25519",
+        "key": "ed25519:39f713d0a644253f",
+        "value": "1cLoKRhvTaEotWuProrjbnODVWv/yNIlNgfGmbkzPwXSgAgSb3bPDayywlh6nf5GK2bDAvL1fWX/Nc2Tkgm+Dw=="
+      }
+    },
+    "records": [
+      {
+        "aqt": "0.1",
+        "id": "rec_019a0f3c2b000000000000000014",
+        "type": "trail.event",
+        "time": "2026-10-21T12:00:20.000000Z",
+        "actor": {
+          "kind": "agent",
+          "id": "agent:claude-code:s-0001",
+          "agent": {
+            "harness": "claude-code",
+            "model": "example-model",
+            "session": "s-0001"
+          }
+        },
+        "action": "forged",
+        "chain": {
+          "seq": 0,
+          "prev": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "sig": [
+          {
+            "alg": "ed25519",
+            "key": "ed25519:39f713d0a644253f",
+            "value": "U+NBhLhgu+F/61HoZdzWEN+pc1POfsx/Jin97DO3RUPONkNxZ4RmgLmyPjxvMCWBIyZh5CKA0lYqadPvsqV/Bg=="
+          }
+        ]
+      },
+      {
+        "aqt": "0.1",
+        "id": "rec_019a0f3c2b000000000000000015",
+        "type": "trail.event",
+        "time": "2026-10-21T12:00:21.000000Z",
+        "actor": {
+          "kind": "agent",
+          "id": "agent:claude-code:s-0001",
+          "agent": {
+            "harness": "claude-code",
+            "model": "example-model",
+            "session": "s-0001"
+          }
+        },
+        "action": "forged",
+        "chain": {
+          "seq": 1,
+          "prev": "sha256:4d4a5333ec75d751ba849b4afac9a9d98b9ac1995a0699f75d6e834bbacf3177"
+        },
+        "sig": [
+          {
+            "alg": "ed25519",
+            "key": "ed25519:39f713d0a644253f",
+            "value": "pfh06w5p+Cpebxfo0evHM5NAFmm9VWup/zq+AVsT/QUXuYeWP9MkxXPK58isFwCo+CInrLY3BrohF40svP7ZAg=="
+          }
+        ]
+      },
+      {
+        "aqt": "0.1",
+        "id": "rec_019a0f3c2b000000000000000016",
+        "type": "trail.event",
+        "time": "2026-10-21T12:00:22.000000Z",
+        "actor": {
+          "kind": "agent",
+          "id": "agent:claude-code:s-0001",
+          "agent": {
+            "harness": "claude-code",
+            "model": "example-model",
+            "session": "s-0001"
+          }
+        },
+        "action": "forged",
+        "chain": {
+          "seq": 2,
+          "prev": "sha256:6296fcef1976b423256feaeee6711a8188242be0e751a7a5b5e5f57b56452dac"
+        },
+        "sig": [
+          {
+            "alg": "ed25519",
+            "key": "ed25519:39f713d0a644253f",
+            "value": "Ykdp92hG6zsdqh+Fq9rfTRI/J7Ro7hszjhy73f46korkwnhuYlFIAns2Dqz7bqHhafLtJPpa6WshY07YMNYgCQ=="
+          }
+        ]
+      },
+      {
+        "aqt": "0.1",
+        "id": "rec_019a0f3c2b000000000000000017",
+        "type": "trail.event",
+        "time": "2026-10-21T12:00:23.000000Z",
+        "actor": {
+          "kind": "agent",
+          "id": "agent:claude-code:s-0001",
+          "agent": {
+            "harness": "claude-code",
+            "model": "example-model",
+            "session": "s-0001"
+          }
+        },
+        "action": "forged",
+        "chain": {
+          "seq": 3,
+          "prev": "sha256:cfd25ee23008fbd5c119d3d32814366ac4e2e7ff7a0365049dcc16206e718a73"
+        },
+        "sig": [
+          {
+            "alg": "ed25519",
+            "key": "ed25519:39f713d0a644253f",
+            "value": "NmrYKw35SWGNTyXg0DEf8v73YsV6Adp5Uph61HESNfEjrUdZLm0b6htoRN/6BCHQ50436ZZFOO6E/3NZRyfbCA=="
+          }
+        ]
+      }
+    ]
+  },
+  "expect": {
+    "valid": false
+  }
+}

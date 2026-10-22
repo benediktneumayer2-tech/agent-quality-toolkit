@@ -1,0 +1,10 @@
+{
+  "name": "duplicate-key",
+  "category": "canonical",
+  "kind": "canonical",
+  "description": "Duplicate keys are refused (parsers disagree on them).",
+  "input_text": "{\"a\": 1, \"a\": 2}",
+  "expect": {
+    "error": true
+  }
+}

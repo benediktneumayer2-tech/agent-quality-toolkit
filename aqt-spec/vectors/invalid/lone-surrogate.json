@@ -1,0 +1,10 @@
+{
+  "name": "lone-surrogate",
+  "category": "invalid",
+  "kind": "record",
+  "description": "A lone surrogate in a string makes the record invalid.",
+  "input_text": "{\"aqt\": \"0.1\", \"id\": \"rec_019a0f3c2b000000000000000013\", \"type\": \"trail.event\", \"time\": \"2026-10-21T12:00:19.000000Z\", \"actor\": {\"kind\": \"agent\", \"id\": \"agent:claude-code:s-0001\", \"agent\": {\"harness\": \"claude-code\", \"model\": \"example-model\", \"session\": \"s-0001\"}}, \"action\": \"step-19\", \"reason\": \"\\udc00\"}",
+  "expect": {
+    "valid": false
+  }
+}

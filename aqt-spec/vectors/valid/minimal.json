@@ -1,0 +1,29 @@
+{
+  "name": "minimal",
+  "category": "valid",
+  "kind": "record",
+  "description": "Only the required fields: aqt, id, type, time, actor, action.",
+  "input": {
+    "aqt": "0.1",
+    "id": "rec_019a0f3c2b000000000000000001",
+    "type": "trail.event",
+    "time": "2026-10-21T12:00:01.000000Z",
+    "actor": {
+      "kind": "agent",
+      "id": "agent:claude-code:s-0001",
+      "agent": {
+        "harness": "claude-code",
+        "model": "example-model",
+        "session": "s-0001"
+      }
+    },
+    "action": "step-1"
+  },
+  "expect": {
+    "valid": true,
+    "schema_valid": true,
+    "record_hash": "sha256:da7d3287e83ff5c46a92fa8377964877a0194a676302b4951dbbe9b83d702040",
+    "content_hash": "sha256:f6318d75ee4a24500f0b93dbac8236bb015b9891a01cbcca4b522363e4d8bbff",
+    "canonical": "{\"action\":\"step-1\",\"actor\":{\"agent\":{\"harness\":\"claude-code\",\"model\":\"example-model\",\"session\":\"s-0001\"},\"id\":\"agent:claude-code:s-0001\",\"kind\":\"agent\"},\"aqt\":\"0.1\",\"id\":\"rec_019a0f3c2b000000000000000001\",\"time\":\"2026-10-21T12:00:01.000000Z\",\"type\":\"trail.event\"}"
+  }
+}

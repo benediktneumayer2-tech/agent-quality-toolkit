@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:trail.anchor",
+  "title": "trail.anchor data",
+  "description": "External anchor of a checkpoint (RFC 3161 token or exported head)",
+  "type": "object",
+  "properties": {
+    "checkpoint": {
+      "$ref": "urn:aqt:schema:0.1:checkpoint"
+    },
+    "imprint": {
+      "type": "string"
+    },
+    "tsa": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "checkpoint"
+  ]
+}

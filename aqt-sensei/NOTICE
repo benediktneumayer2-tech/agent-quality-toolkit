@@ -1,0 +1,16 @@
+aqt-sensei
+Copyright 2026 Benedikt Neumayer
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Derived from the author's private Agent Platform Next (its Sensei bridge:
+bridge daemon, agent command, sandboxed launcher, advisor prompt and their
+tests). The copied code was adapted; private paths, hosts, model presets and
+setup-specific parts were removed. No data from that project is included.
+
+Design ideas (no code) from crew (MIT), pi-blanche (MIT), pi-meta-harness (MIT),
+codex-plugin-cc (Apache-2.0), steipete/oracle (MIT) and Anthropic's advisor tool.
+
+Depends on: aqt-spec (Apache-2.0), cryptography (Apache-2.0 OR BSD-3-Clause).
+Runs as external programs (not included, not linked): bubblewrap
+(LGPL-2.0-or-later), tmux (ISC), Herdr (Apache-2.0).

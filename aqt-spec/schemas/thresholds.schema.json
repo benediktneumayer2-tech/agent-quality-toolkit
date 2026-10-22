@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:thresholds",
+  "title": "Detector thresholds file (aqt-validate -> aqt-quarantine)",
+  "description": "Scores and thresholds in parts per million (score_ppm of the detector).",
+  "type": "object",
+  "properties": {
+    "aqt_thresholds": {
+      "const": "0.1"
+    },
+    "protocol": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+        }
+      },
+      "required": [
+        "id",
+        "sha256"
+      ]
+    },
+    "run": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/record_id"
+    },
+    "detectors": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string"
+          },
+          "sha256": {
+            "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+          }
+        },
+        "required": [
+          "id",
+          "version"
+        ]
+      }
+    },
+    "bands": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "enum": [
+              "warn",
+              "hold"
+            ]
+          },
+          "fpr_target_ppm": {
+            "$ref": "urn:aqt:schema:0.1:common#/$defs/ppm"
+          },
+          "rule": {
+            "oneOf": [
+              {
+                "const": "any"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "at_least": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "at_least"
+                ]
+              }
+            ]
+          },
+          "thresholds": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": {
+              "$ref": "urn:aqt:schema:0.1:common#/$defs/ppm"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "rule",
+          "thresholds"
+        ]
+      }
+    },
+    "calibration": {
+      "type": "object",
+      "properties": {
+        "n": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "realised_fpr_ppm": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "urn:aqt:schema:0.1:common#/$defs/ppm"
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "aqt_thresholds",
+    "detectors",
+    "bands"
+  ]
+}

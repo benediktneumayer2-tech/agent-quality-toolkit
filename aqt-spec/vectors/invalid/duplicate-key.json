@@ -1,0 +1,10 @@
+{
+  "name": "duplicate-key",
+  "category": "invalid",
+  "kind": "record",
+  "description": "Duplicate keys make a record ambiguous and invalid.",
+  "input_text": "{\"aqt\": \"0.1\", \"id\": \"rec_019a0f3c2b000000000000000012\", \"type\": \"trail.event\", \"time\": \"2026-10-21T12:00:18.000000Z\", \"actor\": {\"kind\": \"agent\", \"id\": \"agent:claude-code:s-0001\", \"agent\": {\"harness\": \"claude-code\", \"model\": \"example-model\", \"session\": \"s-0001\"}}, \"action\": \"step-18\", \"action\": \"other\"}",
+  "expect": {
+    "valid": false
+  }
+}

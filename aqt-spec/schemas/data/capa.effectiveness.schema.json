@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:capa.effectiveness",
+  "title": "capa.effectiveness data",
+  "description": "Effectiveness check result",
+  "type": "object",
+  "properties": {
+    "action_id": {
+      "type": "string"
+    },
+    "result": {
+      "enum": [
+        "effective",
+        "not-effective",
+        "pending"
+      ]
+    },
+    "counts": {
+      "type": "object"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "unicode-raw",
+  "category": "canonical",
+  "kind": "canonical",
+  "description": "Non-ASCII string content is written as raw UTF-8, not escaped.",
+  "input_text": "{\"text\": \"Gr\\u00fc\\u00dfe \\u20ac \\ud834\\udd1e\"}",
+  "expect": {
+    "error": false,
+    "canonical": "{\"text\":\"Grüße € 𝄞\"}",
+    "sha256": "sha256:1b8c10015bec7bac4a692617659d45f76d12fedf4c6fa701330cea2a6bf8ba09"
+  }
+}

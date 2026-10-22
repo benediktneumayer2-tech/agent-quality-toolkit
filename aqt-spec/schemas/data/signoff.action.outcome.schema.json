@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:signoff.action.outcome",
+  "title": "signoff.action.outcome data",
+  "description": "Outcome of a claimed action; unknown is never retried",
+  "type": "object",
+  "properties": {
+    "action_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "claim_id": {
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "succeeded",
+        "failed",
+        "unknown",
+        "not-applied"
+      ]
+    },
+    "basis": {
+      "type": "string"
+    },
+    "exit_code": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "stdout_sha256": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+    },
+    "stderr_sha256": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+    },
+    "excerpt": {
+      "type": "string"
+    },
+    "signature": {
+      "$ref": "urn:aqt:schema:0.1:signature"
+    }
+  },
+  "required": [
+    "outcome",
+    "action_id"
+  ]
+}

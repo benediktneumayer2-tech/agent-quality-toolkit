@@ -1,0 +1,10 @@
+{
+  "name": "lone-surrogate",
+  "category": "canonical",
+  "kind": "canonical",
+  "description": "Strings must be valid Unicode; a lone surrogate escape is refused.",
+  "input_text": "{\"s\": \"\\ud800\"}",
+  "expect": {
+    "error": true
+  }
+}

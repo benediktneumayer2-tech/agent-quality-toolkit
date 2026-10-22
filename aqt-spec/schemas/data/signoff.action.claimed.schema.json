@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:signoff.action.claimed",
+  "title": "signoff.action.claimed data",
+  "description": "Executor claimed an approved action (at most once)",
+  "type": "object",
+  "properties": {
+    "action_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "action_sha256": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+    },
+    "claim_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "approvals": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "payload_checked": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "action_id",
+    "claim_id"
+  ]
+}

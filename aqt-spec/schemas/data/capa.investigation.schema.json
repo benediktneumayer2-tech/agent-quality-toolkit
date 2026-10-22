@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:capa.investigation",
+  "title": "capa.investigation data",
+  "description": "Root-cause investigation",
+  "type": "object",
+  "properties": {
+    "whys": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "factors": {
+      "type": "array"
+    },
+    "root_cause": {
+      "type": "string"
+    },
+    "root_category": {
+      "type": "string"
+    },
+    "impact": {
+      "type": "string"
+    }
+  }
+}

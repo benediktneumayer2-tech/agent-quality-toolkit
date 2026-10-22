@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:sensei.pair",
+  "title": "sensei.pair data",
+  "description": "Advisor pairing lifecycle",
+  "type": "object",
+  "properties": {
+    "pair": {
+      "type": "string"
+    },
+    "backend": {
+      "type": "string"
+    },
+    "worker": {
+      "type": "object"
+    },
+    "advisor": {
+      "type": "object"
+    },
+    "mode": {
+      "type": "string"
+    },
+    "budget": {
+      "type": "object"
+    },
+    "independence": {
+      "type": "string"
+    }
+  }
+}

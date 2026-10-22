@@ -1,0 +1,12 @@
+{
+  "name": "escapes",
+  "category": "canonical",
+  "kind": "canonical",
+  "description": "Quote, backslash and C0 controls are escaped as in RFC 8785; DEL and / are not.",
+  "input_text": "{\"s\": \"q\\\" b\\\\ n\\n t\\t c\\u0001 d\\u007f s\\/\"}",
+  "expect": {
+    "error": false,
+    "canonical": "{\"s\":\"q\\\" b\\\\ n\\n t\\t c\\u0001 d s/\"}",
+    "sha256": "sha256:e32acde6c76d3dd8a8ca2d7ea5588e2e69dc5c9300d2d29e3df58de5055794ec"
+  }
+}

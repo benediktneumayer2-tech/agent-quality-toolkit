@@ -1,0 +1,29 @@
+{
+  "name": "extension-type",
+  "category": "valid",
+  "kind": "record",
+  "description": "x-<org>. types are valid envelopes (registration is checked at conformance L1).",
+  "input": {
+    "aqt": "0.1",
+    "id": "rec_019a0f3c2b000000000000000002",
+    "type": "x-example.thing",
+    "time": "2026-10-21T12:00:02.000000Z",
+    "actor": {
+      "kind": "agent",
+      "id": "agent:claude-code:s-0001",
+      "agent": {
+        "harness": "claude-code",
+        "model": "example-model",
+        "session": "s-0001"
+      }
+    },
+    "action": "step-2"
+  },
+  "expect": {
+    "valid": true,
+    "schema_valid": true,
+    "record_hash": "sha256:45e9521573254302b7d4951ced21b5ded8d8d6493ef8e3a8b8848059934e8639",
+    "content_hash": "sha256:8f6baa2a55146bc990c70fa33ab4f961821f9101a5c70dfc371ce33e0d365403",
+    "canonical": "{\"action\":\"step-2\",\"actor\":{\"agent\":{\"harness\":\"claude-code\",\"model\":\"example-model\",\"session\":\"s-0001\"},\"id\":\"agent:claude-code:s-0001\",\"kind\":\"agent\"},\"aqt\":\"0.1\",\"id\":\"rec_019a0f3c2b000000000000000002\",\"time\":\"2026-10-21T12:00:02.000000Z\",\"type\":\"x-example.thing\"}"
+  }
+}

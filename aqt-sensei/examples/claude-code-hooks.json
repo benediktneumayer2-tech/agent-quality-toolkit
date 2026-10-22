@@ -1,0 +1,8 @@
+{
+  "_comment": "Merge into .claude/settings.json of the worker's project (or the advisor profile's settings) when you use the tmux backend: these hooks report the pane's lifecycle exactly, instead of the quiet-screen heuristic. Outside tmux the command does nothing.",
+  "hooks": {
+    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "aqt-sensei hook-state working"}]}],
+    "Stop": [{"hooks": [{"type": "command", "command": "aqt-sensei hook-state idle"}]}],
+    "Notification": [{"matcher": "permission_prompt", "hooks": [{"type": "command", "command": "aqt-sensei hook-state blocked"}]}]
+  }
+}

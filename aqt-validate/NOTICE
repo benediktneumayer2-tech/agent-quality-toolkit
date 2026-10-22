@@ -1,0 +1,13 @@
+aqt-validate
+Copyright 2026 Benedikt Neumayer
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The detector validation method (thresholds from calibration benign data only, hash-based
+splits, payload composition, max-rank fusion, leave-one-family-out, single test readout and
+disclosed deviations) is derived from the author's private Agent Platform Next classifier
+evaluation. The code was written fresh; no data, labels, scores, thresholds or models from
+that work are included.
+
+No benchmark data is distributed. AgentDojo, BIPIA, InjecAgent and LLMail-Inject (MIT
+licensed) are read from paths the user provides. Test fixtures are synthetic.

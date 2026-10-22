@@ -1,0 +1,5 @@
+# Example $XDG_CONFIG_HOME/aqt/validate.toml
+actor = "human:alice"                       # who you are in records (qualification is human only)
+# sink = "unix:/run/user/1000/aqt/trail.sock"  # or file:/path/evidence.jsonl (default: AQT_SINK, then the state dir)
+# state_dir = "~/.local/state/aqt/validate"
+# evidence = ["~/.local/state/aqt/evidence.jsonl"]   # where earlier records are read from

@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:envelope",
+  "title": "AQT evidence record envelope 0.1",
+  "description": "Structural rules only. Canonical-JSON rules (no floats, ASCII keys, integers within +/-2^53, no duplicate keys, valid Unicode) are checked by the canonicaliser, not by this schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "aqt",
+    "id",
+    "type",
+    "time",
+    "actor",
+    "action"
+  ],
+  "properties": {
+    "aqt": {
+      "const": "0.1"
+    },
+    "id": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/record_id"
+    },
+    "type": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+\\.[a-z0-9_.-]+$"
+    },
+    "time": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/time"
+    },
+    "tz": {
+      "type": "string",
+      "minLength": 1
+    },
+    "actor": {
+      "type": "object",
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "human",
+            "agent",
+            "service"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "type": "string"
+        },
+        "display": {
+          "type": "string"
+        },
+        "agent": {
+          "type": "object",
+          "properties": {
+            "harness": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            },
+            "session": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "observed": {
+      "$ref": "urn:aqt:schema:0.1:observed"
+    },
+    "action": {
+      "type": "string",
+      "minLength": 1
+    },
+    "subject": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+        }
+      },
+      "required": [
+        "kind",
+        "ref"
+      ]
+    },
+    "before": {
+      "type": "object",
+      "properties": {
+        "sha256": {
+          "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+        }
+      }
+    },
+    "after": {
+      "type": "object",
+      "properties": {
+        "sha256": {
+          "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+        }
+      }
+    },
+    "reason": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "meaning": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/meaning"
+    },
+    "links": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "rel": {
+            "type": "string",
+            "minLength": 1
+          },
+          "ref": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "rel",
+          "ref"
+        ]
+      }
+    },
+    "data": {
+      "type": "object"
+    },
+    "chain": {
+      "type": "object",
+      "properties": {
+        "seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "prev": {
+          "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+        }
+      },
+      "required": [
+        "seq",
+        "prev"
+      ]
+    },
+    "sig": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:aqt:schema:0.1:common#/$defs/ed25519_sig"
+      }
+    }
+  }
+}

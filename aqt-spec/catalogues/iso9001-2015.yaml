@@ -1,0 +1,86 @@
+catalogue: iso9001-2015
+title: ISO 9001:2015 Quality management systems — Requirements (clauses used by AQT)
+licence: CC-BY-4.0
+source:
+  document: ISO 9001:2015
+  version: fifth edition 2015 with Amendment 1:2024 (climate change in clauses 4.1 and 4.2; not used here)
+  status: in force as the 2015 edition; a revised edition was announced for September 2026 (not checked here)
+  consulted: "2026-10-22"
+  basis: "Clause numbers and titles checked against public clause outlines of ISO 9001:2015 (https://www.iso.org/standard/62085.html refused automated access; the paywalled ISO text was not consulted). Paraphrases are the author's own one-sentence summary of each clause's intent, not the standard's wording."
+items:
+  - id: iso9001-2015:6.3
+    clause: "6.3"
+    title: Planning of changes
+    paraphrase: Changes to the quality management system are planned, considering their purpose, consequences and responsibilities.
+    supported_by: [change.plan-ledger, change.finish]
+    verified: true
+  - id: iso9001-2015:7.1.5
+    clause: "7.1.5"
+    title: Monitoring and measuring resources
+    paraphrase: Resources used to verify conformity are suitable, maintained and, where needed, calibrated or verified.
+    supported_by: [validate.detector, validate.reviewer, validate.qualification, spec.conformance]
+    user_must: Treat detectors and AI reviewers as measuring resources and requalify them on change.
+    verified: true
+  - id: iso9001-2015:7.2
+    clause: "7.2"
+    title: Competence
+    paraphrase: People doing work that affects quality are competent, and evidence of competence is retained.
+    supported_by: [validate.reviewer]
+    user_must: Keep competence records for people; AI reviewer qualification is an analogy.
+    verified: true
+  - id: iso9001-2015:7.5.3
+    clause: "7.5.3"
+    title: Control of documented information
+    paraphrase: Documented information is available, protected, versioned and retained, with changes controlled.
+    supported_by: [spec.chain, spec.checkpoint, change.plan-ledger, signoff.signature]
+    verified: true
+  - id: iso9001-2015:8.5.2
+    clause: "8.5.2"
+    title: Identification and traceability
+    paraphrase: Outputs are identified and, where traceability is required, their unique identification is controlled and retained.
+    supported_by: [spec.envelope, change.trace-report]
+    verified: true
+  - id: iso9001-2015:8.5.6
+    clause: "8.5.6"
+    title: Control of changes
+    paraphrase: Changes in production or service provision are reviewed and controlled, with records of the review, the authoriser and any actions.
+    supported_by: [change.plan-ledger, change.reconcile-diff, change.review, signoff.signature]
+    verified: true
+  - id: iso9001-2015:8.6
+    clause: "8.6"
+    title: Release of products and services
+    paraphrase: Release happens only after planned verification is complete, and records show who authorised the release.
+    supported_by: [change.finish, quarantine.release, signoff.approved-actions]
+    verified: true
+  - id: iso9001-2015:8.7
+    clause: "8.7"
+    title: Control of nonconforming outputs
+    paraphrase: Nonconforming outputs are identified and controlled to prevent unintended use, with records of the nonconformity, actions and the authority deciding.
+    supported_by: [quarantine.hold, quarantine.release, capa.intake]
+    verified: true
+  - id: iso9001-2015:9.1.3
+    clause: "9.1.3"
+    title: Analysis and evaluation
+    paraphrase: Data from monitoring is analysed to evaluate conformity, effectiveness and the need for improvement.
+    supported_by: [capa.trends, trail.alcoa]
+    verified: true
+  - id: iso9001-2015:9.2
+    clause: "9.2"
+    title: Internal audit
+    paraphrase: Internal audits are planned and performed, and results are reported and acted on.
+    supported_by: [trail.review]
+    user_must: Plan internal audits; an audit-trail review is one input, not the whole audit.
+    verified: true
+  - id: iso9001-2015:9.3
+    clause: "9.3"
+    title: Management review
+    paraphrase: Top management reviews the system at planned intervals, using inputs such as nonconformities, corrective actions and monitoring results.
+    supported_by: [capa.trends]
+    user_must: Hold management reviews and record decisions.
+    verified: true
+  - id: iso9001-2015:10.2
+    clause: "10.2"
+    title: Nonconformity and corrective action
+    paraphrase: Nonconformities are reacted to, their causes determined, corrective actions implemented and their effectiveness reviewed, with records retained.
+    supported_by: [capa.intake, capa.investigation, capa.action, capa.effectiveness]
+    verified: true

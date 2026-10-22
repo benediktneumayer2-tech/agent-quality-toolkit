@@ -1,0 +1,10 @@
+{
+  "name": "non-ascii-key",
+  "category": "canonical",
+  "kind": "canonical",
+  "description": "Object keys must be ASCII.",
+  "input_text": "{\"\\u00e4\": 1}",
+  "expect": {
+    "error": true
+  }
+}

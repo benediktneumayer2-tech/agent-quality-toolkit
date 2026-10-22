@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:capa.deviation",
+  "title": "capa.deviation data",
+  "description": "Deviation lifecycle",
+  "type": "object",
+  "properties": {
+    "dev_id": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "severity": {
+      "enum": [
+        "minor",
+        "major",
+        "critical"
+      ]
+    },
+    "category": {
+      "type": "string"
+    },
+    "source": {
+      "type": "object"
+    },
+    "similar": {
+      "type": "array"
+    }
+  }
+}

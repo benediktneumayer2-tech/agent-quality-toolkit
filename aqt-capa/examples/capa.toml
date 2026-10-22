@@ -1,0 +1,35 @@
+# Example configuration for aqt-capa.
+# Copy to $XDG_CONFIG_HOME/aqt/capa.toml (usually ~/.config/aqt/capa.toml) and adjust.
+# Relative paths are resolved against the directory of this file.
+
+[identity]
+id = "human:qa-lead"          # who you are in records (human:<id>)
+role = "quality"
+display = "QA Lead"
+# tz = "Europe/Vienna"        # time zone stored with records (default: $TZ)
+
+[evidence]
+# Files to read records from. Default without this key: AQT_EVIDENCE, or the
+# default sink file plus the aqt-trail log ($XDG_STATE_HOME/aqt/trail/trail.jsonl).
+# paths = ["~/.local/state/aqt/evidence.jsonl", "~/.local/state/aqt/trail/trail.jsonl"]
+
+[project]
+root = "."                    # action targets (AGENTS.md, skills, hooks) are stored relative to this
+# id = "my-project"
+
+[scan]
+repos = ["."]                 # git repositories scanned for reverted commits
+disabled_rules = []           # e.g. ["quarantine-held", "action-outcome-unknown"]
+# Count only reverts of commits whose message matches one of these regexes (empty = all reverts):
+agent_commit_patterns = []    # e.g. ["Co-Authored-By: .*(Claude|Codex)", "AQT-Finish:"]
+
+[due_days]                    # investigation due dates per severity
+critical = 2
+major = 7
+minor = 30
+
+[similarity]
+threshold_ppm = 300000        # show past deviations at or above 30 % similarity
+
+[approval]
+allow_self_approval = false   # true lets the implementer of an action approve it (solo projects)

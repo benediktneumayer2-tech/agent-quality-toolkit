@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:validate.qualification",
+  "title": "validate.qualification data",
+  "description": "Human qualification decision with validity period",
+  "type": "object",
+  "properties": {
+    "configuration_hash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "valid_until": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/time"
+    },
+    "valid_from": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/time"
+    },
+    "report": {
+      "type": "string"
+    },
+    "triggers": {
+      "type": "array"
+    },
+    "thresholds_sha256": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+    },
+    "expected_fpr_upper_ppm": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/ppm"
+    }
+  },
+  "required": [
+    "configuration_hash",
+    "valid_until"
+  ]
+}

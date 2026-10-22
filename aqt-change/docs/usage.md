@@ -1,0 +1,102 @@
+# aqt-change usage
+
+## Plan format
+
+```markdown
+---
+tracker:                      # Project Tracker Next compatible
+  schema: 1
+  kind: sprint
+  id: s01                     # stable ID, unique per project
+  implementation: calc
+  status: planned             # draft|planned|in_progress|blocked|completed|failed|cancelled|superseded
+aqt:                          # optional, ignored by Project Tracker Next
+  paths: ["src/**", "tests/**"]          # approved change scope (globs; ** spans directories)
+  review: {min_independence: fresh-context}   # tightens the configured gate policy (block form also works)
+---
+# Title
+## Tasks
+- [ ] [T01] Implement sub
+## Verification
+- [ ] [V01] Unit tests pass `$ python -m pytest -q`     # declared command: inline code starting with "$ "
+- [ ] [V02] README example checked by a person          # manual item: needs `aqt-change attest`
+## Progress Log / ## Blockers / ## Deviations / ## Failures And Learnings / ## Decisions
+### 2026-10-21T10:00:00Z — Title                          # append-only event entries
+## Completion
+```
+
+The front matter accepts a strict YAML subset: mappings, scalars, quoted strings, flow and block lists of scalars. Anything else is refused with an error. Declared commands are split with `shlex` and run **without a shell**; put pipelines in a script. Every item needs a stable ID.
+
+## What counts as a change
+
+| Edit | Plan state | Needed |
+|---|---|---|
+| Tick or untick a box, append an event entry | `status_neutral` | nothing |
+| Change prose (Outcome, Scope …) | `unreconciled` | `reconcile --kind editorial` (reason needed while active or terminal) |
+| Add, remove or rename items, change a declared command, `aqt` block, `sequence`, `depends_on` | `unreconciled` | `reconcile --kind semantic --reason …` (refused for terminal plans; completed items must stay intact while active) |
+| Edit or delete an earlier event entry | `history_rewritten` | restore it (always refused) |
+| Change `status`, `started_at`, `completed_at`, `git` by hand | `lifecycle_changed` | restore it (written by `begin`/`finish` only) |
+| Change `id`, `kind`, `schema`, `implementation` | — | refused (`plan_identity_changed`) |
+
+## Freshness and output files
+
+A receipt is fresh while the plan basis hash and the tree fingerprint match the current state. The fingerprint covers all tracked files plus untracked files that are not ignored, and leaves out the plan file. This is strict on purpose: a file a later command leaves behind in the working tree (`coverage.xml`, `report.html`, scratch notes) makes earlier receipts stale. Keep outputs in paths covered by `.gitignore` (for example `build/`, `.pytest_cache/`), or add globs to `fingerprint_exclude` in `change.toml`. The `--junit` file of a run is excluded automatically. A run that changes the working tree itself records the warning `command_modified_worktree`.
+
+## Commands
+
+All commands accept `--root`, `--state` and `--json`. Exit codes: 0 ok, 1 check failed or refused, 2 usage or runtime error.
+
+| Command | Purpose |
+|---|---|
+| `plan new PATH --id ID --title T [--implementation I] [--follows ID]` | Write and register a plan from the template |
+| `plan add PATH` | Register an existing plan (baseline record) |
+| `plan status [PATH…]` | Reconciliation state; exit 1 unless every plan is clean or status-neutral |
+| `reconcile PATH --kind editorial\|semantic [--reason R] [--expect SHA]` | Accept the current version |
+| `begin PATH [--reason R]` | `in_progress`, `started_at`, Git base commit; baseline record |
+| `run [--plan P] [--item ID \| --all] [--junit FILE] [--timeout S] [--quiet] -- CMD…` | Run and record receipts; an explicit command must equal the declared one |
+| `attest PATH --item ID [--evidence FILE…] --reason R` | Evidence for a manual item (`meaning: verified`) |
+| `review add PATH --reviewer ID --independence C --verdict V --reason R [--findings F.json] [--harness H --model M] [--base REV] [--qualification REC]` | Review record bound to the diff |
+| `reconcile-diff PATH [--evidence F…]` | Approved scope versus actual diff and missing evidence |
+| `finish PATH --key K --summary S [--path F…] [--message M] [--waive ID=REASON…] [--ack-warnings R] [--remaining R] [--no-commit]` | Checked completion, scoped commit, `change.finish` |
+| `report PATH [--format md\|html] [--out F] [--gate F] [--rerun] [--evidence F…]` | Trace report and gate file |
+| `gate PATH [--rerun] [--evidence F…]` | Gate JSON; exit 0 only for GO |
+| `hook claude-code` | Claude Code hook (stdin JSON; exit 2 blocks) |
+| `hook commit-msg FILE [--require]` | Trailer check |
+| `hooks print` / `hooks install-git` | Settings snippet / commit-msg shim (never overwrites an existing hook) |
+
+## Finish in detail
+
+1. **Preflight** (nothing is written if it fails): plan in progress (unless `lifecycle_owner = "external"`), plan clean or status-neutral, and a fresh passing receipt for every verification item (or a waiver with a reason). Open tasks, anti-gaming warnings, unapproved paths, an open FAIL review or a stale approval need `--ack-warnings REASON`. Unrelated *staged* files abort the finish.
+2. **prepared → plan_written_commit_pending:** the final plan is written atomically. Verification items with fresh passing receipts are ticked, `status: completed` and `completed_at` are set, and a completion entry is appended, generated from the receipts.
+3. **→ commit_created_record_pending:** `git add` and `git commit` of exactly the plan plus the `--path` files, with trailers `AQT-Plan`, `AQT-Task`, `AQT-Receipts` and `AQT-Finish: <plan>/<key>`. Hooks run; a failure stops here and is never bypassed.
+4. **→ completed:** the trailers are verified, then `change.finish` is written.
+
+Run the same command again with the same `--key` to resume after a hook failure or a crash. A commit that was already made is adopted, not made twice. The same key with different inputs fails with `idempotency_conflict`.
+
+## Gate codes
+
+- **NO-GO:** `plan_unreconciled`, `receipt_missing`, `receipt_stale`, `receipt_failed`, `unapproved_change`, `review_fail` (the latest review is FAIL), `not_finished`; `anti_gaming_warning` when `warnings_block = true`.
+- **MANUAL_VERIFY_REQUIRED:** `waiver_present`, `manual_item_agent_attested`, `anti_gaming_warning`, `approval_stale`, `approval_invalid`, `approval_unsigned` / `approval_unverified` (with `require_signed_approval`), `review_concerns`, `review_waived`, `review_independence_below_policy`, `scope_undeclared`, `scope_unverifiable`.
+
+## Approval with aqt-signoff
+
+The approval target is the latest `baseline`/`begin`/semantic `reconcile` record of the plan (`plan status --json` and the report show its ID). A person signs it with aqt-signoff (`--record <id> --meaning approved`). The signature subject is `{kind: record, ref, sha256: record_content_hash(record)}`. aqt-change asks `aqt_signoff.is_approved` when it is installed (`signed`). Otherwise it looks for matching `signoff.signature` records in `--evidence` files, `AQT_EVIDENCE`, the sink or the trail log, and reports them as `unverified`. If aqt-signoff is installed and rejects the signature, the state is `invalid` (gate: MANUAL).
+
+## Claude Code hooks
+
+`aqt-change hooks print` prints a snippet for `TaskCompleted`, `Stop` and `SubagentStop`; merge it into `.claude/settings.json`. On `Stop`, the hook blocks while a plan is unreconciled or a *ticked* verification item has no fresh passing receipt. When `stop_hook_active` is true it reports the problem without blocking a second time, and `finish` still refuses. On `TaskCompleted`, it blocks when the task text names a verification ID (`[V01]`) that has no fresh passing receipt. The hook never runs tests.
+
+## Working with Project Tracker Next
+
+The files are the same. With the default `lifecycle_owner = "aqt-change"`, use aqt-change's `begin`/`finish` *instead of* PTN's for that plan. With `lifecycle_owner = "external"`, PTN keeps `begin_work`/`finish_work`. aqt-change then records the baseline, receipts, reviews, scope checks and a record-only `change.finish` (no plan write, no commit), and lifecycle field changes count as status-neutral.
+
+## Records
+
+| Type | Action | Fixed `data` fields (INTERFACES.md I6) |
+|---|---|---|
+| `change.plan.reconciled` | `baseline`, `begin`, `reconcile` | `plan_id`, `kind`, `basis_before/after`, `items` |
+| `change.receipt` | `run`, `attest` | `argv`, `exit_code`, `passed`, `plan_basis_hash`, `tree_fingerprint`, `counts` |
+| `change.review` | `review` | `verdict`, `independence`, `diff_sha256`, `findings` |
+| `change.reconciliation` | `reconcile-diff` | `unapproved`, `missing_evidence`, `approval`, `result` |
+| `change.finish` | `finish` | `plan_ref`, `receipts`, `waivers`, `gate` |
+| `change.refused` | `refused` | `attempted_action`, `reason_code`, `agent_markers` |

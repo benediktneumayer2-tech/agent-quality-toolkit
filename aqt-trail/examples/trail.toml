@@ -1,0 +1,34 @@
+# Example configuration for aqt-trail. Copy to $XDG_CONFIG_HOME/aqt/trail.toml.
+# Every value is optional; the defaults are shown.
+
+# [trail]
+# state = "~/.local/state/aqt/trail"     # or AQT_TRAIL_STATE / --state
+
+[writer]
+socket = ""                # default: $XDG_RUNTIME_DIR/aqt/trail.sock, else <state>/aqt-trail.sock
+socket_mode = "0600"       # separate-user mode: "0660" together with socket_group
+socket_group = ""          # separate-user mode: "aqt-trail-clients"
+log_mode = "0600"          # separate-user mode: "0640" so the clients group can read and verify
+allowed_uids = []          # uids allowed to append besides the writer's own
+clock_jump_ms = 2000       # wall clock vs monotonic clock difference that is recorded as clock.jump
+drain_interval_s = 30      # how often the running writer drains the shared spool
+
+[anchor]
+tsa_url = ""               # e.g. an RFC 3161 TSA you trust (eIDAS-qualified if you need that);
+                           # "test:" uses the built-in TEST ONLY authority (offline demos)
+tsa_ca = ""                # PEM file with the TSA's CA certificate(s), used by verify
+timeout_s = 10
+
+[import]
+excerpt_chars = 160        # 0 disables excerpts; full texts are never stored, only hashes
+
+[review]
+timezone = "Europe/Vienna"
+work_start = "07:00"
+work_end = "19:00"
+workdays = [1, 2, 3, 4, 5]     # ISO weekdays
+repeated_failures = 3
+failure_window_min = 60
+skew_ms = 5000
+unanchored_hours = 24
+actor_change_window_min = 60

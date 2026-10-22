@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aqt-trail"
+version = "0.1.0"
+description = "Agent Quality Toolkit: tamper-evident audit trail for AI coding agents, with ALCOA++ report and audit-trail review"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [{ name = "Benedikt Neumayer" }]
+dependencies = ["aqt-spec>=0.1", "cryptography>=42"]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "jsonschema>=4.18"]  # jsonschema: payload checks of aqt-evidence conform
+
+[project.scripts]
+aqt-trail = "aqt_trail.cli:main"
+
+[tool.uv.sources]
+aqt-spec = { path = "../aqt-spec", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aqt_trail"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

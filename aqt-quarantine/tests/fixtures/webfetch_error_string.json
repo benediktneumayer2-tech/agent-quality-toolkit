@@ -1,0 +1,4 @@
+{"session_id": "sess-test-1", "hook_event_name": "PostToolUse", "tool_name": "WebFetch",
+ "tool_input": {"url": "https://down.example.org/"},
+ "tool_response": "Request failed with status code 503",
+ "tool_use_id": "toolu_test_0004"}

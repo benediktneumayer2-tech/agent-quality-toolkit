@@ -1,0 +1,11 @@
+{
+  "aqt_thresholds": "0.1",
+  "protocol": null,
+  "run": null,
+  "note": "TEST ONLY: holds every result. Used by the manual Claude Code verification in docs/claude-code.md.",
+  "detectors": [{"id": "heuristics", "version": "builtin"}],
+  "bands": [
+    {"name": "hold", "fpr_target_ppm": null, "rule": "any", "thresholds": {"heuristics": -1}}
+  ],
+  "calibration": {"n": 0, "realised_fpr_ppm": {"hold": null}}
+}

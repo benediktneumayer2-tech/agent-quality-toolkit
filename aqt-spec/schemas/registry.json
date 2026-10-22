@@ -1,0 +1,529 @@
+{
+  "aqt": "0.1",
+  "extension_prefix": "x-",
+  "types": {
+    "capa.action": {
+      "tool": "aqt-capa",
+      "summary": "Corrective or preventive change to an agent control",
+      "schema": "data/capa.action.schema.json",
+      "actions": [
+        "planned",
+        "implemented",
+        "approved",
+        "cancelled"
+      ],
+      "meanings": [
+        "approved"
+      ],
+      "human_reason": false
+    },
+    "capa.closure": {
+      "tool": "aqt-capa",
+      "summary": "CAPA closure",
+      "schema": "data/capa.closure.schema.json",
+      "actions": [
+        "closed"
+      ],
+      "meanings": [
+        "approved"
+      ],
+      "human_reason": true
+    },
+    "capa.deviation": {
+      "tool": "aqt-capa",
+      "summary": "Deviation lifecycle",
+      "schema": "data/capa.deviation.schema.json",
+      "actions": [
+        "opened",
+        "accepted",
+        "dismissed",
+        "classified",
+        "closed"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "capa.effectiveness": {
+      "tool": "aqt-capa",
+      "summary": "Effectiveness check result",
+      "schema": "data/capa.effectiveness.schema.json",
+      "actions": [
+        "evaluated",
+        "extended"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "capa.investigation": {
+      "tool": "aqt-capa",
+      "summary": "Root-cause investigation",
+      "schema": "data/capa.investigation.schema.json",
+      "actions": [
+        "drafted",
+        "recorded",
+        "revised"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "capa.refused": {
+      "tool": "aqt-capa",
+      "summary": "Refused attempt (typically by an agent)",
+      "schema": "data/capa.refused.schema.json",
+      "actions": [
+        "refused"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "change.finish": {
+      "tool": "aqt-change",
+      "summary": "Evidenced finish of a plan",
+      "schema": "data/change.finish.schema.json",
+      "actions": [
+        "finish"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "change.plan.reconciled": {
+      "tool": "aqt-change",
+      "summary": "Plan baseline or reconciled plan edit",
+      "schema": "data/change.plan.reconciled.schema.json",
+      "actions": [
+        "baseline",
+        "begin",
+        "reconcile"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "change.receipt": {
+      "tool": "aqt-change",
+      "summary": "Runner-captured verification receipt",
+      "schema": "data/change.receipt.schema.json",
+      "actions": [
+        "run",
+        "attest"
+      ],
+      "meanings": [
+        "verified"
+      ],
+      "human_reason": false
+    },
+    "change.reconciliation": {
+      "tool": "aqt-change",
+      "summary": "Approved-versus-actual diff reconciliation",
+      "schema": "data/change.reconciliation.schema.json",
+      "actions": [
+        "reconcile-diff"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "change.refused": {
+      "tool": "aqt-change",
+      "summary": "Refused attempt (typically by an agent)",
+      "schema": "data/change.refused.schema.json",
+      "actions": [
+        "refused"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "change.review": {
+      "tool": "aqt-change",
+      "summary": "Review record with reviewer independence class",
+      "schema": "data/change.review.schema.json",
+      "actions": [
+        "review"
+      ],
+      "meanings": [
+        "reviewed"
+      ],
+      "human_reason": false
+    },
+    "quarantine.delivered": {
+      "tool": "aqt-quarantine",
+      "summary": "Released content delivered to the agent",
+      "schema": "data/quarantine.delivered.schema.json",
+      "actions": [
+        "deliver"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "quarantine.held": {
+      "tool": "aqt-quarantine",
+      "summary": "Untrusted input held in quarantine",
+      "schema": "data/quarantine.held.schema.json",
+      "actions": [
+        "hold"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "quarantine.passed": {
+      "tool": "aqt-quarantine",
+      "summary": "Untrusted input passed (pass or warn band)",
+      "schema": "data/quarantine.passed.schema.json",
+      "actions": [
+        "pass"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "quarantine.refused": {
+      "tool": "aqt-quarantine",
+      "summary": "Refused attempt (typically by an agent)",
+      "schema": "data/quarantine.refused.schema.json",
+      "actions": [
+        "refused"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "quarantine.released": {
+      "tool": "aqt-quarantine",
+      "summary": "Held input released by a responsible person",
+      "schema": "data/quarantine.released.schema.json",
+      "actions": [
+        "release"
+      ],
+      "meanings": [
+        "released"
+      ],
+      "human_reason": true
+    },
+    "quarantine.source.trusted": {
+      "tool": "aqt-quarantine",
+      "summary": "Source trusted (or trust revoked) with expiry",
+      "schema": "data/quarantine.source.trusted.schema.json",
+      "actions": [
+        "trust",
+        "revoke"
+      ],
+      "meanings": [
+        "approved"
+      ],
+      "human_reason": true
+    },
+    "quarantine.threat.declared": {
+      "tool": "aqt-quarantine",
+      "summary": "Held input declared a threat",
+      "schema": "data/quarantine.threat.declared.schema.json",
+      "actions": [
+        "declare"
+      ],
+      "meanings": [
+        "rejected"
+      ],
+      "human_reason": true
+    },
+    "sensei.budget": {
+      "tool": "aqt-sensei",
+      "summary": "Budget consumption and limits",
+      "schema": "data/sensei.budget.schema.json",
+      "actions": [
+        "consumed",
+        "reached",
+        "cost-added"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "sensei.decision": {
+      "tool": "aqt-sensei",
+      "summary": "Owner decision on a message",
+      "schema": "data/sensei.decision.schema.json",
+      "actions": [
+        "approved",
+        "edited",
+        "discarded",
+        "forwarded"
+      ],
+      "meanings": [
+        "approved",
+        "rejected",
+        "released"
+      ],
+      "human_reason": true
+    },
+    "sensei.message": {
+      "tool": "aqt-sensei",
+      "summary": "Message between worker and advisor (hash + excerpt)",
+      "schema": "data/sensei.message.schema.json",
+      "actions": [
+        "enqueued",
+        "delivered",
+        "failed",
+        "no-reply"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "sensei.pair": {
+      "tool": "aqt-sensei",
+      "summary": "Advisor pairing lifecycle",
+      "schema": "data/sensei.pair.schema.json",
+      "actions": [
+        "attached",
+        "updated",
+        "paused",
+        "resumed",
+        "ended",
+        "doctor"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "sensei.refused": {
+      "tool": "aqt-sensei",
+      "summary": "Refused attempt (typically by an agent)",
+      "schema": "data/sensei.refused.schema.json",
+      "actions": [
+        "refused"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "signoff.action.approved": {
+      "tool": "aqt-signoff",
+      "summary": "Approval of the exact action hash",
+      "schema": "data/signoff.action.approved.schema.json",
+      "actions": [
+        "approve"
+      ],
+      "meanings": [
+        "approved"
+      ],
+      "human_reason": true
+    },
+    "signoff.action.claimed": {
+      "tool": "aqt-signoff",
+      "summary": "Executor claimed an approved action (at most once)",
+      "schema": "data/signoff.action.claimed.schema.json",
+      "actions": [
+        "claim"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "signoff.action.outcome": {
+      "tool": "aqt-signoff",
+      "summary": "Outcome of a claimed action; unknown is never retried",
+      "schema": "data/signoff.action.outcome.schema.json",
+      "actions": [
+        "outcome",
+        "resolve"
+      ],
+      "meanings": [
+        "verified"
+      ],
+      "human_reason": false
+    },
+    "signoff.action.prepared": {
+      "tool": "aqt-signoff",
+      "summary": "An action proposed for approval",
+      "schema": "data/signoff.action.prepared.schema.json",
+      "actions": [
+        "prepare"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "signoff.action.rejected": {
+      "tool": "aqt-signoff",
+      "summary": "Rejection of the exact action hash",
+      "schema": "data/signoff.action.rejected.schema.json",
+      "actions": [
+        "reject"
+      ],
+      "meanings": [
+        "rejected"
+      ],
+      "human_reason": true
+    },
+    "signoff.auth.failed": {
+      "tool": "aqt-signoff",
+      "summary": "Failed re-authentication",
+      "schema": "data/signoff.auth.failed.schema.json",
+      "actions": [
+        "auth.failed"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "signoff.invalidation": {
+      "tool": "aqt-signoff",
+      "summary": "A signature stopped applying (content changed or withdrawn)",
+      "schema": "data/signoff.invalidation.schema.json",
+      "actions": [],
+      "meanings": [],
+      "human_reason": true
+    },
+    "signoff.key.enrolled": {
+      "tool": "aqt-signoff",
+      "summary": "Signer key enrolled",
+      "schema": "data/signoff.key.enrolled.schema.json",
+      "actions": [
+        "enroll"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "signoff.key.revoked": {
+      "tool": "aqt-signoff",
+      "summary": "Signer key revoked",
+      "schema": "data/signoff.key.revoked.schema.json",
+      "actions": [
+        "revoke"
+      ],
+      "meanings": [],
+      "human_reason": true
+    },
+    "signoff.refused": {
+      "tool": "aqt-signoff",
+      "summary": "Refused attempt (typically by an agent)",
+      "schema": "data/signoff.refused.schema.json",
+      "actions": [
+        "refused"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "signoff.signature": {
+      "tool": "aqt-signoff",
+      "summary": "Signature with meaning bound to a subject hash",
+      "schema": "data/signoff.signature.schema.json",
+      "actions": [
+        "sign"
+      ],
+      "meanings": [
+        "authored",
+        "reviewed",
+        "approved",
+        "released",
+        "rejected",
+        "verified",
+        "waived",
+        "acknowledged"
+      ],
+      "human_reason": true
+    },
+    "trail.anchor": {
+      "tool": "aqt-trail",
+      "summary": "External anchor of a checkpoint (RFC 3161 token or exported head)",
+      "schema": "data/trail.anchor.schema.json",
+      "actions": [
+        "rfc3161",
+        "external-head"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "trail.event": {
+      "tool": "aqt-trail",
+      "summary": "Generic event (service start/stop, clock jump, user events)",
+      "schema": "data/trail.event.schema.json",
+      "actions": [],
+      "meanings": [],
+      "human_reason": false
+    },
+    "trail.gap": {
+      "tool": "aqt-trail",
+      "summary": "Spooled records follow; marks the time the writer was unavailable",
+      "schema": "data/trail.gap.schema.json",
+      "actions": [
+        "spool.drained"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "trail.import": {
+      "tool": "aqt-trail",
+      "summary": "Event imported from an agent harness (hook, session JSONL)",
+      "schema": "data/trail.import.schema.json",
+      "actions": [],
+      "meanings": [],
+      "human_reason": false
+    },
+    "trail.refused": {
+      "tool": "aqt-trail",
+      "summary": "Refused attempt (typically by an agent)",
+      "schema": "data/trail.refused.schema.json",
+      "actions": [
+        "refused"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "trail.review": {
+      "tool": "aqt-trail",
+      "summary": "Signed audit-trail review",
+      "schema": "data/trail.review.schema.json",
+      "actions": [
+        "review.signed"
+      ],
+      "meanings": [
+        "reviewed"
+      ],
+      "human_reason": true
+    },
+    "validate.qualification": {
+      "tool": "aqt-validate",
+      "summary": "Human qualification decision with validity period",
+      "schema": "data/validate.qualification.schema.json",
+      "actions": [
+        "qualify"
+      ],
+      "meanings": [
+        "approved",
+        "rejected"
+      ],
+      "human_reason": true
+    },
+    "validate.refused": {
+      "tool": "aqt-validate",
+      "summary": "Refused attempt (typically by an agent)",
+      "schema": "data/validate.refused.schema.json",
+      "actions": [
+        "refused"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "validate.report": {
+      "tool": "aqt-validate",
+      "summary": "Validation report",
+      "schema": "data/validate.report.schema.json",
+      "actions": [
+        "report"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "validate.requalification": {
+      "tool": "aqt-validate",
+      "summary": "Requalification trigger fired",
+      "schema": "data/validate.requalification.schema.json",
+      "actions": [
+        "requalify"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "validate.run": {
+      "tool": "aqt-validate",
+      "summary": "Validation run lifecycle",
+      "schema": "data/validate.run.schema.json",
+      "actions": [
+        "protocol-locked",
+        "completed",
+        "failed"
+      ],
+      "meanings": [],
+      "human_reason": false
+    }
+  }
+}

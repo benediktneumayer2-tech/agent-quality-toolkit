@@ -1,0 +1,12 @@
+{
+  "aqt_thresholds": "0.1",
+  "protocol": null,
+  "run": null,
+  "note": "UNCALIBRATED defaults shipped with aqt-quarantine. Calibrate on your own benign traffic with aqt-validate.",
+  "detectors": [{"id": "heuristics", "version": "builtin"}],
+  "bands": [
+    {"name": "warn", "fpr_target_ppm": null, "rule": "any", "thresholds": {"heuristics": 350000}},
+    {"name": "hold", "fpr_target_ppm": null, "rule": "any", "thresholds": {"heuristics": 750000}}
+  ],
+  "calibration": {"n": 0, "realised_fpr_ppm": {"warn": null, "hold": null}}
+}

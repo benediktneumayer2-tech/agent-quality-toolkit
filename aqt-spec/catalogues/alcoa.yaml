@@ -1,0 +1,90 @@
+catalogue: alcoa
+title: ALCOA++ data-integrity attributes
+licence: CC-BY-4.0
+source:
+  document: EU GMP Chapter 4 consultation draft (July 2025), Table 1 and glossary; PIC/S PI 041-1 (2021); MHRA GxP Data Integrity Guidance and Definitions (2018)
+  version: Chapter 4 consultation draft, July 2025 ("Traceable" added to ALCOA+)
+  status: draft (Chapter 4); guidance (PIC/S, MHRA)
+  consulted: "2026-10-22"
+  basis: "Attribute meanings checked against Table 1 of the Chapter 4 consultation draft https://health.ec.europa.eu/document/download/fa336a6e-753b-46fc-b53b-9178bacd8878_en?filename=mp_vol4_chap4_consultation_guideline_en.pdf; paraphrased in own words. The PIC/S and MHRA definitions were not re-checked in this pass."
+items:
+  - id: alcoa:attributable
+    clause: Attributable
+    title: Attributable
+    paraphrase: It is clear which person or computerised system performed a recorded task and when, and for any change to a record who made it, when and why.
+    supported_by: [spec.envelope, trail.writer, signoff.identity]
+    user_must: Give every person and agent session its own identity; do not share accounts or keys.
+    r3: [R-02, R-08, R-21]
+    verified: true
+  - id: alcoa:legible
+    clause: Legible
+    title: Legible
+    paraphrase: Records are readable and unambiguous, including all original entries; where search, query or trending matters to the meaning of electronic data, it stays usable through a suitable application.
+    supported_by: [spec.conformance, trail.verify-export]
+    user_must: Keep the export and report tools available for the retention period.
+    r3: [R-05, R-21]
+    verified: true
+  - id: alcoa:contemporaneous
+    clause: Contemporaneous
+    title: Contemporaneous
+    paraphrase: Actions, events and decisions are recorded as they take place, including what was decided and why, not reconstructed later.
+    supported_by: [trail.writer, trail.spool-gap, trail.alcoa]
+    user_must: Route tool records to the trail service as they happen; review gap markers.
+    r3: [R-02]
+    verified: true
+  - id: alcoa:original
+    clause: Original
+    title: Original
+    paraphrase: The first capture of the information (or a true copy) is kept, and information captured in a dynamic state remains available in that state.
+    supported_by: [spec.canonical-hash, spec.chain, trail.import]
+    user_must: Keep the original session logs where they matter; the trail stores hashes and excerpts, not full content.
+    r3: [R-21]
+    verified: true
+  - id: alcoa:accurate
+    clause: Accurate
+    title: Accurate
+    paraphrase: Records truthfully represent the facts; accuracy rests on qualified and validated equipment and systems, controlled procedures and data review, deviation management and trained staff.
+    supported_by: [spec.chain, spec.signature, trail.verify-export, change.receipts]
+    user_must: Verify the trail regularly and investigate any break.
+    r3: [R-21]
+    verified: true
+  - id: alcoa:complete
+    clause: Complete
+    title: Complete
+    paraphrase: All information needed to recreate an event is present, at a level of detail matching its criticality, nothing is lost or deleted, and electronic records include their relevant metadata.
+    supported_by: [spec.chain, trail.spool-gap, spec.checkpoint]
+    user_must: Send all relevant tool output to the trail; keep external checkpoints to detect truncation.
+    r3: [R-21]
+    verified: true
+  - id: alcoa:consistent
+    clause: Consistent
+    title: Consistent
+    paraphrase: Information is created, processed and stored in a defined, consistent way, for example chronological sequence, date formats, units and rounding.
+    supported_by: [spec.envelope, spec.conformance, trail.alcoa]
+    user_must: Keep host clocks synchronised; use one trail per scope of records.
+    r3: [R-21]
+    verified: true
+  - id: alcoa:enduring
+    clause: Enduring
+    title: Enduring
+    paraphrase: Records stay intact and accessible as durable records for the whole period in which they might be needed.
+    supported_by: [spec.checkpoint, trail.anchor]
+    user_must: Back up the trail and its keys; define and follow a retention period.
+    r3: [R-20, R-21]
+    verified: true
+  - id: alcoa:available
+    clause: Available
+    title: Available
+    paraphrase: Records are available in readable form, throughout the retention period, to the people who review them for release, investigations, trending, audits or inspections.
+    supported_by: [trail.verify-export, spec.conformance]
+    user_must: Test export and restore periodically.
+    r3: [R-05, R-20]
+    verified: true
+  - id: alcoa:traceable
+    clause: Traceable
+    title: Traceable
+    paraphrase: Recorded identifiers make it possible to follow where data came from, how it changed and where it is held.
+    supported_by: [spec.envelope, change.trace-report, capa.action]
+    user_must: Link records (links) when a decision depends on earlier evidence.
+    r3: [R-21, R-22]
+    verified: true

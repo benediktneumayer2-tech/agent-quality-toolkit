@@ -1,0 +1,16 @@
+# aqt-change configuration: copy to $XDG_CONFIG_HOME/aqt/change.toml (or point AQT_CHANGE_CONFIG at it).
+actor = "human:alice"              # default human actor id (agents are detected and recorded as agents)
+excerpt_lines = 20                 # tail of stdout/stderr kept in receipts; 0 disables excerpts
+timeout_seconds = 1800             # per command run by `aqt-change run`
+fingerprint_exclude = []           # extra globs left out of the tree fingerprint, e.g. ["build/**"]
+lifecycle_owner = "aqt-change"     # or "external" when Project Tracker Next owns lifecycle writes
+
+[gate]
+# QM rationale: the person accountable for the change approves the plan version before it is released;
+# without a signed approval (aqt-signoff, over the baseline/semantic reconciliation record) an agent could
+# plan, implement, verify and close a change on its own. With true, an unsigned or unverified approval
+# makes the gate MANUAL_VERIFY_REQUIRED. The library default is false so solo use works without aqt-signoff.
+require_signed_approval = true
+min_review_independence = "none"   # none | same-session | fresh-context | different-model | human
+warnings_block = false             # true: anti-gaming warnings make the gate NO-GO instead of MANUAL
+always_allowed_paths = []          # paths allowed outside the plan's aqt.paths, e.g. ["CHANGELOG.md"]

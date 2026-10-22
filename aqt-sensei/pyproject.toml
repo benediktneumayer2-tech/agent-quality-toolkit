@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aqt-sensei"
+version = "0.1.0"
+description = "Independent advisor for a coding agent: any vendor, read-only enforced by the OS, owner modes and budgets, advice ledger"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [{ name = "Benedikt Neumayer" }]
+dependencies = ["aqt-spec>=0.1"]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.scripts]
+aqt-sensei = "aqt_sensei.cli:main"
+
+[tool.uv.sources]
+aqt-spec = { path = "../aqt-spec", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aqt_sensei"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

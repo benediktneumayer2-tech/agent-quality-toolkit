@@ -1,0 +1,10 @@
+# A review profile for `aqt-trail review run --profile examples/review-profile.toml`.
+# Queries not listed are skipped; params override [review] in the configuration.
+name = "weekly-decisions"
+queries = ["self_approval", "missing_reason", "attribution_mismatch", "gaps", "repeated_failures",
+           "invalidated_signatures", "unanchored_head"]
+
+[params]
+repeated_failures = 2
+failure_window_min = 30
+unanchored_hours = 168

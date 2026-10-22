@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:trail.import",
+  "title": "trail.import data",
+  "description": "Event imported from an agent harness (hook, session JSONL)",
+  "type": "object",
+  "properties": {
+    "source": {
+      "type": "object"
+    },
+    "source_hash": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+    },
+    "source_time": {
+      "type": "string"
+    },
+    "tool": {
+      "type": "object"
+    },
+    "model": {
+      "type": "string"
+    },
+    "harness_version": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "source",
+    "source_hash"
+  ]
+}

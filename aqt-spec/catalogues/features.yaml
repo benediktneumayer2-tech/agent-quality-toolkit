@@ -1,0 +1,179 @@
+# AQT features referenced by the GxP catalogues (supported_by).
+# Licence: CC BY 4.0. A feature names its package and the record types that evidence it.
+features:
+  # aqt-spec
+  spec.envelope:
+    package: aqt-spec
+    description: Evidence envelope with actor and role, action, subject, before/after, UTC time and zone, reason and meaning
+    records: ["*"]
+  spec.canonical-hash:
+    package: aqt-spec
+    description: Canonical JSON and SHA-256 record hashes; strict parsing (no floats, no duplicate keys)
+    records: ["*"]
+  spec.signature:
+    package: aqt-spec
+    description: Ed25519 record signatures and detached signed statements bound to a content hash
+    records: [signoff.signature]
+  spec.chain:
+    package: aqt-spec
+    description: Hash chain over stored records (edit, insert, delete and reorder become visible)
+    records: ["*"]
+  spec.checkpoint:
+    package: aqt-spec
+    description: Signed checkpoints of the chain head for storage outside the writer
+    records: [trail.anchor]
+  spec.conformance:
+    package: aqt-spec
+    description: Open specification, JSON Schemas, conformance levels L1-L3 and test vectors
+    records: []
+  spec.human-check:
+    package: aqt-spec
+    description: Shared agent-context check for human-only decisions; refusals recorded as <tool>.refused
+    records: [trail.refused, signoff.refused, change.refused, sensei.refused, quarantine.refused, validate.refused, capa.refused]
+  # aqt-trail
+  trail.writer:
+    package: aqt-trail
+    description: Separate append-only writer service with service time and OS process attribution (observed)
+    records: [trail.event]
+  trail.spool-gap:
+    package: aqt-trail
+    description: Client spool while the writer is down; gap markers instead of silent loss
+    records: [trail.gap]
+  trail.anchor:
+    package: aqt-trail
+    description: RFC 3161 timestamps and exported heads anchoring checkpoints outside the writer
+    records: [trail.anchor]
+  trail.import:
+    package: aqt-trail
+    description: Idempotent importers for Claude Code hooks and Claude Code, Codex and pi session logs
+    records: [trail.import]
+  trail.verify-export:
+    package: aqt-trail
+    description: Verification (intact / broken from seq N), JSONL export with keys and checkpoints, readable report
+    records: []
+  trail.alcoa:
+    package: aqt-trail
+    description: ALCOA++ report per record and in aggregate, citing catalogue IDs
+    records: []
+  trail.review:
+    package: aqt-trail
+    description: Risk-based audit-trail review with saved queries, reviewer independence enforced, signed review record
+    records: [trail.review]
+  # aqt-signoff
+  signoff.signature:
+    package: aqt-signoff
+    description: Signature with meaning, printed name, time and zone bound to the exact content hash; manifestation
+    records: [signoff.signature]
+  signoff.reauth:
+    package: aqt-signoff
+    description: Re-authentication (passphrase) at every signing; failed attempts recorded
+    records: [signoff.auth.failed]
+  signoff.invalidation:
+    package: aqt-signoff
+    description: A signature visibly stops applying when the signed content changes or is withdrawn
+    records: [signoff.invalidation]
+  signoff.identity:
+    package: aqt-signoff
+    description: Unique, never reused signer IDs; key enrolment, revocation and compromise dates
+    records: [signoff.key.enrolled, signoff.key.revoked]
+  signoff.policy:
+    package: aqt-signoff
+    description: Signature policy per meaning (roles, minimum signatures, author differs from approver)
+    records: [signoff.signature]
+  signoff.approved-actions:
+    package: aqt-signoff
+    description: Prepare, approve exact hash, claim once, record outcome; unknown outcomes never retried
+    records: [signoff.action.prepared, signoff.action.approved, signoff.action.rejected, signoff.action.claimed, signoff.action.outcome]
+  # aqt-change
+  change.plan-ledger:
+    package: aqt-change
+    description: Hash-reconciled plans; unreconciled edits block finish
+    records: [change.plan.reconciled]
+  change.receipts:
+    package: aqt-change
+    description: Runner-captured verification receipts with staleness and anti-gaming warnings
+    records: [change.receipt]
+  change.finish:
+    package: aqt-change
+    description: Finish gate requiring fresh passing receipts; scoped commit with trailers
+    records: [change.finish]
+  change.review:
+    package: aqt-change
+    description: Review records with reviewer independence class and verdict bound to the diff hash
+    records: [change.review]
+  change.reconcile-diff:
+    package: aqt-change
+    description: Approved-versus-actual comparison of declared paths and the real diff
+    records: [change.reconciliation]
+  change.trace-report:
+    package: aqt-change
+    description: Trace report from requirement and task to commits, receipts, reviews and sign-off; gate JSON
+    records: []
+  # aqt-sensei
+  sensei.read-only-advisor:
+    package: aqt-sensei
+    description: Advisor agent of any vendor in an OS sandbox that cannot change the project
+    records: [sensei.pair]
+  sensei.advice-ledger:
+    package: aqt-sensei
+    description: Every consultation on record (content hash and excerpt) with owner decisions
+    records: [sensei.message, sensei.decision]
+  sensei.owner-control:
+    package: aqt-sensei
+    description: Owner modes (manual, confirm, auto) and budgets; authenticated owner operations
+    records: [sensei.budget, sensei.decision]
+  # aqt-quarantine
+  quarantine.hold:
+    package: aqt-quarantine
+    description: Untrusted inputs scored and held in risk bands; content withheld until a decision
+    records: [quarantine.passed, quarantine.held]
+  quarantine.release:
+    package: aqt-quarantine
+    description: Release, trusted source and declared threat decided by a responsible person with a reason
+    records: [quarantine.released, quarantine.source.trusted, quarantine.threat.declared, quarantine.delivered]
+  quarantine.cases:
+    package: aqt-quarantine
+    description: Case files with evidence spans, detector and threshold versions and decision history
+    records: []
+  quarantine.self-trust-guard:
+    package: aqt-quarantine
+    description: Decisions refused when run from an agent session; refusals recorded
+    records: [quarantine.refused]
+  # aqt-validate
+  validate.detector:
+    package: aqt-validate
+    description: Detector validation with calibrated thresholds and exact binomial confidence bounds
+    records: [validate.run, validate.report]
+  validate.reviewer:
+    package: aqt-validate
+    description: AI reviewer qualification on seeded defects with detection, false alarms and repeatability
+    records: [validate.run, validate.report]
+  validate.protocol-lock:
+    package: aqt-validate
+    description: Acceptance criteria fixed and hashed before the run
+    records: [validate.run]
+  validate.qualification:
+    package: aqt-validate
+    description: Human qualification decision with validity period and requalification triggers
+    records: [validate.qualification, validate.requalification]
+  # aqt-capa
+  capa.intake:
+    package: aqt-capa
+    description: Deviations recorded by hand or accepted from evidence-based candidates
+    records: [capa.deviation]
+  capa.investigation:
+    package: aqt-capa
+    description: Structured root-cause investigation (5 Whys, Ishikawa categories) with evidence links
+    records: [capa.investigation]
+  capa.action:
+    package: aqt-capa
+    description: Corrective and preventive changes to agent controls with before/after hashes and approval
+    records: [capa.action]
+  capa.effectiveness:
+    package: aqt-capa
+    description: Effectiveness criteria evaluated from evidence; closure only when effective or justified
+    records: [capa.effectiveness, capa.closure]
+  capa.trends:
+    package: aqt-capa
+    description: Trend review of deviations and CAPAs for management review
+    records: []

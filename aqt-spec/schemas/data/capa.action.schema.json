@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:capa.action",
+  "title": "capa.action data",
+  "description": "Corrective or preventive change to an agent control",
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "before_sha256": {
+          "anyOf": [
+            {
+              "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "after_sha256": {
+          "anyOf": [
+            {
+              "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "before_sha256",
+        "after_sha256"
+      ]
+    },
+    "effectiveness_criterion": {
+      "type": [
+        "object",
+        "string"
+      ]
+    },
+    "action_id": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "target",
+    "effectiveness_criterion"
+  ]
+}

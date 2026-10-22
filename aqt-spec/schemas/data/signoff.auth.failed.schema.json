@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:signoff.auth.failed",
+  "title": "signoff.auth.failed data",
+  "description": "Failed re-authentication",
+  "type": "object",
+  "properties": {
+    "signer": {
+      "type": "string"
+    },
+    "operation": {
+      "type": "string"
+    },
+    "count": {
+      "type": "integer"
+    }
+  }
+}

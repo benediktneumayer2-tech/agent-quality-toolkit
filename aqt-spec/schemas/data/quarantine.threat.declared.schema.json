@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:quarantine.threat.declared",
+  "title": "quarantine.threat.declared data",
+  "description": "Held input declared a threat",
+  "type": "object",
+  "properties": {
+    "case_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "band": {
+      "type": "string",
+      "minLength": 1
+    },
+    "score_ppm": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/ppm"
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "tool": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "domain": {
+          "type": "string"
+        }
+      }
+    },
+    "reached_model": {
+      "type": "boolean"
+    },
+    "signature": {
+      "$ref": "urn:aqt:schema:0.1:signature"
+    }
+  },
+  "required": [
+    "case_id",
+    "band",
+    "score_ppm",
+    "source"
+  ]
+}

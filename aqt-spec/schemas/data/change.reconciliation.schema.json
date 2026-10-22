@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:change.reconciliation",
+  "title": "change.reconciliation data",
+  "description": "Approved-versus-actual diff reconciliation",
+  "type": "object",
+  "properties": {
+    "plan_id": {
+      "type": "string"
+    },
+    "base_commit": {
+      "type": "string"
+    },
+    "declared_paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "changed": {
+      "type": "array"
+    },
+    "unapproved": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "missing_evidence": {
+      "type": "array"
+    },
+    "result": {
+      "enum": [
+        "clean",
+        "findings"
+      ]
+    }
+  }
+}

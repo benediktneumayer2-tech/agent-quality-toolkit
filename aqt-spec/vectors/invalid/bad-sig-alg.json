@@ -1,0 +1,33 @@
+{
+  "name": "bad-sig-alg",
+  "category": "invalid",
+  "kind": "record",
+  "description": "sig entries use alg ed25519.",
+  "input": {
+    "aqt": "0.1",
+    "id": "rec_019a0f3c2b00000000000000000f",
+    "type": "trail.event",
+    "time": "2026-10-21T12:00:15.000000Z",
+    "actor": {
+      "kind": "agent",
+      "id": "agent:claude-code:s-0001",
+      "agent": {
+        "harness": "claude-code",
+        "model": "example-model",
+        "session": "s-0001"
+      }
+    },
+    "action": "step-15",
+    "sig": [
+      {
+        "alg": "rsa",
+        "key": "k",
+        "value": "v"
+      }
+    ]
+  },
+  "expect": {
+    "valid": false,
+    "schema_valid": false
+  }
+}

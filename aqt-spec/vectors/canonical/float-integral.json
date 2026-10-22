@@ -1,0 +1,10 @@
+{
+  "name": "float-integral",
+  "category": "canonical",
+  "kind": "canonical",
+  "description": "1.0 is a float in the JSON text and is refused, although its value is integral.",
+  "input_text": "{\"score\": 1.0}",
+  "expect": {
+    "error": true
+  }
+}

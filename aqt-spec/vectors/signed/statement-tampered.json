@@ -1,0 +1,39 @@
+{
+  "name": "statement-tampered",
+  "category": "signed",
+  "kind": "statement",
+  "description": "The meaning inside the statement was changed after signing.",
+  "pinned_keys": [
+    "rfc8032-test1"
+  ],
+  "input": {
+    "signature": {
+      "statement": {
+        "aqt_signature": "0.1",
+        "signer": {
+          "id": "human:alice",
+          "name": "Alice Example",
+          "role": "quality-manager"
+        },
+        "key": "ed25519:21fe31dfa154a261",
+        "meaning": "released",
+        "reason": "Receipts and review checked",
+        "signed_at": "2026-10-21T12:00:55.000000Z",
+        "tz": "Europe/Vienna",
+        "record_type": "change.finish",
+        "subject": {
+          "kind": "record",
+          "ref": "rec_019a0f3c2b000000000000000032",
+          "sha256": "sha256:2d61838d09f460e3f4a65f79094f5c15bfbcca2c6d69c99ef90340bc22bc7706"
+        },
+        "nonce": "0123456789abcdef"
+      },
+      "alg": "ed25519",
+      "key": "ed25519:21fe31dfa154a261",
+      "value": "rE/d3pReit4R1Bhkh7dXFZ3RV9ANow86gg/uCsK9IuPgj7uCccjPDt2qc8r6t5lSUG+8C2bg9uAW1EwsmrqtBA=="
+    }
+  },
+  "expect": {
+    "valid": false
+  }
+}

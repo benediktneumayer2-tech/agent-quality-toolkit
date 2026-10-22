@@ -1,0 +1,12 @@
+{
+  "name": "integer-bounds",
+  "category": "canonical",
+  "kind": "canonical",
+  "description": "Integers up to +/-(2^53-1) are allowed and written in plain decimal.",
+  "input_text": "{\"max\": 9007199254740991, \"min\": -9007199254740991, \"zero\": 0, \"neg\": -1}",
+  "expect": {
+    "error": false,
+    "canonical": "{\"max\":9007199254740991,\"min\":-9007199254740991,\"neg\":-1,\"zero\":0}",
+    "sha256": "sha256:38ce4603e38371a2b56876246a87339d03f1bcc9d8022c2527ca0f204fd77a8e"
+  }
+}

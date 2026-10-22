@@ -1,0 +1,14 @@
+aqt-change
+Copyright 2026 Benedikt Neumayer
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Parts of the plan reconciliation rules (identity and lifecycle protection, append-only
+event history, editorial/semantic classification), the Markdown task and event patterns,
+the sprint template and the idempotent finish phase machine are derived from the author's
+private Project Tracker Next (part of the private Agent Platform Next). Private paths,
+hosts and data were removed.
+
+Ideas (no code) were taken from: dunnit (MIT; anti-gaming diff checks), BMAD TEA (MIT;
+gate decision separated from waivers), OpenSpec (MIT; ADDED/MODIFIED/REMOVED item diff
+vocabulary) and the Claude Code hook protocol (host documentation).

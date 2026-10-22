@@ -1,0 +1,37 @@
+# aqt-quarantine example configuration.
+# Copy to $XDG_CONFIG_HOME/aqt/quarantine.toml (usually ~/.config/aqt/quarantine.toml).
+# Every value shown is the default unless marked "example".
+
+tz = "UTC"                              # example: "Europe/Vienna"; recorded with every record
+
+[paths]
+# state_dir  = "~/.local/state/aqt/quarantine"   # journal, outbox, case files (also AQT_QUARANTINE_STATE)
+# registry   = "~/.config/aqt/signers.json"      # signer registry shared with aqt-signoff (also AQT_SIGNERS)
+# keys       = "~/.config/aqt/keys"              # <signer-id-slug>.key / .pub (also AQT_KEYS_DIR)
+# sink       = "unix:~/.local/state/aqt/trail/trail.sock"   # evidence sink (also AQT_SINK)
+# thresholds = "~/.config/aqt/thresholds.json"   # from aqt-validate (also AQT_QUARANTINE_THRESHOLDS)
+
+[policy]
+max_scan_chars = 2000000                # larger results are held, never partly scanned
+record_passes = true                    # write quarantine.passed for every pass
+trusted_source_policy = "downgrade"     # "downgrade" one band, or "pass"
+require_signed_decisions = true         # hooks honour only decisions signed by a registered key
+# responsible = ["human:alex"]          # example: who may decide; empty = every registered signer
+
+[[detectors]]
+kind = "heuristics"                     # built-in
+
+# Example: a local ONNX export of a transformer detector (needs the [hf] extra).
+# [[detectors]]
+# kind = "onnx"
+# name = "horizon"                      # must match the detector id in the thresholds file
+# model_dir = "~/models/prompt-injection-guard-base-onnx"
+# positive_index = 1                    # logit index of the "injection" label (see the model card)
+# window_tokens = 512
+# stride_tokens = 128
+
+[claude_code]
+tools = ["WebFetch", "WebSearch", "mcp__.*"]   # regexes; keep the settings.json matcher in step
+wrap_min_chars = 80
+deliver_max_chars = 9000                # larger releases are delivered as a pointer
+# metadata_keys = ["url", "query", "tool_use_id", "codeText", "type", "mimeType", "uri", "id", "name"]

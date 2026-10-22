@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aqt-spec"
+version = "0.1.0"
+description = "Agent Quality Toolkit evidence records: specification, JSON Schemas, conformance vectors, GxP catalogues and the reference library"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0 AND CC-BY-4.0"
+authors = [{ name = "Benedikt Neumayer" }]
+dependencies = ["cryptography>=41"]
+
+[project.optional-dependencies]
+schema = ["jsonschema>=4.18"]
+test = ["pytest>=8", "jsonschema>=4.18", "pyyaml>=6"]
+
+[project.scripts]
+aqt-evidence = "aqt_evidence.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aqt_evidence"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"schemas" = "aqt_evidence/_data/schemas"
+"vectors" = "aqt_evidence/_data/vectors"
+"catalogues/catalogues.json" = "aqt_evidence/_data/catalogues.json"
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "schemas", "vectors", "catalogues", "spec", "scripts", "tests", "docs", "examples",
+           "crosswalk.md", "README.md", "Design.md", "CHANGELOG.md", "NOTICE", "LICENSE"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

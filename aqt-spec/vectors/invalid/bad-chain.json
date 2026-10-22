@@ -1,0 +1,30 @@
+{
+  "name": "bad-chain",
+  "category": "invalid",
+  "kind": "record",
+  "description": "chain.seq is an integer.",
+  "input": {
+    "aqt": "0.1",
+    "id": "rec_019a0f3c2b00000000000000000e",
+    "type": "trail.event",
+    "time": "2026-10-21T12:00:14.000000Z",
+    "actor": {
+      "kind": "agent",
+      "id": "agent:claude-code:s-0001",
+      "agent": {
+        "harness": "claude-code",
+        "model": "example-model",
+        "session": "s-0001"
+      }
+    },
+    "action": "step-14",
+    "chain": {
+      "seq": "0",
+      "prev": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  "expect": {
+    "valid": false,
+    "schema_valid": false
+  }
+}

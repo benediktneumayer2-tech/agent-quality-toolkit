@@ -1,0 +1,36 @@
+catalogue: ichq10
+title: ICH Q10 Pharmaceutical Quality System (elements used by AQT)
+licence: CC-BY-4.0
+source:
+  document: ICH Harmonised Tripartite Guideline Q10, Pharmaceutical Quality System
+  version: Step 4, 4 June 2008
+  status: guidance in force
+  consulted: "2026-10-22"
+  basis: "Checked against https://database.ich.org/sites/default/files/Q10%20Guideline.pdf (ICH). Paraphrased in own words."
+items:
+  - id: ichq10:3.2.2
+    clause: "3.2.2"
+    title: Corrective action and preventive action (CAPA) system
+    paraphrase: A CAPA system implements corrective and preventive actions from investigations of complaints, rejections, nonconformances, recalls, deviations, audits, inspections and monitoring trends, using a structured, risk-proportionate root-cause approach. In commercial manufacturing the effectiveness of the actions is evaluated.
+    supported_by: [capa.intake, capa.investigation, capa.action, capa.effectiveness]
+    verified: true
+  - id: ichq10:3.2.3
+    clause: "3.2.3"
+    title: Change management system
+    paraphrase: Proposed changes are evaluated with quality risk management by experts from the relevant areas, against prospective criteria and the marketing authorisation. After implementation the change is evaluated to confirm its objectives were met without harm to product quality.
+    supported_by: [change.plan-ledger, change.review, change.reconcile-diff, signoff.signature]
+    verified: true
+  - id: ichq10:3.2.4
+    clause: "3.2.4"
+    title: Management review of process performance and product quality
+    paraphrase: Management review covers inspection and audit results, periodic quality reviews (complaints, recalls, monitoring conclusions, effectiveness of changes and CAPA) and earlier follow-ups, and identifies improvement actions.
+    supported_by: [capa.trends]
+    user_must: Hold the reviews and record decisions.
+    verified: true
+  - id: ichq10:4.1
+    clause: "4.1"
+    title: Management review of the pharmaceutical quality system
+    paraphrase: Management has a formal process to review the pharmaceutical quality system periodically, measuring achievement of its objectives and assessing performance indicators such as complaint, deviation, CAPA and change management processes.
+    supported_by: [capa.trends, trail.review]
+    user_must: Include the agent controls in the periodic review.
+    verified: true

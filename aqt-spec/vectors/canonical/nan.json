@@ -1,0 +1,10 @@
+{
+  "name": "nan",
+  "category": "canonical",
+  "kind": "canonical",
+  "description": "NaN and Infinity are not JSON.",
+  "input_text": "{\"n\": NaN}",
+  "expect": {
+    "error": true
+  }
+}

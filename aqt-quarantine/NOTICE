@@ -1,0 +1,13 @@
+aqt-quarantine
+Copyright 2026 Benedikt Neumayer
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Parts of this package are derived from the author's private Agent Platform Next
+(its pi-omni web guard, injection classifier evidence format and web-safety
+helpers): the untrusted-content wrapping, the fail-closed withhold decision, the
+three owner decisions and the owner-only file opening were rebuilt or adapted
+for this package, with all private paths, names and tool lists removed.
+
+The quarantine-and-release flow is informed by Trail of Bits'
+mcp-context-protector (Apache-2.0); no code was copied from it.

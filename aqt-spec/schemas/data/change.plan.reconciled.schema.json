@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:change.plan.reconciled",
+  "title": "change.plan.reconciled data",
+  "description": "Plan baseline or reconciled plan edit",
+  "type": "object",
+  "properties": {
+    "plan_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "path": {
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "baseline",
+        "editorial",
+        "semantic"
+      ]
+    },
+    "status": {
+      "type": "string"
+    },
+    "basis_before": {
+      "type": "string"
+    },
+    "basis_after": {
+      "type": "string"
+    },
+    "items": {
+      "type": "object",
+      "properties": {
+        "added": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "removed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "changed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "plan_id",
+    "kind"
+  ]
+}

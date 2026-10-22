@@ -1,0 +1,29 @@
+{
+  "name": "subject-without-ref",
+  "category": "invalid",
+  "kind": "record",
+  "description": "subject needs kind and ref.",
+  "input": {
+    "aqt": "0.1",
+    "id": "rec_019a0f3c2b00000000000000000c",
+    "type": "trail.event",
+    "time": "2026-10-21T12:00:12.000000Z",
+    "actor": {
+      "kind": "agent",
+      "id": "agent:claude-code:s-0001",
+      "agent": {
+        "harness": "claude-code",
+        "model": "example-model",
+        "session": "s-0001"
+      }
+    },
+    "action": "step-12",
+    "subject": {
+      "kind": "file"
+    }
+  },
+  "expect": {
+    "valid": false,
+    "schema_valid": false
+  }
+}

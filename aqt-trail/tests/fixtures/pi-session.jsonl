@@ -1,0 +1,6 @@
+{"type":"session","version":3,"id":"pi-session-0001","timestamp":"2026-10-20T11:00:00.000Z","cwd":"/work/example-project"}
+{"type":"model_change","id":"e1","parentId":null,"provider":"example-provider","modelId":"example-pi-model","timestamp":"2026-10-20T11:00:01.000Z"}
+{"type":"message","id":"e2","parentId":"e1","timestamp":"2026-10-20T11:00:02.000Z","message":{"role":"user","content":[{"type":"text","text":"List the open tasks"}]}}
+{"type":"message","id":"e3","parentId":"e2","timestamp":"2026-10-20T11:00:03.000Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"..."},{"type":"text","text":"Reading the plan."},{"type":"toolCall","id":"c1","name":"read","arguments":{"path":"PLAN.md"}}]}}
+{"type":"message","id":"e4","parentId":"e3","timestamp":"2026-10-20T11:00:04.000Z","message":{"role":"toolResult","toolCallId":"c1","toolName":"read","isError":false,"content":[{"type":"text","text":"- [ ] T01"}]}}
+{"type":"compaction","id":"e5","parentId":"e4","summary":"...","firstKeptEntryId":"e3","tokensBefore":500,"timestamp":"2026-10-20T11:10:00.000Z"}

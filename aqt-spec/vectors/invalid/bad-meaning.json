@@ -1,0 +1,27 @@
+{
+  "name": "bad-meaning",
+  "category": "invalid",
+  "kind": "record",
+  "description": "meaning comes from the fixed vocabulary.",
+  "input": {
+    "aqt": "0.1",
+    "id": "rec_019a0f3c2b00000000000000000a",
+    "type": "trail.event",
+    "time": "2026-10-21T12:00:10.000000Z",
+    "actor": {
+      "kind": "agent",
+      "id": "agent:claude-code:s-0001",
+      "agent": {
+        "harness": "claude-code",
+        "model": "example-model",
+        "session": "s-0001"
+      }
+    },
+    "action": "step-10",
+    "meaning": "liked"
+  },
+  "expect": {
+    "valid": false,
+    "schema_valid": false
+  }
+}

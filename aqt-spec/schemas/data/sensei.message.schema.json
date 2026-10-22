@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:sensei.message",
+  "title": "sensei.message data",
+  "description": "Message between worker and advisor (hash + excerpt)",
+  "type": "object",
+  "properties": {
+    "pair": {
+      "type": "string"
+    },
+    "message": {
+      "type": "string"
+    },
+    "excerpt": {
+      "type": "string"
+    },
+    "digest_sha256": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+    },
+    "rendered_sha256": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+    },
+    "peer": {
+      "$ref": "urn:aqt:schema:0.1:observed"
+    }
+  }
+}

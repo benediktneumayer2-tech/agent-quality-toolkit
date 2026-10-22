@@ -1,0 +1,10 @@
+{
+  "name": "exponent",
+  "category": "canonical",
+  "kind": "canonical",
+  "description": "Exponent notation is a float.",
+  "input_text": "{\"n\": 1e2}",
+  "expect": {
+    "error": true
+  }
+}

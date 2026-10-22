@@ -1,0 +1,9 @@
+aqt-capa — part of the Agent Quality Toolkit
+Copyright 2026 Benedikt Neumayer
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Concepts (human-gated triage, "no reopening, linked follow-up") are derived from
+the author's private Agent Platform Next and Project Tracker Next; no code was
+copied. Ideas, not code, were taken from Foreman (MIT), OCA management-system
+(AGPL-3.0; ideas only) and pharma-investigation-platform (MIT).

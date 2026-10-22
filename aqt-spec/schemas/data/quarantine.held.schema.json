@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:quarantine.held",
+  "title": "quarantine.held data",
+  "description": "Untrusted input held in quarantine",
+  "type": "object",
+  "properties": {
+    "case_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "band": {
+      "type": "string",
+      "minLength": 1
+    },
+    "score_ppm": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/ppm"
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "tool": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "domain": {
+          "type": "string"
+        }
+      }
+    },
+    "reason_code": {
+      "type": "string"
+    },
+    "evidence": {
+      "type": "array"
+    },
+    "original": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "case_id",
+    "band",
+    "score_ppm",
+    "source"
+  ]
+}

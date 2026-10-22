@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:validate.report",
+  "title": "validate.report data",
+  "description": "Validation report",
+  "type": "object",
+  "properties": {
+    "run": {
+      "type": "string"
+    },
+    "conclusion": {
+      "enum": [
+        "meets",
+        "does-not-meet",
+        "inconclusive"
+      ]
+    },
+    "criteria": {
+      "type": "array"
+    },
+    "deviations": {
+      "type": "array"
+    },
+    "thresholds_sha256": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+    }
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:change.review",
+  "title": "change.review data",
+  "description": "Review record with reviewer independence class",
+  "type": "object",
+  "properties": {
+    "verdict": {
+      "enum": [
+        "PASS",
+        "CONCERNS",
+        "FAIL",
+        "WAIVED"
+      ]
+    },
+    "independence": {
+      "enum": [
+        "same-session",
+        "fresh-context",
+        "different-model",
+        "human"
+      ]
+    },
+    "diff_sha256": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "plan_id": {
+      "type": "string"
+    },
+    "reviewer": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "verdict",
+    "independence",
+    "diff_sha256",
+    "findings"
+  ]
+}

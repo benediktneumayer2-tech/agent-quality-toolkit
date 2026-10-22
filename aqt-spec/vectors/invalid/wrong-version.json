@@ -1,0 +1,26 @@
+{
+  "name": "wrong-version",
+  "category": "invalid",
+  "kind": "record",
+  "description": "aqt must be \"0.1\".",
+  "input": {
+    "aqt": "0.2",
+    "id": "rec_019a0f3c2b000000000000000004",
+    "type": "trail.event",
+    "time": "2026-10-21T12:00:04.000000Z",
+    "actor": {
+      "kind": "agent",
+      "id": "agent:claude-code:s-0001",
+      "agent": {
+        "harness": "claude-code",
+        "model": "example-model",
+        "session": "s-0001"
+      }
+    },
+    "action": "step-4"
+  },
+  "expect": {
+    "valid": false,
+    "schema_valid": false
+  }
+}

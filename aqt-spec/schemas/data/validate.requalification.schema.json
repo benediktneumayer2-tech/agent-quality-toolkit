@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:validate.requalification",
+  "title": "validate.requalification data",
+  "description": "Requalification trigger fired",
+  "type": "object",
+  "properties": {
+    "configuration_hash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "valid_until": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/time"
+    },
+    "trigger": {
+      "type": "string",
+      "minLength": 1
+    },
+    "qualification": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "configuration_hash",
+    "valid_until",
+    "trigger"
+  ]
+}

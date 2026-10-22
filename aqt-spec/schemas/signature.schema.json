@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:signature",
+  "title": "Detached signed statement (data.signature)",
+  "description": "Ed25519 over canonical_json(statement). Used by aqt-signoff and by every tool that signs a human decision.",
+  "type": "object",
+  "properties": {
+    "statement": {
+      "type": "object",
+      "properties": {
+        "aqt_signature": {
+          "const": "0.1"
+        },
+        "signer": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "role": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ]
+        },
+        "key": {
+          "$ref": "urn:aqt:schema:0.1:common#/$defs/key_id"
+        },
+        "meaning": {
+          "$ref": "urn:aqt:schema:0.1:common#/$defs/meaning"
+        },
+        "reason": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "signed_at": {
+          "$ref": "urn:aqt:schema:0.1:common#/$defs/time"
+        },
+        "tz": {
+          "type": "string",
+          "minLength": 1
+        },
+        "subject": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ref": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sha256": {
+              "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+            }
+          },
+          "required": [
+            "kind",
+            "ref",
+            "sha256"
+          ]
+        },
+        "record_type": {
+          "type": "string"
+        },
+        "nonce": {
+          "type": "string"
+        },
+        "expires_at": {
+          "$ref": "urn:aqt:schema:0.1:common#/$defs/time"
+        }
+      },
+      "required": [
+        "aqt_signature",
+        "signer",
+        "key",
+        "meaning",
+        "signed_at",
+        "subject"
+      ]
+    },
+    "alg": {
+      "const": "ed25519"
+    },
+    "key": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/key_id"
+    },
+    "value": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "statement",
+    "alg",
+    "key",
+    "value"
+  ]
+}

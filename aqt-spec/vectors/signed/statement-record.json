@@ -1,0 +1,105 @@
+{
+  "name": "statement-record",
+  "category": "signed",
+  "kind": "statement",
+  "description": "A detached signed statement over a record's content hash (record_content_hash excludes sig, chain, observed and time), so it still matches after the trail stored it.",
+  "pinned_keys": [
+    "rfc8032-test1"
+  ],
+  "input": {
+    "signature": {
+      "statement": {
+        "aqt_signature": "0.1",
+        "signer": {
+          "id": "human:alice",
+          "name": "Alice Example",
+          "role": "quality-manager"
+        },
+        "key": "ed25519:21fe31dfa154a261",
+        "meaning": "approved",
+        "reason": "Receipts and review checked",
+        "signed_at": "2026-10-21T12:00:55.000000Z",
+        "tz": "Europe/Vienna",
+        "record_type": "change.finish",
+        "subject": {
+          "kind": "record",
+          "ref": "rec_019a0f3c2b000000000000000032",
+          "sha256": "sha256:2d61838d09f460e3f4a65f79094f5c15bfbcca2c6d69c99ef90340bc22bc7706"
+        },
+        "nonce": "0123456789abcdef"
+      },
+      "alg": "ed25519",
+      "key": "ed25519:21fe31dfa154a261",
+      "value": "rE/d3pReit4R1Bhkh7dXFZ3RV9ANow86gg/uCsK9IuPgj7uCccjPDt2qc8r6t5lSUG+8C2bg9uAW1EwsmrqtBA=="
+    },
+    "target": {
+      "aqt": "0.1",
+      "id": "rec_019a0f3c2b000000000000000032",
+      "type": "change.finish",
+      "time": "2026-10-21T12:00:50.000000Z",
+      "actor": {
+        "kind": "agent",
+        "id": "agent:claude-code:s-0001",
+        "agent": {
+          "harness": "claude-code",
+          "model": "example-model",
+          "session": "s-0001"
+        }
+      },
+      "action": "step-50",
+      "data": {
+        "plan_ref": "plan-1",
+        "receipts": [
+          "rec_019a0f3c2b000000000000000031"
+        ],
+        "waivers": [],
+        "gate": "GO"
+      }
+    },
+    "stored_target": {
+      "aqt": "0.1",
+      "id": "rec_019a0f3c2b000000000000000032",
+      "type": "change.finish",
+      "time": "2026-10-21T12:00:51.000000Z",
+      "actor": {
+        "kind": "agent",
+        "id": "agent:claude-code:s-0001",
+        "agent": {
+          "harness": "claude-code",
+          "model": "example-model",
+          "session": "s-0001"
+        }
+      },
+      "action": "step-50",
+      "data": {
+        "plan_ref": "plan-1",
+        "receipts": [
+          "rec_019a0f3c2b000000000000000031"
+        ],
+        "waivers": [],
+        "gate": "GO"
+      },
+      "observed": {
+        "pid": 7,
+        "uid": 1000,
+        "via": "socket"
+      },
+      "chain": {
+        "seq": 12,
+        "prev": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "sig": [
+        {
+          "alg": "ed25519",
+          "key": "ed25519:21fe31dfa154a261",
+          "value": "XDJUQgwMO+zU3NpImuXA6cNNljptM8jCK6UY0MwoHgMt6y17r8ZRDzA9Mh1k0vzgEgzib8wYygNa49d8ARrkBw=="
+        }
+      ]
+    }
+  },
+  "expect": {
+    "valid": true,
+    "target_matches": true,
+    "stored_target_matches": true
+  }
+}

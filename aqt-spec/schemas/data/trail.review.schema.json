@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:trail.review",
+  "title": "trail.review data",
+  "description": "Signed audit-trail review",
+  "type": "object",
+  "properties": {
+    "head": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+    },
+    "scope": {
+      "type": "object"
+    },
+    "profile": {
+      "type": "string"
+    },
+    "profile_sha256": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+    },
+    "worksheet_sha256": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+    },
+    "actors_reviewed": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "conclusion": {
+      "type": "string"
+    },
+    "signature": {
+      "$ref": "urn:aqt:schema:0.1:signature"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1
+          },
+          "severity": {
+            "type": "string",
+            "minLength": 1
+          },
+          "record_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "disposition": {
+            "enum": [
+              "ok",
+              "explained",
+              "deviation"
+            ]
+          }
+        },
+        "required": [
+          "query",
+          "severity",
+          "record_ids",
+          "disposition"
+        ]
+      }
+    }
+  },
+  "required": [
+    "findings",
+    "head"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "key-order",
+  "category": "canonical",
+  "kind": "canonical",
+  "description": "Object keys are sorted by code point at every level; whitespace is removed.",
+  "input_text": "{ \"b\": 1, \"a\": 2, \"c\": { \"z\": true, \"y\": null } }",
+  "expect": {
+    "error": false,
+    "canonical": "{\"a\":2,\"b\":1,\"c\":{\"y\":null,\"z\":true}}",
+    "sha256": "sha256:e238c7551aeab3a4d63763242b13268386f4975976255faf6cd722430bbe8800"
+  }
+}

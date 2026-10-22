@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:common",
+  "title": "AQT common definitions",
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "time": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$"
+    },
+    "record_id": {
+      "type": "string",
+      "pattern": "^rec_[0-9a-f]{28}$"
+    },
+    "key_id": {
+      "type": "string",
+      "pattern": "^ed25519:[0-9a-f]{16}$"
+    },
+    "ppm": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000
+    },
+    "safe_integer": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "meaning": {
+      "enum": [
+        "authored",
+        "reviewed",
+        "approved",
+        "released",
+        "rejected",
+        "verified",
+        "waived",
+        "acknowledged"
+      ]
+    },
+    "ed25519_sig": {
+      "type": "object",
+      "properties": {
+        "alg": {
+          "const": "ed25519"
+        },
+        "key": {
+          "$ref": "#/$defs/key_id"
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "alg",
+        "key",
+        "value"
+      ]
+    }
+  }
+}

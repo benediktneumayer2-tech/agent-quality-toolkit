@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:quarantine.released",
+  "title": "quarantine.released data",
+  "description": "Held input released by a responsible person",
+  "type": "object",
+  "properties": {
+    "case_id": {
+      "type": "string"
+    },
+    "content_sha256": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "signature": {
+      "$ref": "urn:aqt:schema:0.1:signature"
+    }
+  }
+}

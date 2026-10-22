@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:capa.closure",
+  "title": "capa.closure data",
+  "description": "CAPA closure",
+  "type": "object",
+  "properties": {
+    "dev_id": {
+      "type": "string"
+    },
+    "basis": {
+      "type": "string"
+    },
+    "actions": {
+      "type": "array"
+    }
+  }
+}

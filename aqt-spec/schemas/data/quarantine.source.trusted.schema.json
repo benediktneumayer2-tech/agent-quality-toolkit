@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:quarantine.source.trusted",
+  "title": "quarantine.source.trusted data",
+  "description": "Source trusted (or trust revoked) with expiry",
+  "type": "object",
+  "properties": {
+    "domain": {
+      "type": "string"
+    },
+    "subdomains": {
+      "type": "boolean"
+    },
+    "expires": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/time"
+    },
+    "policy": {
+      "type": "string"
+    },
+    "signature": {
+      "$ref": "urn:aqt:schema:0.1:signature"
+    }
+  }
+}

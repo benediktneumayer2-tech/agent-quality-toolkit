@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:signers",
+  "title": "Signer registry ($XDG_CONFIG_HOME/aqt/signers.json)",
+  "type": "object",
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "signers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "type": "string"
+          },
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key_id": {
+                  "$ref": "urn:aqt:schema:0.1:common#/$defs/key_id"
+                },
+                "public_pem": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "enrolled_at": {
+                  "$ref": "urn:aqt:schema:0.1:common#/$defs/time"
+                },
+                "revoked_at": {
+                  "anyOf": [
+                    {
+                      "$ref": "urn:aqt:schema:0.1:common#/$defs/time"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "key_id",
+                "public_pem"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "keys"
+        ]
+      }
+    }
+  },
+  "required": [
+    "version",
+    "signers"
+  ]
+}

@@ -1,0 +1,16 @@
+aqt-trail — part of the Agent Quality Toolkit
+Copyright 2026 Benedikt Neumayer. Licensed under the Apache License, Version 2.0.
+
+Derived from the author's private Agent Platform Next:
+- the audit-trail concept (separate writer, peer attribution, hash chain with signatures,
+  external anchors, gap markers, ALCOA+ mapping) of its unbuilt sprint "Tamper-evident agent
+  audit trail", rebuilt here from the design;
+- the session-format knowledge of its native history readers for Claude Code, Codex and pi
+  (identity rules, record types, safe file reading), adapted and reduced to what evidence
+  records need.
+No private paths, hosts, names or data were copied. All test fixtures are synthetic.
+
+Runtime dependencies: aqt-spec (Apache-2.0), cryptography (Apache-2.0 OR BSD-3-Clause).
+Test-only: pytest (MIT), jsonschema (MIT).
+Ideas only, no code: RFC 3161 time-stamp handling as practised by eLabFTW (AGPL) and
+`openssl ts`; C2SP checkpoint and Rekor v2 log/TSA split (Apache-2.0).

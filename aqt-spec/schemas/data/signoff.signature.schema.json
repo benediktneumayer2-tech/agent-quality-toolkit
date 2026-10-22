@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:signoff.signature",
+  "title": "signoff.signature data",
+  "description": "Signature with meaning bound to a subject hash",
+  "type": "object",
+  "properties": {
+    "signature": {
+      "$ref": "urn:aqt:schema:0.1:signature"
+    },
+    "meaning": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/meaning"
+    },
+    "policy_check": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "signature",
+    "meaning"
+  ]
+}

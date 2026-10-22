@@ -1,0 +1,31 @@
+{
+  "name": "bad-subject-hash",
+  "category": "invalid",
+  "kind": "record",
+  "description": "sha256 values are sha256:<64 lower-case hex>.",
+  "input": {
+    "aqt": "0.1",
+    "id": "rec_019a0f3c2b00000000000000000d",
+    "type": "trail.event",
+    "time": "2026-10-21T12:00:13.000000Z",
+    "actor": {
+      "kind": "agent",
+      "id": "agent:claude-code:s-0001",
+      "agent": {
+        "harness": "claude-code",
+        "model": "example-model",
+        "session": "s-0001"
+      }
+    },
+    "action": "step-13",
+    "subject": {
+      "kind": "file",
+      "ref": "a",
+      "sha256": "md5:abc"
+    }
+  },
+  "expect": {
+    "valid": false,
+    "schema_valid": false
+  }
+}

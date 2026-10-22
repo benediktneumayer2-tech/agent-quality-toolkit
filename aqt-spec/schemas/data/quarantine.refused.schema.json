@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:quarantine.refused",
+  "title": "quarantine.refused data",
+  "description": "Refused attempt (typically by an agent)",
+  "type": "object",
+  "properties": {
+    "attempted_action": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reason_code": {
+      "type": "string",
+      "minLength": 1
+    },
+    "agent_markers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "attempted_action",
+    "reason_code",
+    "agent_markers"
+  ]
+}

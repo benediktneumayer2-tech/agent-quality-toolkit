@@ -1,0 +1,79 @@
+{
+  "name": "signature-tampered",
+  "category": "valid",
+  "kind": "record",
+  "description": "The envelope is still valid, but the signature no longer verifies (false).",
+  "pinned_keys": [
+    "rfc8032-test1"
+  ],
+  "input": {
+    "aqt": "0.1",
+    "id": "rec_019a0f3c2b000000000000000064",
+    "type": "signoff.signature",
+    "time": "2026-10-21T12:00:10.000000Z",
+    "tz": "Europe/Vienna",
+    "actor": {
+      "kind": "human",
+      "id": "human:alice",
+      "role": "quality-manager",
+      "display": "Alice Example"
+    },
+    "observed": {
+      "pid": 4242,
+      "uid": 1000,
+      "gid": 1000,
+      "process_chain": [
+        "aqt-signoff",
+        "bash"
+      ],
+      "harness": null,
+      "client_time": "2026-10-21T12:00:09.000000Z",
+      "via": "socket"
+    },
+    "action": "sign",
+    "subject": {
+      "kind": "file",
+      "ref": "docs/report.md",
+      "sha256": "sha256:abababababababababababababababababababababababababababababababab"
+    },
+    "before": {
+      "sha256": "sha256:0101010101010101010101010101010101010101010101010101010101010101"
+    },
+    "after": {
+      "sha256": "sha256:0202020202020202020202020202020202020202020202020202020202020202",
+      "value": "v2"
+    },
+    "reason": "changed after signing",
+    "meaning": "approved",
+    "links": [
+      {
+        "rel": "evidence",
+        "ref": "rec_019a0f3c2b000000000000000063"
+      }
+    ],
+    "data": {
+      "meaning": "approved",
+      "note": "Grüße"
+    },
+    "sig": [
+      {
+        "alg": "ed25519",
+        "key": "ed25519:21fe31dfa154a261",
+        "value": "xXqIuc9QPuEiL8KQZWR4BLy0v7WxaD+D21XGtt2QYcIszjlObKMtan6wTpP6GTxPS3UwjTMTiEvk1D/Ri9v0CQ=="
+      }
+    ]
+  },
+  "expect": {
+    "valid": true,
+    "schema_valid": true,
+    "record_hash": "sha256:defc406009201b4a94135f7119b82da4677347ea1340c3b336309e9500544985",
+    "content_hash": "sha256:45f1ab95a0bf26626d31c9453a736d89def24a4500279507e08978041210d6f4",
+    "canonical": "{\"action\":\"sign\",\"actor\":{\"display\":\"Alice Example\",\"id\":\"human:alice\",\"kind\":\"human\",\"role\":\"quality-manager\"},\"after\":{\"sha256\":\"sha256:0202020202020202020202020202020202020202020202020202020202020202\",\"value\":\"v2\"},\"aqt\":\"0.1\",\"before\":{\"sha256\":\"sha256:0101010101010101010101010101010101010101010101010101010101010101\"},\"data\":{\"meaning\":\"approved\",\"note\":\"Grüße\"},\"id\":\"rec_019a0f3c2b000000000000000064\",\"links\":[{\"ref\":\"rec_019a0f3c2b000000000000000063\",\"rel\":\"evidence\"}],\"meaning\":\"approved\",\"observed\":{\"client_time\":\"2026-10-21T12:00:09.000000Z\",\"gid\":1000,\"harness\":null,\"pid\":4242,\"process_chain\":[\"aqt-signoff\",\"bash\"],\"uid\":1000,\"via\":\"socket\"},\"reason\":\"changed after signing\",\"sig\":[{\"alg\":\"ed25519\",\"key\":\"ed25519:21fe31dfa154a261\",\"value\":\"xXqIuc9QPuEiL8KQZWR4BLy0v7WxaD+D21XGtt2QYcIszjlObKMtan6wTpP6GTxPS3UwjTMTiEvk1D/Ri9v0CQ==\"}],\"subject\":{\"kind\":\"file\",\"ref\":\"docs/report.md\",\"sha256\":\"sha256:abababababababababababababababababababababababababababababababab\"},\"time\":\"2026-10-21T12:00:10.000000Z\",\"type\":\"signoff.signature\",\"tz\":\"Europe/Vienna\"}",
+    "signatures": [
+      [
+        "ed25519:21fe31dfa154a261",
+        false
+      ]
+    ]
+  }
+}

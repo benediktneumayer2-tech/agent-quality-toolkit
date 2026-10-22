@@ -1,0 +1,17 @@
+{
+  "name": "missing-actor",
+  "category": "invalid",
+  "kind": "record",
+  "description": "actor is required.",
+  "input": {
+    "aqt": "0.1",
+    "id": "rec_019a0f3c2b000000000000000008",
+    "type": "trail.event",
+    "time": "2026-10-21T12:00:08.000000Z",
+    "action": "step-8"
+  },
+  "expect": {
+    "valid": false,
+    "schema_valid": false
+  }
+}

@@ -1,0 +1,150 @@
+catalogue: annex11-2025d
+title: EU GMP Annex 11 — Computerised Systems (revision draft 2025)
+licence: CC-BY-4.0
+source:
+  document: EudraLex Volume 4, Annex 11 Computerised Systems, revision drafted by the EMA GMDP Inspectors Working Group with PIC/S
+  version: draft for stakeholder consultation, 7 July – 7 October 2025
+  status: draft (not adopted as of 2026-10-22; the 2011 text is in force; numbering may change)
+  consulted: "2026-10-22"
+  basis: "Checked against the consultation draft https://health.ec.europa.eu/document/download/40231f18-e564-4043-94de-c031f813d38b_en?filename=mp_vol4_chap4_annex11_consultation_guideline_en.pdf. Paraphrased in own words; where an item groups clauses, its ID uses the first clause."
+items:
+  - id: annex11-2025d:2.4
+    clause: "2.4"
+    title: Data integrity
+    paraphrase: Data captured, analysed and reported by systems used in GMP activities must be trustworthy; data integrity, as defined by the ALCOA+ principles, spans data handling, identity and access management, audit trails, electronic signatures and security.
+    supported_by: [spec.envelope, trail.alcoa]
+    user_must: Apply the principles to your whole process, not only to the tools.
+    r3: [R-21]
+    verified: true
+  - id: annex11-2025d:3.1
+    clause: "3.1(i)-(ii)"
+    title: Deviations and changes in the quality system
+    paraphrase: All deviations are recorded and significant ones investigated for root cause and impact, with corrective and preventive actions whose effectiveness is verified. Changes, including configuration, hardware, software and platform, are controlled, and significant changes are subject to requalification and validation.
+    supported_by: [capa.intake, capa.investigation, capa.effectiveness, change.plan-ledger, validate.qualification]
+    user_must: Decide which deviations and changes are significant.
+    r3: [R-17, R-18]
+    verified: true
+  - id: annex11-2025d:6.1
+    clause: "6.1-6.5, 9.5"
+    title: Requirements and traceability
+    paraphrase: Approved system requirements describe the GMP functionality relied on, are kept current over the life cycle and are traceable to design specifications and test cases. Test cases that do not trace to a requirement or specification do not count as qualification or validation.
+    supported_by: [change.trace-report, change.plan-ledger]
+    user_must: Maintain requirement IDs and link them in plans.
+    r3: [R-14]
+    verified: true
+  - id: annex11-2025d:9.4
+    clause: "9.4, 9.7, 9.8"
+    title: Test evidence and approved plans
+    paraphrase: Qualification and validation follow approved plans, protocols and test scripts and give evidence as executed test scripts and, where relevant, screen captures. They are completed and reported before use, and a conditional approval needs a documented impact assessment stated in the validation report.
+    supported_by: [change.receipts, change.finish, validate.protocol-lock]
+    user_must: Approve plans before execution and keep screenshots where needed.
+    r3: [R-15]
+    verified: true
+  - id: annex11-2025d:11.1
+    clause: "11.1, 11.10, 11.11"
+    title: Personal accounts and segregation of duties
+    paraphrase: Every user has a unique personal account, and shared accounts are acceptable only for read-only access. Users involved in GMP activities hold no administrative privileges, privileges are the least necessary, and managers confirm access in documented recurrent reviews.
+    supported_by: [signoff.identity, spec.envelope, signoff.policy, sensei.read-only-advisor]
+    user_must: Give each agent session and each person its own identity; review access periodically.
+    r3: [R-08]
+    verified: true
+  - id: annex11-2025d:11.9
+    clause: "11.9"
+    title: Access log
+    paraphrase: An access log, separate or within the audit trail, automatically records the username, the role where several can be chosen, and login and logout times including inactivity logouts. It is sortable and searchable, or exportable to a tool that is.
+    supported_by: [trail.import]
+    user_must: Import session start and end events; host logins remain an OS matter.
+    r3: [R-07]
+    verified: true
+  - id: annex11-2025d:12.1
+    clause: "12.1"
+    title: Manual user interactions
+    paraphrase: Any system in which users create, change or delete data, settings or access rights, acknowledge alarms or sign electronically has an audit trail that logs every manual user interaction automatically.
+    supported_by: [trail.writer, trail.import, spec.envelope]
+    user_must: Connect every tool and hook that makes such changes to the trail.
+    r3: [R-01]
+    verified: true
+  - id: annex11-2025d:12.2
+    clause: "12.2"
+    title: Who, what, when, why
+    paraphrase: The audit trail captures who made a change (with role where users have several), what changed (with old and new value) and when (date, time and, where applicable, time zone), recorded at the time of the event. When a value changes, the system prompts for and registers the reason.
+    supported_by: [spec.envelope, trail.writer]
+    user_must: Require reasons in your tools' configuration where they are optional.
+    r3: [R-02, R-03]
+    verified: true
+  - id: annex11-2025d:12.3
+    clause: "12.3"
+    title: No edit or deactivation
+    paraphrase: Audit-trail functionality is always enabled and locked, and no user can edit audit-trail data. Changing audit-trail settings or system time, or deactivating the function, itself creates an entry and is possible only for a system administrator not involved in GMP activities.
+    supported_by: [trail.writer, spec.chain, spec.checkpoint, trail.anchor]
+    user_must: Run the writer as a separate user administered by someone who does not do the work being recorded.
+    r3: [R-04]
+    verified: true
+  - id: annex11-2025d:12.4
+    clause: "12.4"
+    title: Accommodate review
+    paraphrase: Systems support effective and efficient review; all users can sort and search audit-trail data by who, what, when and why in the system, or export it to a tool that can.
+    supported_by: [trail.verify-export, spec.conformance]
+    r3: [R-05]
+    verified: true
+  - id: annex11-2025d:12.5
+    clause: "12.5-12.8, 12.10"
+    title: Audit-trail review
+    paraphrase: Audit trails are reviewed under a documented procedure by people not directly involved, targeted by risk, in time for the decision (before batch release unless justified) and available to the QP at release. Review tools are encouraged, and significant variations are fully investigated and recorded.
+    supported_by: [trail.review, capa.intake]
+    user_must: Write the review procedure, set its frequency and assign independent reviewers.
+    r3: [R-06]
+    verified: true
+  - id: annex11-2025d:12.9
+    clause: "12.9"
+    title: Electronic copy
+    paraphrase: A complete electronic copy of system data, including audit-trail data, can be obtained; flat or locked files are not acceptable because the data must remain searchable and sortable.
+    supported_by: [trail.verify-export, spec.conformance]
+    r3: [R-05]
+    verified: true
+  - id: annex11-2025d:13.2
+    clause: "13.2"
+    title: Open systems
+    paraphrase: Where the system owner does not fully control system access (open systems), or other legislation requires it, electronic signatures also meet applicable national and international requirements such as trusted services.
+    supported_by: [trail.anchor]
+    user_must: Use qualified trust services where your context requires them.
+    r3: [R-12]
+    verified: true
+  - id: annex11-2025d:13.3
+    clause: "13.3-13.6"
+    title: Re-authentication, date and time, meaning and manifestation
+    paraphrase: Signing enforces a full re-authentication at least as strong as login (password or biometrics alone suffice for further signatures in immediate sequence), logs date, time and zone, and prompts for the meaning. The displayed or printed manifestation shows full name, username, role where applicable, meaning, and date and time of signing.
+    supported_by: [signoff.signature, signoff.reauth]
+    r3: [R-10]
+    verified: true
+  - id: annex11-2025d:13.8
+    clause: "13.8"
+    title: Unbreakable link
+    paraphrase: Electronic signatures are permanently linked to their records; a signed record either cannot be modified or, if changed later, clearly appears as unsigned.
+    supported_by: [spec.signature, signoff.invalidation]
+    r3: [R-11]
+    verified: true
+  - id: annex11-2025d:13.9
+    clause: "13.9"
+    title: Hybrid solution
+    paraphrase: If a wet-ink signature on paper signs an electronic record, measures give high certainty that any change to the record invalidates the signature, for example by printing the record's hash on the signature page.
+    supported_by: [signoff.signature, spec.canonical-hash]
+    user_must: Print the content hash on any paper signature page you still use.
+    r3: [R-13]
+    verified: true
+  - id: annex11-2025d:14.1
+    clause: "14.1-14.3"
+    title: Periodic reviews and unapproved changes
+    paraphrase: Periodic reviews confirm the system stays fit for intended use and validated; they cover changes since the last review, including identifying undocumented changes for example by configuration auditing, and follow up audits, CAPA, audit-trail and access reviews. Their frequency is risk-based and they run to plan.
+    supported_by: [change.reconcile-diff, trail.review, capa.trends]
+    user_must: Schedule periodic reviews and act on unapproved changes.
+    r3: [R-19]
+    verified: true
+  - id: annex11-2025d:16
+    clause: "16, 17"
+    title: Backup and archiving
+    paraphrase: Data and metadata are backed up regularly, kept physically and logically apart from the original, with documented restore tests; completed GMP data and audit trails are protected as read-only or archived. Moves are verified, for example by checksum, before deletion, and archived data stays retrievable in a searchable, sortable form.
+    supported_by: [spec.checkpoint, trail.verify-export, spec.canonical-hash]
+    user_must: Back up, archive and test restores.
+    r3: [R-20]
+    verified: true

@@ -1,0 +1,27 @@
+name: aqt-spec
+
+on:
+  push:
+    paths: ["aqt-spec/**"]
+  pull_request:
+    paths: ["aqt-spec/**"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    defaults:
+      run:
+        working-directory: aqt-spec
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: uv venv .venv --python ${{ matrix.python-version }}
+      - run: uv pip install --python .venv/bin/python -e ".[test]"
+      - run: .venv/bin/python -m pytest -q
+      - run: .venv/bin/aqt-evidence vectors

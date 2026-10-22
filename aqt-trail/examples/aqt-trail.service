@@ -1,0 +1,22 @@
+# Example systemd unit for separate-user mode (installed by scripts/setup-system-user.sh).
+[Unit]
+Description=aqt-trail audit-trail writer
+After=local-fs.target
+
+[Service]
+Type=simple
+User=aqt-trail
+Group=aqt-trail
+RuntimeDirectory=aqt-trail
+RuntimeDirectoryMode=0750
+Environment=XDG_CONFIG_HOME=/etc
+ExecStart=/usr/local/bin/aqt-trail serve --config /etc/aqt/trail.toml
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/aqt-trail
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

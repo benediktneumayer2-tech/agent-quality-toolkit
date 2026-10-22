@@ -1,0 +1,88 @@
+{
+  "name": "cosigned-unknown-key",
+  "category": "valid",
+  "kind": "record",
+  "description": "Two independent signatures; only TEST 1 is pinned, so TEST 2 reports unknown (null).",
+  "pinned_keys": [
+    "rfc8032-test1"
+  ],
+  "input": {
+    "aqt": "0.1",
+    "id": "rec_019a0f3c2b000000000000000064",
+    "type": "signoff.signature",
+    "time": "2026-10-21T12:00:10.000000Z",
+    "tz": "Europe/Vienna",
+    "actor": {
+      "kind": "human",
+      "id": "human:alice",
+      "role": "quality-manager",
+      "display": "Alice Example"
+    },
+    "observed": {
+      "pid": 4242,
+      "uid": 1000,
+      "gid": 1000,
+      "process_chain": [
+        "aqt-signoff",
+        "bash"
+      ],
+      "harness": null,
+      "client_time": "2026-10-21T12:00:09.000000Z",
+      "via": "socket"
+    },
+    "action": "sign",
+    "subject": {
+      "kind": "file",
+      "ref": "docs/report.md",
+      "sha256": "sha256:abababababababababababababababababababababababababababababababab"
+    },
+    "before": {
+      "sha256": "sha256:0101010101010101010101010101010101010101010101010101010101010101"
+    },
+    "after": {
+      "sha256": "sha256:0202020202020202020202020202020202020202020202020202020202020202",
+      "value": "v2"
+    },
+    "reason": "Reviewed against the change request",
+    "meaning": "approved",
+    "links": [
+      {
+        "rel": "evidence",
+        "ref": "rec_019a0f3c2b000000000000000063"
+      }
+    ],
+    "data": {
+      "meaning": "approved",
+      "note": "Grüße"
+    },
+    "sig": [
+      {
+        "alg": "ed25519",
+        "key": "ed25519:21fe31dfa154a261",
+        "value": "xXqIuc9QPuEiL8KQZWR4BLy0v7WxaD+D21XGtt2QYcIszjlObKMtan6wTpP6GTxPS3UwjTMTiEvk1D/Ri9v0CQ=="
+      },
+      {
+        "alg": "ed25519",
+        "key": "ed25519:39f713d0a644253f",
+        "value": "jkFbLD5M1t2RKhrOhWAAd6Bg1ME4jZxI5QAQYy5HH80BPH0HFRI1RDbj64c7KPzvhoY2Nsfo6oEz0PvRJceNBw=="
+      }
+    ]
+  },
+  "expect": {
+    "valid": true,
+    "schema_valid": true,
+    "record_hash": "sha256:7685c829f4110b58be8d730a1153402e402ed16e5dae1c2cacb2af9ae3b0c19d",
+    "content_hash": "sha256:bcdcc57f7564f6dd60b5b5bff7d3c08f5d2989982870066796225e727666d355",
+    "canonical": "{\"action\":\"sign\",\"actor\":{\"display\":\"Alice Example\",\"id\":\"human:alice\",\"kind\":\"human\",\"role\":\"quality-manager\"},\"after\":{\"sha256\":\"sha256:0202020202020202020202020202020202020202020202020202020202020202\",\"value\":\"v2\"},\"aqt\":\"0.1\",\"before\":{\"sha256\":\"sha256:0101010101010101010101010101010101010101010101010101010101010101\"},\"data\":{\"meaning\":\"approved\",\"note\":\"Grüße\"},\"id\":\"rec_019a0f3c2b000000000000000064\",\"links\":[{\"ref\":\"rec_019a0f3c2b000000000000000063\",\"rel\":\"evidence\"}],\"meaning\":\"approved\",\"observed\":{\"client_time\":\"2026-10-21T12:00:09.000000Z\",\"gid\":1000,\"harness\":null,\"pid\":4242,\"process_chain\":[\"aqt-signoff\",\"bash\"],\"uid\":1000,\"via\":\"socket\"},\"reason\":\"Reviewed against the change request\",\"sig\":[{\"alg\":\"ed25519\",\"key\":\"ed25519:21fe31dfa154a261\",\"value\":\"xXqIuc9QPuEiL8KQZWR4BLy0v7WxaD+D21XGtt2QYcIszjlObKMtan6wTpP6GTxPS3UwjTMTiEvk1D/Ri9v0CQ==\"},{\"alg\":\"ed25519\",\"key\":\"ed25519:39f713d0a644253f\",\"value\":\"jkFbLD5M1t2RKhrOhWAAd6Bg1ME4jZxI5QAQYy5HH80BPH0HFRI1RDbj64c7KPzvhoY2Nsfo6oEz0PvRJceNBw==\"}],\"subject\":{\"kind\":\"file\",\"ref\":\"docs/report.md\",\"sha256\":\"sha256:abababababababababababababababababababababababababababababababab\"},\"time\":\"2026-10-21T12:00:10.000000Z\",\"type\":\"signoff.signature\",\"tz\":\"Europe/Vienna\"}",
+    "signatures": [
+      [
+        "ed25519:21fe31dfa154a261",
+        true
+      ],
+      [
+        "ed25519:39f713d0a644253f",
+        null
+      ]
+    ]
+  }
+}

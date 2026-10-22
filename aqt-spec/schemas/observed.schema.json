@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:observed",
+  "title": "observed (writer-owned process attribution)",
+  "description": "Set only by the aqt-trail writer (or, inside data.peer, by a tool that observes a peer itself).",
+  "type": "object",
+  "properties": {
+    "pid": {
+      "type": "integer"
+    },
+    "uid": {
+      "type": "integer"
+    },
+    "gid": {
+      "type": "integer"
+    },
+    "process_chain": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "command names, nearest first"
+    },
+    "processes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "pid": {
+            "type": "integer"
+          },
+          "comm": {
+            "type": "string"
+          },
+          "start_time": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pid"
+        ]
+      }
+    },
+    "harness": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "client_time": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/time"
+    },
+    "via": {
+      "enum": [
+        "socket",
+        "spool"
+      ]
+    }
+  }
+}

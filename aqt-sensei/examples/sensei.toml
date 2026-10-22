@@ -1,0 +1,32 @@
+# aqt-sensei configuration ($XDG_CONFIG_HOME/aqt/sensei.toml)
+
+[owner]
+id = "owner"              # recorded as human:<id>
+# display = "Your Name"
+
+[bridge]
+# backend = "tmux"        # tmux | herdr (default: tmux inside tmux, herdr inside Herdr)
+# tmux_socket = "work"    # tmux -L NAME
+poll_seconds = 1.5
+quiet_seconds = 3.0       # tmux without hooks: pane unchanged this long and a prompt visible
+default_mode = "confirm"  # manual | confirm | auto
+# sink = "file:/path/evidence.jsonl"   # or unix:/path/trail.sock; default AQT_SINK or the AQT default file
+
+[bridge.auto_budget]      # applied when a pair starts in auto mode without explicit limits
+max_exchanges = 8
+
+[sandbox]
+bwrap = "bwrap"
+network = "share"         # share (model API and web search) | none
+env_allow = []            # e.g. ["ANTHROPIC_API_KEY"] for a pi advisor; the advisor can read these
+extra_ro_binds = []       # e.g. ["~/.agents/skills"]
+scratch_root = ".sensei"  # scratch folders: <project>/.sensei/<pair>/
+
+# Override a built-in profile or add a custom one:
+# [profiles.myagent]
+# command = ["myagent", "--system-prompt-file", "{prompt_file}"]
+# prompt = "file"          # file | agents-md
+# env = {}
+# ro_binds = []
+# prompt_pattern = "^> "
+# cost_per_exchange = 0    # integer minor units, declared estimate

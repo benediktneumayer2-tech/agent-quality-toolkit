@@ -1,0 +1,49 @@
+catalogue: annex22-2025d
+title: EU GMP Annex 22 — Artificial Intelligence (draft 2025)
+licence: CC-BY-4.0
+source:
+  document: EudraLex Volume 4, Annex 22 Artificial Intelligence (new annex), drafted by the EMA GMDP Inspectors Working Group with PIC/S
+  version: draft for stakeholder consultation, 7 July – 7 October 2025
+  status: draft (not adopted as of 2026-10-22; numbering and the treatment of generative AI may change)
+  consulted: "2026-10-22"
+  basis: "Checked against the consultation draft https://health.ec.europa.eu/document/download/5f38a92d-bb8e-4264-8898-ea076e926db6_en?filename=mp_vol4_chap4_annex22_consultation_guideline_en.pdf. Paraphrased in own words; where an item groups clauses, its ID uses the section number."
+items:
+  - id: annex22-2025d:1
+    clause: "1"
+    title: Scope and human in the loop
+    paraphrase: The annex covers static, deterministic AI/ML models in critical GMP applications; generative AI and large language models are outside it and should not be used in critical GMP applications. In non-critical uses, qualified and trained people remain responsible for checking that their output suits the intended use (human in the loop).
+    supported_by: [quarantine.release, signoff.signature, change.review, sensei.owner-control, spec.human-check]
+    user_must: Classify each agent use as critical or non-critical and keep agents out of critical GMP decisions.
+    r3: [R-23]
+    verified: true
+  - id: annex22-2025d:6.2
+    clause: "6.2-6.3"
+    title: Test-data independence and identification
+    paraphrase: When test data is split from a common pool, staff who develop the model never access it, it is protected by access control and an audit trail, and no copies exist outside its repository. Which data was used for testing, when and how many times is recorded.
+    supported_by: [validate.protocol-lock, validate.detector]
+    user_must: Keep test sets separate from training and tuning data.
+    r3: [R-25]
+    verified: true
+  - id: annex22-2025d:8
+    clause: "8.1-8.2"
+    title: Explainability
+    paraphrase: When models for critical GMP use are tested, the system records which features of the test data drove each classification or decision, for example with feature attribution or heat maps. Reviewing whether those features are relevant and appropriate is part of approving the test results.
+    supported_by: [quarantine.cases]
+    user_must: Treat detector evidence spans as triage aids, not as a full explanation.
+    r3: [R-26]
+    verified: true
+  - id: annex22-2025d:9
+    clause: "9.1-9.2"
+    title: Confidence
+    paraphrase: When a model that predicts or classifies data is tested, the system logs its confidence score for each outcome where applicable. Models have a suitable threshold, and a very low score should be considered for flagging the outcome as undecided instead of giving an unreliable result.
+    supported_by: [quarantine.hold, validate.detector]
+    r3: [R-26]
+    verified: true
+  - id: annex22-2025d:10
+    clause: "10.1-10.5"
+    title: Operation (change and configuration control, monitoring, human review)
+    paraphrase: Before deployment the model, its system and the process are put under change and configuration control, with justified retest decisions and detection of unauthorised change. Performance and input-data drift are monitored regularly, and where a human decides on the model's input, records of that review are kept.
+    supported_by: [validate.qualification, spec.envelope, change.review, sensei.advice-ledger, capa.action]
+    user_must: Record model and configuration versions and requalify after changes.
+    r3: [R-24]
+    verified: true

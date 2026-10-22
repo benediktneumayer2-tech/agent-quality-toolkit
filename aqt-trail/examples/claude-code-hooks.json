@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "SessionStart": [{"hooks": [{"type": "command", "command": "aqt-trail hook claude-code"}]}],
+    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "aqt-trail hook claude-code"}]}],
+    "PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "aqt-trail hook claude-code"}]}],
+    "PostToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "aqt-trail hook claude-code"}]}],
+    "Stop": [{"hooks": [{"type": "command", "command": "aqt-trail hook claude-code"}]}],
+    "SessionEnd": [{"hooks": [{"type": "command", "command": "aqt-trail hook claude-code"}]}]
+  }
+}

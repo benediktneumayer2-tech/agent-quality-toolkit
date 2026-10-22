@@ -1,0 +1,291 @@
+{
+  "aqt": "0.1",
+  "count": 57,
+  "vectors": [
+    {
+      "file": "canonical/key-order.json",
+      "kind": "canonical",
+      "description": "Object keys are sorted by code point at every level; whitespace is removed."
+    },
+    {
+      "file": "canonical/unicode-raw.json",
+      "kind": "canonical",
+      "description": "Non-ASCII string content is written as raw UTF-8, not escaped."
+    },
+    {
+      "file": "canonical/escapes.json",
+      "kind": "canonical",
+      "description": "Quote, backslash and C0 controls are escaped as in RFC 8785; DEL and / are not."
+    },
+    {
+      "file": "canonical/integer-bounds.json",
+      "kind": "canonical",
+      "description": "Integers up to +/-(2^53-1) are allowed and written in plain decimal."
+    },
+    {
+      "file": "canonical/arrays-and-empty.json",
+      "kind": "canonical",
+      "description": "Array order is kept; empty objects and arrays stay."
+    },
+    {
+      "file": "canonical/float.json",
+      "kind": "canonical",
+      "description": "Floats are not allowed (use integers such as *_ppm or *_ms)."
+    },
+    {
+      "file": "canonical/float-integral.json",
+      "kind": "canonical",
+      "description": "1.0 is a float in the JSON text and is refused, although its value is integral."
+    },
+    {
+      "file": "canonical/exponent.json",
+      "kind": "canonical",
+      "description": "Exponent notation is a float."
+    },
+    {
+      "file": "canonical/integer-too-large.json",
+      "kind": "canonical",
+      "description": "Integers beyond 2^53-1 are refused."
+    },
+    {
+      "file": "canonical/non-ascii-key.json",
+      "kind": "canonical",
+      "description": "Object keys must be ASCII."
+    },
+    {
+      "file": "canonical/duplicate-key.json",
+      "kind": "canonical",
+      "description": "Duplicate keys are refused (parsers disagree on them)."
+    },
+    {
+      "file": "canonical/lone-surrogate.json",
+      "kind": "canonical",
+      "description": "Strings must be valid Unicode; a lone surrogate escape is refused."
+    },
+    {
+      "file": "canonical/nan.json",
+      "kind": "canonical",
+      "description": "NaN and Infinity are not JSON."
+    },
+    {
+      "file": "valid/minimal.json",
+      "kind": "record",
+      "description": "Only the required fields: aqt, id, type, time, actor, action."
+    },
+    {
+      "file": "valid/full.json",
+      "kind": "record",
+      "description": "Every envelope field, including writer-owned observed and a meaning."
+    },
+    {
+      "file": "valid/extension-type.json",
+      "kind": "record",
+      "description": "x-<org>. types are valid envelopes (registration is checked at conformance L1)."
+    },
+    {
+      "file": "valid/signed.json",
+      "kind": "record",
+      "description": "A record signed by the RFC 8032 TEST 1 key; the signature covers the record without sig."
+    },
+    {
+      "file": "valid/cosigned-unknown-key.json",
+      "kind": "record",
+      "description": "Two independent signatures; only TEST 1 is pinned, so TEST 2 reports unknown (null)."
+    },
+    {
+      "file": "valid/signature-tampered.json",
+      "kind": "record",
+      "description": "The envelope is still valid, but the signature no longer verifies (false)."
+    },
+    {
+      "file": "invalid/unknown-field.json",
+      "kind": "record",
+      "description": "Unknown top-level fields are invalid; extensions go into data."
+    },
+    {
+      "file": "invalid/wrong-version.json",
+      "kind": "record",
+      "description": "aqt must be \"0.1\"."
+    },
+    {
+      "file": "invalid/bad-id.json",
+      "kind": "record",
+      "description": "id is rec_ plus 28 lower-case hex digits."
+    },
+    {
+      "file": "invalid/bad-type.json",
+      "kind": "record",
+      "description": "type is <tool>.<kind> in lower case."
+    },
+    {
+      "file": "invalid/time-offset.json",
+      "kind": "record",
+      "description": "time is UTC with a Z suffix; offsets go into tz as a zone name."
+    },
+    {
+      "file": "invalid/missing-actor.json",
+      "kind": "record",
+      "description": "actor is required."
+    },
+    {
+      "file": "invalid/bad-actor-kind.json",
+      "kind": "record",
+      "description": "actor.kind is human, agent or service."
+    },
+    {
+      "file": "invalid/bad-meaning.json",
+      "kind": "record",
+      "description": "meaning comes from the fixed vocabulary."
+    },
+    {
+      "file": "invalid/blank-reason.json",
+      "kind": "record",
+      "description": "reason, when present, is non-blank."
+    },
+    {
+      "file": "invalid/subject-without-ref.json",
+      "kind": "record",
+      "description": "subject needs kind and ref."
+    },
+    {
+      "file": "invalid/bad-subject-hash.json",
+      "kind": "record",
+      "description": "sha256 values are sha256:<64 lower-case hex>."
+    },
+    {
+      "file": "invalid/bad-chain.json",
+      "kind": "record",
+      "description": "chain.seq is an integer."
+    },
+    {
+      "file": "invalid/bad-sig-alg.json",
+      "kind": "record",
+      "description": "sig entries use alg ed25519."
+    },
+    {
+      "file": "invalid/link-without-ref.json",
+      "kind": "record",
+      "description": "links are {rel, ref}."
+    },
+    {
+      "file": "invalid/float-in-data.json",
+      "kind": "record",
+      "description": "No floats anywhere, also inside data; the schema alone cannot see this."
+    },
+    {
+      "file": "invalid/duplicate-key.json",
+      "kind": "record",
+      "description": "Duplicate keys make a record ambiguous and invalid."
+    },
+    {
+      "file": "invalid/lone-surrogate.json",
+      "kind": "record",
+      "description": "A lone surrogate in a string makes the record invalid."
+    },
+    {
+      "file": "chained/intact.json",
+      "kind": "chain",
+      "description": "Four records chained from GENESIS (64 zeros)."
+    },
+    {
+      "file": "chained/intact-signed.json",
+      "kind": "chain",
+      "description": "The same chain, each record signed by TEST 1; signatures required."
+    },
+    {
+      "file": "tampered/edited-unsigned.json",
+      "kind": "chain",
+      "description": "Record 1 edited: without signatures the break shows at the next record (seq 2), whose prev no longer matches."
+    },
+    {
+      "file": "tampered/edited-signed.json",
+      "kind": "chain",
+      "description": "Record 1 edited in a signed chain: its own signature fails (seq 1)."
+    },
+    {
+      "file": "tampered/edited-last-unsigned.json",
+      "kind": "chain",
+      "description": "LIMIT: editing the last record of an unsigned chain is not detectable by the chain alone; signatures or a checkpoint are needed."
+    },
+    {
+      "file": "tampered/deleted.json",
+      "kind": "chain",
+      "description": "Record 1 deleted: record seq 2 appears where seq 1 is expected."
+    },
+    {
+      "file": "tampered/reordered.json",
+      "kind": "chain",
+      "description": "Records 0 and 1 swapped."
+    },
+    {
+      "file": "tampered/inserted.json",
+      "kind": "chain",
+      "description": "A record from another chain inserted at position 2."
+    },
+    {
+      "file": "tampered/wrong-genesis.json",
+      "kind": "chain",
+      "description": "The first record's prev is not GENESIS."
+    },
+    {
+      "file": "tampered/truncated.json",
+      "kind": "chain",
+      "description": "LIMIT: dropping the last record leaves a valid shorter chain; only a checkpoint detects it (see checkpoint/truncated)."
+    },
+    {
+      "file": "tampered/rewritten-fresh-key.json",
+      "kind": "chain",
+      "description": "A complete rewrite signed with another key verifies as a chain but fails against the pinned key (no valid signature from a known key at seq 0)."
+    },
+    {
+      "file": "tampered/unsigned-but-required.json",
+      "kind": "chain",
+      "description": "Signatures required, but the records carry none."
+    },
+    {
+      "file": "signed/checkpoint-valid.json",
+      "kind": "checkpoint",
+      "description": "A signed checkpoint of the head (seq 3) that matches the chain."
+    },
+    {
+      "file": "signed/checkpoint-truncated.json",
+      "kind": "checkpoint",
+      "description": "The chain was truncated after the checkpoint: no record at seq 3 any more, so the checkpoint does not match."
+    },
+    {
+      "file": "signed/checkpoint-rewritten.json",
+      "kind": "checkpoint",
+      "description": "A rewritten chain has another head hash at seq 3."
+    },
+    {
+      "file": "signed/checkpoint-tampered.json",
+      "kind": "checkpoint",
+      "description": "The checkpoint's seq was changed after signing."
+    },
+    {
+      "file": "signed/checkpoint-unpinned-key.json",
+      "kind": "checkpoint",
+      "description": "A checkpoint signed by a key that is not pinned is not valid."
+    },
+    {
+      "file": "signed/statement-record.json",
+      "kind": "statement",
+      "description": "A detached signed statement over a record's content hash (record_content_hash excludes sig, chain, observed and time), so it still matches after the trail stored it."
+    },
+    {
+      "file": "signed/statement-target-changed.json",
+      "kind": "statement",
+      "description": "The statement still verifies, but the signed record's content changed: the signature no longer applies to it (invalidated)."
+    },
+    {
+      "file": "signed/statement-tampered.json",
+      "kind": "statement",
+      "description": "The meaning inside the statement was changed after signing."
+    },
+    {
+      "file": "signed/statement-unpinned.json",
+      "kind": "statement",
+      "description": "Signed by a key that is not pinned: unknown (null)."
+    }
+  ]
+}

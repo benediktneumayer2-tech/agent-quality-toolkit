@@ -1,0 +1,8 @@
+# Which detector was trained on which dataset. Results for these pairs are reported
+# separately as "contaminated - not evidence" and are excluded from acceptance criteria.
+# `dataset` matches an item's `family` or the name part of its `source` ("llmail@phase1" -> "llmail").
+
+[[entries]]
+detector = "horizon"
+dataset = "llmail"
+note = "model card lists LLMail-Inject phase 1 as training data"

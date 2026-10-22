@@ -1,0 +1,26 @@
+name: aqt-validate
+
+on:
+  push:
+    paths: ["aqt-validate/**", "aqt-spec/**"]
+  pull_request:
+    paths: ["aqt-validate/**", "aqt-spec/**"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    defaults:
+      run:
+        working-directory: aqt-validate
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Install
+        run: |
+          uv venv --python ${{ matrix.python }} .venv
+          uv pip install --python .venv/bin/python -e ../aqt-spec -e ".[test]"
+      - name: Test
+        run: .venv/bin/python -m pytest -q

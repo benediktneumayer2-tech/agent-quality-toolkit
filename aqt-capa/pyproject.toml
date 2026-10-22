@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aqt-capa"
+version = "0.1.0"
+description = "Deviations and CAPA for AI coding agent work: evidence-driven intake, root cause, hash-bound corrective actions, effectiveness checks and trends"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [{ name = "Benedikt Neumayer" }]
+dependencies = ["aqt-spec>=0.1", "cryptography>=41"]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.scripts]
+aqt-capa = "aqt_capa.cli:main"
+
+[tool.uv.sources]
+aqt-spec = { path = "../aqt-spec", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aqt_capa"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

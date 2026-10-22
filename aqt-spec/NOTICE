@@ -1,0 +1,29 @@
+aqt-spec — Agent Quality Toolkit evidence records
+Copyright 2026 Benedikt Neumayer
+
+Licensing
+- Source code (src/, scripts/, tests/, examples/), JSON Schemas (schemas/) and
+  test vectors (vectors/): Apache License 2.0 (SPDX: Apache-2.0), see LICENSE.
+- Specification (spec/), GxP catalogues (catalogues/) and crosswalk.md:
+  Creative Commons Attribution 4.0 International (SPDX: CC-BY-4.0),
+  https://creativecommons.org/licenses/by/4.0/legalcode
+  (full text in LICENSES/CC-BY-4.0.txt).
+
+Origin
+- Concepts are derived from the author's private Agent Platform Next (design of a
+  tamper-evident agent audit trail). No code, data or private content was copied.
+
+Third-party material
+- vectors/keys.json contains the Ed25519 test keys published in RFC 8032,
+  section 7.1 (TEST 1 and TEST 2). They are public test values.
+- Catalogue items paraphrase regulatory and standards texts with clause numbers:
+  21 CFR Part 11 (US public domain); EudraLex Volume 4 Annex 11 (2011), its 2025
+  revision draft, Chapter 4 draft and Annex 22 draft, and the EU GDP Guidelines
+  2013/C 343/01 (European Union, reuse with acknowledgement); ISO 9001:2015 (clause
+  numbers and titles only; paraphrases are the authors' own); ICH Q9(R1) and Q10;
+  Regulation (EU) 2024/1689. Paraphrases are not the official texts.
+
+Dependencies
+- cryptography (Apache-2.0 OR BSD-3-Clause), runtime.
+- jsonschema (MIT), optional [schema] extra and tests.
+- PyYAML (MIT), catalogue generator and tests only.

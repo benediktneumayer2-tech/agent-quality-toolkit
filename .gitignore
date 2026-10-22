@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+examples/demo/output/
+
+# Internal planning and tracker records stay local.
+planning/
+docs/implementations/

@@ -1,0 +1,27 @@
+{
+  "name": "blank-reason",
+  "category": "invalid",
+  "kind": "record",
+  "description": "reason, when present, is non-blank.",
+  "input": {
+    "aqt": "0.1",
+    "id": "rec_019a0f3c2b00000000000000000b",
+    "type": "trail.event",
+    "time": "2026-10-21T12:00:11.000000Z",
+    "actor": {
+      "kind": "agent",
+      "id": "agent:claude-code:s-0001",
+      "agent": {
+        "harness": "claude-code",
+        "model": "example-model",
+        "session": "s-0001"
+      }
+    },
+    "action": "step-11",
+    "reason": "   "
+  },
+  "expect": {
+    "valid": false,
+    "schema_valid": false
+  }
+}

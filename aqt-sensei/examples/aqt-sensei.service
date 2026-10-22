@@ -1,0 +1,16 @@
+# systemd user unit template for the aqt-sensei bridge (not installed automatically).
+# Install: copy to ~/.config/systemd/user/aqt-sensei.service, adjust ExecStart, then
+#   systemctl --user daemon-reload && systemctl --user enable --now aqt-sensei
+[Unit]
+Description=aqt-sensei bridge: relays messages between a worker agent and its sandboxed advisor
+
+[Service]
+Type=simple
+# Path to the aqt-sensei console script of your installation:
+ExecStart=%h/.local/bin/aqt-sensei serve
+Environment=PYTHONUNBUFFERED=1
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

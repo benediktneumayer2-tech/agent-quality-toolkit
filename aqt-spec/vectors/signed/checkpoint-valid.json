@@ -1,0 +1,137 @@
+{
+  "name": "checkpoint-valid",
+  "category": "signed",
+  "kind": "checkpoint",
+  "description": "A signed checkpoint of the head (seq 3) that matches the chain.",
+  "pinned_keys": [
+    "rfc8032-test1"
+  ],
+  "input": {
+    "checkpoint": {
+      "aqt_checkpoint": "0.1",
+      "log": "example-log",
+      "seq": 3,
+      "head": "sha256:2de7f376b471a466b523d55829f1e7583ce14bfb85d9a4ebbb6284c507d3fc81",
+      "time": "2026-10-21T12:00:30.000000Z",
+      "sig": {
+        "alg": "ed25519",
+        "key": "ed25519:21fe31dfa154a261",
+        "value": "vrEVhmfm0pUmX026JSNff3ERH9Q6Q4aXdeV1QksA3UJv9f/51mf6OV+niLOK//QJeuDYwuLATezdPu4WAdovAA=="
+      }
+    },
+    "records": [
+      {
+        "aqt": "0.1",
+        "id": "rec_019a0f3c2b000000000000000014",
+        "type": "trail.event",
+        "time": "2026-10-21T12:00:20.000000Z",
+        "actor": {
+          "kind": "agent",
+          "id": "agent:claude-code:s-0001",
+          "agent": {
+            "harness": "claude-code",
+            "model": "example-model",
+            "session": "s-0001"
+          }
+        },
+        "action": "step-20",
+        "chain": {
+          "seq": 0,
+          "prev": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "sig": [
+          {
+            "alg": "ed25519",
+            "key": "ed25519:21fe31dfa154a261",
+            "value": "q3W881BfSmdVsTaGJYjRVfH1GAmJXkHu/7yb+dISXLBL2nfwBOpoR71rqrZkMhO/3x6qeg4Tol4/LjelWwI/AA=="
+          }
+        ]
+      },
+      {
+        "aqt": "0.1",
+        "id": "rec_019a0f3c2b000000000000000015",
+        "type": "trail.event",
+        "time": "2026-10-21T12:00:21.000000Z",
+        "actor": {
+          "kind": "agent",
+          "id": "agent:claude-code:s-0001",
+          "agent": {
+            "harness": "claude-code",
+            "model": "example-model",
+            "session": "s-0001"
+          }
+        },
+        "action": "step-21",
+        "chain": {
+          "seq": 1,
+          "prev": "sha256:f261f49f5612ba1cd8e6ec9aa25bca591539765c52c61248735c79445e402390"
+        },
+        "sig": [
+          {
+            "alg": "ed25519",
+            "key": "ed25519:21fe31dfa154a261",
+            "value": "XMmE6yPm3fL+EtgtRrk7vxVfwiEDumarvncC3XEeHFYQfkRaaL9NfqU8j6fQIORMJHHgM44d1+3kiBnbm6nfAA=="
+          }
+        ]
+      },
+      {
+        "aqt": "0.1",
+        "id": "rec_019a0f3c2b000000000000000016",
+        "type": "trail.event",
+        "time": "2026-10-21T12:00:22.000000Z",
+        "actor": {
+          "kind": "agent",
+          "id": "agent:claude-code:s-0001",
+          "agent": {
+            "harness": "claude-code",
+            "model": "example-model",
+            "session": "s-0001"
+          }
+        },
+        "action": "step-22",
+        "chain": {
+          "seq": 2,
+          "prev": "sha256:d246adb01d9e456d2774d772a30cbfe466b45d175ff74ae62400c7f4b57d02bd"
+        },
+        "sig": [
+          {
+            "alg": "ed25519",
+            "key": "ed25519:21fe31dfa154a261",
+            "value": "pjHMidW+Y5LWr2r1nFA8TAedbm3hxgvaDDhiKLSTTxP7V5xU4Lgjf8mxBvTm4Z79QzvI9lFgYOqMt3TT4kcLAg=="
+          }
+        ]
+      },
+      {
+        "aqt": "0.1",
+        "id": "rec_019a0f3c2b000000000000000017",
+        "type": "trail.event",
+        "time": "2026-10-21T12:00:23.000000Z",
+        "actor": {
+          "kind": "agent",
+          "id": "agent:claude-code:s-0001",
+          "agent": {
+            "harness": "claude-code",
+            "model": "example-model",
+            "session": "s-0001"
+          }
+        },
+        "action": "step-23",
+        "chain": {
+          "seq": 3,
+          "prev": "sha256:32f00753b25295b8cdc045522b0aac9fc8be9b99cf2cefe4ef48c992319b1881"
+        },
+        "sig": [
+          {
+            "alg": "ed25519",
+            "key": "ed25519:21fe31dfa154a261",
+            "value": "GfdP+XEbkslk6N4b6uPqFcnUrVK9QXgFTcKXMB0fqe5yIIPGdErIrhqa6YOIqLYHmU0Ip90KfuF0JZL66iBCCg=="
+          }
+        ]
+      }
+    ]
+  },
+  "expect": {
+    "valid": true,
+    "matches": true
+  }
+}

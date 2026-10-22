@@ -1,0 +1,28 @@
+# Example aqt-signoff configuration: copy to $XDG_CONFIG_HOME/aqt/signoff.toml
+[signoff]
+signer = "human:alice"          # default signer for sign/approve/resolve
+tz = "Europe/Berlin"            # IANA zone shown in manifestations
+passphrase_min_length = 12
+claim_grace_ms = 300000         # a claim without outcome counts as unknown after 5 minutes
+run_timeout_ms = 600000
+
+[paths]
+# registry = "~/.config/aqt/signers.json"
+# keys = "~/.config/aqt/keys"
+# state = "~/.local/state/aqt/signoff"
+# sink = "unix:/run/user/1000/aqt-trail.sock"
+# evidence = ["~/.local/state/aqt/trail/trail.jsonl"]
+
+# Two-person rule for approvals: two distinct signers, neither an author of the content.
+[policy.approved]
+min_signatures = 2
+distinct_from_author = true
+
+# Only the quality function releases.
+[policy.released]
+roles = ["quality-manager"]
+
+# Approved actions: one approval by someone other than the preparer.
+[actions]
+min_signatures = 1
+distinct_from_author = true

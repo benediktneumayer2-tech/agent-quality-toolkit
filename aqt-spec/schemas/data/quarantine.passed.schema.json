@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:quarantine.passed",
+  "title": "quarantine.passed data",
+  "description": "Untrusted input passed (pass or warn band)",
+  "type": "object",
+  "properties": {
+    "band": {
+      "enum": [
+        "pass",
+        "warn"
+      ]
+    },
+    "case_id": {
+      "type": "string"
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "tool": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "domain": {
+          "type": "string"
+        }
+      }
+    },
+    "scores": {
+      "type": "object"
+    },
+    "detectors": {
+      "type": "array"
+    },
+    "thresholds": {
+      "type": "object"
+    }
+  }
+}

@@ -1,0 +1,34 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aqt-quarantine"
+version = "0.1.0"
+description = "Quarantine and release of untrusted AI agent inputs: risk bands, withheld content, signed human decisions and case files"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [{ name = "Benedikt Neumayer" }]
+dependencies = ["aqt-spec>=0.1", "cryptography>=41"]
+
+[project.optional-dependencies]
+# Transformer detectors as local ONNX exports (Horizon, Wolf Defender, PIGuard, deepset ...).
+hf = ["onnxruntime>=1.17", "tokenizers>=0.15", "numpy>=1.24"]
+test = ["pytest>=8"]
+
+[project.scripts]
+aqt-quarantine = "aqt_quarantine.cli:main"
+
+[project.entry-points."aqt.detectors"]
+heuristics = "aqt_quarantine.detectors.heuristics:HeuristicsDetector"
+onnx = "aqt_quarantine.detectors.onnx:OnnxDetector"
+
+[tool.uv.sources]
+aqt-spec = { path = "../aqt-spec", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aqt_quarantine"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

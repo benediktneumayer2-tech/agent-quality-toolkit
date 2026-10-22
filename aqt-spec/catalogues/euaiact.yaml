@@ -1,0 +1,59 @@
+catalogue: euaiact
+title: EU AI Act — Regulation (EU) 2024/1689 (articles used by AQT)
+licence: CC-BY-4.0
+source:
+  document: Regulation (EU) 2024/1689 (Artificial Intelligence Act), OJ L 12.7.2024, as amended by Regulation (EU) 2026/1744 (Digital Omnibus on AI), OJ L 24.7.2026
+  version: text of 2024/1689; the 2026 amendment changes Article 17(2) and the application dates but none of the paragraphs listed here
+  status: in force; the high-risk rules of Chapter III Sections 1-3 apply from 2 Dec 2027 (Article 6(2), Annex III) and 2 Aug 2028 (Article 6(1), Annex I)
+  consulted: "2026-10-22"
+  basis: "Checked against http://publications.europa.eu/resource/celex/32024R1689 and http://publications.europa.eu/resource/celex/32026R1744 (Official Journal texts from the EU Publications Office). Paraphrased in own words. These obligations bind providers and deployers of high-risk AI systems; coding agents are usually not such systems, so the mapping is an analogy."
+items:
+  - id: euaiact:12(1)
+    clause: Art. 12(1)
+    title: Automatic recording of events
+    paraphrase: High-risk AI systems are technically able to record events (logs) automatically throughout their lifetime.
+    supported_by: [trail.writer, trail.import, spec.envelope]
+    r3: [R-27]
+    verified: true
+  - id: euaiact:12(2)
+    clause: Art. 12(2)
+    title: Purpose of logging
+    paraphrase: Logging records events relevant to identifying risk situations or substantial modifications, to post-market monitoring and to the deployer's monitoring of operation.
+    supported_by: [trail.review, capa.intake, quarantine.cases]
+    r3: [R-27]
+    verified: true
+  - id: euaiact:14(1)
+    clause: Art. 14(1)
+    title: Human oversight by design
+    paraphrase: High-risk AI systems are built, with suitable human-machine interfaces where needed, so that people can oversee them effectively while they are in use.
+    supported_by: [quarantine.release, signoff.approved-actions, sensei.owner-control, spec.human-check]
+    r3: [R-27]
+    verified: true
+  - id: euaiact:14(4)
+    clause: Art. 14(4)
+    title: Abilities of the overseer
+    paraphrase: Overseers are enabled to understand the system's capacities and limits and monitor it, stay aware of automation bias, interpret its output, decide not to use, override or reverse it, and stop it safely.
+    supported_by: [quarantine.release, signoff.approved-actions, sensei.owner-control]
+    verified: true
+  - id: euaiact:17(1)
+    clause: Art. 17(1)
+    title: Quality management system
+    paraphrase: Providers of high-risk AI systems keep a quality management system documented as written policies, procedures and instructions, covering among others the management of modifications, test and validation procedures, data management, risk management and record keeping.
+    supported_by: [change.plan-ledger, change.receipts, validate.qualification, capa.action]
+    user_must: AQT supports parts of a QMS; the QMS itself is the organisation's.
+    verified: true
+  - id: euaiact:19(1)
+    clause: Art. 19(1)
+    title: Log retention by providers
+    paraphrase: Providers keep the automatically generated logs under their control for a period suited to the intended purpose, at least six months unless other Union or national law provides otherwise.
+    supported_by: [spec.checkpoint, trail.verify-export]
+    user_must: Configure retention; GMP retention periods are usually longer.
+    r3: [R-27]
+    verified: true
+  - id: euaiact:26(6)
+    clause: Art. 26(6)
+    title: Log retention by deployers
+    paraphrase: Deployers keep the automatically generated logs under their control for a period suited to the intended purpose, at least six months unless other Union or national law provides otherwise.
+    supported_by: [spec.checkpoint, trail.verify-export]
+    r3: [R-27]
+    verified: true

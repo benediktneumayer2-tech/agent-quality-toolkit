@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:change.finish",
+  "title": "change.finish data",
+  "description": "Evidenced finish of a plan",
+  "type": "object",
+  "properties": {
+    "plan_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "receipts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "waivers": {
+      "type": "array"
+    },
+    "gate": {
+      "enum": [
+        "GO",
+        "NO-GO",
+        "MANUAL_VERIFY_REQUIRED"
+      ]
+    },
+    "commit": {
+      "type": "string"
+    },
+    "paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "plan_ref",
+    "receipts",
+    "waivers",
+    "gate"
+  ]
+}
