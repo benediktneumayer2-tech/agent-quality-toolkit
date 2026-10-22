@@ -139,30 +139,77 @@ class ChangesView:
     def decide_action(action_id: str, kind: str, *, expected_hash: str, reason: str, passphrase: str,
                       signer_id: str | None, human_check: Callable) -> dict:
         """Approve or reject the exact action version shown (aqt-signoff checks the hash)."""
-        from aqt_signoff import AuthFailed, Conflict, NotFound as SignoffNotFound, Refused, SignoffError, UsageError
         so = open_signoff(passphrase=passphrase, human_check=human_check)
         call = {"approve": so.actions.approve, "reject": so.actions.reject}.get(kind)
         if call is None:
             raise UsageProblem(f"unknown decision {kind}")
-        try:
-            view = call(action_id, expected_hash, reason, signer_id=signer_id or None)
-        except Refused as error:
-            return {"ok": False, "message": str(error), "reason_code": getattr(error, "code", None),
-                    "record_id": _last_refusal(so)}
-        except AuthFailed as error:
-            return {"ok": False, "message": f"the key could not be unlocked ({getattr(error, 'code', 'auth_failed')})",
-                    "reason_code": "auth_failed", "record_id": _last_record(so, "signoff.auth.failed")}
-        except Conflict as error:
-            raise Stale(str(error)) from error
-        except SignoffNotFound as error:
-            raise NotFound(str(error)) from error
-        except (UsageError, SignoffError) as error:
-            raise UsageProblem(str(error)) from error
+        view, refusal = signoff_call(so, lambda: call(action_id, expected_hash, reason, signer_id=signer_id or None))
+        if refusal:
+            return refusal
         row = so.actions.get(action_id)
         stored = (row.get("approvals") or [None])[-1] if kind == "approve" else row.get("rejection")
         return {"ok": True, "message": f"{kind} recorded for {action_id}; status now {view['status']}",
                 "status": view["status"], "record_id": (stored or {}).get("id"),
                 "time": (stored or {}).get("time"), "approvals": view.get("approvals") or []}
+
+
+    # -- plan approval ---------------------------------------------------------------------------------
+    def approve_plan(self, root: str, plan_id: str, *, shown_record: str, shown_sha256: str, reason: str,
+                     passphrase: str, signer_id: str | None, human_check: Callable) -> dict:
+        """Sign the plan version shown (its approval target record) with the meaning "approved",
+        as ``aqt-signoff sign --record <target> --meaning approved``. The project folder is passed
+        explicitly; nothing depends on the server's working directory."""
+        from aqt_change import ChangeError, Ledger
+        from aqt_change.approval import approval_state
+        so = open_signoff(passphrase=passphrase, human_check=human_check)
+        project = next((p for p in self.projects if str(p) == str(root)), None)
+
+        def sign():
+            signer = so.signer_entry(signer_id or None)
+            so.require_human("sign", so.signer_actor(signer))         # the guard first; refusals are recorded
+            if project is None:
+                raise UsageProblem(f"{root} is not a configured project")
+            try:
+                ledger = Ledger.open(project)
+            except (ChangeError, OSError) as error:
+                raise UsageProblem(str(error)) from error
+            state = approval_state(ledger, plan_id)
+            if not state.get("record"):
+                raise UsageProblem(f"plan {plan_id} has no version to approve")
+            if state["record"] != shown_record or state["sha256"] != shown_sha256:
+                raise Stale("the plan version is not the one shown; nothing was signed. Reload the gate.")
+            if state["state"] == "signed":
+                raise UsageProblem(f"this version of plan {plan_id} is already approved")
+            subject, _ = so.record_subject(state["record"])
+            if subject["sha256"] != shown_sha256:
+                raise Stale("the plan version is not the one shown; nothing was signed. Reload the gate.")
+            return so.sign(subject, "approved", reason, signer_id=signer.id)
+        stored, refusal = signoff_call(so, sign)
+        if refusal:
+            return refusal
+        with self._lock:
+            self._cache.pop(str(project), None)                       # the gate changes with the approval
+        return {"ok": True, "message": f"plan {plan_id} approved", "record_id": stored.get("id"),
+                "record_type": stored.get("type"), "time": stored.get("time")}
+
+
+def signoff_call(so, call: Callable) -> tuple:
+    """(result, None) or (None, refusal) for a call into aqt-signoff, with its errors in UI terms."""
+    from aqt_signoff import AuthFailed, Conflict, NotFound as SignoffNotFound, Refused, SignoffError, UsageError
+    try:
+        return call(), None
+    except Refused as error:
+        return None, {"ok": False, "message": str(error), "reason_code": getattr(error, "code", None),
+                      "record_id": _last_refusal(so)}
+    except AuthFailed as error:
+        return None, {"ok": False, "message": f"the key could not be unlocked ({getattr(error, 'code', 'auth_failed')})",
+                      "reason_code": "auth_failed", "record_id": _last_record(so, "signoff.auth.failed")}
+    except Conflict as error:
+        raise Stale(str(error)) from error
+    except SignoffNotFound as error:
+        raise NotFound(str(error)) from error
+    except (UsageError, SignoffError) as error:
+        raise UsageProblem(str(error)) from error
 
 
 def _signers() -> list[dict]:

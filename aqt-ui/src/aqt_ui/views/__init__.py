@@ -40,3 +40,22 @@ def installed(module: str) -> bool:
 def require(module: str, package: str) -> None:
     if not installed(module):
         raise NotInstalled(package)
+
+
+def fingerprint(*paths) -> tuple:
+    """Size and modification time of each path (missing ones count as absent). Cached derived
+    values are kept while this stays equal and rebuilt when a file grows or is replaced."""
+    import os
+    out = []
+    for path in paths:
+        try:
+            info = os.stat(path)
+            out.append((str(path), info.st_ino, info.st_size, info.st_mtime_ns))
+        except OSError:
+            out.append((str(path), None))
+    return tuple(out)
+
+
+def evidence_fingerprint() -> tuple:
+    from aqt_evidence import evidence_sources
+    return fingerprint(*evidence_sources())

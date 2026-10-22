@@ -86,4 +86,4 @@ Unverändert aus einem Demo-Lauf vom 22. Oktober 2026 ([Übersicht](../../exampl
 
 ## Entstehung
 
-Benedikt Neumayer hat das Toolkit mit KI-Coding-Agenten gebaut; Anforderungen, Architektur und Review kamen von ihm. Stand: acht Pakete plus die optionale lokale Weboberfläche aqt-ui, 551 automatisierte Tests, eine Demo mit 42 geprüften Ergebnissen; Linux, Python (Programmiersprache) 3.11–3.13. Lizenzen: Apache-2.0 für den Code, CC BY 4.0 für Spezifikation und Kataloge.
+Benedikt Neumayer hat das Toolkit mit KI-Coding-Agenten gebaut; Anforderungen, Architektur und Review kamen von ihm. Stand: acht Pakete plus die optionale lokale Weboberfläche aqt-ui, 580 automatisierte Tests, eine Demo mit 42 geprüften Ergebnissen; Linux, Python (Programmiersprache) 3.11–3.13. Lizenzen: Apache-2.0 für den Code, CC BY 4.0 für Spezifikation und Kataloge.

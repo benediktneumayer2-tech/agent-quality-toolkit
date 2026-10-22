@@ -1331,9 +1331,11 @@ aqt-ui
 
 The browser opens with the login link. Press Enter in the terminal for a fresh link, Ctrl+C to stop the server.
 
-- **Overview** answers "Is everything in order, and what needs me?": trail status, ALCOA++ per attribute, and the "Needs you" queue (held cases, prepared actions, gates that are not GO, refused attempts, a review that is due, qualifications about to expire).
-- **Decisions in the page:** release a quarantine case or declare it a threat, and approve or reject a prepared action. Each one shows who signs, with which meaning, over which content, and asks for your passphrase again. If the content changed since you opened it, nothing is signed.
-- **Read-only views:** Trail, Changes (add your repositories under `[changes] projects` in `~/.config/aqt/ui.toml`), Signatures, CAPA and Qualifications. The other decisions stay in the terminal for now.
+- **Overview** answers "Is everything in order, and what needs me?": the "Needs you" queue comes first (held cases, prepared actions, gates that are not GO, CAPA candidates, refused attempts, a review that is due, qualifications about to expire), then trail status and ALCOA++ per attribute.
+- **Decisions in the page:** release a quarantine case or declare it a threat; trust a source until a date (this only lowers the band for later content from that domain and releases no case) or revoke that trust; approve the plan version a gate shows (add your repositories under `[changes] projects` in `~/.config/aqt/ui.toml`); approve or reject a prepared action; accept or dismiss a CAPA candidate, approve an implemented corrective action and close a deviation; sign the audit-trail review (a person who acted in the period cannot sign it). Each one shows who signs, with which meaning, over which content, and asks for your passphrase again. If the content changed since you opened it, nothing is signed. Each is recorded by the owning package, as the command line does it.
+- **Without a passphrase:** verify the trail, download a verification bundle for an auditor, verify signatures, follow deviations and qualifications. Signing a file or record, the CAPA investigation and action steps, and qualifying a detector stay in the terminal.
+- **Language:** a switch in the top bar shows English or German labels; the browser remembers the choice.
+- **Large trails:** the Trail view shows 100 records per page; the Overview stays fast with tens of thousands of records.
 - **Started by an agent, it is read-only.** A ribbon names the agent markers found, and decision requests are refused and recorded as `<tool>.refused`. A decision request sent by a program that runs under an agent (for example `curl` started by Claude Code) is refused the same way, even when you started the page yourself.
 
 The page listens on `127.0.0.1` only. Its security model and limits are in the [aqt-ui README](../aqt-ui/README.md).

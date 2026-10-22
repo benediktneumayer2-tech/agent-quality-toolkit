@@ -42,13 +42,24 @@ Everything else (trail location, evidence sink, signer registry) comes from the 
 
 | View | What you see | What you can decide here |
 |---|---|---|
-| Overview | Trail status (intact or broken from which record), writer and spool, ALCOA++ per attribute, the **Needs you** queue sorted by urgency, tool health, refused attempts of the last 24 hours | – |
-| Trail | Records with filters (kept in the address), claimed actor next to the observed process chain, the stored record as text, verification on demand | – |
-| Quarantine | Held and warned cases with the suspicious passages highlighted and hidden characters made visible; trusted sources | **Release** or **declare a threat** |
-| Changes | Release gates (GO, NO-GO, MANUAL) with every reason in words, receipts, approval state; prepared actions | **Approve** or **reject** a prepared action |
+| Overview | The **Needs you** queue sorted by urgency first, then trail status (intact or broken from which record), writer and spool, ALCOA++ per attribute, tool health, refused attempts of the last 24 hours | – |
+| Trail | Records page by page (100 at a time, newest first) with filters kept in the address, claimed actor next to the observed process chain, the stored record as text, verification on demand | **Sign the audit-trail review** (prepare the worksheet, set a disposition per finding, sign); **download a verification bundle** (no passphrase, records nothing) |
+| Quarantine | Held and warned cases with the suspicious passages highlighted and hidden characters made visible; trusted sources | **Release** or **declare a threat**; **trust a source** until a date, or revoke that trust |
+| Changes | Release gates (GO, NO-GO, MANUAL) with every reason in words, receipts with their test counts, approval state; prepared actions | **Approve the plan version** shown; **approve** or **reject** a prepared action |
 | Signatures | Verify a file, record or hash, with the signature manifest to download; the signer registry | – |
-| CAPA | Candidates, deviations with their timeline, effectiveness results, trend summary | – |
+| CAPA | Candidates first when there are any, deviations with their timeline, effectiveness results, trend summary | **Accept** or **dismiss** a candidate, **approve** an implemented corrective action, **close** a deviation |
 | Qualifications | Qualified detectors and AI reviewers, valid until when, recorded requalification triggers, the thresholds file in use | – |
+
+How each decision is recorded, as the command line does it:
+
+- **Trust a source** is `aqt-quarantine trust-source`: a signed `quarantine.source.trusted` record. Trust only lowers the band for content that arrives later from that domain; it releases no held case, and the page says so.
+- **Approve the plan version** is `aqt-signoff sign --record <approval target> --meaning approved` over the plan version the gate shows. The project folder comes from `ui.toml` and is passed explicitly.
+- **CAPA:** aqt-capa records accept, dismiss and close without a signature, under the identity it is given. The page first unlocks the chosen signer's key with your passphrase (a failed unlock is recorded as `signoff.auth.failed`) and then lets aqt-capa record the decision under that signer. A corrective action is approved as aqt-capa recommends: an aqt-signoff signature with the meaning "approved" over its implementation record, which aqt-capa then reports as `signed-verified`. Closing needs a recorded investigation and, with actions, a passed effectiveness check; a deviation without actions can be closed with a justification.
+- **Audit-trail review** is `aqt-trail review run` and `review sign`. The independence rule holds: a person who acted in the reviewed period cannot sign its review, and a refused attempt is recorded as `trail.refused`.
+
+**Language.** The switch in the top bar shows English (the default) or German labels, with German quality terms (Freigabe, Abweichung, Wirksamkeitsprüfung, Audit Trail, Prüfpunkt, Bedeutung der Unterschrift). The choice stays in the browser's `localStorage`. Evidence, record content and the tools' own messages are never translated.
+
+![Overview in German](docs/screenshots/overview-de.png)
 
 Opening or refreshing a page never writes evidence. Two tools keep working state of their own when they are read, as their command lines do: aqt-capa refreshes its candidate index, and `aqt-change gate` may note that a plan's history moved on.
 
@@ -63,16 +74,16 @@ The threat picture is the toolkit's own: one person on one Linux machine, AI age
 - **Every change is checked.** Each request that changes something must carry the session's CSRF token in a header and the server's own `Origin`.
 - **Untrusted text stays text.** A strict Content-Security-Policy allows only the page's own script and style; evidence is put into the page as text, never as markup, so a quarantined page cannot run code or fake a passphrase prompt.
 - **The passphrase is asked for every decision.** It travels once in the body of that one request over loopback, unlocks the key, and is dropped. It is never written to disk, a log, a cookie, browser storage or an address. The request log holds method, path, status and duration only.
-- **You sign what you see.** Each decision carries the hash shown on screen. If the case or action changed in the meantime, nothing is signed and the page says so.
-- **Agents cannot decide through the page.** At start, `aqt-ui` runs the toolkit's agent check (agent environment markers, agent processes among its parents, an interactive terminal). Started inside an agent session it still runs, but read-only, with a ribbon that names the markers it found; an agent can show you the state, as the command line allows. In addition, for every decision request the server finds the process on the other end of the connection and checks its parents the same way: a request sent by `curl` under an agent is refused. Each refusal is recorded by the owning package (`quarantine.refused`, `signoff.refused`) and shows up in the trail and on the Overview.
+- **You sign what you see.** Each decision carries the hash or version shown on screen (case content, action, plan version, implementation record, worksheet head, deviation state, trust entry). If it changed in the meantime, nothing is signed and the page says so.
+- **Agents cannot decide through the page.** At start, `aqt-ui` runs the toolkit's agent check (agent environment markers, agent processes among its parents, an interactive terminal). Started inside an agent session it still runs, but read-only, with a ribbon that names the markers it found; an agent can show you the state, as the command line allows. In addition, for every decision request the server finds the process on the other end of the connection and checks its parents the same way: a request sent by `curl` under an agent is refused. Each refusal is recorded by the owning package (`quarantine.refused`, `signoff.refused`, `capa.refused`, `trail.refused`) and shows up in the trail and on the Overview.
 
 What this does not protect against, as for the rest of the toolkit: an agent that learns your passphrase; an agent that drives your own browser and gets you to type the passphrase into a decision it prepared (the decision panel therefore shows plainly who signs, with which meaning, over which content); and a same-user process that deliberately works around the checks. The agent checks are a guard, not a boundary. The passphrase is the real control.
 
 ## Limits of version 0.1
 
-- Linux only (the agent check and the connection lookup read `/proc`). One dark theme, English labels.
-- Decisions in the page: quarantine release and declare threat, approve or reject a prepared action. Trusting a source, approving a plan, signing a file or record, CAPA decisions, signing the periodic trail review, qualifying a detector and exporting a bundle stay in the terminal for now.
-- The full verification runs at start and on demand; records added since are shown as "not yet verified". It reads the whole trail, which takes a few seconds for a very large trail.
+- Linux only (the agent check and the connection lookup read `/proc`). A light design; a quiet dark variant follows the system setting.
+- Signing a file or record, resolving an action whose outcome is unknown, the CAPA steps of the person handling a deviation (investigation, action plan, implementation, extending a window) and qualifying a detector stay in the terminal for now.
+- Large trails: the Trail list is paged on the server, and the Overview reuses what it derived from the trail until the trail grows. With 50,000 records the first request reads the trail once (about 0.6 s); after that the Overview and any page answer in a few milliseconds (measured by the test suite). The full verification still reads the whole trail, at start and on demand; records added since are shown as "not yet verified".
 - Gate evaluation runs `aqt-change gate` for each configured plan and is cached for a minute.
 - aqt-sensei's owner decisions stay in the terminal by design.
 
@@ -86,7 +97,7 @@ The screenshots come from the integration demo's throw-away environment, seeded 
 scripts/test_all.sh aqt-ui      # from the repository root
 ```
 
-The tests start the server and a real aqt-trail writer in throw-away directories and cover login, cookies, the Host, CSRF and Origin checks, read-only mode, the peer check, stale views, a wrong passphrase, and a release and an action approval end to end, including that the passphrase appears in no response, log line or file.
+The tests start the server and a real aqt-trail writer in throw-away directories and cover login, cookies, the Host, CSRF and Origin checks, read-only mode, the peer check, stale views and a wrong passphrase for every decision; each decision end to end (release, threat, action approval, trust and revoke, plan approval, CAPA accept, dismiss, approval and close, review signing with the independence rule, export), including that the passphrase appears in no response, log line or file; the German labels; and paging and response times with a generated 50,000-record trail.
 
 ## License
 

@@ -26,6 +26,7 @@ from . import __version__
 from .config import UiConfig
 from .guard import Guard, Mode
 from .views import NotInstalled, UsageProblem, ViewProblem, installed
+from .views.trail import PAGE
 
 STATIC = Path(__file__).parent / "static"
 STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -324,11 +325,27 @@ class Handler(BaseHTTPRequestHandler):
         elif route == ("GET", "trail", "status"):
             self.send_json(200, {"status": app.trail.status(), "alcoa": app.trail.alcoa()})
         elif route == ("GET", "trail", "records"):
-            before = query.get("before")
+            before, offset, limit = query.get("before"), query.get("offset"), query.get("limit")
             self.send_json(200, app.trail.records(
                 since=query.get("since"), until=query.get("until"), type=query.get("type"),
                 actor=query.get("actor"), action=query.get("action"), subject=query.get("subject"),
-                session=query.get("session"), before=int(before) if before and before.isdigit() else None))
+                session=query.get("session"), before=int(before) if before and before.isdigit() else None,
+                offset=int(offset) if offset and offset.isdigit() else 0,
+                limit=int(limit) if limit and limit.isdigit() else PAGE))
+        elif route == ("POST", "trail", "review", "run"):
+            body = self.body()
+            self.send_json(200, {"ok": True, **app.trail.review_run(since=str(body.get("since") or "") or None,
+                                                                    until=str(body.get("until") or "") or None),
+                                 "signers": signer_list()})
+        elif len(route) == 5 and route[:3] == ("POST", "trail", "review") and route[4] == "sign":
+            self.decide(lambda body, check: app.trail.review_sign(
+                route[3], shown_head=str(body.get("head") or ""), dispositions=body.get("dispositions") or {},
+                notes=body.get("notes") or {}, reason=str(body.get("reason") or ""),
+                conclusion=str(body.get("conclusion") or ""), passphrase=self._secret or "",
+                signer_id=str(body.get("signer_id") or ""), human_check=check))
+        elif route == ("GET", "trail", "export"):
+            name, data = app.trail.export()
+            self.send_bytes(200, data, "application/gzip", {"Content-Disposition": f'attachment; filename="{name}"'})
         elif len(route) == 4 and route[:3] == ("GET", "trail", "record"):
             found = app.trail.record(route[3])
             if found is None:
@@ -339,6 +356,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(200, app.quarantine().cases(query.get("state")))
         elif len(route) == 3 and route[:2] == ("GET", "quarantine"):
             self.send_json(200, app.quarantine().case(route[2], full=query.get("full") == "1"))
+        elif len(route) == 4 and route[:3] == ("POST", "quarantine", "sources") and route[3] in ("trust", "revoke"):
+            self.decide(lambda body, check: app.quarantine().trust(
+                str(body.get("domain") or ""), reason=str(body.get("reason") or ""), passphrase=self._secret or "",
+                signer_id=body.get("signer_id"), human_check=check, expires=str(body.get("expires") or "") or None,
+                subdomains=bool(body.get("subdomains")), revoke=route[3] == "revoke",
+                shown_record=str(body.get("record") or "") or None))
         elif len(route) == 4 and route[:2] == ("POST", "quarantine") and route[3] in ("release", "threat"):
             self.decide(lambda body, check: app.quarantine().decide(
                 route[2], route[3], reason=str(body.get("reason") or ""), passphrase=self._secret or "",
@@ -351,6 +374,12 @@ class Handler(BaseHTTPRequestHandler):
         elif len(route) == 5 and route[:3] == ("POST", "changes", "actions") and route[4] in ("approve", "reject"):
             self.decide(lambda body, check: app.changes.decide_action(
                 route[3], route[4], expected_hash=str(body.get("expected_hash") or ""),
+                reason=str(body.get("reason") or ""), passphrase=self._secret or "",
+                signer_id=body.get("signer_id"), human_check=check))
+        elif route == ("POST", "changes", "plans", "approve"):
+            self.decide(lambda body, check: app.changes.approve_plan(
+                str(body.get("root") or ""), str(body.get("plan_id") or ""),
+                shown_record=str(body.get("record") or ""), shown_sha256=str(body.get("sha256") or ""),
                 reason=str(body.get("reason") or ""), passphrase=self._secret or "",
                 signer_id=body.get("signer_id"), human_check=check))
         elif route == ("GET", "signatures"):
@@ -374,6 +403,19 @@ class Handler(BaseHTTPRequestHandler):
                             {"Content-Disposition": 'attachment; filename="capa-trends.md"'})
         elif len(route) == 3 and route[:2] == ("GET", "capa"):
             self.send_json(200, app.capa().deviation(route[2]))
+        elif len(route) == 5 and route[:3] == ("POST", "capa", "candidates") and route[4] in ("accept", "dismiss"):
+            self.decide(lambda body, check: app.capa().decide(
+                route[4], route[3], reason=str(body.get("reason") or ""), passphrase=self._secret or "",
+                signer_id=body.get("signer_id"), human_check=check))
+        elif len(route) == 5 and route[:3] == ("POST", "capa", "actions") and route[4] == "approve":
+            self.decide(lambda body, check: app.capa().approve_action(
+                route[3], expected_hash=str(body.get("expected_hash") or ""), reason=str(body.get("reason") or ""),
+                passphrase=self._secret or "", signer_id=body.get("signer_id"), human_check=check))
+        elif len(route) == 4 and route[:2] == ("POST", "capa") and route[3] == "close":
+            self.decide(lambda body, check: app.capa().decide(
+                "close", route[2], reason=str(body.get("reason") or ""), passphrase=self._secret or "",
+                signer_id=body.get("signer_id"), human_check=check, shown_version=str(body.get("version") or ""),
+                no_action=bool(body.get("no_action"))))
         elif route == ("GET", "qualifications"):
             from .views.qualifications import qualifications
             self.send_json(200, qualifications(app.config.qualification_warn_days))
@@ -392,6 +434,14 @@ class Handler(BaseHTTPRequestHandler):
         check = self.app.guard.human_check(self.client_address, self.server.server_address)
         result = call(body, check)
         self.send_json(200 if result.get("ok") else 403, result)
+
+
+def signer_list() -> list[dict]:
+    from .views import installed as has
+    if not has("aqt_signoff"):
+        return []
+    from .views.changes import _signers
+    return _signers()
 
 
 def make_server(app: App, port: int = 0) -> UiServer:

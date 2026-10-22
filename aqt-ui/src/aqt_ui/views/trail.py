@@ -9,14 +9,21 @@ are cached with the record count they covered.
 from __future__ import annotations
 
 import json
+import re
+import tempfile
 import threading
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Callable
 
 from aqt_evidence import SinkError, spool_file
 
+from . import NotFound, Stale, UsageProblem
+
 REASON_CHARS = 200
+PAGE = 100          # records per page in the Trail view
+MAX_PAGE = 500
 
 
 def _now() -> datetime:
@@ -61,22 +68,51 @@ class TrailIndex:
 
     def __init__(self, path: Path):
         self.path = Path(path)
-        self.rows: list[dict] = []
-        self.offset = 0
-        self.identity: tuple | None = None
         self.unreadable: str | None = None
         self.lock = threading.Lock()
+        self._reset(None)
+
+    def _reset(self, identity: tuple | None) -> None:
+        """Forget everything (new or rewritten file). The aggregates below are kept up to date
+        row by row, so no request has to walk the whole list for them."""
+        self.rows: list[dict] = []
+        self.offset = 0
+        self.identity = identity
+        self.types: set[str] = set()
+        self.last_time: dict[str, str] = {}      # last record time per tool prefix ("trail.", ...)
+        self.last_anchor: str | None = None
+        self.last_review: str | None = None
+        self.refused: list[dict] = []
+        self.by_id: dict[str, int] = {}          # record id -> position in rows
+        self.version = 0                          # grows with every change of rows
+
+    def _add(self, row: dict) -> None:
+        kind = row["type"]
+        self.by_id[str(row["id"])] = len(self.rows)
+        self.rows.append(row)
+        self.types.add(kind)
+        self.last_time[kind.split(".", 1)[0] + "."] = row["time"]
+        if kind == "trail.anchor":
+            self.last_anchor = row["time"]
+        elif kind == "trail.review":
+            self.last_review = row["time"]
+        if kind.endswith(".refused"):
+            self.refused.append(row)
 
     def refresh(self) -> list[dict]:
         with self.lock:
             try:
                 info = self.path.stat()
             except FileNotFoundError:
-                self.rows, self.offset, self.identity = [], 0, None
+                if self.identity is not None or self.rows:
+                    self._reset(None)
+                    self.version += 1
                 return self.rows
             identity = (info.st_ino, info.st_dev)
             if identity != self.identity or info.st_size < self.offset:
-                self.rows, self.offset, self.identity = [], 0, identity   # new or rewritten file
+                version = self.version
+                self._reset(identity)                   # new or rewritten file
+                self.version = version + 1
             if info.st_size == self.offset:
                 return self.rows
             with open(self.path, "rb") as handle:
@@ -88,10 +124,12 @@ class TrailIndex:
                     if line.strip():
                         try:
                             record = json.loads(line)
-                            self.rows.append(compact(record, position, len(line)))
+                            self._add(compact(record, position, len(line)))
                         except ValueError:
                             self.unreadable = f"byte {position}: line is not valid JSON"
                     position += len(line)
+                if position != self.offset:
+                    self.version += 1
                 self.offset = position
             return self.rows
 
@@ -102,10 +140,14 @@ class TrailIndex:
 
     def find(self, key: str) -> dict | None:
         rows = self.refresh()
-        for row in rows:
-            if row["id"] == key or str(row["chain"].get("seq")) == key:
-                return self.full(row)
-        return None
+        position = self.by_id.get(key)
+        if position is None and key.isdigit():
+            seq = int(key)       # seq usually equals the position; fall back to a scan otherwise
+            if seq < len(rows) and rows[seq]["chain"].get("seq") == seq:
+                position = seq
+            else:
+                position = next((i for i, row in enumerate(rows) if row["chain"].get("seq") == seq), None)
+        return self.full(rows[position]) if position is not None else None
 
 
 def public_row(row: dict) -> dict:
@@ -120,6 +162,7 @@ class TrailView:
         self.check: dict | None = None          # last verification + ALCOA++ result
         self.running = False
         self._lock = threading.Lock()
+        self._selection: tuple = (None, [])     # (key, rows) of the last filtered selection
 
     # -- writer and spool --------------------------------------------------------------------------
     def writer(self) -> dict:
@@ -191,8 +234,6 @@ class TrailView:
     # -- status band -----------------------------------------------------------------------------------
     def status(self) -> dict:
         rows = self.index.refresh()
-        anchors = [row for row in rows if row["type"] == "trail.anchor"]
-        reviews = [row for row in rows if row["type"] == "trail.review"]
         check = self.check
         if not self.config.trail_path.exists():
             state = "missing"
@@ -210,8 +251,7 @@ class TrailView:
             "path": str(self.config.trail_path), "log_id": (check or {}).get("log_id"),
             "check": {k: v for k, v in (check or {}).items() if k != "alcoa"} or None,
             "verifying": self.running, "appended_since_check": unverified,
-            "last_anchor": anchors[-1]["time"] if anchors else None,
-            "last_review": reviews[-1]["time"] if reviews else None,
+            "last_anchor": self.index.last_anchor, "last_review": self.index.last_review,
             "writer": self.writer(), "unreadable": self.index.unreadable,
         }
 
@@ -220,17 +260,34 @@ class TrailView:
 
     # -- list ------------------------------------------------------------------------------------------
     def records(self, *, since=None, until=None, type=None, actor=None, action=None, subject=None, session=None,
-                limit: int = 300, before: int | None = None) -> dict:
-        from aqt_trail.export import select
+                limit: int = PAGE, offset: int = 0, before: int | None = None) -> dict:
+        """One page of the (filtered) records, newest first. ``offset`` counts from the newest
+        match; ``before`` (a seq) is the older cursor form. A filtered selection is cached until
+        the trail grows, so paging through it does not filter 50,000 rows again."""
         rows = self.index.refresh()
-        chosen = select(rows, since=since or None, until=until or None, type=type or None, actor=actor or None,
-                        action=action or None, subject=subject or None, session=session or None)
+        filters = (since or None, until or None, type or None, actor or None, action or None, subject or None,
+                   session or None)
+        if any(filters):
+            key = (self.index.version, filters)
+            if self._selection[0] != key:
+                from aqt_trail.export import select
+                names = ("since", "until", "type", "actor", "action", "subject", "session")
+                self._selection = (key, select(rows, **dict(zip(names, filters))))
+            chosen = self._selection[1]
+        else:
+            chosen = rows
         if before is not None:
-            chosen = [row for row in chosen if (row["chain"].get("seq") or 0) < before]
-        newest = list(reversed(chosen))[:limit]
-        types = sorted({row["type"] for row in rows})
-        return {"total": len(chosen), "rows": [public_row(row) for row in newest], "types": types,
-                "more": len(chosen) > limit}
+            cut = len(chosen)
+            while cut and (chosen[cut - 1]["chain"].get("seq") or 0) >= before:
+                cut -= 1
+            chosen = chosen[:cut]
+        limit = max(1, min(int(limit), MAX_PAGE))
+        total = len(chosen)
+        offset = max(0, min(int(offset), max(total - 1, 0)))
+        end = total - offset
+        page = chosen[max(0, end - limit):end][::-1]
+        return {"total": total, "rows": [public_row(row) for row in page], "types": sorted(self.index.types),
+                "offset": offset, "limit": limit, "more": end - limit > 0}
 
     def record(self, key: str) -> dict | None:
         record = self.index.find(key)
@@ -242,14 +299,114 @@ class TrailView:
         return {"record": record, "claimed": claimed, "observed": observed, "attribution_mismatch": mismatch}
 
     def refusals_since(self, hours: int = 24) -> list[dict]:
+        self.index.refresh()
         cutoff = _now() - timedelta(hours=hours)
         out = []
-        for row in self.index.refresh():
-            if row["type"].endswith(".refused"):
-                moment = parse_time(row["time"])
-                if moment and moment >= cutoff:
-                    out.append(public_row(row))
-        return out
+        for row in reversed(self.index.refused):
+            moment = parse_time(row["time"])
+            if moment and moment >= cutoff:
+                out.append(public_row(row))
+            elif moment and moment < cutoff - timedelta(hours=1):
+                break                                 # older than the window (allowing some clock skew)
+        return out[::-1]
+
+    # -- audit-trail review and export (the CLI's review run / review sign / export) ----------------------
+    def review_run(self, *, since: str | None = None, until: str | None = None) -> dict:
+        """``aqt-trail review run``: risk queries over the period, saved as a worksheet. Writes no evidence."""
+        from aqt_trail.review import load_profile, run_review, save_worksheet, worksheet_markdown
+        from aqt_trail.state import read_records
+        config = self.config
+        if not config.trail_path.exists():
+            raise UsageProblem("there is no trail to review yet")
+        profile = load_profile("default", config.section("review"))
+        try:
+            sheet = run_review(read_records(config.trail_path), profile, log_id=config.meta()["log_id"],
+                               since=since or None, until=until or None, trail=str(config.trail_path))
+        except ValueError as error:
+            raise UsageProblem(str(error)) from error
+        path = save_worksheet(sheet, config.state / "reviews")
+        return {**sheet, "path": str(path), "markdown": worksheet_markdown(sheet)}
+
+    def worksheet(self, sheet_id: str) -> dict:
+        if not re.fullmatch(r"rv_[0-9a-f]{12}", sheet_id or ""):
+            raise UsageProblem("not a worksheet id")
+        path = self.config.state / "reviews" / sheet_id / "worksheet.json"
+        if not path.exists():
+            raise NotFound(f"no worksheet {sheet_id}")
+        return json.loads(path.read_text())
+
+    def review_sign(self, sheet_id: str, *, shown_head: str, dispositions: dict, notes: dict, reason: str,
+                    conclusion: str, passphrase: str, signer_id: str, human_check: Callable) -> dict:
+        """``aqt-trail review sign``: same checks and the same records as the CLI. A refusal is
+        recorded as ``trail.refused``; the reviewer must not be an actor of the reviewed period."""
+        from aqt_evidence import HumanCheckError, load_signer
+        from aqt_trail.review import ReviewRefused, build_review
+        from aqt_trail.signers import key_file, load_registry
+        config = self.config
+        reviewer = str(signer_id or "")
+        try:
+            human_check()
+        except HumanCheckError as error:
+            return self._refuse_review(reviewer, "agent_context", str(error), list(error.context.markers))
+        sheet = self.worksheet(sheet_id)
+        if not shown_head or sheet["scope"]["head"] != shown_head:
+            raise Stale("the worksheet is not the one shown; nothing was signed. Reload the review.")
+        key_path = key_file(reviewer)
+        if not key_path.exists():
+            raise UsageProblem(f"no key at {key_path}; enrol the reviewer with aqt-signoff init")
+        encrypted = b"ENCRYPTED" in key_path.read_bytes()     # as the CLI: ask only for a protected key
+        try:
+            signer = load_signer(key_path, passphrase=passphrase.encode() if encrypted else None)
+        except (ValueError, TypeError) as error:
+            return self._refuse_review(reviewer, "auth_failed", f"could not unlock the key: {error}")
+        records = read_all(config.trail_path)
+        try:
+            record = build_review(sheet, records, reviewer_id=reviewer, signer=signer,
+                                  dispositions={str(k): str(v) for k, v in (dispositions or {}).items()},
+                                  notes={str(k): str(v).strip() for k, v in (notes or {}).items() if str(v).strip()},
+                                  reason=reason, conclusion=conclusion or "audit trail reviewed; dispositions as listed",
+                                  registry=load_registry(), tz=config.section("review")["timezone"])
+        except ReviewRefused as refused:
+            return self._refuse_review(reviewer, refused.code, refused.message)
+        except ValueError as error:
+            raise UsageProblem(str(error)) from error
+        stored = self._send(record)
+        return {"ok": True, "message": f"review {record['id']} signed by {reviewer}", "record_id": record["id"],
+                "record_type": "trail.review", "time": (stored or record).get("time")}
+
+    def _send(self, record: dict) -> dict | None:
+        from aqt_trail.client import TrailClient, TrailRefused
+        try:
+            return TrailClient(self.config.socket_path, timeout=5.0).append(record)
+        except TrailRefused as error:
+            raise UsageProblem(f"the trail refused the record: {error}") from error
+
+    def _refuse_review(self, reviewer: str, code: str, message: str, markers: list[str] | None = None) -> dict:
+        from aqt_trail.review import refusal_record
+        record = refusal_record(reviewer, code, message, markers)
+        try:
+            self._send(record)
+        except (UsageProblem, SinkError, OSError):
+            pass
+        return {"ok": False, "message": f"refused: {message}", "reason_code": code, "markers": markers or [],
+                "record_id": record["id"]}
+
+    def export(self) -> tuple[str, bytes]:
+        """``aqt-trail export --tar``: a verification bundle, built in a temporary folder and sent as a file."""
+        from aqt_trail.export import export_bundle
+        if not self.config.trail_path.exists():
+            raise UsageProblem("there is no trail to export yet")
+        stamp = _now().strftime("%Y%m%dT%H%M%SZ")
+        log_id = self.config.meta()["log_id"] if self.config.meta_path.exists() else "trail"
+        name = re.sub(r"[^A-Za-z0-9._-]", "_", f"aqt-trail-bundle-{log_id}-{stamp}")
+        with tempfile.TemporaryDirectory(prefix="aqt-ui-export-") as folder:
+            archive = export_bundle(self.config, Path(folder) / name, tar=True)
+            return archive.name, archive.read_bytes()
+
+
+def read_all(path: Path) -> list[dict]:
+    from aqt_trail.state import read_records
+    return read_records(path)
 
 
 def _count_lines(path: Path) -> int:

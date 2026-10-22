@@ -105,7 +105,7 @@ class QuarantineView:
         trusted = [{"domain": s.domain, "subdomains": s.subdomains, "expires": s.expires, "active": s.active(),
                     "record": s.record.get("id"), "by": (s.record.get("actor") or {}).get("id"),
                     "reason": s.record.get("reason")} for s in sources]
-        return {"cases": rows, "counts": counts, "sources": trusted,
+        return {"cases": rows, "counts": counts, "sources": trusted, "signers": self.signers(decider),
                 "state_dir": str(self.config.state_dir), "outbox": decider.store.outbox_size()}
 
     def case(self, case_id: str, *, full: bool = False) -> dict:
@@ -182,8 +182,40 @@ class QuarantineView:
             raise (UsageProblem if error.exit_code == 2 else Stale)(str(error)) from error
         except StoreError as error:
             raise UsageProblem(str(error)) from error
-        record = outcome.record
-        data = record.get("data") or {}
-        return {"ok": outcome.ok, "message": outcome.message, "record_id": record.get("id"),
-                "record_type": record.get("type"), "time": record.get("time"),
-                "reason_code": data.get("reason_code"), "markers": data.get("agent_markers", [])}
+        return _outcome(outcome)
+
+    def trust(self, domain: str, *, reason: str, passphrase: str, signer_id: str | None, human_check: Callable,
+              expires: str | None = None, subdomains: bool = False, revoke: bool = False,
+              shown_record: str | None = None) -> dict:
+        """Trust a source domain until a date (or revoke that trust), as ``aqt-quarantine trust-source``.
+        Trust only lowers the band of later content from the domain; it releases no case."""
+        from aqt_evidence import HumanCheckError
+        from aqt_quarantine.decisions import DecisionError
+        decider = self.decider(passphrase=passphrase, human_check=human_check)
+        if revoke:
+            wanted = (domain or "").strip().lower().rstrip(".")
+            _, sources = decider.fold()
+            current = next((s for s in sources if s.domain == wanted and s.active()), None)
+            if current is None or not shown_record or current.record.get("id") != shown_record:
+                try:
+                    human_check()
+                except HumanCheckError:
+                    pass                  # refused first: aqt-quarantine records the refusal below
+                else:
+                    if current is None:
+                        raise NotFound(f"{wanted} is not a trusted source")
+                    raise Stale("the trust entry is not the one shown; nothing was signed. Reload the sources.")
+        try:
+            outcome = decider.trust_source(domain or "", reason, expires=expires or None, signer_id=signer_id or None,
+                                           subdomains=bool(subdomains), revoke=revoke)
+        except DecisionError as error:
+            raise (UsageProblem if error.exit_code == 2 else Stale)(str(error)) from error
+        return _outcome(outcome)
+
+
+def _outcome(outcome) -> dict:
+    record = outcome.record
+    data = record.get("data") or {}
+    return {"ok": outcome.ok, "message": outcome.message, "record_id": record.get("id"),
+            "record_type": record.get("type"), "time": record.get("time"),
+            "reason_code": data.get("reason_code"), "markers": data.get("agent_markers", [])}

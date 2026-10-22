@@ -9,15 +9,23 @@ from datetime import UTC, datetime
 
 from aqt_evidence import SinkError, iter_evidence
 
-from . import installed
+from . import evidence_fingerprint, installed
 from .trail import parse_time
+
+_CACHE: dict = {}
 
 
 def _records() -> list[dict]:
+    """``validate.*`` records, re-read only when an evidence file changed (large trails)."""
+    key = evidence_fingerprint()
+    if _CACHE.get("key") == key:
+        return _CACHE["records"]
     try:
-        return [r for r in iter_evidence() if isinstance(r, dict) and str(r.get("type", "")).startswith("validate.")]
+        records = [r for r in iter_evidence() if isinstance(r, dict) and str(r.get("type", "")).startswith("validate.")]
     except (SinkError, OSError):
         return []
+    _CACHE.update(key=key, records=records)
+    return records
 
 
 def thresholds_in_use() -> dict | None:

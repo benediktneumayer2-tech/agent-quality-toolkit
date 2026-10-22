@@ -47,7 +47,7 @@ Seven habits of a medicine plant became seven tools; the eighth is the shared fo
 | [aqt-capa](aqt-capa/README.md) | Deviation and CAPA (corrective and preventive action) | Turns an agent failure into a deviation (a recorded "this should not have happened"), finds the root cause, gets a fix to the agent's instruction file (`AGENTS.md`) approved, then checks that the fix worked. | A mistake must not happen again. |
 | [aqt-trail](aqt-trail/README.md) | The bound logbook nobody can secretly edit | The audit trail. A separate writer program stores every record and links it to the one before. Unlike most agent logs, it does not just keep what the sender claims: it asks the Linux kernel which program sent the record. It checks the trail against ALCOA++, the pharma checklist for trustworthy records, and supports a signed review. | Always, to show later what happened. |
 | [aqt-spec](aqt-spec/README.md) | The standard form and the rulebook | One record format for all tools (who did what, when, why, to which exact content), plus catalogues of the regulations and a crosswalk from each rule to the tool that supports it. | You build a tool or check the regulations. |
-| [aqt-ui](aqt-ui/README.md) (optional) | The quality desk | One local web page that shows the state of all tools, lists what needs you, and lets you release a quarantined page or approve a prepared action with your passphrase. Refuses decisions from agents. | You prefer a page to many commands. |
+| [aqt-ui](aqt-ui/README.md) (optional) | The quality desk | One local web page that shows the state of all tools, lists what needs you, and lets you make the human decisions (quarantine, plan and action approval, CAPA, trail review) with your passphrase, in English or German. Refuses decisions from agents. | You prefer a page to many commands. |
 
 **Each part works on its own, needing only the shared `aqt-spec` library; together they form a loop.** All of them write the same kind of record into the same trail, so they use each other's evidence: aqt-capa finds a refused release, aqt-validate's approved thresholds drive the quarantine, and the trail review checks every signature.
 
@@ -169,7 +169,7 @@ The [catalogues](aqt-spec/catalogues/) hold 121 paraphrased requirements from 11
 - **Some checks are manual.** The Claude Code hooks, a live advisor pairing and the AI-reviewer command lines have documented manual checks, not automated tests. The trail's separate-user mode is not yet tested.
 - **Demo shortcuts.** The demo's people use fixed passphrases (DEMO ONLY), and its time stamps come from a local test authority (TEST ONLY).
 - **Preview.** Version 0.1; interfaces may change before 1.0. Linux only. Not on PyPI (the Python package index) yet: install from this repository. Ready-made hooks exist for Claude Code only; with Codex or pi you run the commands yourself, and aqt-trail imports their session logs.
-- **Tests.** `scripts/test_all.sh` runs 551 offline tests (550 in the nine packages, including the optional aqt-ui, and one for the demo) with a throw-away home folder; GitHub's automatic checks (CI) run it on Python 3.11, 3.12 and 3.13.
+- **Tests.** `scripts/test_all.sh` runs 580 offline tests (579 in the nine packages, including the optional aqt-ui, and one for the demo) with a throw-away home folder; GitHub's automatic checks (CI) run it on Python 3.11, 3.12 and 3.13.
 
 ## Privacy and security
 

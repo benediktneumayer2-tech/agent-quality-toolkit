@@ -930,9 +930,10 @@ Each package has an offline pytest suite in `<package>/tests/` with synthetic fi
 | aqt-quarantine | 65 | 0 | Detectors, engine, decisions, Claude Code adapter, payload conformance of every record type |
 | aqt-validate | 110 | 0 | Statistics against reference values, loaders, detector and reviewer runs |
 | aqt-capa | 20 | 0 | Units, CLI, end to end |
+| aqt-ui | 53 | 0 | Login, Host, CSRF and Origin, read-only and peer checks for every decision, each decision end to end, German labels, paging and a 50,000-record trail |
 | demo | 1 | 0 | `examples/demo/test_demo.py`: the full story, 42 expected outcomes |
 
-In total 551 tests pass: 550 package tests (including the optional aqt-ui) plus the demo test. Some tests skip themselves when a tool is missing: `openssl` (aqt-trail token cross-check) and `git` (aqt-change quick start).
+In total 580 tests pass: 579 package tests (including the optional aqt-ui) plus the demo test. Some tests skip themselves when a tool is missing: `openssl` (aqt-trail token cross-check) and `git` (aqt-change quick start).
 
 ### 9.2 Running them
 

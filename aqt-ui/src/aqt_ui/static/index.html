@@ -10,7 +10,7 @@
 <script type="module" src="/static/app.js"></script>
 </head>
 <body>
-<a class="skip" href="#main">Skip to content</a>
+<a class="skip" id="skip" href="#main">Skip to content</a>
 <div class="shell">
   <div class="top-stack">
     <div class="ribbon" id="ribbon" role="status" hidden></div>
@@ -21,16 +21,17 @@
       <span class="pill" id="trail-pill">Trail: loading</span>
       <span class="spacer"></span>
       <span class="badge" id="mode-badge">Mode: loading</span>
+      <select class="lang" id="lang" aria-label="Language"><option value="en">English</option><option value="de">Deutsch</option></select>
       <button class="btn small ghost" id="refresh" type="button">Refresh</button>
     </header>
   </div>
   <nav class="rail" id="rail" aria-label="Views">
-    <div class="brand">Agent Quality Toolkit<small>quality desk, this machine only</small></div>
+    <div class="brand">Agent Quality Toolkit<small id="brand-sub">quality desk, this machine only</small></div>
     <ul class="nav" id="nav"></ul>
     <div class="rail-foot" id="railfoot"></div>
   </nav>
   <main class="center" id="main" tabindex="-1"></main>
-  <aside class="inspector" id="inspector" aria-label="Inspector"></aside>
+  <aside class="inspector" id="inspector" aria-label="Details"></aside>
 </div>
 <div class="sr-only" id="live" aria-live="polite"></div>
 </body>
