@@ -15,7 +15,7 @@ from . import __version__, records
 from . import thresholds as thresholds_mod
 from .adapters.claude_code import HARNESS, run_hook
 from .config import Config, config_home, load_config
-from .decisions import Decider, DecisionError, create_identity, slug
+from .decisions import Decider, DecisionError, adopt_identity, create_identity, slug
 from .engine import Engine, Source, text_hash
 from .report import html_page, terminal
 from .store import Store, StoreError, normalise_case_id
@@ -82,6 +82,13 @@ def cmd_init(args) -> int:
     Store(config.state_dir).ensure()
     if args.no_key:
         print("no key created: decisions will be refused while require_signed_decisions = true")
+        return 0
+    if args.id and (config.keys_dir / f"{slug(args.id)}.key").exists():
+        # A key for this id exists already, typically from aqt-signoff init: reuse it, never overwrite it.
+        key_id, path, enrolled = adopt_identity(config, signer_id=args.id, name=args.name, role=args.role)
+        print(f"reused the existing key {key_id} at {path}; "
+              + (f"enrolled {args.id} in {config.registry}" if enrolled
+                 else f"{args.id} is already enrolled in {config.registry}"))
         return 0
     if not (args.id and args.name):
         print("aqt-quarantine init: --id human:<id> and --name are required to create a key", file=sys.stderr)

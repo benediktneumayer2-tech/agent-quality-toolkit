@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Docs: `docs/usage.md` named `plan status --json` as a place that shows the approval record; `gate`
+  (`approval.record`) and the trace report do.
+
 ## 0.1.0 — 2026-10-21
 
 First MVP.

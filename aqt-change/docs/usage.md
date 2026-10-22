@@ -80,7 +80,7 @@ Run the same command again with the same `--key` to resume after a hook failure 
 
 ## Approval with aqt-signoff
 
-The approval target is the latest `baseline`/`begin`/semantic `reconcile` record of the plan (`plan status --json` and the report show its ID). A person signs it with aqt-signoff (`--record <id> --meaning approved`). The signature subject is `{kind: record, ref, sha256: record_content_hash(record)}`. aqt-change asks `aqt_signoff.is_approved` when it is installed (`signed`). Otherwise it looks for matching `signoff.signature` records in `--evidence` files, `AQT_EVIDENCE`, the sink or the trail log, and reports them as `unverified`. If aqt-signoff is installed and rejects the signature, the state is `invalid` (gate: MANUAL).
+The approval target is the latest `baseline`/`begin`/semantic `reconcile` record of the plan (`gate` shows its ID as `approval.record`, the trace report in its *Approval* row; `plan status` does not). A person signs it with aqt-signoff (`--record <id> --meaning approved`). The signature subject is `{kind: record, ref, sha256: record_content_hash(record)}`. aqt-change asks `aqt_signoff.is_approved` when it is installed (`signed`). Otherwise it looks for matching `signoff.signature` records in `--evidence` files, `AQT_EVIDENCE`, the sink or the trail log, and reports them as `unverified`. If aqt-signoff is installed and rejects the signature, the state is `invalid` (gate: MANUAL).
 
 ## Claude Code hooks
 

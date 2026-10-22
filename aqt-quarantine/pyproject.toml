@@ -15,7 +15,7 @@ dependencies = ["aqt-spec>=0.1", "cryptography>=41"]
 [project.optional-dependencies]
 # Transformer detectors as local ONNX exports (Horizon, Wolf Defender, PIGuard, deepset ...).
 hf = ["onnxruntime>=1.17", "tokenizers>=0.15", "numpy>=1.24"]
-test = ["pytest>=8"]
+test = ["pytest>=8", "jsonschema>=4.18"]  # jsonschema: payload checks of the records
 
 [project.scripts]
 aqt-quarantine = "aqt_quarantine.cli:main"

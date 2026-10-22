@@ -13,6 +13,7 @@
         "cancelled"
       ],
       "meanings": [
+        "authored",
         "approved"
       ],
       "human_reason": false
@@ -204,7 +205,8 @@
         "revoke"
       ],
       "meanings": [
-        "approved"
+        "approved",
+        "rejected"
       ],
       "human_reason": true
     },
@@ -227,6 +229,7 @@
       "actions": [
         "consumed",
         "reached",
+        "set",
         "cost-added"
       ],
       "meanings": [],
@@ -327,7 +330,8 @@
       "summary": "An action proposed for approval",
       "schema": "data/signoff.action.prepared.schema.json",
       "actions": [
-        "prepare"
+        "prepare",
+        "revise"
       ],
       "meanings": [],
       "human_reason": false
@@ -358,7 +362,10 @@
       "tool": "aqt-signoff",
       "summary": "A signature stopped applying (content changed or withdrawn)",
       "schema": "data/signoff.invalidation.schema.json",
-      "actions": [],
+      "actions": [
+        "content-changed",
+        "withdraw"
+      ],
       "meanings": [],
       "human_reason": true
     },
@@ -475,7 +482,8 @@
       "summary": "Human qualification decision with validity period",
       "schema": "data/validate.qualification.schema.json",
       "actions": [
-        "qualify"
+        "approve",
+        "reject"
       ],
       "meanings": [
         "approved",
@@ -498,7 +506,7 @@
       "summary": "Validation report",
       "schema": "data/validate.report.schema.json",
       "actions": [
-        "report"
+        "issued"
       ],
       "meanings": [],
       "human_reason": false
@@ -508,7 +516,7 @@
       "summary": "Requalification trigger fired",
       "schema": "data/validate.requalification.schema.json",
       "actions": [
-        "requalify"
+        "triggered"
       ],
       "meanings": [],
       "human_reason": false

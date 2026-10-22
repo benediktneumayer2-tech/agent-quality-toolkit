@@ -8,7 +8,7 @@ tz = "UTC"                              # example: "Europe/Vienna"; recorded wit
 # state_dir  = "~/.local/state/aqt/quarantine"   # journal, outbox, case files (also AQT_QUARANTINE_STATE)
 # registry   = "~/.config/aqt/signers.json"      # signer registry shared with aqt-signoff (also AQT_SIGNERS)
 # keys       = "~/.config/aqt/keys"              # <signer-id-slug>.key / .pub (also AQT_KEYS_DIR)
-# sink       = "unix:~/.local/state/aqt/trail/trail.sock"   # evidence sink (also AQT_SINK)
+# sink       = "unix:/run/user/1000/aqt/trail.sock"   # evidence sink: the trail writer at $XDG_RUNTIME_DIR/aqt/trail.sock, 1000 = your uid (also AQT_SINK)
 # thresholds = "~/.config/aqt/thresholds.json"   # from aqt-validate (also AQT_QUARANTINE_THRESHOLDS)
 
 [policy]

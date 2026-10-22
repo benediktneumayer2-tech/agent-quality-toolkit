@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Global options (`--json`, `--config`, `--db`, `--evidence`, `--root`, `--repo`) are accepted before or after
+  the subcommand, as in aqt-trail, aqt-quarantine and aqt-validate.
+
 ## 0.1.0 — 2026-10-21
 
 First MVP.

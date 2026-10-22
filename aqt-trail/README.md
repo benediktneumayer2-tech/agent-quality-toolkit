@@ -36,7 +36,7 @@ uv venv .venv && uv pip install --python .venv/bin/python -e ../aqt-spec -e .
 export PATH=$PWD/.venv/bin:$PATH
 
 aqt-trail init                                   # state dir + service key
-aqt-trail serve &                                # the writer (Unix socket, 0600)
+aqt-trail serve &                                # the writer (Unix socket, 0600); as a service: examples/aqt-trail.service
 export AQT_SINK=unix:$XDG_RUNTIME_DIR/aqt/trail.sock   # other AQT tools now write here
 
 aqt-trail event --action release.decided --actor human:alice --reason "plan approved in review"

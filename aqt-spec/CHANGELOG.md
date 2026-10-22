@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- Registry aligned with what the 0.1 tools write: actions `signoff.action.prepared` `revise`,
+  `signoff.invalidation` `content-changed`/`withdraw`, `sensei.budget` `set`, `validate.report` `issued`,
+  `validate.qualification` `approve`/`reject`, `validate.requalification` `triggered`; meanings
+  `quarantine.source.trusted` `rejected` (revocation) and `capa.action` `authored` (implementation).
+- Payload schemas: `quarantine.source.trusted` `expires` is a calendar date (`common#/$defs/date`);
+  `quarantine.delivered` accepts the modes `command` and `failed`, a null `session`, and lists `kind` and
+  `decision`; a quarantine `source` may have a null `ref` or `domain`. Real aqt-quarantine records now pass
+  `aqt-evidence conform` with payload checks.
+- A test keeps the spec's registry table in step with `registry.json` (actions and meanings).
+
 ## 0.1.0 — 2026-10-21
 
 First version of the Agent Quality Toolkit evidence model.

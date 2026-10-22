@@ -1,11 +1,10 @@
 {
   "aqt_thresholds": "0.1",
-  "protocol": null,
-  "run": null,
-  "note": "TEST ONLY: holds every result. Used by the manual Claude Code verification in docs/claude-code.md.",
+  "calibrated": false,
+  "note": "TEST ONLY: holds every result. Used by the manual Claude Code verification in docs/claude-code.md. The threshold -1 (below the schema's 0..1,000,000 ppm range) makes even a score of 0 fire.",
   "detectors": [{"id": "heuristics", "version": "builtin"}],
   "bands": [
-    {"name": "hold", "fpr_target_ppm": null, "rule": "any", "thresholds": {"heuristics": -1}}
+    {"name": "hold", "rule": "any", "thresholds": {"heuristics": -1}}
   ],
-  "calibration": {"n": 0, "realised_fpr_ppm": {"hold": null}}
+  "calibration": {"n": 0, "realised_fpr_ppm": {}}
 }

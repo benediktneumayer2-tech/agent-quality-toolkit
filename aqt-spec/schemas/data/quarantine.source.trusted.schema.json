@@ -12,7 +12,7 @@
       "type": "boolean"
     },
     "expires": {
-      "$ref": "urn:aqt:schema:0.1:common#/$defs/time"
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/date"
     },
     "policy": {
       "type": "string"

@@ -42,7 +42,8 @@ aqt-trail review sign <worksheet.json> --reviewer human:dora \
 - The key: `--key PEM`, or the reviewer's key in the shared key directory `$XDG_CONFIG_HOME/aqt/keys/` (as
   enrolled by aqt-signoff). An encrypted key asks for its passphrase at the terminal (re-authentication). When
   the reviewer is in `$XDG_CONFIG_HOME/aqt/signers.json`, the key must be one of their active keys; a revoked key
-  is refused. Name and role come from the registry.
+  is refused. Name and role come from the registry. `AQT_SIGNERS` and `AQT_KEYS_DIR` point to another registry
+  or key directory, as in aqt-signoff and aqt-quarantine; `verify` and `export` use the same registry.
 - **Refused** (and recorded as `trail.refused` with `attempted_action: review.sign`) when the command runs inside
   an agent session or without a terminal (`aqt_evidence.require_human`), when the reviewer was an actor in scope
   (`not_independent`), is not a `human:` identity, or when the trail at the end of the scope no longer has the

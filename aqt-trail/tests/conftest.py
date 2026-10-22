@@ -41,7 +41,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
-    for name in ("AQT_SINK", "AQT_TRAIL_STATE", "AQT_EVIDENCE", "AQT_ACTOR"):
+    for name in ("AQT_SINK", "AQT_TRAIL_STATE", "AQT_EVIDENCE", "AQT_ACTOR", "AQT_SIGNERS", "AQT_KEYS_DIR"):
         monkeypatch.delenv(name, raising=False)
     yield tmp_path
     shutil.rmtree(runtime, ignore_errors=True)

@@ -29,8 +29,8 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-from aqt_evidence import (HumanCheckError, actor, canonical_json, content_hash, generate_key, load_signer,
-                          require_human, subject, utc_now)
+from aqt_evidence import (HumanCheckError, actor, canonical_json, content_hash, generate_key, load_public_key,
+                          load_signer, require_human, subject, utc_now)
 
 from . import records
 from .config import Config
@@ -336,3 +336,34 @@ def create_identity(config: Config, *, signer_id: str, name: str, role: str,
           public_pem=Path(f"{key_path}.pub").read_text(encoding="ascii"))
     return key_id, key_path
 
+
+def adopt_identity(config: Config, *, signer_id: str, name: str | None, role: str,
+                   passphrase: Callable[[str], str] | None = None) -> tuple[str, Path, bool]:
+    """Reuse the existing key of ``signer_id`` (for example from ``aqt-signoff init``).
+
+    Returns the key id, its path and whether it was enrolled now. A key already enrolled for this
+    signer is only reported; otherwise the passphrase must unlock it before it is enrolled."""
+    key_path = config.keys_dir / f"{slug(signer_id)}.key"
+    registry = load_registry(config.registry)
+    try:
+        key_id, _ = load_public_key(f"{key_path}.pub")
+    except (OSError, ValueError):
+        key_id = None
+    known = _registered_key(registry, signer_id, key_id) if key_id else None
+    if known is not None:
+        if known.get("revoked_at"):
+            raise DecisionError(f"the key {key_id} at {key_path} is revoked; create a new key with "
+                                f"aqt-signoff init --id {signer_id} --add-key")
+        return key_id, key_path, False
+    ask = passphrase or (lambda prompt: getpass.getpass(prompt))
+    try:
+        signer = load_signer(key_path, passphrase=ask(f"Passphrase of the existing key {key_path}: ").encode())
+    except (ValueError, TypeError) as error:
+        raise DecisionError(f"{key_path} exists but could not be unlocked ({error}); enter its passphrase, "
+                            "or move the file away if it is not yours") from error
+    if signer_id not in registry and not name:
+        raise DecisionError("--name is required to enrol a new signer", 2)
+    enrol(config.registry, signer_id=signer_id, name=name or "", role=role, key_id=signer.key_id,
+          public_pem=signer.public_key.public_bytes(serialization.Encoding.PEM,
+                                                    serialization.PublicFormat.SubjectPublicKeyInfo).decode("ascii"))
+    return signer.key_id, key_path, True

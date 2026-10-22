@@ -1,7 +1,9 @@
 """Reviewer identities: the shared signer registry and detached statements.
 
 Reads ``$XDG_CONFIG_HOME/aqt/signers.json`` (INTERFACES I9, owned by
-aqt-signoff) without importing aqt-signoff. Statements follow the shape of
+aqt-signoff) without importing aqt-signoff. ``AQT_SIGNERS`` and ``AQT_KEYS_DIR``
+override the registry and the key directory, as in aqt-signoff and
+aqt-quarantine. Statements follow the shape of
 aqt-spec ``schemas/signature.schema.json`` (INTERFACES I1): ``{"aqt_signature": "0.1",
 "signer", "key", "meaning", "reason", "signed_at", "tz", "record_type", "nonce",
 "subject"}``, signed over ``canonical_json(statement)``.
@@ -28,12 +30,18 @@ STATEMENT_VERSION = "0.1"
 
 
 def registry_path() -> Path:
-    return config_dir() / "signers.json"
+    override = os.environ.get("AQT_SIGNERS")
+    return Path(override).expanduser() if override else config_dir() / "signers.json"
+
+
+def keys_dir() -> Path:
+    override = os.environ.get("AQT_KEYS_DIR")
+    return Path(override).expanduser() if override else config_dir() / "keys"
 
 
 def key_file(signer_id: str) -> Path:
     slug = re.sub(r"[^a-z0-9._-]", "_", signer_id.replace(":", "-"))
-    return config_dir() / "keys" / f"{slug}.key"
+    return keys_dir() / f"{slug}.key"
 
 
 @dataclass

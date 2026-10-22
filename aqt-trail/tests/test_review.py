@@ -172,3 +172,17 @@ def test_registry_keys_and_revocation(planted, reviewer, env):
     with pytest.raises(ReviewRefused) as caught:
         _sign(planted, reviewer, sheet, registry=load_registry())
     assert caught.value.code == "revoked_key"
+
+
+def test_registry_and_key_directory_honour_the_shared_overrides(env, monkeypatch):
+    """AQT_SIGNERS and AQT_KEYS_DIR work as in aqt-signoff and aqt-quarantine."""
+    from aqt_trail.signers import key_file, registry_path
+    assert registry_path() == env / "config" / "aqt" / "signers.json"
+    assert key_file("human:dora") == env / "config" / "aqt" / "keys" / "human-dora.key"
+    other = env / "elsewhere" / "signers.json"
+    other.parent.mkdir()
+    other.write_text(json.dumps({"version": 1, "signers": [{"id": "human:dora", "name": "Dora Example", "keys": []}]}))
+    monkeypatch.setenv("AQT_SIGNERS", str(other))
+    monkeypatch.setenv("AQT_KEYS_DIR", str(env / "keys-elsewhere"))
+    assert registry_path() == other and set(load_registry()) == {"human:dora"}
+    assert key_file("human:dora") == env / "keys-elsewhere" / "human-dora.key"

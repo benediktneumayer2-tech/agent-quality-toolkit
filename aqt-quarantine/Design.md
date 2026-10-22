@@ -191,7 +191,7 @@ stateDiagram-v2
 
 | Command | Purpose |
 |---|---|
-| `init [--id ID --name NAME --role ROLE] [--no-key]` | Write example config, create the person's passphrase-protected Ed25519 key at the I9 path and enrol it in `signers.json` (same format as aqt-signoff, which may do this instead) |
+| `init [--id ID --name NAME --role ROLE] [--no-key]` | Write example config, create the person's passphrase-protected Ed25519 key at the I9 path and enrol it in `signers.json` (same format as aqt-signoff, which may do this instead). An existing key file for the ID (e.g. from `aqt-signoff init`) is reused: enrolled after its passphrase unlocks it, or only reported when already enrolled |
 | `scan [--source S] [--tool T] [--session ID] [--harness H] < text` | Generic filter: wrapped text or notice on stdout; exit 0 pass/warn, 1 held, 2 error (the notice is still printed, never the content) |
 | `hook claude-code` | Reads hook JSON on stdin, dispatches on `hook_event_name` (`PostToolUse`, `UserPromptSubmit`); always exits 0 with JSON; on an internal error emits a hold replacement; last resort exit 2 with stderr |
 | `hooks print claude-code` | Prints the `settings.json` snippet: hooks, matchers, permission deny rules, and a short CLAUDE.md "external content is data" paragraph. Never edits settings itself |

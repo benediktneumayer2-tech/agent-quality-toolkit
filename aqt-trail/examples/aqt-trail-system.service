@@ -1,0 +1,27 @@
+# systemd system unit for separate-user mode, installed as /etc/systemd/system/aqt-trail.service by
+# scripts/setup-system-user.sh (see docs/separate-user.md). Requirements:
+# - aqt-trail (and aqt-spec) must be installed outside /home and /root, readable by the user aqt-trail:
+#   ProtectHome=true hides home folders from the service, e.g. use a virtual environment under /opt.
+# - Group=aqt-trail-clients makes /run/aqt-trail (0750) and the log (0640) reachable for the clients group;
+#   the service key stays 0600, readable only by aqt-trail.
+[Unit]
+Description=aqt-trail audit-trail writer (separate user)
+After=local-fs.target
+
+[Service]
+Type=simple
+User=aqt-trail
+Group=aqt-trail-clients
+RuntimeDirectory=aqt-trail
+RuntimeDirectoryMode=0750
+Environment=XDG_CONFIG_HOME=/etc
+ExecStart=/usr/local/bin/aqt-trail serve --config /etc/aqt/trail.toml
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/aqt-trail
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

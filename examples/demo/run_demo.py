@@ -559,13 +559,13 @@ class Demo:
                     "effectiveness: approval signed-verified, result pending", f"{first['approval']} {first['result']}")
         self.note(f"pending because: {'; '.join(first['reasons'])}")
         # Two later agent sessions run without a recurrence (Claude Code hook events, synthetic).
-        # (UserPromptSubmit and Stop only: a SessionStart payload's "source" field overwrites data.source in
-        # aqt-trail's hook importer and breaks the payload schema; see examples/demo/README.md.)
         for session in ("worker-2", "worker-3"):
-            for event in ("UserPromptSubmit", "Stop"):
+            for event in ("SessionStart", "UserPromptSubmit", "Stop"):
                 payload = {"session_id": session, "transcript_path": str(self.root / f"{session}.jsonl"),
                            "cwd": str(self.project), "permission_mode": "default", "hook_event_name": event}
-                if event == "UserPromptSubmit":
+                if event == "SessionStart":
+                    payload["source"] = "startup"
+                elif event == "UserPromptSubmit":
                     payload["prompt"] = "Continue with the next task."
                 else:
                     payload["stop_hook_active"] = False
@@ -618,9 +618,6 @@ class Demo:
                     "text": f"{hard[i % len(hard)]} ({rng.choice(words)} {i})"} for i in range(60)]
         for name, rows in (("benign.jsonl", benign), ("attacks.jsonl", attacks)):
             (work / "data" / name).write_text("".join(json.dumps(r) + "\n" for r in rows))
-        # Pin the plugin's own version: aqt-validate hashes only the version written in the protocol.
-        from aqt_quarantine.detectors import load_detector
-        version = load_detector("heuristics").version
         (self.config / "aqt" / "validate.toml").write_text(f'actor = "{DEV}"\n')
         protocol = work / "detector.toml"
         protocol.write_text(textwrap.dedent("""\
@@ -642,7 +639,6 @@ class Demo:
             [[detectors]]
             id = "heuristics"
             plugin = "heuristics"
-            version = "@VERSION@"
 
             [[bands]]
             name = "warn"
@@ -666,7 +662,7 @@ class Demo:
             split = "heldout"
             op = "<="
             target = 0.03
-            """).replace("@VERSION@", version))
+            """))
         evidence = ["--evidence", str(self.trail_log)]
         env = {**os.environ, "AQT_VALIDATE_STATE": str(self.state / "aqt" / "validate")}
         self.run("aqt-validate", "protocol", "lock", protocol, "--reason", "criteria agreed before the test readout",
@@ -737,10 +733,15 @@ class Demo:
                     (verify.stdout + verify.stderr)[-400:])
         self.note(verify.stdout.strip().splitlines()[0] if verify.stdout.strip() else "")
         conform = self.run("aqt-evidence", "conform", self.trail_log, "--level", "3", "--key", key, "--checkpoint",
-                           checkpoint, codes=None)
-        self.expect(conform.returncode == 0, "aqt-evidence conform --level 3 with pinned key and checkpoint",
-                    (conform.stdout + conform.stderr)[-400:])
-        self.note(conform.stdout.strip().splitlines()[0] if conform.stdout.strip() else "")
+                           checkpoint, "--json", codes=None)
+        result = json.loads(conform.stdout or "{}")
+        unregistered = self.unregistered()
+        self.expect(conform.returncode == 0 and result.get("payloads_checked") is True and not result.get("warnings")
+                    and not unregistered, "aqt-evidence conform --level 3 with pinned key, checkpoint and payload "
+                    "schemas; every type, action and meaning is registered",
+                    f"{(conform.stdout + conform.stderr)[-400:]} {unregistered[:5]}")
+        self.note(f"conformance: L{result.get('level')} reached (target L3), {result.get('count')} records, "
+                  f"payloads checked: {result.get('payloads_checked')}")
 
         alcoa = self.run("aqt-trail", "alcoa", "--test-tsa", "--format", "md", codes=None)
         self.save("alcoa-report.md", alcoa.stdout)
@@ -805,6 +806,20 @@ class Demo:
         shutil.copy(Path(period["worksheet"]).with_suffix(".md"), self.out / "review-worksheet.md")
         self.save("review-signed.json", json.dumps(stored, indent=2) + "\n")
         self.note("outputs: output/alcoa-report.md, output/review-worksheet.md, output/review-worksheet-full-trail.md")
+
+    def unregistered(self) -> list[str]:
+        """Types, actions and meanings in the trail that the aqt-spec registry does not list."""
+        from aqt_evidence import schemas
+        types, problems = schemas.registry()["types"], []
+        for record in self.records():
+            entry = types.get(record["type"])
+            if entry is None:
+                problems.append(f"type {record['type']}")
+            elif entry["actions"] and record["action"] not in entry["actions"]:
+                problems.append(f"{record['type']} action {record['action']}")
+            elif entry["meanings"] and record.get("meaning", entry["meanings"][0]) not in entry["meanings"]:
+                problems.append(f"{record['type']} meaning {record['meaning']}")
+        return sorted(set(problems))
 
     # ---- h) release record -----------------------------------------------------------------------------
     def step_h(self) -> None:

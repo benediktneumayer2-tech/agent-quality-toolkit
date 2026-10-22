@@ -73,7 +73,14 @@ JWTs, `password=…`). Record ids are derived from the source time and the sourc
 See [`examples/trail.toml`](../examples/trail.toml). Paths: state `$AQT_TRAIL_STATE` or
 `$XDG_STATE_HOME/aqt/trail`; config `$XDG_CONFIG_HOME/aqt/trail.toml`; socket from `[writer] socket`,
 `AQT_SINK=unix:…`, `$XDG_RUNTIME_DIR/aqt/trail.sock`, or `<state>/aqt-trail.sock`, in that order.
-AF_UNIX paths are limited to about 104 bytes.
+AF_UNIX paths are limited to about 104 bytes. Signer registry `$AQT_SIGNERS` or `$XDG_CONFIG_HOME/aqt/signers.json`;
+reviewer keys in `$AQT_KEYS_DIR` or `$XDG_CONFIG_HOME/aqt/keys/`.
+
+To run the writer as a systemd **user** service, copy [`examples/aqt-trail.service`](../examples/aqt-trail.service)
+to `~/.config/systemd/user/`, set `ExecStart` to your `aqt-trail`, then
+`systemctl --user daemon-reload && systemctl --user enable --now aqt-trail`. Separate-user mode has its own system
+unit, [`examples/aqt-trail-system.service`](../examples/aqt-trail-system.service); see
+[separate-user.md](separate-user.md).
 
 ## RFC 3161
 

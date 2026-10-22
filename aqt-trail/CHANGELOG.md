@@ -5,6 +5,12 @@
 - Fix: Claude Code hook fields `source` (SessionStart) and `reason` (SessionEnd) are stored as
   `session_source` and `end_reason`; they overwrote `data.source` and broke payload conformance.
 - Tests remove their temporary HOME at the end of the run.
+- Fix: the signer registry and key directory honour `AQT_SIGNERS` and `AQT_KEYS_DIR`, as in aqt-signoff and
+  aqt-quarantine (review signing, `verify`, `export`).
+- Fix: the separate-user unit (now `examples/aqt-trail-system.service`) runs with `Group=aqt-trail-clients`,
+  so clients can reach `/run/aqt-trail/trail.sock` and read the log; `setup-system-user.sh` refuses an
+  `aqt-trail` installed in a home folder (`ProtectHome=true`), and `docs/separate-user.md` states the requirement.
+- New `examples/aqt-trail.service`: a systemd user unit for user mode.
 
 ## 0.1.0 — 2026-10-21
 

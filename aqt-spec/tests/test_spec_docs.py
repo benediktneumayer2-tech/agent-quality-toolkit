@@ -16,6 +16,17 @@ def test_every_registered_type_is_in_the_spec_table():
         assert f"| `{type_}` |" in SPEC, type_
 
 
+def test_spec_table_lists_the_registered_actions_and_meanings():
+    types = schemas.registry()["types"]
+    rows = {m.group(1): (m.group(2).strip(), m.group(3).strip())
+            for m in re.finditer(r"^\| `([a-z]+\.[a-z0-9_.-]+)` \| [^|]+ \| ([^|]+) \| ([^|]+) \|[^|]*\|$", SPEC, re.M)}
+    assert set(rows) == set(types)
+    for type_, (actions, meanings) in rows.items():
+        entry = types[type_]
+        assert actions == (", ".join(entry["actions"]) or "—"), type_
+        assert meanings in (", ".join(entry["meanings"]) or "—", "any"), type_
+
+
 def test_worked_example_matches_its_vector():
     vector = json.loads((vector_dir() / "valid" / "minimal.json").read_text())
     assert vector["expect"]["record_hash"] in SPEC

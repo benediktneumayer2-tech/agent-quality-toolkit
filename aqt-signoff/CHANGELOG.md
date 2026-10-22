@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Global options (`--json`, `--config`, `--registry`, `--keys-dir`, `--state-dir`, `--sink`, `--evidence`) are
+  accepted before or after the subcommand, as in aqt-trail, aqt-quarantine and aqt-validate.
+- `examples/signoff.toml`: the commented trail sink is the writer's default socket `$XDG_RUNTIME_DIR/aqt/trail.sock`.
+
 ## 0.1.0 — 2026-10-21
 
 First MVP.

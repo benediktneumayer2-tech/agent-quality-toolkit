@@ -8,16 +8,30 @@
     "case_id": {
       "type": "string"
     },
+    "kind": {
+      "enum": [
+        "content",
+        "threat-note"
+      ]
+    },
+    "decision": {
+      "type": "string"
+    },
     "harness": {
       "type": "string"
     },
     "session": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "mode": {
       "enum": [
         "inline",
-        "pointer"
+        "pointer",
+        "command",
+        "failed"
       ]
     },
     "content_sha256": {

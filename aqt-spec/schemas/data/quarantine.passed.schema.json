@@ -21,10 +21,16 @@
           "type": "string"
         },
         "ref": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "domain": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },

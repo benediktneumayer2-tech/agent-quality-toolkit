@@ -10,7 +10,7 @@ run_timeout_ms = 600000
 # registry = "~/.config/aqt/signers.json"
 # keys = "~/.config/aqt/keys"
 # state = "~/.local/state/aqt/signoff"
-# sink = "unix:/run/user/1000/aqt-trail.sock"
+# sink = "unix:/run/user/1000/aqt/trail.sock"   # the trail writer at $XDG_RUNTIME_DIR/aqt/trail.sock (1000 = your uid)
 # evidence = ["~/.local/state/aqt/trail/trail.jsonl"]
 
 # Two-person rule for approvals: two distinct signers, neither an author of the content.

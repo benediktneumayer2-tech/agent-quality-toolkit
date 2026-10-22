@@ -16,34 +16,46 @@ from .util import parse_since
 
 
 def _parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="aqt-capa", description="Deviations and CAPA for AI coding agent work.")
-    p.add_argument("--config", help="TOML config (default $XDG_CONFIG_HOME/aqt/capa.toml)")
-    p.add_argument("--db", help="SQLite working index (default $XDG_STATE_HOME/aqt/capa/capa.db)")
-    p.add_argument("--evidence", action="append", metavar="PATH",
-                   help="evidence JSONL to read (repeatable; default AQT_EVIDENCE or sink file + trail log)")
-    p.add_argument("--root", help="project root for action targets (default: config or current directory)")
-    p.add_argument("--repo", action="append", metavar="PATH", help="git repository to scan for reverts (repeatable)")
-    p.add_argument("--json", action="store_true", help="machine-readable output")
+    def options(suppress: bool) -> argparse.ArgumentParser:
+        # Accepted before or after the subcommand; sub-level copies must not reset the top-level values.
+        default = {"default": argparse.SUPPRESS} if suppress else {}
+        group = argparse.ArgumentParser(add_help=False)
+        group.add_argument("--config", help="TOML config (default $XDG_CONFIG_HOME/aqt/capa.toml)", **default)
+        group.add_argument("--db", help="SQLite working index (default $XDG_STATE_HOME/aqt/capa/capa.db)", **default)
+        group.add_argument("--evidence", action="append", metavar="PATH", **default,
+                           help="evidence JSONL to read (repeatable; default AQT_EVIDENCE or sink file + trail log)")
+        group.add_argument("--root", help="project root for action targets (default: config or current directory)",
+                           **default)
+        group.add_argument("--repo", action="append", metavar="PATH", **default,
+                           help="git repository to scan for reverts (repeatable)")
+        group.add_argument("--json", action="store_true", help="machine-readable output", **default)
+        return group
+
+    common = [options(True)]
+    p = argparse.ArgumentParser(prog="aqt-capa", description="Deviations and CAPA for AI coding agent work.",
+                                parents=[options(False)])
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    sub.add_parser("scan", help="find deviation candidates in the evidence and git")
+    sub.add_parser("scan", parents=common, help="find deviation candidates in the evidence and git")
 
-    cand = sub.add_parser("candidate", help="list, accept or dismiss candidates").add_subparsers(dest="sub", required=True)
-    cl = cand.add_parser("list")
+    cand = sub.add_parser("candidate", parents=common, help="list, accept or dismiss candidates").add_subparsers(
+        dest="sub", required=True)
+    cl = cand.add_parser("list", parents=common)
     cl.add_argument("--all", action="store_true", help="include decided candidates")
-    ca = cand.add_parser("accept")
+    ca = cand.add_parser("accept", parents=common)
     ca.add_argument("candidate")
     ca.add_argument("--reason", required=True)
     ca.add_argument("--severity", choices=sources.SEVERITIES)
     ca.add_argument("--category", choices=sources.CATEGORIES)
     ca.add_argument("--title")
     ca.add_argument("--description")
-    cd = cand.add_parser("dismiss")
+    cd = cand.add_parser("dismiss", parents=common)
     cd.add_argument("candidate")
     cd.add_argument("--reason", required=True)
 
-    dev = sub.add_parser("deviation", help="open or classify a deviation").add_subparsers(dest="sub", required=True)
-    dn = dev.add_parser("new")
+    dev = sub.add_parser("deviation", parents=common, help="open or classify a deviation").add_subparsers(
+        dest="sub", required=True)
+    dn = dev.add_parser("new", parents=common)
     dn.add_argument("--title", required=True)
     dn.add_argument("--description")
     dn.add_argument("--severity", required=True, choices=sources.SEVERITIES)
@@ -51,14 +63,15 @@ def _parser() -> argparse.ArgumentParser:
     dn.add_argument("--subject", dest="subject_ref", help="what the deviation is about (path, session, record id)")
     dn.add_argument("--link", action="append", default=[], metavar="REL=REF")
     dn.add_argument("--reason")
-    dc = dev.add_parser("classify")
+    dc = dev.add_parser("classify", parents=common)
     dc.add_argument("dev")
     dc.add_argument("--reason", required=True)
     dc.add_argument("--severity", choices=sources.SEVERITIES)
     dc.add_argument("--category", choices=sources.CATEGORIES)
     dc.add_argument("--recurrence-of", action="append", default=[], metavar="DEV")
 
-    inv = sub.add_parser("investigate", help="record the investigation (5-Whys, 6M factors, root cause)")
+    inv = sub.add_parser("investigate", parents=common,
+                         help="record the investigation (5-Whys, 6M factors, root cause)")
     inv.add_argument("dev")
     inv.add_argument("--why", action="append", required=True, default=[])
     inv.add_argument("--factor", action="append", default=[], metavar="CATEGORY:TEXT",
@@ -70,9 +83,9 @@ def _parser() -> argparse.ArgumentParser:
     inv.add_argument("--draft", action="store_true", help="record as a draft (allowed for agents)")
     inv.add_argument("--reason")
 
-    act = sub.add_parser("action", help="corrective/preventive actions on agent controls").add_subparsers(
-        dest="sub", required=True)
-    ap = act.add_parser("plan")
+    act = sub.add_parser("action", parents=common,
+                         help="corrective/preventive actions on agent controls").add_subparsers(dest="sub", required=True)
+    ap = act.add_parser("plan", parents=common)
     ap.add_argument("dev")
     ap.add_argument("--kind", required=True, choices=KINDS)
     ap.add_argument("--target", required=True, help="agent control file, e.g. AGENTS.md (inside the project root)")
@@ -83,18 +96,18 @@ def _parser() -> argparse.ArgumentParser:
     ap.add_argument("--max", type=int, default=0, help="allowed recurrences in the window (default 0)")
     ap.add_argument("--match-category", choices=sources.CATEGORIES)
     ap.add_argument("--match-source", metavar="TYPE", help="record type pattern, e.g. 'change.*'")
-    ai = act.add_parser("implement")
+    ai = act.add_parser("implement", parents=common)
     ai.add_argument("action")
-    aa = act.add_parser("approve")
+    aa = act.add_parser("approve", parents=common)
     aa.add_argument("action")
     aa.add_argument("--reason", required=True)
-    ax = act.add_parser("cancel")
+    ax = act.add_parser("cancel", parents=common)
     ax.add_argument("action")
     ax.add_argument("--reason", required=True)
-    av = act.add_parser("verify")
+    av = act.add_parser("verify", parents=common)
     av.add_argument("action", nargs="?")
 
-    eff = sub.add_parser("effectiveness", help="evaluate effectiveness checks, or extend a window")
+    eff = sub.add_parser("effectiveness", parents=common, help="evaluate effectiveness checks, or extend a window")
     eff.add_argument("target", nargs="?", help="DEV-… or CAPA-… (default: all running checks)")
     eff.add_argument("--check", action="store_true", help="exit 1 unless every evaluated check is effective")
     eff.add_argument("--extend", metavar="ACTION", help="extend the window of ACTION (human, with --reason)")
@@ -102,24 +115,25 @@ def _parser() -> argparse.ArgumentParser:
     eff.add_argument("--window-days", type=int)
     eff.add_argument("--reason")
 
-    cl = sub.add_parser("close", help="close a deviation (effective CAPA, or --no-action with justification)")
+    cl = sub.add_parser("close", parents=common,
+                        help="close a deviation (effective CAPA, or --no-action with justification)")
     cl.add_argument("dev")
     cl.add_argument("--reason", required=True)
     cl.add_argument("--no-action", action="store_true")
 
-    ls = sub.add_parser("list", help="list deviations")
+    ls = sub.add_parser("list", parents=common, help="list deviations")
     ls.add_argument("--open", action="store_true")
     ls.add_argument("--overdue", action="store_true")
-    sh = sub.add_parser("show", help="show one deviation with its timeline")
+    sh = sub.add_parser("show", parents=common, help="show one deviation with its timeline")
     sh.add_argument("dev")
     sh.add_argument("--markdown", action="store_true")
 
-    tr = sub.add_parser("trends", help="management-review style trend summary")
+    tr = sub.add_parser("trends", parents=common, help="management-review style trend summary")
     tr.add_argument("--since", help="e.g. 90d, 12w or 2026-01-01")
     tr.add_argument("--by", choices=["month", "week"], default="month")
     tr.add_argument("--format", choices=["md", "json"], default="md")
 
-    sub.add_parser("rebuild", help="rebuild the working index from capa.* evidence records")
+    sub.add_parser("rebuild", parents=common, help="rebuild the working index from capa.* evidence records")
     return p
 
 

@@ -254,8 +254,8 @@ The machine-readable registry is `schemas/registry.json`; each type has a payloa
 | `trail.review` | Signed audit-trail review | review.signed | reviewed | yes |
 | `trail.refused` | Refused attempt | refused | — | |
 | `signoff.signature` | Signature with meaning bound to a subject hash | sign | any | yes |
-| `signoff.invalidation` | A signature stopped applying (content changed or withdrawn) | — | — | yes |
-| `signoff.action.prepared` | An action proposed for approval | prepare | — | |
+| `signoff.invalidation` | A signature stopped applying (content changed or withdrawn) | content-changed, withdraw | — | yes |
+| `signoff.action.prepared` | An action proposed for approval | prepare, revise | — | |
 | `signoff.action.approved` | Approval of the exact action hash | approve | approved | yes |
 | `signoff.action.rejected` | Rejection of the exact action hash | reject | rejected | yes |
 | `signoff.action.claimed` | Executor claimed an approved action (at most once) | claim | — | |
@@ -273,28 +273,28 @@ The machine-readable registry is `schemas/registry.json`; each type has a payloa
 | `sensei.pair` | Advisor pairing lifecycle | attached, updated, paused, resumed, ended, doctor | — | |
 | `sensei.message` | Message between worker and advisor (hash + excerpt) | enqueued, delivered, failed, no-reply | — | |
 | `sensei.decision` | Owner decision on a message | approved, edited, discarded, forwarded | approved, rejected, released | yes |
-| `sensei.budget` | Budget consumption and limits | consumed, reached, cost-added | — | |
+| `sensei.budget` | Budget consumption and limits | consumed, reached, set, cost-added | — | |
 | `sensei.refused` | Refused attempt | refused | — | |
 | `quarantine.passed` | Untrusted input passed (pass or warn band) | pass | — | |
 | `quarantine.held` | Untrusted input held in quarantine | hold | — | |
 | `quarantine.released` | Held input released by a responsible person | release | released | yes |
-| `quarantine.source.trusted` | Source trusted (or trust revoked) with expiry | trust, revoke | approved | yes |
+| `quarantine.source.trusted` | Source trusted (or trust revoked) with expiry | trust, revoke | approved, rejected | yes |
 | `quarantine.threat.declared` | Held input declared a threat | declare | rejected | yes |
 | `quarantine.delivered` | Released content delivered to the agent | deliver | — | |
 | `quarantine.refused` | Refused attempt | refused | — | |
 | `validate.run` | Validation run lifecycle | protocol-locked, completed, failed | — | |
-| `validate.report` | Validation report | report | — | |
-| `validate.qualification` | Human qualification decision with validity period | qualify | approved, rejected | yes |
-| `validate.requalification` | Requalification trigger fired | requalify | — | |
+| `validate.report` | Validation report | issued | — | |
+| `validate.qualification` | Human qualification decision with validity period | approve, reject | approved, rejected | yes |
+| `validate.requalification` | Requalification trigger fired | triggered | — | |
 | `validate.refused` | Refused attempt | refused | — | |
 | `capa.deviation` | Deviation lifecycle | opened, accepted, dismissed, classified, closed | — | |
 | `capa.investigation` | Root-cause investigation | drafted, recorded, revised | — | |
-| `capa.action` | Corrective or preventive change to an agent control | planned, implemented, approved, cancelled | approved | |
+| `capa.action` | Corrective or preventive change to an agent control | planned, implemented, approved, cancelled | authored, approved | |
 | `capa.effectiveness` | Effectiveness check result | evaluated, extended | — | |
 | `capa.closure` | CAPA closure | closed | approved | yes |
 | `capa.refused` | Refused attempt | refused | — | |
 
-Actions listed are those known at 0.1; tools MAY use further actions. Minimal `data` fields fixed for cross-tool use:
+Actions and meanings listed are those the AQT 0.1 tools write; tools MAY use further actions. `—` under Actions means free-form actions (`trail.event`, `trail.import`). Minimal `data` fields fixed for cross-tool use:
 
 | Type | Required `data` fields |
 |---|---|

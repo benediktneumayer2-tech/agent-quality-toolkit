@@ -6,9 +6,11 @@ import sys
 
 import pytest
 
-from aqt_evidence import AgentContext
+from aqt_evidence import AgentContext, generate_key
 
 from aqt_quarantine import cli, decisions
+from aqt_quarantine.config import load_config
+from aqt_quarantine.decisions import create_identity
 from conftest import AGENT_ENV, PASSPHRASE, fixture
 
 
@@ -114,3 +116,26 @@ def test_doctor_and_hooks_print(human, monkeypatch, capsys):
     snippet = json.loads(out)
     assert snippet["hooks"]["PostToolUse"][0]["hooks"][0]["command"] == "aqt-quarantine hook claude-code"
     assert "Bash(aqt-quarantine release:*)" in snippet["permissions"]["deny"]
+
+
+def test_init_reuses_an_existing_key(human, monkeypatch, capsys):
+    """A key from aqt-signoff init (same file, already enrolled) is reused, never overwritten."""
+    config = load_config()
+    create_identity(config, signer_id="human:alex", name="Alex Example", role="quality-manager",
+                    passphrase=lambda _prompt: PASSPHRASE)
+    key = (config.keys_dir / "human-alex.key").read_bytes()
+    code, out, err = run(monkeypatch, capsys, ["init", "--id", "human:alex", "--name", "Alex Example"])
+    assert code == 0 and "reused the existing key" in out and "already enrolled" in out, err
+    assert (config.keys_dir / "human-alex.key").read_bytes() == key
+    (signer,) = json.loads(config.registry.read_text())["signers"]
+    assert len(signer["keys"]) == 1
+
+    # A key file that is not in the registry yet is enrolled once its passphrase unlocks it.
+    generate_key(config.keys_dir / "human-sam.key", passphrase=PASSPHRASE.encode())
+    code, out, _ = run(monkeypatch, capsys, ["init", "--id", "human:sam", "--name", "Sam Example"])
+    assert code == 0 and "enrolled human:sam" in out
+    assert "human:sam" in {s["id"] for s in json.loads(config.registry.read_text())["signers"]}
+    monkeypatch.setattr(decisions.getpass, "getpass", lambda _prompt="": "wrong passphrase")
+    generate_key(config.keys_dir / "human-kim.key", passphrase=PASSPHRASE.encode())
+    code, _, err = run(monkeypatch, capsys, ["init", "--id", "human:kim", "--name", "Kim Example"])
+    assert code == 1 and "could not be unlocked" in err

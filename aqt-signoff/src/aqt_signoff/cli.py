@@ -30,30 +30,38 @@ def duration_ms(text: str) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="aqt-signoff", description=__doc__,
+    def options(suppress: bool) -> argparse.ArgumentParser:
+        # Accepted before or after the subcommand; sub-level copies must not reset the top-level values.
+        default = {"default": argparse.SUPPRESS} if suppress else {}
+        group = argparse.ArgumentParser(add_help=False)
+        group.add_argument("--config", help="config TOML (default $XDG_CONFIG_HOME/aqt/signoff.toml)", **default)
+        group.add_argument("--registry", help="signer registry (default $XDG_CONFIG_HOME/aqt/signers.json)",
+                           **default)
+        group.add_argument("--keys-dir", help="key directory (default $XDG_CONFIG_HOME/aqt/keys)", **default)
+        group.add_argument("--state-dir", help="state directory (default $XDG_STATE_HOME/aqt/signoff)", **default)
+        group.add_argument("--sink", help="evidence sink, file:PATH or unix:PATH (default AQT_SINK)", **default)
+        group.add_argument("--evidence", action="append", help="JSONL evidence file to read; repeatable", **default)
+        group.add_argument("--json", action="store_true", help="machine-readable output", **default)
+        return group
+
+    common = [options(True)]
+    parser = argparse.ArgumentParser(prog="aqt-signoff", description=__doc__, parents=[options(False)],
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--config", help="config TOML (default $XDG_CONFIG_HOME/aqt/signoff.toml)")
-    parser.add_argument("--registry", help="signer registry (default $XDG_CONFIG_HOME/aqt/signers.json)")
-    parser.add_argument("--keys-dir", help="key directory (default $XDG_CONFIG_HOME/aqt/keys)")
-    parser.add_argument("--state-dir", help="state directory (default $XDG_STATE_HOME/aqt/signoff)")
-    parser.add_argument("--sink", help="evidence sink, file:PATH or unix:PATH (default AQT_SINK)")
-    parser.add_argument("--evidence", action="append", help="JSONL evidence file to read; repeatable")
-    parser.add_argument("--json", action="store_true", help="machine-readable output")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("init", help="create a signer with a passphrase-protected key")
+    p = sub.add_parser("init", parents=common, help="create a signer with a passphrase-protected key")
     p.add_argument("--id", required=True, help="signer id, e.g. human:alice")
     p.add_argument("--name", default="", help="printed name")
     p.add_argument("--role", default="", help="role, e.g. quality-manager")
     p.add_argument("--add-key", action="store_true", help="new key for an existing signer (old key revoked)")
 
-    signers = sub.add_parser("signers", help="list or export the signer registry")
+    signers = sub.add_parser("signers", parents=common, help="list or export the signer registry")
     signers_sub = signers.add_subparsers(dest="signers_command", required=True)
-    signers_sub.add_parser("list")
-    export = signers_sub.add_parser("export")
+    signers_sub.add_parser("list", parents=common)
+    export = signers_sub.add_parser("export", parents=common)
     export.add_argument("file", nargs="?")
 
-    p = sub.add_parser("revoke", help="revoke a signer's active key")
+    p = sub.add_parser("revoke", parents=common, help="revoke a signer's active key")
     p.add_argument("signer")
     p.add_argument("--reason", required=True)
     p.add_argument("--compromised-since", help="RFC 3339 time; signatures from then on show 'revoked'")
@@ -66,7 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
         if hash_ok:
             group.add_argument("--hash", dest="sha256", help="sha256:<hex> of an externally hashed artefact")
 
-    p = sub.add_parser("sign", help="sign a file, record or hash with a meaning")
+    p = sub.add_parser("sign", parents=common, help="sign a file, record or hash with a meaning")
     subject_args(p)
     p.add_argument("--meaning", required=True)
     p.add_argument("--reason", required=True)
@@ -75,22 +83,22 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--ref", help="subject reference with --hash")
     p.add_argument("--author", action="append", default=[], help="author id for the two-person rule; repeatable")
 
-    p = sub.add_parser("verify", help="verify the signatures over a file, record or hash")
+    p = sub.add_parser("verify", parents=common, help="verify the signatures over a file, record or hash")
     subject_args(p)
     p.add_argument("--require", action="append", default=[], metavar="MEANING",
                    help="fail unless the policy for MEANING is met; repeatable")
     p.add_argument("--no-record", action="store_true", help="do not record detected invalidations")
 
-    p = sub.add_parser("invalidate", help="withdraw one of your signatures")
+    p = sub.add_parser("invalidate", parents=common, help="withdraw one of your signatures")
     p.add_argument("signature", help="signature record id")
     p.add_argument("--reason", required=True)
 
-    p = sub.add_parser("manifest", help="render the signature block")
+    p = sub.add_parser("manifest", parents=common, help="render the signature block")
     subject_args(p, hash_ok=False)
     p.add_argument("--format", choices=("md", "html"), default="md")
     p.add_argument("--out")
 
-    p = sub.add_parser("prepare", help="propose an action for approval")
+    p = sub.add_parser("prepare", parents=common, help="propose an action for approval")
     p.add_argument("--kind", choices=("command", "http", "other"), default="command")
     p.add_argument("--request-key", help="idempotency key (same key + same action returns the same action)")
     p.add_argument("--description", default="")
@@ -102,15 +110,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--revise", help="new version of an existing action (earlier approvals no longer apply)")
     p.add_argument("argv", nargs=argparse.REMAINDER, help="command: -- ARGV...")
 
-    p = sub.add_parser("show", help="show an action, its hash and its state")
+    p = sub.add_parser("show", parents=common, help="show an action, its hash and its state")
     p.add_argument("action")
-    p = sub.add_parser("status", help="short state of an action")
+    p = sub.add_parser("status", parents=common, help="short state of an action")
     p.add_argument("action")
-    p = sub.add_parser("list", help="list actions")
+    p = sub.add_parser("list", parents=common, help="list actions")
     p.add_argument("--status")
 
     for name in ("approve", "reject"):
-        p = sub.add_parser(name, help=f"{name} the exact action hash")
+        p = sub.add_parser(name, parents=common, help=f"{name} the exact action hash")
         p.add_argument("action")
         p.add_argument("--hash", required=True, dest="sha256")
         p.add_argument("--reason", required=True)
@@ -118,29 +126,29 @@ def build_parser() -> argparse.ArgumentParser:
         if name == "approve":
             p.add_argument("--valid-for", help="approval lifetime, e.g. 24h")
 
-    p = sub.add_parser("claim", help="claim an approved action before executing it yourself")
+    p = sub.add_parser("claim", parents=common, help="claim an approved action before executing it yourself")
     p.add_argument("action")
     p.add_argument("--hash", required=True, dest="sha256")
     p.add_argument("--payload")
 
-    p = sub.add_parser("outcome", help="report the outcome of a claimed action")
+    p = sub.add_parser("outcome", parents=common, help="report the outcome of a claimed action")
     p.add_argument("action")
     p.add_argument("--claim", required=True)
     p.add_argument("--status", required=True, choices=("succeeded", "failed", "unknown"))
     p.add_argument("--evidence-text", help="short evidence note (e.g. provider id)")
 
-    p = sub.add_parser("run", help="claim and run an approved command action once")
+    p = sub.add_parser("run", parents=common, help="claim and run an approved command action once")
     p.add_argument("action")
     p.add_argument("--timeout", help="e.g. 10m")
     p.add_argument("--payload")
 
-    p = sub.add_parser("resolve", help="close an unknown outcome after checking the external state")
+    p = sub.add_parser("resolve", parents=common, help="close an unknown outcome after checking the external state")
     p.add_argument("action")
     p.add_argument("--as", dest="as_", required=True, choices=("succeeded", "not-applied"))
     p.add_argument("--reason", required=True)
     p.add_argument("--signer")
 
-    sub.add_parser("sync", help="deliver records that could not reach the sink")
+    sub.add_parser("sync", parents=common, help="deliver records that could not reach the sink")
     return parser
 
 

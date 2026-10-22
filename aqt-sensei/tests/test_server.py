@@ -80,6 +80,9 @@ def test_owner_round_trip_and_advisor_socket(server, paths, project, sink_path):
     decision = records(sink_path, "sensei.decision")[0]
     assert decision["data"]["peer"]["process_chain"][0] == "aqt-sensei"
     assert decision["data"]["peer"]["via"] == "socket" and "observed" not in decision
+    # like the trail's `observed` (aqt-spec observed.schema.json), fields without a value are left out
+    assert "client_time" not in decision["data"]["peer"]
+    assert all(value is not None for process in decision["data"]["peer"]["processes"] for value in process.values())
     server.who["pid"] = 4210
     status = call(advisor_socket, {"op": "status"})
     assert status["status"] == "available" and "you are the sensei" in status["output"]

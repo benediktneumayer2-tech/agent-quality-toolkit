@@ -35,11 +35,13 @@ class Peer:
     agent_markers: list[str] | None = None
 
     def describe(self) -> dict:
-        """`data.peer`: same field names as the trail's `observed` object (I2)."""
+        """`data.peer`: same field names as the trail's `observed` object (I2). As there, fields without a
+        value are left out: the peer sends no client time, and a process may be gone before its start time
+        is read."""
+        processes = [{"pid": pid, "comm": name} if start is None else {"pid": pid, "comm": name, "start_time": start}
+                     for pid, name, start in zip(self.chain, self.names, self.start_times)]
         return {"pid": self.pid, "uid": self.uid, "gid": self.gid, "process_chain": self.names,
-                "processes": [{"pid": pid, "comm": name, "start_time": start}
-                              for pid, name, start in zip(self.chain, self.names, self.start_times)],
-                "harness": self.harness, "client_time": None, "via": "socket"}
+                "processes": processes, "harness": self.harness, "via": "socket"}
 
 
 def peer_credentials(connection: socket.socket) -> tuple[int, int, int]:

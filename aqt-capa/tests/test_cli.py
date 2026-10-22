@@ -93,3 +93,17 @@ def test_cli_usage_errors(cli):
     assert cli("deviation", "new", "--title", "x")[0] == 2  # missing --severity
     assert cli("show", "DEV-0099")[0] == 2
     assert cli("effectiveness", "--extend", "CAPA-0001-1")[0] == 2  # needs --reason
+
+
+def test_global_options_before_or_after_the_subcommand(cli, tmp_path):
+    code, found, _ = cli("scan", "--json")
+    assert code == 0 and json.loads(found)
+    code, before, _ = cli("--json", "candidate", "list")
+    code_after, after, _ = cli("candidate", "list", "--json")
+    assert code == code_after == 0 and json.loads(before) == json.loads(after) and json.loads(after)
+    # --db given after the subcommand wins; one given before is not reset by the subcommand's defaults
+    other = tmp_path / "other.db"
+    assert main(["--config", str(tmp_path / "capa.toml"), "list", "--db", str(other), "--json"]) == 0
+    third = tmp_path / "third.db"
+    assert main(["--config", str(tmp_path / "capa.toml"), "--db", str(third), "list", "--json"]) == 0
+    assert other.exists() and third.exists()

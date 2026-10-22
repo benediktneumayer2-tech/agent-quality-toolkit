@@ -9,6 +9,9 @@
 # the log nor read the service key. Root and members of root-equivalent groups (docker,
 # sudo) can still do anything: anchors remain the real guarantee. Nothing here is run by
 # the test suite.
+#
+# /path/to/aqt-trail must belong to an installation outside /home and /root (for example a
+# virtual environment under /opt): the service runs as aqt-trail with ProtectHome=true.
 set -eu
 
 AQT_TRAIL_BIN=${1:?usage: setup-system-user.sh /path/to/aqt-trail}
@@ -16,6 +19,18 @@ OWNER=${SUDO_USER:?run with sudo from your own account}
 OWNER_UID=$(id -u "$OWNER")
 
 [ "$(id -u)" -eq 0 ] || { echo "run with sudo" >&2; exit 2; }
+
+# The console script's interpreter (and the Python it links to) must be reachable for the service.
+INTERPRETER=$(sed -n '1s/^#![[:space:]]*\([^[:space:]]*\).*/\1/p' "$AQT_TRAIL_BIN")
+for path in "$(readlink -f "$AQT_TRAIL_BIN")" "$INTERPRETER" "$(readlink -f "${INTERPRETER:-/}")"; do
+    case "$path" in
+        /home/*|/root/*|/run/user/*)
+            echo "$path is inside a home folder; the aqt-trail service (ProtectHome=true) cannot run it." >&2
+            echo "Install aqt-spec and aqt-trail into a virtual environment outside /home, e.g. /opt/aqt;" >&2
+            echo "see docs/separate-user.md." >&2
+            exit 2 ;;
+    esac
+done
 
 getent group aqt-trail-clients >/dev/null || groupadd --system aqt-trail-clients
 getent passwd aqt-trail >/dev/null || useradd --system --home-dir /var/lib/aqt-trail --shell /usr/sbin/nologin aqt-trail
@@ -46,7 +61,7 @@ chmod 0640 /var/lib/aqt-trail/trail.json
 chmod 0750 /var/lib/aqt-trail/keys
 chgrp aqt-trail-clients /var/lib/aqt-trail/keys/service.key.pub
 
-install -m 0644 "$(dirname "$0")/../examples/aqt-trail.service" /etc/systemd/system/aqt-trail.service
+install -m 0644 "$(dirname "$0")/../examples/aqt-trail-system.service" /etc/systemd/system/aqt-trail.service
 systemctl daemon-reload
 systemctl enable --now aqt-trail.service
 

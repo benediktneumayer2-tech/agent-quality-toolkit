@@ -1,22 +1,18 @@
-# Example systemd unit for separate-user mode (installed by scripts/setup-system-user.sh).
+# systemd user unit for the aqt-trail writer in user mode (not installed automatically).
+# Install: copy to ~/.config/systemd/user/aqt-trail.service, adjust ExecStart, then
+#   systemctl --user daemon-reload && systemctl --user enable --now aqt-trail
+# If you set XDG_STATE_HOME or XDG_CONFIG_HOME in your shell, add the same values here
+# (Environment=XDG_STATE_HOME=...), or the service uses a different trail.
+# Separate-user mode uses aqt-trail-system.service instead (docs/separate-user.md).
 [Unit]
-Description=aqt-trail audit-trail writer
-After=local-fs.target
+Description=aqt-trail audit-trail writer (user mode)
 
 [Service]
 Type=simple
-User=aqt-trail
-Group=aqt-trail
-RuntimeDirectory=aqt-trail
-RuntimeDirectoryMode=0750
-Environment=XDG_CONFIG_HOME=/etc
-ExecStart=/usr/local/bin/aqt-trail serve --config /etc/aqt/trail.toml
+# Path to the aqt-trail console script of your installation:
+ExecStart=%h/agent-quality-toolkit/.venv/bin/aqt-trail serve
 Restart=on-failure
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/var/lib/aqt-trail
-PrivateTmp=true
+RestartSec=3
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target

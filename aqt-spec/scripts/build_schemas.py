@@ -26,6 +26,7 @@ def ref(name: str, pointer: str = "") -> dict:
 
 SHA = ref("common", "/$defs/sha256")
 TIME = ref("common", "/$defs/time")
+DATE = ref("common", "/$defs/date")
 RECID = ref("common", "/$defs/record_id")
 PPM = ref("common", "/$defs/ppm")
 MS = {"type": "integer", "minimum": 0}
@@ -56,6 +57,7 @@ COMMON = {
     "$defs": {
         "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
         "time": {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$"},
+        "date": {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}$"},
         "record_id": {"type": "string", "pattern": "^rec_[0-9a-f]{28}$"},
         "key_id": {"type": "string", "pattern": "^ed25519:[0-9a-f]{16}$"},
         "ppm": {"type": "integer", "minimum": 0, "maximum": 1000000},
@@ -165,7 +167,8 @@ SIGNERS = {
 
 REFUSED = obj(["attempted_action", "reason_code", "agent_markers"], attempted_action=NESTR, reason_code=NESTR,
               agent_markers=STRS)
-SOURCE = obj(tool=STR, ref=STR, domain=STR)
+NULLSTR = {"type": ["string", "null"]}
+SOURCE = obj(tool=STR, ref=NULLSTR, domain=NULLSTR)
 FINDINGS = {"type": "array", "items": OBJ}
 
 # type -> (summary, actions, meanings, human_reason, data schema)
@@ -189,10 +192,11 @@ TYPES: dict[str, tuple] = {
     "signoff.signature": ("Signature with meaning bound to a subject hash", ["sign"], MEANINGS, True,
                           obj(["signature", "meaning"], signature=SIGNATURE, meaning=ref("common", "/$defs/meaning"),
                               policy_check=OBJ)),
-    "signoff.invalidation": ("A signature stopped applying (content changed or withdrawn)", [], [], True,
+    "signoff.invalidation": ("A signature stopped applying (content changed or withdrawn)",
+                             ["content-changed", "withdraw"], [], True,
                              obj(["cause"], cause=enum("content-changed", "withdrawn", "key-revoked"),
                                  signed_sha256=SHA, observed_sha256=SHA)),
-    "signoff.action.prepared": ("An action proposed for approval", ["prepare"], [], False,
+    "signoff.action.prepared": ("An action proposed for approval", ["prepare", "revise"], [], False,
                                 obj(["action_sha256"], action=OBJ, action_sha256=SHA, request_key_sha256=SHA,
                                     supersedes=STR, expires_at=TIME)),
     "signoff.action.approved": ("Approval of the exact action hash", ["approve"], ["approved"], True,
@@ -251,7 +255,7 @@ TYPES: dict[str, tuple] = {
                         obj(["decision", "message_id", "pair_id"],
                             decision=enum("approve", "edit", "discard", "forward"), message_id=NESTR,
                             pair_id=NESTR)),
-    "sensei.budget": ("Budget consumption and limits", ["consumed", "reached", "cost-added"], [], False,
+    "sensei.budget": ("Budget consumption and limits", ["consumed", "reached", "set", "cost-added"], [], False,
                       obj(pair=STR, messages_used=INT, exchanges_used=INT, fallback_mode=STR)),
     # aqt-quarantine
     "quarantine.passed": ("Untrusted input passed (pass or warn band)", ["pass"], [], False,
@@ -263,27 +267,28 @@ TYPES: dict[str, tuple] = {
     "quarantine.released": ("Held input released by a responsible person", ["release"], ["released"], True,
                             obj(case_id=STR, content_sha256=SHA, kind=STR, signature=SIGNATURE)),
     "quarantine.source.trusted": ("Source trusted (or trust revoked) with expiry", ["trust", "revoke"],
-                                  ["approved"], True, obj(domain=STR, subdomains=BOOL, expires=TIME, policy=STR,
-                                                          signature=SIGNATURE)),
+                                  ["approved", "rejected"], True,
+                                  obj(domain=STR, subdomains=BOOL, expires=DATE, policy=STR, signature=SIGNATURE)),
     "quarantine.threat.declared": ("Held input declared a threat", ["declare"], ["rejected"], True,
                                    obj(["case_id", "band", "score_ppm", "source"], case_id=NESTR, band=NESTR,
                                        score_ppm=PPM, source=SOURCE, reached_model=BOOL, signature=SIGNATURE)),
     "quarantine.delivered": ("Released content delivered to the agent", ["deliver"], [], False,
-                             obj(case_id=STR, harness=STR, session=STR, mode=enum("inline", "pointer"),
+                             obj(case_id=STR, kind=enum("content", "threat-note"), decision=STR, harness=STR,
+                                 session=NULLSTR, mode=enum("inline", "pointer", "command", "failed"),
                                  content_sha256=SHA)),
     # aqt-validate
     "validate.run": ("Validation run lifecycle", ["protocol-locked", "completed", "failed"], [], False,
                      obj(["protocol"], kind=enum("detector", "reviewer"), protocol=obj(["sha256"], id=STR, sha256=SHA),
                          datasets=ARR, results_sha256=SHA, headline=OBJ)),
-    "validate.report": ("Validation report", ["report"], [], False,
+    "validate.report": ("Validation report", ["issued"], [], False,
                         obj(run=STR, conclusion=enum("meets", "does-not-meet", "inconclusive"), criteria=ARR,
                             deviations=ARR, thresholds_sha256=SHA)),
-    "validate.qualification": ("Human qualification decision with validity period", ["qualify"],
+    "validate.qualification": ("Human qualification decision with validity period", ["approve", "reject"],
                                ["approved", "rejected"], True,
                                obj(["configuration_hash", "valid_until"], configuration_hash=NESTR, valid_until=TIME,
                                    valid_from=TIME, report=STR, triggers=ARR, thresholds_sha256=SHA,
                                    expected_fpr_upper_ppm=PPM)),
-    "validate.requalification": ("Requalification trigger fired", ["requalify"], [], False,
+    "validate.requalification": ("Requalification trigger fired", ["triggered"], [], False,
                                  obj(["configuration_hash", "valid_until", "trigger"], configuration_hash=NESTR,
                                      valid_until=TIME, trigger=NESTR, qualification=STR)),
     # aqt-capa
@@ -293,7 +298,7 @@ TYPES: dict[str, tuple] = {
     "capa.investigation": ("Root-cause investigation", ["drafted", "recorded", "revised"], [], False,
                            obj(whys=STRS, factors=ARR, root_cause=STR, root_category=STR, impact=STR)),
     "capa.action": ("Corrective or preventive change to an agent control",
-                    ["planned", "implemented", "approved", "cancelled"], ["approved"], False,
+                    ["planned", "implemented", "approved", "cancelled"], ["authored", "approved"], False,
                     obj(["target", "effectiveness_criterion"],
                         target=obj(["path", "before_sha256", "after_sha256"], path=NESTR,
                                    before_sha256={"anyOf": [SHA, {"type": "null"}]},

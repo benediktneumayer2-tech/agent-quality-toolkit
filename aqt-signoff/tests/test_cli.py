@@ -101,3 +101,17 @@ def test_cli_usage_errors_exit_2(isolated, capsys):
     assert main(["--sink", f"file:{isolated / 'e.jsonl'}", "verify", "missing.md"]) == 2
     assert main(["--sink", f"file:{isolated / 'e.jsonl'}", "sign", "--hash", "nothex", "--meaning", "approved",
                  "--reason", "x"]) == 2
+
+
+def test_global_options_before_or_after_the_subcommand(cli, isolated, capsys):
+    cli("init", "--id", "human:alice", "--name", "Alice Example", "--role", "quality-manager")
+    before = main(["--json", "--sink", f"file:{cli.sink}", "signers", "list"])
+    listed_before = json.loads(capsys.readouterr().out)
+    after = main(["signers", "list", "--json", "--sink", f"file:{cli.sink}"])
+    listed_after = json.loads(capsys.readouterr().out)
+    assert before == after == 0 and listed_before == listed_after
+    assert [s["id"] for s in listed_after["signers"]] == ["human:alice"]
+    # a value given before the subcommand is not reset by the subcommand's defaults
+    other = isolated / "other-signers.json"
+    assert main(["--registry", str(other), "signers", "list", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["signers"] == []

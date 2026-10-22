@@ -17,7 +17,7 @@ The tested structures were taken from Claude Code session logs: key names and va
 ## Install
 
 1. Install aqt-quarantine so that `aqt-quarantine` is on the `PATH` that Claude Code sees.
-2. Run `aqt-quarantine init --id human:<you> --name "<Your Name>"` in **your own terminal**. This creates your passphrase-protected key and the config. If aqt-signoff is installed, `aqt-signoff init` creates the same key and registry entry.
+2. Run `aqt-quarantine init --id human:<you> --name "<Your Name>"` in **your own terminal**. This creates your passphrase-protected key and the config. If aqt-signoff is installed, `aqt-signoff init` creates the same key and registry entry; `aqt-quarantine init --id` then reuses that key instead of creating a second one.
 3. Run `aqt-quarantine hooks print claude-code`. Merge the snippet into `~/.claude/settings.json` or the project's `.claude/settings.json`, and add the CLAUDE.md paragraph it prints. The deny rules stop the agent from running decision commands and from reading the quarantine state.
 4. Run `aqt-quarantine doctor`.
 
