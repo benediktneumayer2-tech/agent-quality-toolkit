@@ -51,11 +51,24 @@ Seven habits of a medicine plant became seven tools; the eighth is the shared fo
 
 **Each part works on its own, needing only the shared `aqt-spec` library; together they form a loop.** All of them write the same kind of record into the same trail, so they use each other's evidence: aqt-capa finds a refused release, aqt-validate's approved thresholds drive the quarantine, and the trail review checks every signature.
 
-```mermaid
-flowchart LR
-    Q["aqt-quarantine"] & S["aqt-sensei"] & G["aqt-signoff"] & C["aqt-change"] & V["aqt-validate"] & K["aqt-capa"] -->|"evidence records<br/>(format: aqt-spec)"| T["aqt-trail<br/>one logbook"]
-    T --> O["verify · ALCOA++ report ·<br/>signed review"]
-```
+## How it fits together
+
+<img src="docs/diagrams/concept.en.svg" alt="Concept diagram in three zones. Left, Agents work: Claude Code, Codex, pi, Agent Unity or any other agent, each in its own program. Middle, Control layer: aqt-quarantine, aqt-validate, aqt-change, aqt-signoff, aqt-sensei and aqt-capa write records in the aqt-spec format into one audit trail, aqt-trail. Four numbered arrows lead from the agents into the control layer: 1 hooks, Claude Code only; 2 commands, any agent; 3 terminal relay through aqt-sensei; 4 observation and import by aqt-trail. Right, People decide: a responsible person, a developer or quality manager, uses aqt-ui or the terminal and decides with a passphrase; auditors get verify, the ALCOA++ report, the signed trail review and signature manifests." width="100%">
+
+The toolkit does not replace your agent program. Your agents keep working in Claude Code, Codex, pi or any other harness, the tools sit beside them as a control layer, and a responsible person (a developer or a quality manager) makes the decisions with a passphrase, in the terminal or on the aqt-ui page. The control layer reaches the agents in four ways: hooks that Claude Code calls automatically, commands that any agent with a shell can run (`aqt-change run`, `aqt-signoff prepare`), a terminal relay in which aqt-sensei passes advice between two agent terminals, and observation: the trail writer asks the Linux kernel which program sent each record, and aqt-trail imports Claude Code, Codex and pi session logs. Ready-made hooks exist only for Claude Code. With other agents nothing intercepts web content or a "done" automatically; you rely on the agent running the commands and on the trail's checks. Every step, by an agent, a tool or a person, becomes one record in the one audit trail, which gives auditors the verification, the ALCOA++ report, the signed audit-trail review and the signature manifests.
+
+<img src="docs/diagrams/workflow.en.svg" alt="Swimlane diagram of one change, with lanes Agent, Toolkit and Responsible person. Step 1: aqt-quarantine scores untrusted input; pass and warn reach the agent marked as untrusted, hold is a STOP until a person releases the content or declares a threat, and the agent's own release attempt is refused and recorded. Step 2: the accepted plan version is recorded; if configured, a person signs it. Step 3: aqt-change runs the declared checks and keeps receipts; if configured, a person or an agent of another model reviews. Step 4: the gate gives NO-GO for a missing, failing or stale receipt, MANUAL_VERIFY_REQUIRED when a person must check, or GO for fresh passing receipts. Step 5: STOP until a person signs released. Step 6: STOP until a person approves an action's exact hash; it then runs once. Side boxes: the deviation and CAPA loop, closed only when effective, and periodic qualification, audit-trail review and ALCOA++ report. A band at the bottom shows that every step becomes a record in the one audit trail." width="100%">
+
+The red STOP points:
+
+- **Untrusted input.** Content that scores *hold* stays away from the agent until a person releases it or declares it a threat; the agent's own release attempt is refused and recorded.
+- **The "done" gate.** GO needs a fresh passing receipt for every declared check: a missing, failing or stale receipt (the code changed after the tests) gives NO-GO, and a waiver, or a plan approval or independent review that the project requires but lacks, gives MANUAL_VERIFY_REQUIRED.
+- **Release.** `aqt-signoff verify --require released` passes only after a person signed the change with the meaning "released", and any later change to the signed content voids the signature.
+- **Approved action.** An action such as a deployment runs only after a person approved its exact hash, runs once, and is never retried blindly.
+- **Deviation and CAPA.** A deviation closes only after the effectiveness check of its corrective action passes.
+- **Periodic.** A detector or AI-reviewer qualification holds only until its date (`aqt-validate check` flags expiry or a change), and an audit-trail review counts only when signed by a person who did not act in the reviewed period.
+
+The editable draw.io sources and their generator are in [`docs/diagrams/`](docs/diagrams/).
 
 ## Choose your path
 

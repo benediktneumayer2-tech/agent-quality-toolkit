@@ -1,0 +1,320 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="Electron" agent="agent-quality-toolkit generate_diagrams.py" version="31.4.2" compressed="false">
+  <diagram id="page-1" name="Eine Änderung vom Start bis zur Freigabe">
+    <mxGraphModel dx="1180" dy="1154" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1180" pageHeight="1154" math="0" shadow="0" adaptiveColors="none">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="panel" value="Eine Änderung vom Start bis zur Freigabe" style="rounded=1;absoluteArcSize=1;arcSize=18;container=1;collapsible=0;fillColor=#FFFFFF;strokeColor=#CBD5E1;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=24;fontStyle=1;fontColor=#172033;align=left;verticalAlign=top;spacingLeft=28;spacingTop=18;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="1180" height="1154" as="geometry" />
+        </mxCell>
+        <mxCell id="v-1" value="Wer in jedem Schritt handelt. Ein rotes STOP wartet auf einen Menschen oder auf Nachweise; jeder Schritt wird ein Eintrag im einen Audit Trail." style="text=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontColor=#475569;fontStyle=0;spacing=0;" vertex="1" parent="panel">
+          <mxGeometry x="28" y="58" width="1120" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="v-2" value="1  Fremde&#10;    Eingabe" style="rounded=0;fillColor=#F8FAFC;strokeColor=none;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontStyle=1;fontColor=#172033;align=left;verticalAlign=top;spacingLeft=10;spacingTop=14;" vertex="1" parent="panel">
+          <mxGeometry x="32" y="140" width="850" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="v-3" value="2  Plan" style="rounded=0;fillColor=#FFFFFF;strokeColor=none;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontStyle=1;fontColor=#172033;align=left;verticalAlign=top;spacingLeft=10;spacingTop=14;" vertex="1" parent="panel">
+          <mxGeometry x="32" y="340" width="850" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="v-4" value="3  Tests und&#10;    Review" style="rounded=0;fillColor=#F8FAFC;strokeColor=none;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontStyle=1;fontColor=#172033;align=left;verticalAlign=top;spacingLeft=10;spacingTop=14;" vertex="1" parent="panel">
+          <mxGeometry x="32" y="440" width="850" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="v-5" value="4  Prüfpunkt&#10;    „fertig“" style="rounded=0;fillColor=#FFFFFF;strokeColor=none;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontStyle=1;fontColor=#172033;align=left;verticalAlign=top;spacingLeft=10;spacingTop=14;" vertex="1" parent="panel">
+          <mxGeometry x="32" y="540" width="850" height="250" as="geometry" />
+        </mxCell>
+        <mxCell id="v-6" value="5  Freigabe" style="rounded=0;fillColor=#F8FAFC;strokeColor=none;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontStyle=1;fontColor=#172033;align=left;verticalAlign=top;spacingLeft=10;spacingTop=14;" vertex="1" parent="panel">
+          <mxGeometry x="32" y="790" width="850" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="v-7" value="6  Genehmigte&#10;    Aktion" style="rounded=0;fillColor=#FFFFFF;strokeColor=none;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontStyle=1;fontColor=#172033;align=left;verticalAlign=top;spacingLeft=10;spacingTop=14;" vertex="1" parent="panel">
+          <mxGeometry x="32" y="880" width="850" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="v-8" value="Schritt" style="rounded=0;fillColor=#F1F5F9;strokeColor=#CBD5E1;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=16;fontStyle=1;fontColor=#172033;" vertex="1" parent="panel">
+          <mxGeometry x="32" y="100" width="118" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="v-9" value="Agent" style="shape=swimlane;horizontal=1;startSize=40;rounded=0;fillColor=#F1F5F9;swimlaneFillColor=none;strokeColor=#CBD5E1;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=16;fontStyle=1;fontColor=#172033;collapsible=0;" vertex="1" parent="panel">
+          <mxGeometry x="150" y="100" width="192" height="950" as="geometry" />
+        </mxCell>
+        <mxCell id="v-10" value="Toolkit" style="shape=swimlane;horizontal=1;startSize=40;rounded=0;fillColor=#DCEBFF;swimlaneFillColor=none;strokeColor=#CBD5E1;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=16;fontStyle=1;fontColor=#172033;collapsible=0;" vertex="1" parent="panel">
+          <mxGeometry x="342" y="100" width="330" height="950" as="geometry" />
+        </mxCell>
+        <mxCell id="v-11" value="Verantwortliche Person" style="shape=swimlane;horizontal=1;startSize=40;rounded=0;fillColor=#F3E8FF;swimlaneFillColor=none;strokeColor=#CBD5E1;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=16;fontStyle=1;fontColor=#172033;collapsible=0;" vertex="1" parent="panel">
+          <mxGeometry x="672" y="100" width="210" height="950" as="geometry" />
+        </mxCell>
+        <mxCell id="v-12" value="Liest Webseite, Such-&#10;ergebnis, MCP-Ausgabe" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#F1F5F9;strokeColor=#64748B;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-9">
+          <mxGeometry x="7" y="52" width="178" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="v-13" value="Gibt sie selbst frei:&#10;abgelehnt, protokolliert" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#FEF2F2;strokeColor=#DC2626;strokeWidth=2;dashed=1;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-9">
+          <mxGeometry x="7" y="136" width="178" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="v-14" value="aqt-quarantine bewertet:&#10;pass · warn · hold" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#DCEBFF;strokeColor=#2563EB;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-10">
+          <mxGeometry x="14" y="52" width="200" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="v-15" value="GO" style="rounded=1;absoluteArcSize=1;arcSize=22;fillColor=#15803D;strokeColor=#15803D;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#FFFFFF;fontStyle=1;align=center;verticalAlign=middle;spacing=6;spacing=3;" vertex="1" parent="v-10">
+          <mxGeometry x="242" y="65" width="60" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="v-16" value="pass, warn: als&#10;fremd markiert" style="text=1;strokeColor=none;fillColor=none;align=center;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="v-10">
+          <mxGeometry x="216" y="102" width="112" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="v-17" value="STOP" style="shape=mxgraph.basic.polygon;polyCoords=[[0.29,0],[0.71,0],[1,0.29],[1,0.71],[0.71,1],[0.29,1],[0,0.71],[0,0.29]];polyline=0;fillColor=#DC2626;strokeColor=#991B1B;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=13;fontStyle=1;fontColor=#FFFFFF;align=center;verticalAlign=middle;" vertex="1" parent="v-10">
+          <mxGeometry x="86" y="136" width="56" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="v-18" value="hold: STOP, bis ein&#10;Mensch entscheidet" style="text=1;strokeColor=none;fillColor=none;align=center;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="v-10">
+          <mxGeometry x="14" y="198" width="200" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="v-19" value="Gibt frei oder erklärt&#10;eine Bedrohung&#10;(Passphrase)" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#F3E8FF;strokeColor=#7C3AED;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-11">
+          <mxGeometry x="14" y="132" width="182" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="e-20" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#64748B;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="panel" source="v-12" target="v-14">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-21" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#15803D;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="panel" source="v-14" target="v-15">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-22" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#DC2626;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="panel" source="v-14" target="v-17">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-23" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#DC2626;strokeWidth=2;dashed=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="panel" source="v-13" target="v-17">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-24" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#DC2626;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="panel" source="v-17" target="v-19">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="v-25" value="Schreibt den Plan: Auf-&#10;gaben, Prüfungen, Pfade" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#F1F5F9;strokeColor=#64748B;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-9">
+          <mxGeometry x="7" y="256" width="178" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="v-26" value="Hält die angenommene Plan-&#10;version fest (Basis-Hash)" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#DCEBFF;strokeColor=#2563EB;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-10">
+          <mxGeometry x="14" y="256" width="302" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="v-27" value="Unterschreibt diese Plan-&#10;version „genehmigt“; nötig&#10;für GO in Schritt 4." style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#F3E8FF;strokeColor=#7C3AED;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-11">
+          <mxGeometry x="14" y="256" width="182" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="v-28" value="einstellbar" style="rounded=1;absoluteArcSize=1;arcSize=11;fillColor=#FEF3C7;strokeColor=#D97706;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=13;fontColor=#172033;fontStyle=1;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-27">
+          <mxGeometry x="92" y="-13" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="e-29" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#64748B;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="panel" source="v-25" target="v-26">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-30" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#D97706;strokeWidth=2;dashed=1;exitX=1;exitY=0.5;entryX=0;entryY=0.4;" edge="1" parent="panel" source="v-26" target="v-27">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="v-31" value="Ändert den Code; lässt&#10;das Werkzeug prüfen" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#F1F5F9;strokeColor=#64748B;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-9">
+          <mxGeometry x="7" y="356" width="178" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="v-32" value="aqt-change run: führt die Prü-&#10;fungen selbst aus, hebt Belege auf" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#DCEBFF;strokeColor=#2563EB;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-10">
+          <mxGeometry x="14" y="356" width="302" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="v-33" value="Review: ein Mensch oder&#10;ein anderes Modell;&#10;nötig für GO in Schritt 4." style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#F3E8FF;strokeColor=#7C3AED;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-11">
+          <mxGeometry x="14" y="356" width="182" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="v-34" value="einstellbar" style="rounded=1;absoluteArcSize=1;arcSize=11;fillColor=#FEF3C7;strokeColor=#D97706;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=13;fontColor=#172033;fontStyle=1;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-33">
+          <mxGeometry x="92" y="-13" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="e-35" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#64748B;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="panel" source="v-31" target="v-32">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="v-36" value="Meldet „fertig“:&#10;aqt-change finish" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#F1F5F9;strokeColor=#64748B;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-9">
+          <mxGeometry x="7" y="480" width="178" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="v-37" value="Claude-Code-Hook und&#10;finish lehnen „fertig“&#10;ohne frische bestandene&#10;Belege ab." style="text=1;strokeColor=none;fillColor=none;align=center;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#475569;fontStyle=0;spacing=0;" vertex="1" parent="v-9">
+          <mxGeometry x="7" y="546" width="178" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="v-38" value="Prüf-&#10;punkt" style="shape=rhombus;fillColor=#FEE2E2;strokeColor=#DC2626;strokeWidth=2.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=13;fontStyle=1;fontColor=#172033;align=center;verticalAlign=middle;" vertex="1" parent="v-10">
+          <mxGeometry x="14" y="466" width="74" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="v-39" value="NO-GO: ein Beleg fehlt,&#10;ist rot oder veraltet" style="rounded=1;absoluteArcSize=1;arcSize=22;fillColor=#DC2626;strokeColor=#DC2626;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=13;fontColor=#FFFFFF;fontStyle=1;align=center;verticalAlign=middle;spacing=6;spacing=3;" vertex="1" parent="v-10">
+          <mxGeometry x="112" y="456" width="204" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="v-40" value="MANUAL_VERIFY_REQUIRED:&#10;ein Mensch muss prüfen" style="rounded=1;absoluteArcSize=1;arcSize=22;fillColor=#B45309;strokeColor=#B45309;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=13;fontColor=#FFFFFF;fontStyle=1;align=center;verticalAlign=middle;spacing=6;spacing=3;" vertex="1" parent="v-10">
+          <mxGeometry x="112" y="510" width="204" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="v-41" value="GO: frische bestandene&#10;Belege für jede Prüfung" style="rounded=1;absoluteArcSize=1;arcSize=22;fillColor=#15803D;strokeColor=#15803D;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=13;fontColor=#FFFFFF;fontStyle=1;align=center;verticalAlign=middle;spacing=6;spacing=3;" vertex="1" parent="v-10">
+          <mxGeometry x="112" y="564" width="204" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="v-42" value="veraltet: Code nach den Tests&#10;geändert. Ausnahmen (Waiver)&#10;bleiben sichtbar, nie GO." style="text=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#475569;fontStyle=0;spacing=0;" vertex="1" parent="v-10">
+          <mxGeometry x="14" y="622" width="220" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="e-43" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#64748B;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="panel" source="v-36" target="v-38">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-44" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#64748B;strokeWidth=2;exitX=0.1225;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="panel" source="v-32" target="v-38">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-45" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#64748B;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="panel" source="v-38" target="v-39">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="442" y="608" />
+              <mxPoint x="442" y="579" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-46" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#64748B;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="panel" source="v-38" target="v-40">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="442" y="608" />
+              <mxPoint x="442" y="633" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-47" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#64748B;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="panel" source="v-38" target="v-41">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="442" y="608" />
+              <mxPoint x="442" y="687" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="v-48" value="STOP" style="shape=mxgraph.basic.polygon;polyCoords=[[0.29,0],[0.71,0],[1,0.29],[1,0.71],[0.71,1],[0.29,1],[0,0.71],[0,0.29]];polyline=0;fillColor=#DC2626;strokeColor=#991B1B;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=13;fontStyle=1;fontColor=#FFFFFF;align=center;verticalAlign=middle;" vertex="1" parent="v-10">
+          <mxGeometry x="242" y="706" width="56" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="v-49" value="STOP, bis ein Mensch&#10;„freigegeben“ unterschreibt.&#10;Neuer Inhalt: ungültig." style="text=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="v-10">
+          <mxGeometry x="14" y="708" width="222" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="v-50" value="Unterschreibt&#10;„freigegeben“" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#F3E8FF;strokeColor=#7C3AED;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-11">
+          <mxGeometry x="14" y="706" width="182" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="e-51" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#15803D;strokeWidth=2;exitX=0.7745;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="panel" source="v-41" target="v-48">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-52" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#DC2626;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="panel" source="v-48" target="v-50">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="v-53" value="Bereitet eine Aktion vor,&#10;etwa ein Deployment&#10;(prepare)" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#F1F5F9;strokeColor=#64748B;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-9">
+          <mxGeometry x="7" y="794" width="178" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="v-54" value="STOP" style="shape=mxgraph.basic.polygon;polyCoords=[[0.29,0],[0.71,0],[1,0.29],[1,0.71],[0.71,1],[0.29,1],[0,0.71],[0,0.29]];polyline=0;fillColor=#DC2626;strokeColor=#991B1B;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=13;fontStyle=1;fontColor=#FFFFFF;align=center;verticalAlign=middle;" vertex="1" parent="v-10">
+          <mxGeometry x="14" y="796" width="56" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="v-55" value="STOP bis zur Genehmigung dieses Hashs." style="text=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="v-10">
+          <mxGeometry x="14" y="860" width="302" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="v-56" value="Genehmigt genau&#10;diesen Hash" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#F3E8FF;strokeColor=#7C3AED;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-11">
+          <mxGeometry x="14" y="796" width="182" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="v-57" value="Läuft genau einmal. „unknown“ wird nie&#10;wiederholt; ein Mensch klärt es." style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#DCEBFF;strokeColor=#2563EB;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-10">
+          <mxGeometry x="14" y="890" width="302" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="e-58" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#64748B;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="panel" source="v-53" target="v-54">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-59" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#DC2626;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="panel" source="v-54" target="v-56">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-60" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#7C3AED;strokeWidth=2;exitX=0.5;exitY=1;entryX=1;entryY=0.5;" edge="1" parent="panel" source="v-56" target="v-57">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="v-61" value="Legende" style="rounded=1;absoluteArcSize=1;arcSize=10;container=1;collapsible=0;fillColor=#FFFFFF;strokeColor=#CBD5E1;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontStyle=1;fontColor=#172033;align=left;verticalAlign=top;spacingLeft=14;spacingTop=10;" vertex="1" parent="panel">
+          <mxGeometry x="906" y="100" width="242" height="196" as="geometry" />
+        </mxCell>
+        <mxCell id="v-62" value="!" style="shape=mxgraph.basic.polygon;polyCoords=[[0.29,0],[0.71,0],[1,0.29],[1,0.71],[0.71,1],[0.29,1],[0,0.71],[0,0.29]];polyline=0;fillColor=#DC2626;strokeColor=#991B1B;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontStyle=1;fontColor=#FFFFFF;align=center;verticalAlign=middle;" vertex="1" parent="v-61">
+          <mxGeometry x="14" y="36" width="28" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="v-63" value="?" style="shape=rhombus;fillColor=#FEE2E2;strokeColor=#DC2626;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=13;fontStyle=1;fontColor=#172033;" vertex="1" parent="v-61">
+          <mxGeometry x="14" y="68" width="28" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="v-64" value="GO" style="rounded=1;absoluteArcSize=1;arcSize=22;fillColor=#15803D;strokeColor=#15803D;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=12;fontColor=#FFFFFF;fontStyle=1;align=center;verticalAlign=middle;spacing=6;spacing=3;" vertex="1" parent="v-61">
+          <mxGeometry x="10" y="103" width="36" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="v-65" value="einstellbar" style="rounded=1;absoluteArcSize=1;arcSize=11;fillColor=#FEF3C7;strokeColor=#D97706;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=13;fontColor=#172033;fontStyle=1;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-61">
+          <mxGeometry x="10" y="133" width="100" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="v-66" value="×" style="rounded=1;absoluteArcSize=1;arcSize=4;fillColor=#FEF2F2;strokeColor=#DC2626;strokeWidth=1.5;dashed=1;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#DC2626;fontStyle=1;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-61">
+          <mxGeometry x="12" y="165" width="32" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="v-67" value="STOP: wartet auf Menschen" style="text=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="v-61">
+          <mxGeometry x="54" y="37" width="182" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="v-68" value="Prüfpunkt: aus Einträgen" style="text=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="v-61">
+          <mxGeometry x="54" y="69" width="182" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="v-69" value="GO: darf weiter" style="text=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="v-61">
+          <mxGeometry x="54" y="101" width="182" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="v-70" value="je Projekt" style="text=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="v-61">
+          <mxGeometry x="118" y="131" width="118" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="v-71" value="abgelehnt, protokolliert" style="text=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="v-61">
+          <mxGeometry x="54" y="163" width="182" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="v-72" value="7  Nebenschleife:&#10;    Abweichung und CAPA" style="rounded=1;absoluteArcSize=1;arcSize=10;container=1;collapsible=0;fillColor=#FFFFFF;strokeColor=#CBD5E1;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontStyle=1;fontColor=#172033;align=left;verticalAlign=top;spacingLeft=14;spacingTop=10;" vertex="1" parent="panel">
+          <mxGeometry x="906" y="312" width="242" height="410" as="geometry" />
+        </mxCell>
+        <mxCell id="v-73" value="Abgelehnte Versuche, rote&#10;Belege → Kandidaten" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#DCEBFF;strokeColor=#2563EB;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-72">
+          <mxGeometry x="16" y="56" width="210" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="v-74" value="Mensch nimmt Abweichung&#10;an (oder verwirft)" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#F3E8FF;strokeColor=#7C3AED;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-72">
+          <mxGeometry x="16" y="114" width="210" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e-75" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#64748B;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="panel" source="v-73" target="v-74">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="v-76" value="Ursache festgehalten" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#F3E8FF;strokeColor=#7C3AED;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-72">
+          <mxGeometry x="16" y="172" width="210" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e-77" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#64748B;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="panel" source="v-74" target="v-76">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="v-78" value="Korrekturmaßnahme, von&#10;einem Menschen genehmigt" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#F3E8FF;strokeColor=#7C3AED;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-72">
+          <mxGeometry x="16" y="230" width="210" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e-79" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#64748B;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="panel" source="v-76" target="v-78">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="v-80" value="Wirksamkeitsprüfung&#10;aus späteren Nachweisen" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#DCEBFF;strokeColor=#2563EB;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-72">
+          <mxGeometry x="16" y="288" width="210" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e-81" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#64748B;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="panel" source="v-78" target="v-80">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="v-82" value="STOP" style="shape=mxgraph.basic.polygon;polyCoords=[[0.29,0],[0.71,0],[1,0.29],[1,0.71],[0.71,1],[0.29,1],[0,0.71],[0,0.29]];polyline=0;fillColor=#DC2626;strokeColor=#991B1B;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=13;fontStyle=1;fontColor=#FFFFFF;align=center;verticalAlign=middle;" vertex="1" parent="v-72">
+          <mxGeometry x="16" y="344" width="56" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="v-83" value="Abschluss erst&#10;wenn wirksam" style="text=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="v-72">
+          <mxGeometry x="82" y="346" width="150" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="e-84" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#64748B;strokeWidth=2;exitX=0.12;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="panel" source="v-80" target="v-82">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="v-85" value="8  Periodisch" style="rounded=1;absoluteArcSize=1;arcSize=10;container=1;collapsible=0;fillColor=#FFFFFF;strokeColor=#CBD5E1;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontStyle=1;fontColor=#172033;align=left;verticalAlign=top;spacingLeft=14;spacingTop=10;" vertex="1" parent="panel">
+          <mxGeometry x="906" y="738" width="242" height="312" as="geometry" />
+        </mxCell>
+        <mxCell id="v-86" value="!" style="shape=mxgraph.basic.polygon;polyCoords=[[0.29,0],[0.71,0],[1,0.29],[1,0.71],[0.71,1],[0.29,1],[0,0.71],[0,0.29]];polyline=0;fillColor=#DC2626;strokeColor=#991B1B;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontStyle=1;fontColor=#FFFFFF;align=center;verticalAlign=middle;" vertex="1" parent="v-85">
+          <mxGeometry x="14" y="40" width="28" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="v-87" value="Qualifizierung eines&#10;Detektors oder KI-Gut-&#10;achters gilt bis zu ihrem&#10;Datum. Ablauf, Änderung:&#10;erst requalifizieren." style="text=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="v-85">
+          <mxGeometry x="48" y="38" width="188" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="v-88" value="✓" style="rounded=1;absoluteArcSize=1;arcSize=4;fillColor=#F3E8FF;strokeColor=#7C3AED;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#7C3AED;fontStyle=1;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-85">
+          <mxGeometry x="16" y="144" width="26" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="v-89" value="Audit-Trail-Review, unter-&#10;schrieben von jemandem,&#10;der im Zeitraum nicht&#10;gehandelt hat." style="text=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="v-85">
+          <mxGeometry x="48" y="142" width="188" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="v-90" value="A" style="rounded=1;absoluteArcSize=1;arcSize=4;fillColor=#DCEBFF;strokeColor=#2563EB;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=13;fontColor=#2563EB;fontStyle=1;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-85">
+          <mxGeometry x="16" y="232" width="26" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="v-91" value="ALCOA++-Bericht über&#10;den Audit Trail." style="text=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="v-85">
+          <mxGeometry x="48" y="230" width="188" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="v-92" value="aqt-trail · EIN Audit Trail" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#1E3A8A;strokeColor=#1E3A8A;fontFamily=Arial,Helvetica,sans-serif;fontSize=16;fontStyle=1;fontColor=#FFFFFF;align=left;verticalAlign=top;spacingLeft=16;spacingTop=7;" vertex="1" parent="panel">
+          <mxGeometry x="32" y="1070" width="1116" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="v-93" value="Jeder Schritt oben wird ein Eintrag: wer, was, wann, warum und an welchem genauen Inhalt. Hash-verkettet; der Linux-Kernel meldet den Absender." style="text=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#FFFFFF;fontStyle=0;spacing=0;" vertex="1" parent="v-92">
+          <mxGeometry x="16" y="28" width="1090" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="e-94" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#1E3A8A;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.1918;entryY=0;" edge="1" parent="panel" source="v-9" target="v-92">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-95" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#1E3A8A;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.4256;entryY=0;" edge="1" parent="panel" source="v-10" target="v-92">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-96" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#1E3A8A;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.6676;entryY=0;" edge="1" parent="panel" source="v-11" target="v-92">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-97" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#1E3A8A;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.8916;entryY=0;" edge="1" parent="panel" source="v-85" target="v-92">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

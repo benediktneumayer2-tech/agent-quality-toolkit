@@ -1,0 +1,209 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="Electron" agent="agent-quality-toolkit generate_diagrams.py" version="31.4.2" compressed="false">
+  <diagram id="page-1" name="Wie das Toolkit um beliebige Agenten-Programme greift">
+    <mxGraphModel dx="1146" dy="826" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1146" pageHeight="826" math="0" shadow="0" adaptiveColors="none">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="panel" value="Wie das Toolkit um beliebige Agenten-Programme greift" style="rounded=1;absoluteArcSize=1;arcSize=18;container=1;collapsible=0;fillColor=#FFFFFF;strokeColor=#CBD5E1;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=24;fontStyle=1;fontColor=#172033;align=left;verticalAlign=top;spacingLeft=28;spacingTop=18;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="1146" height="826" as="geometry" />
+        </mxCell>
+        <mxCell id="v-1" value="Agenten arbeiten in ihren eigenen Programmen. Das Toolkit ist eine Kontrollschicht daneben. Menschen entscheiden." style="text=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontColor=#475569;fontStyle=0;spacing=0;" vertex="1" parent="panel">
+          <mxGeometry x="28" y="58" width="1090" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="v-2" value="Agenten arbeiten" style="rounded=1;absoluteArcSize=1;arcSize=14;container=1;collapsible=0;fillColor=#F8FAFC;strokeColor=#64748B;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=16;fontStyle=1;fontColor=#172033;align=left;verticalAlign=top;spacingLeft=14;spacingTop=10;" vertex="1" parent="panel">
+          <mxGeometry x="28" y="100" width="200" height="520" as="geometry" />
+        </mxCell>
+        <mxCell id="v-3" value="Kontrollschicht" style="rounded=1;absoluteArcSize=1;arcSize=14;container=1;collapsible=0;fillColor=#F5F9FF;strokeColor=#2563EB;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=16;fontStyle=1;fontColor=#172033;align=left;verticalAlign=top;spacingLeft=14;spacingTop=10;" vertex="1" parent="panel">
+          <mxGeometry x="392" y="100" width="420" height="520" as="geometry" />
+        </mxCell>
+        <mxCell id="v-4" value="Menschen entscheiden" style="rounded=1;absoluteArcSize=1;arcSize=14;container=1;collapsible=0;fillColor=#FBF8FF;strokeColor=#7C3AED;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=16;fontStyle=1;fontColor=#172033;align=left;verticalAlign=top;spacingLeft=14;spacingTop=10;" vertex="1" parent="panel">
+          <mxGeometry x="912" y="100" width="206" height="520" as="geometry" />
+        </mxCell>
+        <mxCell id="v-5" value="Claude Code" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#FFFFFF;strokeColor=#64748B;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontColor=#172033;fontStyle=1;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-2">
+          <mxGeometry x="16" y="50" width="168" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="v-6" value="Codex" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#FFFFFF;strokeColor=#64748B;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontColor=#172033;fontStyle=1;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-2">
+          <mxGeometry x="16" y="100" width="168" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="v-7" value="pi" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#FFFFFF;strokeColor=#64748B;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontColor=#172033;fontStyle=1;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-2">
+          <mxGeometry x="16" y="150" width="168" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="v-8" value="Agent Unity" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#FFFFFF;strokeColor=#64748B;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontColor=#172033;fontStyle=1;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-2">
+          <mxGeometry x="16" y="200" width="168" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="v-9" value="jeder andere Agent" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#FFFFFF;strokeColor=#64748B;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontColor=#172033;fontStyle=1;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-2">
+          <mxGeometry x="16" y="250" width="168" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="v-10" value="Jeder Agent läuft in&#10;seinem eigenen&#10;Programm. Das Toolkit&#10;ist keine Sitzungs-&#10;ansicht und kein&#10;Agenten-Programm." style="text=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#475569;fontStyle=0;spacing=0;" vertex="1" parent="v-2">
+          <mxGeometry x="16" y="310" width="172" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="v-11" value="aqt-quarantine" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#DCEBFF;strokeColor=#2563EB;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontColor=#172033;fontStyle=1;align=center;verticalAlign=top;spacingTop=4;spacing=6;" vertex="1" parent="v-3">
+          <mxGeometry x="16" y="46" width="188" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="v-12" value="hält Verdächtiges zurück" style="text=1;strokeColor=none;fillColor=none;align=center;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="v-11">
+          <mxGeometry x="8" y="31" width="172" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="v-13" value="aqt-validate" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#DCEBFF;strokeColor=#2563EB;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontColor=#172033;fontStyle=1;align=center;verticalAlign=top;spacingTop=4;spacing=6;" vertex="1" parent="v-3">
+          <mxGeometry x="216" y="46" width="188" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="v-14" value="qualifiziert KI-Prüfer" style="text=1;strokeColor=none;fillColor=none;align=center;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="v-13">
+          <mxGeometry x="8" y="31" width="172" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="v-15" value="aqt-change" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#DCEBFF;strokeColor=#2563EB;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontColor=#172033;fontStyle=1;align=center;verticalAlign=top;spacingTop=4;spacing=6;" vertex="1" parent="v-3">
+          <mxGeometry x="16" y="120" width="188" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="v-16" value="Tests, Belege, Prüfpunkt" style="text=1;strokeColor=none;fillColor=none;align=center;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="v-15">
+          <mxGeometry x="8" y="31" width="172" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="v-17" value="aqt-signoff" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#DCEBFF;strokeColor=#2563EB;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontColor=#172033;fontStyle=1;align=center;verticalAlign=top;spacingTop=4;spacing=6;" vertex="1" parent="v-3">
+          <mxGeometry x="216" y="120" width="188" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="v-18" value="signiert mit Bedeutung" style="text=1;strokeColor=none;fillColor=none;align=center;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="v-17">
+          <mxGeometry x="8" y="31" width="172" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="v-19" value="aqt-sensei" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#DCEBFF;strokeColor=#2563EB;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontColor=#172033;fontStyle=1;align=center;verticalAlign=top;spacingTop=4;spacing=6;" vertex="1" parent="v-3">
+          <mxGeometry x="16" y="194" width="188" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="v-20" value="Berater, nur lesend" style="text=1;strokeColor=none;fillColor=none;align=center;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="v-19">
+          <mxGeometry x="8" y="31" width="172" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="v-21" value="aqt-capa" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#DCEBFF;strokeColor=#2563EB;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontColor=#172033;fontStyle=1;align=center;verticalAlign=top;spacingTop=4;spacing=6;" vertex="1" parent="v-3">
+          <mxGeometry x="216" y="194" width="188" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="v-22" value="Abweichungen und CAPA" style="text=1;strokeColor=none;fillColor=none;align=center;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="v-21">
+          <mxGeometry x="8" y="31" width="172" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="v-23" value="aqt-spec · ein Datensatzformat für alle Werkzeuge" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#FFFFFF;strokeColor=#2563EB;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontColor=#172033;fontStyle=0;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-3">
+          <mxGeometry x="16" y="280" width="388" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="v-24" value="aqt-trail · EIN Audit Trail" style="shape=cylinder3;boundedLbl=1;size=12;fillColor=#1E3A8A;strokeColor=#1E3A8A;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=17;fontStyle=1;fontColor=#FFFFFF;align=center;verticalAlign=top;spacingTop=12;" vertex="1" parent="v-3">
+          <mxGeometry x="16" y="346" width="388" height="158" as="geometry" />
+        </mxCell>
+        <mxCell id="v-25" value="hash-verkettet; der Linux-Kernel&#10;meldet den Absender jedes Eintrags" style="text=1;strokeColor=none;fillColor=none;align=center;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#FFFFFF;fontStyle=0;spacing=0;" vertex="1" parent="v-24">
+          <mxGeometry x="16" y="82" width="356" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="e-26" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#2563EB;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="panel" source="v-23" target="v-24">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="v-27" value="Verantwortliche&#10;Person" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#F3E8FF;strokeColor=#7C3AED;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontColor=#172033;fontStyle=1;align=center;verticalAlign=top;spacingTop=4;spacing=6;" vertex="1" parent="v-4">
+          <mxGeometry x="14" y="46" width="178" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="v-28" value="Entwicklung oder&#10;Qualitätsmanagement" style="text=1;strokeColor=none;fillColor=none;align=center;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="v-27">
+          <mxGeometry x="8" y="50" width="162" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="v-29" value="aqt-ui" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#F3E8FF;strokeColor=#7C3AED;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontColor=#172033;fontStyle=1;align=center;verticalAlign=top;spacingTop=4;spacing=6;" vertex="1" parent="v-4">
+          <mxGeometry x="14" y="154" width="178" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="v-30" value="lokaler QS-Arbeitsplatz" style="text=1;strokeColor=none;fillColor=none;align=center;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="v-29">
+          <mxGeometry x="8" y="31" width="162" height="21" as="geometry" />
+        </mxCell>
+        <mxCell id="v-31" value="Terminal" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#F3E8FF;strokeColor=#7C3AED;strokeWidth=2;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontColor=#172033;fontStyle=1;align=center;verticalAlign=top;spacingTop=4;spacing=6;" vertex="1" parent="v-4">
+          <mxGeometry x="14" y="218" width="178" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="v-32" value="alle Befehle" style="text=1;strokeColor=none;fillColor=none;align=center;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="v-31">
+          <mxGeometry x="8" y="31" width="162" height="21" as="geometry" />
+        </mxCell>
+        <mxCell id="v-33" value="Entscheidet mit&#10;Passphrase: freigeben,&#10;unterschreiben,&#10;genehmigen, prüfen" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#FFFFFF;strokeColor=#7C3AED;strokeWidth=2.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;align=center;verticalAlign=middle;spacing=6;" vertex="1" parent="v-4">
+          <mxGeometry x="14" y="288" width="178" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="v-34" value="Für Auditoren" style="shape=document;boundedLbl=1;size=0.1;fillColor=#FFFFFF;strokeColor=#64748B;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontStyle=1;fontColor=#172033;align=center;verticalAlign=top;spacingTop=4;" vertex="1" parent="v-4">
+          <mxGeometry x="14" y="387" width="178" height="119" as="geometry" />
+        </mxCell>
+        <mxCell id="v-35" value="verify&#10;ALCOA++-Bericht&#10;signiertes Trail-Review&#10;Unterschriftsmanifeste" style="text=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="v-34">
+          <mxGeometry x="8" y="27" width="162" height="77" as="geometry" />
+        </mxCell>
+        <mxCell id="e-36" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#334155;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.3871;" edge="1" parent="panel" source="v-5" target="v-11">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="v-37" value="1" style="shape=ellipse;perimeter=ellipsePerimeter;fillColor=#334155;strokeColor=#334155;fontFamily=Arial,Helvetica,sans-serif;fontSize=13;fontStyle=1;fontColor=#FFFFFF;align=center;verticalAlign=middle;" vertex="1" parent="panel">
+          <mxGeometry x="240" y="132" width="24" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="v-38" value="Hooks&#10;nur Claude Code" style="text=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="panel">
+          <mxGeometry x="270" y="130" width="118" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="e-39" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#334155;strokeWidth=2;exitX=1;exitY=0.2904;entryX=0;entryY=0.5;" edge="1" parent="panel" source="v-2" target="v-15">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="v-40" value="2" style="shape=ellipse;perimeter=ellipsePerimeter;fillColor=#334155;strokeColor=#334155;fontFamily=Arial,Helvetica,sans-serif;fontSize=13;fontStyle=1;fontColor=#FFFFFF;align=center;verticalAlign=middle;" vertex="1" parent="panel">
+          <mxGeometry x="240" y="213" width="24" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="v-41" value="Befehle&#10;jeder Agent" style="text=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="panel">
+          <mxGeometry x="270" y="211" width="118" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="e-42" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#334155;strokeWidth=2;exitX=1;exitY=0.4327;entryX=0;entryY=0.5;" edge="1" parent="panel" source="v-2" target="v-19">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="v-43" value="3" style="shape=ellipse;perimeter=ellipsePerimeter;fillColor=#334155;strokeColor=#334155;fontFamily=Arial,Helvetica,sans-serif;fontSize=13;fontStyle=1;fontColor=#FFFFFF;align=center;verticalAlign=middle;" vertex="1" parent="panel">
+          <mxGeometry x="240" y="287" width="24" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="v-44" value="Terminal-Relais&#10;tmux oder Herdr" style="text=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="panel">
+          <mxGeometry x="270" y="285" width="118" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="e-45" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#334155;strokeWidth=2;exitX=1;exitY=0.8173;entryX=0;entryY=0.5;" edge="1" parent="panel" source="v-2" target="v-24">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="v-46" value="4" style="shape=ellipse;perimeter=ellipsePerimeter;fillColor=#334155;strokeColor=#334155;fontFamily=Arial,Helvetica,sans-serif;fontSize=13;fontStyle=1;fontColor=#FFFFFF;align=center;verticalAlign=middle;" vertex="1" parent="panel">
+          <mxGeometry x="240" y="487" width="24" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="v-47" value="Beobachtung&#10;und Import" style="text=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="panel">
+          <mxGeometry x="270" y="485" width="118" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="e-48" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#64748B;strokeWidth=2;exitX=1;exitY=0.1635;entryX=0;entryY=0.4062;" edge="1" parent="panel" source="v-3" target="v-27">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="v-49" value="braucht&#10;Entscheidung" style="text=1;strokeColor=none;fillColor=none;align=center;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="panel">
+          <mxGeometry x="818" y="146" width="90" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="e-50" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#7C3AED;strokeWidth=2;exitX=0;exitY=0.5;entryX=1;entryY=0.6356;" edge="1" parent="panel" source="v-33" target="v-3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="v-51" value="signierte&#10;Entscheidung" style="text=1;strokeColor=none;fillColor=none;align=center;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="panel">
+          <mxGeometry x="818" y="384.5" width="90" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="e-52" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;endArrow=block;endFill=1;endSize=7;strokeColor=#64748B;strokeWidth=2;exitX=1;exitY=0.6361;entryX=0;entryY=0.5;" edge="1" parent="panel" source="v-24" target="v-34">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="v-53" value="Berichte" style="text=1;strokeColor=none;fillColor=none;align=center;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="panel">
+          <mxGeometry x="818" y="522.5" width="90" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="v-54" value="Hooks · nur Claude Code" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#F8FAFC;strokeColor=#CBD5E1;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontStyle=1;fontColor=#172033;align=left;verticalAlign=top;spacingLeft=44;spacingTop=12;" vertex="1" parent="panel">
+          <mxGeometry x="28" y="640" width="262" height="158" as="geometry" />
+        </mxCell>
+        <mxCell id="v-55" value="1" style="shape=ellipse;perimeter=ellipsePerimeter;fillColor=#334155;strokeColor=#334155;fontFamily=Arial,Helvetica,sans-serif;fontSize=13;fontStyle=1;fontColor=#FFFFFF;align=center;verticalAlign=middle;" vertex="1" parent="v-54">
+          <mxGeometry x="12" y="9" width="24" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="v-56" value="Laufen automatisch. aqt-quarantine&#10;prüft Web-, Such- und MCP-&#10;Ergebnisse, bevor das Modell sie&#10;sieht. aqt-change blockiert&#10;„fertig“ ohne frische bestandene&#10;Belege. aqt-trail protokolliert." style="text=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="v-54">
+          <mxGeometry x="14" y="38" width="240" height="112" as="geometry" />
+        </mxCell>
+        <mxCell id="v-57" value="Befehle · jeder Agent" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#F8FAFC;strokeColor=#CBD5E1;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontStyle=1;fontColor=#172033;align=left;verticalAlign=top;spacingLeft=44;spacingTop=12;" vertex="1" parent="panel">
+          <mxGeometry x="304" y="640" width="262" height="158" as="geometry" />
+        </mxCell>
+        <mxCell id="v-58" value="2" style="shape=ellipse;perimeter=ellipsePerimeter;fillColor=#334155;strokeColor=#334155;fontFamily=Arial,Helvetica,sans-serif;fontSize=13;fontStyle=1;fontColor=#FFFFFF;align=center;verticalAlign=middle;" vertex="1" parent="v-57">
+          <mxGeometry x="12" y="9" width="24" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="v-59" value="Jeder Agent mit Shell nutzt&#10;dieselben Werkzeuge, etwa&#10;aqt-change run (das Werkzeug&#10;führt die Tests aus) und&#10;aqt-signoff prepare (eine Aktion&#10;wartet auf Genehmigung)." style="text=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="v-57">
+          <mxGeometry x="14" y="38" width="240" height="112" as="geometry" />
+        </mxCell>
+        <mxCell id="v-60" value="Terminal-Relais" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#F8FAFC;strokeColor=#CBD5E1;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontStyle=1;fontColor=#172033;align=left;verticalAlign=top;spacingLeft=44;spacingTop=12;" vertex="1" parent="panel">
+          <mxGeometry x="580" y="640" width="262" height="158" as="geometry" />
+        </mxCell>
+        <mxCell id="v-61" value="3" style="shape=ellipse;perimeter=ellipsePerimeter;fillColor=#334155;strokeColor=#334155;fontFamily=Arial,Helvetica,sans-serif;fontSize=13;fontStyle=1;fontColor=#FFFFFF;align=center;verticalAlign=middle;" vertex="1" parent="v-60">
+          <mxGeometry x="12" y="9" width="24" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="v-62" value="aqt-sensei leitet Rat zwischen&#10;zwei Agenten-Terminals weiter&#10;(tmux oder Herdr). Im Standard-&#10;modus gibt ein Mensch jede&#10;Nachricht frei." style="text=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="v-60">
+          <mxGeometry x="14" y="38" width="240" height="112" as="geometry" />
+        </mxCell>
+        <mxCell id="v-63" value="Beobachtung und Import" style="rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#F8FAFC;strokeColor=#CBD5E1;strokeWidth=1.5;fontFamily=Arial,Helvetica,sans-serif;fontSize=15;fontStyle=1;fontColor=#172033;align=left;verticalAlign=top;spacingLeft=44;spacingTop=12;" vertex="1" parent="panel">
+          <mxGeometry x="856" y="640" width="262" height="158" as="geometry" />
+        </mxCell>
+        <mxCell id="v-64" value="4" style="shape=ellipse;perimeter=ellipsePerimeter;fillColor=#334155;strokeColor=#334155;fontFamily=Arial,Helvetica,sans-serif;fontSize=13;fontStyle=1;fontColor=#FFFFFF;align=center;verticalAlign=middle;" vertex="1" parent="v-63">
+          <mxGeometry x="12" y="9" width="24" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="v-65" value="Das Schreibprogramm des Audit&#10;Trails fragt den Linux-Kernel,&#10;welches Programm jeden Eintrag&#10;sandte. aqt-trail importiert&#10;Sitzungsprotokolle von Claude&#10;Code, Codex und pi." style="text=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontFamily=Arial,Helvetica,sans-serif;fontSize=14;fontColor=#172033;fontStyle=0;spacing=0;" vertex="1" parent="v-63">
+          <mxGeometry x="14" y="38" width="240" height="112" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
