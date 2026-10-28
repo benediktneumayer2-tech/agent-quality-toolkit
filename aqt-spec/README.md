@@ -27,12 +27,13 @@ uv venv .venv && uv pip install --python .venv/bin/python -e ".[schema]"
 In Python:
 
 ```python
-from aqt_evidence import actor, new_record, open_sink, subject, bytes_hash
+from aqt_evidence import actor, new_record, open_sink, resolve_sink, subject, bytes_hash
 
 record = new_record("change.finish", actor("agent", "agent:claude-code:s-0001"), "finish",
                     subject=subject("file", "docs/report.md", sha256=bytes_hash(b"...")),
                     data={"plan_ref": "plan-0001", "receipts": [], "waivers": [], "gate": "GO"})
-open_sink().append(record)   # AQT_SINK=file:... or unix:... (aqt-trail); default ~/.local/state/aqt/evidence.jsonl
+open_sink().append(record)   # AQT_SINK, else a local aqt-trail writer, else ~/.local/state/aqt/evidence.jsonl
+resolve_sink()               # where records go, and a warning when they may miss the trail
 ```
 
 ## How it works

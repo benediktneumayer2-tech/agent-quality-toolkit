@@ -48,13 +48,14 @@ The 0.1.0 API is stable; later changes are additive and backwards compatible. Ev
 
 | Name | Purpose |
 |---|---|
-| `open_sink(spec=None)` | `AQT_SINK` → `JsonlSink` (`file:`) or `SocketSink` (`unix:`); default `$XDG_STATE_HOME/aqt/evidence.jsonl` |
+| `open_sink(spec=None)` | `spec`, else the route of `resolve_sink()`: `JsonlSink` (`file:`) or `SocketSink` (`unix:`). Pings only when that decides the route |
+| `resolve_sink(environ=None) -> dict` | Where records go: `kind` (`file`/`unix`), `target` (path), `source` (`env` = `AQT_SINK`, `discovered` = aqt-trail socket, `default` = fallback file), `writer` (a ping was answered: `True`/`False`; `None` when not asked) and `warning` (`None` or why records may be missing from the trail). Order: `AQT_SINK`; the default aqt-trail socket when a writer answers or a trail is initialised (spooled while the writer is down); `$XDG_STATE_HOME/aqt/evidence.jsonl`. Raises `SinkError` for a malformed `AQT_SINK` (spec §10.1) |
 | `JsonlSink(path).append(record)` | Locked, fsynced, mode 0600 |
-| `SocketSink(path, *, timeout=5.0, spool=True, spool_path=None).append(record)` | aqt-trail client. When the socket is unreachable the record is spooled to `spool_file()` and `last_spooled` is `True`; `spool=False` raises `SinkUnavailable`. Refusals (`ok: false`) raise `SinkError` and are never spooled |
+| `SocketSink(path, *, timeout=5.0, spool=True, spool_path=None).append(record)` | aqt-trail client. When the socket is unreachable the record is spooled to `spool_file()` and `last_spooled` is `True`; `spool=False` raises `SinkUnavailable`. Spooling prints one warning per process on stderr. Refusals (`ok: false`) raise `SinkError` and are never spooled |
 | `spool_file()`, `state_dir()` | `$XDG_STATE_HOME/aqt/spool/spool.jsonl`, `$XDG_STATE_HOME/aqt` |
 | `ERROR_CODES` | `invalid_record`, `unauthorized`, `duplicate_id`, `unavailable`, `internal` |
 | `read_jsonl(path)` | Yield records (lenient JSON) |
-| `evidence_sources()`, `iter_evidence(paths=None)` | `AQT_EVIDENCE` or default sink + trail log, deduplicated by id |
+| `evidence_sources(environ=None)`, `iter_evidence(paths=None)` | `AQT_EVIDENCE`, or the sink file, the trail log and the spool; deduplicated by id |
 | `SinkError`, `SinkUnavailable` | Errors (`SinkUnavailable` is a `SinkError`) |
 
 ## Human check

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added
+- Sink discovery (spec §10.1): without `AQT_SINK`, `open_sink()` finds the aqt-trail writer socket at its
+  default place (`[writer] socket` in `trail.toml`, `$XDG_RUNTIME_DIR/aqt/trail.sock`). An initialised trail
+  whose writer is down gets the records through the spool; the fallback file is used only when no trail is
+  found. `resolve_sink()` reports the route (`kind`, `target`, `source`, `writer`, `warning`).
+
+### Changed
+- `SocketSink` prints one warning per process on stderr when it spools.
+- `evidence_sources()` also reads the spool, and finds the trail log under `AQT_TRAIL_STATE` or `[trail] state`.
+
 ### Fixed
 - Registry aligned with what the 0.1 tools write: actions `signoff.action.prepared` `revise`,
   `signoff.invalidation` `content-changed`/`withdraw`, `sensei.budget` `set`, `validate.report` `issued`,

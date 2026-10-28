@@ -23,8 +23,9 @@ def isolated(tmp_path, monkeypatch):
     """Keep every test away from the real XDG directories and the real agent environment."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "run"))  # no discovery of a real trail writer
     for name in ("AQT_SINK", "AQT_EVIDENCE", "AQT_SIGNERS", "AQT_KEYS_DIR", "AQT_SIGNOFF_STATE",
-                 "AQT_SIGNOFF_CONFIG", "AQT_ACTOR"):
+                 "AQT_SIGNOFF_CONFIG", "AQT_ACTOR", "AQT_TRAIL_STATE"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.chdir(tmp_path)
     return tmp_path

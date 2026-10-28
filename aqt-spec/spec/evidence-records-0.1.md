@@ -211,7 +211,7 @@ The signature covers the canonical checkpoint without `sig`. Note that `sig` is 
 
 ### 10.1 Choosing a sink
 
-`AQT_SINK=file:/path.jsonl` appends records as canonical JSON lines to a file (exclusive lock, fsync, mode 0600). `AQT_SINK=unix:/path.sock` sends them to an aqt-trail writer. Without `AQT_SINK`, records go to `$XDG_STATE_HOME/aqt/evidence.jsonl`. A JSONL sink does not chain.
+`AQT_SINK=file:/path.jsonl` appends records as canonical JSON lines to a file (exclusive lock, fsync, mode 0600). `AQT_SINK=unix:/path.sock` sends them to an aqt-trail writer. Without `AQT_SINK`, a client looks for the writer socket at its default place: `[writer] socket` in `$XDG_CONFIG_HOME/aqt/trail.toml`, else `$XDG_RUNTIME_DIR/aqt/trail.sock`, else `aqt-trail.sock` in the trail state directory (`[trail] state`, else `$AQT_TRAIL_STATE`, else `$XDG_STATE_HOME/aqt/trail`). It uses that socket when a writer answers the aqt-trail request `{"op": "ping"}` (which stores nothing), or when a trail has been initialised (`trail.json` in the trail state directory); while that writer is down, records wait in the spool (§10.4). Otherwise records go to the fallback file `$XDG_STATE_HOME/aqt/evidence.jsonl`. Clients SHOULD make a fallback or spooled route visible (`aqt_evidence.resolve_sink()` returns it with a warning). A JSONL sink does not chain.
 
 ### 10.2 Socket protocol
 
@@ -237,7 +237,7 @@ When the socket cannot be reached, a client SHOULD append the record to `$XDG_ST
 
 ### 10.5 Reading records
 
-Consumers read files, not the socket. `AQT_EVIDENCE` lists JSONL paths separated by colons; the default is the default sink file plus the trail log `$XDG_STATE_HOME/aqt/trail/trail.jsonl`, deduplicated by `id` (`aqt_evidence.iter_evidence`). Tools that consume records accept `--evidence PATH` (repeatable).
+Consumers read files, not the socket. `AQT_EVIDENCE` lists JSONL paths separated by colons; the default is the sink file, the trail log (`trail.jsonl` in the trail state directory, §10.1) and the spool, deduplicated by `id` (`aqt_evidence.iter_evidence`). Tools that consume records accept `--evidence PATH` (repeatable).
 
 ## 11. Record-type registry
 

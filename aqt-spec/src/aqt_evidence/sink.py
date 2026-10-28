@@ -1,16 +1,24 @@
 """Where tools write their records.
 
-``AQT_SINK`` selects the destination:
-- ``file:/path/evidence.jsonl`` appends records as JSON lines (locked, fsynced);
-- ``unix:/path/aqt-trail.sock`` sends them to an aqt-trail writer service.
-Without ``AQT_SINK`` records go to ``$XDG_STATE_HOME/aqt/evidence.jsonl``.
+``open_sink()`` without an argument uses ``resolve_sink()``, which picks, in this order:
+1. ``AQT_SINK``: ``file:/path/evidence.jsonl`` appends records as JSON lines (locked,
+   fsynced); ``unix:/path/aqt-trail.sock`` sends them to an aqt-trail writer service.
+2. The aqt-trail writer socket at its default place (``[writer] socket`` in
+   ``$XDG_CONFIG_HOME/aqt/trail.toml``, else ``$XDG_RUNTIME_DIR/aqt/trail.sock``, else
+   ``aqt-trail.sock`` in the trail state directory), when a writer answers there or a
+   trail has been initialised (``trail.json`` in the trail state directory). A trail
+   whose writer is down gets the records through the spool below.
+3. The fallback file ``$XDG_STATE_HOME/aqt/evidence.jsonl`` (not chained, not in a trail).
+Degraded routes carry a warning in ``resolve_sink()``; spooling also prints one line on
+stderr per process.
 
 Trail socket protocol (one JSON object per line, one request per connection):
 request ``{"op": "append", "record": {...}}``; response
 ``{"ok": true, "record": {...stored record with chain, time and observed...}}`` or
 ``{"ok": false, "code": "...", "message": "..."}`` with ``code`` one of
 ``invalid_record``, ``unauthorized``, ``duplicate_id``, ``unavailable``, ``internal``.
-Appends are idempotent by record ``id``.
+Appends are idempotent by record ``id``. Discovery checks the writer with the aqt-trail
+request ``{"op": "ping"}``, which stores nothing.
 
 When the socket cannot be reached, ``SocketSink`` spools the record to
 ``$XDG_STATE_HOME/aqt/spool/spool.jsonl`` and sets ``last_spooled``; aqt-trail
@@ -23,6 +31,8 @@ import fcntl
 import json
 import os
 import socket
+import sys
+import tomllib
 from pathlib import Path
 from typing import Iterator, Protocol
 
@@ -39,6 +49,19 @@ class SinkUnavailable(SinkError):
 
 
 ERROR_CODES = ("invalid_record", "unauthorized", "duplicate_id", "unavailable", "internal")
+PROBE_TIMEOUT = 0.5  # seconds for the discovery ping; a local writer answers in about a millisecond
+_warned: set[str] = set()
+
+
+def _warn_once(message: str) -> None:
+    if message not in _warned:
+        _warned.add(message)
+        print(f"aqt: warning: {message}", file=sys.stderr)
+
+
+def _spool_warning(socket_path, spool) -> str:
+    return (f"no aqt-trail writer answers at {socket_path}; records are spooled to {spool} "
+            "and reach the trail when the writer runs (aqt-trail serve)")
 
 
 class Sink(Protocol):
@@ -112,18 +135,99 @@ class SocketSink:
         except SinkUnavailable:
             if not self.spool:
                 raise
-            JsonlSink(self.spool_path or spool_file()).append(record)
+            spool = self.spool_path or spool_file()
+            JsonlSink(spool).append(record)
             self.last_spooled = True
+            _warn_once(_spool_warning(self.path, spool))
             return record
         if not response.get("ok"):
             raise SinkError(f"{response.get('code', 'error')}: {response.get('message', 'append refused')}")
         return response["record"]
 
 
+def _trail_location(environ) -> tuple[Path, Path]:
+    """aqt-trail's state directory and writer socket, computed as ``aqt_trail.config`` does
+    (``trail.toml`` ``[trail] state`` and ``[writer] socket``, ``AQT_TRAIL_STATE``, XDG dirs)."""
+    config = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "aqt" / "trail.toml"
+    try:
+        with open(config, "rb") as handle:
+            values = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError):
+        values = {}
+    trail, writer = (values.get(name) if isinstance(values.get(name), dict) else {} for name in ("trail", "writer"))
+    state = Path(trail.get("state") or environ.get("AQT_TRAIL_STATE") or state_dir() / "trail")
+    if writer.get("socket"):
+        return state, Path(writer["socket"])
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    return state, (Path(runtime) / "aqt" / "trail.sock" if runtime else state / "aqt-trail.sock")
+
+
+def _ping(path) -> dict | None:
+    """The writer's answer to ``{"op": "ping"}``, or None when nothing answers. (aqt-trail
+    records a connection that closes without a request as a refused request; a ping stores nothing.)"""
+    try:
+        answer = SocketSink(path, timeout=PROBE_TIMEOUT, spool=False).request({"op": "ping"})
+    except SinkError:
+        return None
+    return answer if isinstance(answer, dict) else None
+
+
+def _resolve(environ, *, probe: bool) -> dict:
+    def route(kind, target, source, writer=None, warning=None):
+        return {"kind": kind, "target": str(target), "source": source, "writer": writer, "warning": warning}
+
+    def answered(target, answer):
+        if answer.get("ok"):
+            return route("unix", target, source, True)
+        return route("unix", target, source, True, f"the aqt-trail writer at {target} refused the check: "
+                                                     f"{answer.get('code', 'error')}: {answer.get('message', '')}")
+
+    spec = environ.get("AQT_SINK")
+    if spec:
+        source = "env"
+        if spec.startswith("file:"):
+            return route("file", spec[5:], source)
+        if not spec.startswith("unix:"):
+            raise SinkError("AQT_SINK must start with file: or unix:")
+        target = spec[5:]
+    else:
+        source = "discovered"
+        trail, target = _trail_location(environ)
+        if not (trail / "trail.json").exists():  # no trail here: only a writer that answers counts
+            answer = _ping(target)
+            if answer is not None:
+                return answered(target, answer)
+            fallback = state_dir() / "evidence.jsonl"
+            return route("file", fallback, "default", False,
+                         f"no aqt-trail writer answers at {target}; records go to the fallback file {fallback}, "
+                         "not into a trail (aqt-trail init and aqt-trail serve, or set AQT_SINK)")
+    if not probe:
+        return route("unix", target, source)
+    answer = _ping(target)
+    if answer is None:
+        return route("unix", target, source, False, _spool_warning(target, spool_file()))
+    return answered(target, answer)
+
+
+def resolve_sink(environ: dict | None = None) -> dict:
+    """Where ``open_sink()`` sends records, and how sure that is.
+
+    Returns ``kind`` (``"file"`` or ``"unix"``), ``target`` (path), ``source`` (``"env"`` for
+    ``AQT_SINK``, ``"discovered"`` for the aqt-trail socket, ``"default"`` for the fallback
+    file), ``writer`` (True when a writer answered a ping, False when none did, None when not
+    asked: a ``file:`` ``AQT_SINK``) and ``warning`` (None, or why records may be missing from
+    the trail). ``environ`` supplies the ``AQT_*`` variables; directories come from the
+    process environment, as in ``state_dir()``. A malformed ``AQT_SINK`` raises ``SinkError``.
+    """
+    return _resolve(os.environ if environ is None else environ, probe=True)
+
+
 def open_sink(spec: str | None = None) -> Sink:
-    spec = spec or os.environ.get("AQT_SINK")
+    """The sink for ``spec`` (``file:PATH`` or ``unix:PATH``) or, without one, for ``resolve_sink()``.
+    It only pings when that decides the route (no initialised trail here)."""
     if not spec:
-        return JsonlSink(state_dir() / "evidence.jsonl")
+        route = _resolve(os.environ, probe=False)
+        spec = f"{route['kind']}:{route['target']}"
     if spec.startswith("file:"):
         return JsonlSink(spec[5:])
     if spec.startswith("unix:"):
@@ -144,14 +248,15 @@ def read_jsonl(path: str | os.PathLike) -> Iterator[dict]:
 
 
 def evidence_sources(environ: dict | None = None) -> list[Path]:
-    """Files other tools read records from: ``AQT_EVIDENCE`` (colon-separated paths) or,
-    by default, the default sink file and the aqt-trail log, when they exist."""
+    """Files other tools read records from: ``AQT_EVIDENCE`` (colon-separated paths) or, by
+    default, the sink file, the aqt-trail log and the spool (records not yet in the trail),
+    when they exist."""
     environ = os.environ if environ is None else environ
     if environ.get("AQT_EVIDENCE"):
         return [Path(part) for part in environ["AQT_EVIDENCE"].split(":") if part]
     sink = environ.get("AQT_SINK", "")
     candidates = [Path(sink[5:])] if sink.startswith("file:") else [state_dir() / "evidence.jsonl"]
-    candidates.append(state_dir() / "trail" / "trail.jsonl")
+    candidates += [_trail_location(environ)[0] / "trail.jsonl", spool_file()]
     return [path for path in candidates if path.exists()]
 
 

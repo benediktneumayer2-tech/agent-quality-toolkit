@@ -21,7 +21,8 @@ AGENT = actor("agent", "agent:claude-code:s-001", harness="claude-code", session
 def isolated(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-    for name in ("AQT_SINK", "AQT_EVIDENCE", "AQT_ACTOR", "AQT_CAPA_DB", "AQT_AGENT_SESSION"):
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "run"))  # no discovery of a real trail writer
+    for name in ("AQT_SINK", "AQT_EVIDENCE", "AQT_ACTOR", "AQT_CAPA_DB", "AQT_AGENT_SESSION", "AQT_TRAIL_STATE"):
         monkeypatch.delenv(name, raising=False)
 
 

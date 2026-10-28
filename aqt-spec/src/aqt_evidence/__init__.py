@@ -11,7 +11,7 @@ from .record import (ACTOR_KINDS, MEANINGS, SPEC_VERSION, actor, new_id, new_rec
 from .conformance import ConformanceResult, conformance
 from .session import AgentContext, HumanCheckError, detect_agent_context, process_chain, require_human
 from .sink import (ERROR_CODES, JsonlSink, Sink, SinkError, SinkUnavailable, SocketSink, evidence_sources,
-                   iter_evidence, open_sink, read_jsonl, spool_file, state_dir)
+                   iter_evidence, open_sink, read_jsonl, resolve_sink, spool_file, state_dir)
 
 __version__ = "0.1.0"
 
@@ -22,7 +22,7 @@ __all__ = [
     "load_signer", "make_checkpoint", "new_id", "process_chain", "require_human", "new_record", "open_sink", "read_jsonl", "record_content_hash", "record_hash", "evidence_sources", "iter_evidence",
     "sha256_hex", "sign_record", "state_dir", "subject", "unsigned", "utc_now", "validate_record",
     "verify_chain", "verify_checkpoint", "verify_record_signatures",
-    "ERROR_CODES", "SinkUnavailable", "parse_json", "parse_record", "spool_file",
+    "ERROR_CODES", "SinkUnavailable", "parse_json", "parse_record", "resolve_sink", "spool_file",
     "public_key_from_raw", "sign_statement", "signer_from_seed", "verify_statement",
     "ConformanceResult", "conformance",
 ]
