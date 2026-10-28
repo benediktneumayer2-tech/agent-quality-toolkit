@@ -80,8 +80,9 @@ import importlib, importlib.metadata as md, json, os, sys
 repo, venv, expected = os.path.realpath(sys.argv[1]), os.path.realpath(sys.argv[2]), int(sys.argv[3])
 bad = [p for p in sys.path if p and (os.path.realpath(p) + os.sep).startswith(repo + os.sep)]
 assert not bad, f"repository paths on sys.path: {bad}"
-dists = {d.metadata["Name"]: d for d in md.distributions() if d.metadata["Name"].startswith("aqt-")}
-assert len(dists) == expected, f"{len(dists)} aqt-* distributions installed, {expected} built: {sorted(dists)}"
+ours = lambda name: name.startswith("aqt-") or name == "agent-quality-toolkit"   # the umbrella package
+dists = {d.metadata["Name"]: d for d in md.distributions() if ours(d.metadata["Name"])}
+assert len(dists) == expected, f"{len(dists)} toolkit distributions installed, {expected} built: {sorted(dists)}"
 for name, dist in sorted(dists.items()):
     origin = json.loads(dist.read_text("direct_url.json") or "{}")
     assert not origin.get("dir_info", {}).get("editable"), f"{name} is an editable install"
