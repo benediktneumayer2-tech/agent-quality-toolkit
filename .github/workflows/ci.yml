@@ -7,11 +7,21 @@ jobs:
       matrix:
         python: ["3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      # setup-uv publishes no major tags since v8; v10.3.3 is an immutable release tag
+      - uses: astral-sh/setup-uv@v10.3.3
         with:
           python-version: ${{ matrix.python }}
       - name: Install bubblewrap and tmux for optional checks
         run: sudo apt-get update && sudo apt-get install -y bubblewrap tmux
       - name: All package suites and the integration demo
         run: scripts/test_all.sh
+  clean-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          python-version: "3.12"
+      - name: Built wheels in a fresh venv outside the checkout, the tools and the demo
+        run: scripts/clean_install_check.sh
