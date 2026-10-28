@@ -1,0 +1,9 @@
+agent-quality-toolkit (the aqt command) — part of the Agent Quality Toolkit
+Copyright 2026 Benedikt Neumayer. Licensed under the Apache License, Version 2.0.
+
+The setup checklist follows the toolkit's own user manual (chapters 1 to 3); no code was copied
+from elsewhere. The approach (setup knowledge as self-checking code) comes from the author's private
+Agent Platform Next; no private paths, hosts, names or data were copied.
+
+Runtime dependencies: the eight Agent Quality Toolkit packages and aqt-ui (Apache-2.0), and through
+aqt-spec[schema]: jsonschema (MIT). Test-only: pytest (MIT).

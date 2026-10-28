@@ -9,7 +9,7 @@
 set -uo pipefail
 
 SUITE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PACKAGES=(aqt-spec aqt-trail aqt-signoff aqt-change aqt-sensei aqt-quarantine aqt-validate aqt-capa aqt-ui)
+PACKAGES=(aqt-spec aqt-trail aqt-signoff aqt-change aqt-sensei aqt-quarantine aqt-validate aqt-capa aqt-ui aqt-cli)
 [ $# -gt 0 ] && PACKAGES=("$@")
 REAL_HOME="$HOME"
 REAL_DIRS=("$REAL_HOME/.local/state/aqt" "$REAL_HOME/.config/aqt")
@@ -28,6 +28,8 @@ ensure_venv() {   # $1 = package directory name
         aqt-validate) extra=(-e ../aqt-spec -e ../aqt-quarantine) ;;   # detector plug-in tests
         aqt-ui) extra=(-e ../aqt-spec -e ../aqt-trail -e ../aqt-quarantine -e ../aqt-signoff -e ../aqt-change
                        -e ../aqt-capa -e ../aqt-validate) ;;                  # every view
+        aqt-cli) extra=(-e "../aqt-spec[schema]" -e ../aqt-trail -e ../aqt-signoff -e ../aqt-change -e ../aqt-sensei
+                        -e ../aqt-quarantine -e ../aqt-validate -e ../aqt-capa -e ../aqt-ui) ;;   # the umbrella: all
         *) extra=(-e ../aqt-spec) ;;
     esac
     (cd "$dir" && uv venv -q .venv && uv pip install -q --python .venv/bin/python "${extra[@]}" -e ".[test]")

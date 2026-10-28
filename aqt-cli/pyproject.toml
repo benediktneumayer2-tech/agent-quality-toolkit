@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agent-quality-toolkit"
+version = "0.2.0.dev0"
+description = "Agent Quality Toolkit: the aqt command with guided setup, a one-screen status and every tool behind one name"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [{ name = "Benedikt Neumayer" }]
+dependencies = [
+    "aqt-spec[schema]>=0.1",
+    "aqt-trail>=0.1",
+    "aqt-signoff>=0.1",
+    "aqt-change>=0.1",
+    "aqt-sensei>=0.1",
+    "aqt-quarantine>=0.1",
+    "aqt-validate>=0.1",
+    "aqt-capa>=0.1",
+    "aqt-ui>=0.1",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.scripts]
+aqt = "aqt_cli.cli:main"
+
+[tool.uv.sources]
+aqt-spec = { path = "../aqt-spec", editable = true }
+aqt-trail = { path = "../aqt-trail", editable = true }
+aqt-signoff = { path = "../aqt-signoff", editable = true }
+aqt-change = { path = "../aqt-change", editable = true }
+aqt-sensei = { path = "../aqt-sensei", editable = true }
+aqt-quarantine = { path = "../aqt-quarantine", editable = true }
+aqt-validate = { path = "../aqt-validate", editable = true }
+aqt-capa = { path = "../aqt-capa", editable = true }
+aqt-ui = { path = "../aqt-ui", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aqt_cli"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
