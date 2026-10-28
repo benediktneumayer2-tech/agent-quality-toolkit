@@ -71,26 +71,27 @@ This manual assumes the clone is in `~/agent-quality-toolkit`.
 
 ### 1.3 Install everything (recommended)
 
-One virtual environment (a private Python folder) holds all eight packages:
+One virtual environment (a private Python folder) holds all eight packages, the optional web page and the `aqt` command:
 
 ```bash
 cd ~/agent-quality-toolkit
 uv venv .venv
 uv pip install --python .venv/bin/python -e "aqt-spec[schema]" -e aqt-trail -e aqt-signoff \
-    -e aqt-change -e aqt-sensei -e aqt-quarantine -e aqt-validate -e aqt-capa
+    -e aqt-change -e aqt-sensei -e aqt-quarantine -e aqt-validate -e aqt-capa -e aqt-ui -e aqt-cli
 ```
 
+- `aqt-cli` provides the `aqt` command: `aqt setup` and `aqt status` (chapter 3), and every tool as `aqt <tool> …`, for example `aqt trail verify` for `aqt-trail verify`.
 - `-e` installs in editable mode: after a `git pull` the new code is used without reinstalling.
 - The `[schema]` extra lets `aqt-evidence conform` check the content of every record against its schema.
 - Optional: aqt-quarantine's ONNX detector (a local machine-learning model in addition to the built-in pattern rules) needs `-e "aqt-quarantine[hf]"`. See `aqt-quarantine/docs/detectors.md`.
 
 ### 1.4 Put the commands on your PATH
 
-Agent hooks call the tools by name, for example `aqt-quarantine hook claude-code`. The commands must therefore be on the `PATH` of the agent program, not only of your shell. Link only the `aqt-*` commands into `~/.local/bin`, so that the virtual environment's `python` does not hide your own:
+Agent hooks call the tools by name, for example `aqt-quarantine hook claude-code`. The commands must therefore be on the `PATH` of the agent program, not only of your shell. Link only `aqt` and the `aqt-*` commands into `~/.local/bin`, so that the virtual environment's `python` does not hide your own:
 
 ```bash
 mkdir -p ~/.local/bin
-ln -sf ~/agent-quality-toolkit/.venv/bin/aqt-* ~/.local/bin/
+ln -sf ~/agent-quality-toolkit/.venv/bin/aqt ~/agent-quality-toolkit/.venv/bin/aqt-* ~/.local/bin/
 ```
 
 Most Linux distributions put `~/.local/bin` on the `PATH` at login. If `command -v aqt-trail` prints nothing in a new terminal, add `export PATH="$HOME/.local/bin:$PATH"` to `~/.profile`, then log out and in again.
@@ -113,19 +114,15 @@ uv pip install --python .venv/bin/python -e "aqt-spec[schema]" -e aqt-change
 | Validation of a detector or AI reviewer | `aqt-validate` (plus `aqt-quarantine` for its detectors) | aqt-quarantine |
 | Deviations and CAPA | `aqt-capa` | the other tools: it finds deviations in their evidence |
 
-Without aqt-trail, every tool writes its records to the file `~/.local/state/aqt/evidence.jsonl`. You can add aqt-trail later; the tools that read evidence look in both places.
+Without aqt-trail, every tool writes its records to the file `~/.local/state/aqt/evidence.jsonl`. You can add aqt-trail later: the tools then find its writer by themselves (3.3), and the tools that read evidence look in both places.
 
 ### 1.6 Check the install
 
 ```bash
-for tool in aqt-evidence aqt-trail aqt-signoff aqt-change aqt-sensei aqt-quarantine aqt-validate aqt-capa; do
-    command -v "$tool" >/dev/null || echo "MISSING: $tool"
-done
-aqt-evidence vectors          # expected: "57 of 57 vectors agree"
-aqt-trail --version           # expected: 0.1.0
+aqt status
 ```
 
-`aqt-evidence vectors` checks that the record library computes every hash and signature exactly as the specification's test vectors require.
+`aqt status` checks every package, the trail, its writer, where records go, your signing identity, the settings and the specification's test vectors, and names a fix for each problem. Right after installing, it lists the setup that chapter 3 does (no trail, no signer yet); the line `packages` and the line `vectors` (the record library computes every hash and signature exactly as the test vectors require) must already say `ok`. `aqt status --json` gives the same for scripts; the exit code is 0 when nothing failed.
 
 To see all tools working together on synthetic data, run the integration demo. It takes about five seconds, runs offline in a temporary folder and never touches your real configuration:
 
@@ -177,7 +174,7 @@ The format is an open specification: `aqt-spec/spec/evidence-records-0.1.md`.
 
 An **audit trail** is the complete, time-ordered list of these records. aqt-trail makes it tamper-evident:
 
-- **One writer.** A small service, `aqt-trail serve`, receives the records of all tools through a Unix socket (a local, file-like connection). Only the writer writes the log. The other tools find it through the environment variable `AQT_SINK`.
+- **One writer.** A small service, `aqt-trail serve`, receives the records of all tools through a Unix socket (a local, file-like connection). Only the writer writes the log. The other tools find it by themselves, or through the environment variable `AQT_SINK` (3.3).
 - **Observed, not only claimed.** The writer asks the Linux kernel which process sent each record and stores the process chain, for example `aqt-quarantine ← bash ← claude`. A record that *claims* to come from `human:alice` but was sent from inside an agent is kept and flagged.
 - **Chained and signed.** Each record contains the hash of the previous record and is signed by the writer. Editing, deleting or reordering a record breaks verification from that record on.
 - **Checkpoints and anchors.** A signed copy of the latest hash (the **head**) stored somewhere else, and time stamps from an outside time-stamp authority (RFC 3161), also reveal a log that was cut short or rewritten completely.
@@ -230,7 +227,7 @@ The evidence records are the authority. Working indexes such as `capa.db` can be
 
 | Variable | Used by | Meaning |
 |---|---|---|
-| `AQT_SINK` | all tools | Where records go: `unix:/path/trail.sock` (the trail writer) or `file:/path/file.jsonl`. Not set: `~/.local/state/aqt/evidence.jsonl` |
+| `AQT_SINK` | all tools | Where records go: `unix:/path/trail.sock` (the trail writer) or `file:/path/file.jsonl`. Not set: the trail writer when one answers or a trail exists, else `~/.local/state/aqt/evidence.jsonl` (3.3) |
 | `AQT_EVIDENCE` | tools that read records (aqt-capa, aqt-change, aqt-signoff, aqt-validate) | Colon-separated record files to read. Default: the default sink file plus the trail log |
 | `AQT_ACTOR` | all tools | The claimed actor ID. Never makes an agent a human |
 | `AQT_AGENT_SESSION` | all tools | Marks a process as part of an agent session |
@@ -240,7 +237,15 @@ The evidence records are the authority. Working indexes such as `capa.db` can be
 
 ## 3. First-time setup on one developer machine
 
-Do these steps once, in this order. The trail writer comes first so that even the enrolment of your signing key is recorded in the audit trail (the same order as the integration demo). Allow about 20 minutes.
+**The quick way.** In your own terminal (not inside an agent session), run:
+
+```bash
+aqt setup
+```
+
+It checks what is missing and does sections 3.2 to 3.5 for you, one confirmed step at a time: it creates the trail, installs and starts the writer as a systemd user service, enrols your signing identity (you choose the ID, name and role and type the passphrase yourself, at aqt-signoff's prompt) and writes `signoff.toml` and `trail.toml` with your time zone. It never overwrites a key, the signer registry or an existing settings file, and you can run it again at any time; finished steps are skipped. It ends with `aqt status` (3.6). `aqt setup --yes` skips the confirmations, except for the identity, which always needs you.
+
+Read 3.1 first, and 3.7 afterwards. The rest of this chapter explains what `aqt setup` does, for doing it by hand or for an unusual setup. Done by hand, the steps go in this order: the trail writer comes first so that even the enrolment of your signing key is recorded in the audit trail (the same order as the integration demo). Allow about 20 minutes.
 
 ### 3.1 Decide who is who
 
@@ -300,26 +305,24 @@ Before you start, write down:
 
    Stopping the service writes a `service.stop` record, and starting it a `service.start` record. That is normal. If you set `XDG_STATE_HOME` or `XDG_CONFIG_HOME` to other folders in your shell, add the same values to the unit (`Environment=XDG_STATE_HOME=…`), or the service uses a different trail.
 
-### 3.3 Point every tool at the writer: `AQT_SINK`
+### 3.3 Where the tools send their records
 
-aqt-trail's own commands find the writer by themselves. **All other tools need `AQT_SINK`.** Without it they write to the separate file `~/.local/state/aqt/evidence.jsonl`.
+**Every tool finds the trail writer by itself** (since 0.2). Without `AQT_SINK` it looks at the writer's usual socket (`[writer] socket` in `trail.toml`, else `$XDG_RUNTIME_DIR/aqt/trail.sock`):
 
-1. Add this line to `~/.profile` (read at login, so programs started from the desktop also get it) and to `~/.bashrc` (read by new terminals):
+- A writer answers: the record goes into the trail.
+- A trail exists but its writer is not running: the record is spooled and reaches the trail, behind a `trail.gap` marker, when the writer runs again; the tool prints one warning line.
+- No trail at all: the record goes to the separate file `~/.local/state/aqt/evidence.jsonl`, which is not part of any trail.
 
-   ```bash
-   export AQT_SINK="unix:$XDG_RUNTIME_DIR/aqt/trail.sock"
-   ```
+`aqt status` shows in its line `sink` where records go and warns about the last two cases. Set `AQT_SINK` only to override this, for example for the separate-user mode (3.8) or to force a file (`AQT_SINK=file:/path/evidence.jsonl`); an explicit `AQT_SINK` always wins. Agent hooks inherit the agent's environment, so start your coding agent from an environment with the same variables.
 
-2. Log out and in again, or run the line in your current terminal.
-3. Start your coding agent from an environment that has the variable. Agent hooks inherit the agent's environment.
-4. Test it:
+Test it:
 
-   ```bash
-   aqt-trail event --action setup.test --reason "first test record"
-   aqt-trail list | tail -3
-   ```
+```bash
+aqt-trail event --action setup.test --reason "first test record"
+aqt-trail list | tail -3
+```
 
-   Expected: `rec_… stored`, and the record at the end of the list. If it says `rec_… spooled`, the writer is not running (see chapter 6).
+Expected: `rec_… stored`, and the record at the end of the list. If it says `rec_… spooled`, the writer is not running (see chapter 6).
 
 ### 3.4 Create your identity and signing key
 
@@ -380,6 +383,14 @@ workdays = [1, 2, 3, 4, 5]
 The setup of each single tool (quarantine, change control, CAPA, validation, advisor) is at the start of its workflow in chapter 4.
 
 ### 3.6 Verify the setup
+
+```bash
+aqt status
+```
+
+Expected: every line `ok` (a `warn` is allowed but worth reading), and the verdict `ok`. It checks the packages, the trail and its systemd unit, that the writer runs and the spool is empty, where records go, that a signer is enrolled and named in `signoff.toml`, `trail.toml`, the trail's latest entry and checkpoint, and the test vectors. For speed it checks only the end of the trail; `aqt status --verify` verifies every record, which takes seconds on a large trail. Each problem comes with the command that fixes it.
+
+The same checks by hand:
 
 | Check | Command | Expected |
 |---|---|---|
@@ -1405,9 +1416,9 @@ Monthly or quarterly:
 
 **`rec_… spooled`, or `spooled: N` in `aqt-trail status`.** The writer is not running, or `AQT_SINK` points to another socket. Start it (`systemctl --user start aqt-trail` or `aqt-trail serve`). A running writer drains the spool at start and every 30 seconds; `aqt-trail drain` does it at once. The trail then shows a `trail.gap` record and the spooled records marked `via: spool`. That is correct: the gap is part of the record. Expect a `gaps` finding in the next review, and a CAPA effectiveness check that stays pending if the gap falls into its window.
 
-**Records end up in `~/.local/state/aqt/evidence.jsonl` instead of the trail.** `AQT_SINK` was not set in that environment, often for programs started from the desktop. Set it as in 3.3 and log in again. The records in that file remain valid evidence, and the reading tools find them by default.
+**Records end up in `~/.local/state/aqt/evidence.jsonl` instead of the trail.** The tool found no trail: none was created, or that environment uses other `XDG_*` folders or an `AQT_SINK=file:…`, often for programs started from the desktop. `aqt status` run in the same environment shows the line `sink` and the fix. The records in that file remain valid evidence, and the reading tools find them by default.
 
-**`socket path is too long for AF_UNIX (… bytes): …; set [writer] socket to a shorter path`.** Socket paths are limited to about 104 bytes. Use the default `$XDG_RUNTIME_DIR`, or set `[writer] socket` in `trail.toml` to a short path (and `AQT_SINK` to match).
+**`socket path is too long for AF_UNIX (… bytes): …; set [writer] socket to a shorter path`.** Socket paths are limited to about 104 bytes. Use the default `$XDG_RUNTIME_DIR`, or set `[writer] socket` in `trail.toml` to a short path (the tools read it from there).
 
 **`a writer is already listening on …`.** A writer is already running. Use it, or stop it first (`systemctl --user stop aqt-trail`).
 
