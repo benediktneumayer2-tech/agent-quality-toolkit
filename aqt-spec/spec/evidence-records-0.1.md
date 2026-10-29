@@ -149,7 +149,7 @@ A file: `{"kind": "file", "ref": <path relative to the project>, "sha256": "sha2
 
 ### 6.1 Keys
 
-Signatures use Ed25519 (RFC 8032). A key ID is `ed25519:` plus the first 16 hex digits of SHA-256 over the raw 32-byte public key. Private keys are stored as PKCS#8 PEM, passphrase-encrypted for human signers, with file mode 0600.
+Signatures use Ed25519 (RFC 8032). A key ID is `ed25519:` plus the first 16 hex digits of SHA-256 over the raw 32-byte public key. Private keys are stored with file mode 0600: for human signers passphrase-protected in the AQT key format (the Ed25519 seed under AES-256-GCM with a key derived by scrypt, N=2^17, r=8, p=1; see `aqt_evidence.crypto`), for unattended service keys as unencrypted PKCS#8 PEM. Readers also accept passphrase-encrypted PKCS#8 PEM written by earlier versions.
 
 ### 6.2 Record signatures (`sig`)
 

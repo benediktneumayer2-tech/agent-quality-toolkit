@@ -28,8 +28,9 @@ The 0.1.0 API is stable; later changes are additive and backwards compatible. Ev
 
 | Name | Purpose |
 |---|---|
-| `generate_key(path, *, passphrase)` | Write `path` (PKCS#8 PEM, 0600) and `path.pub`; returns the key ID |
-| `load_signer(path, *, passphrase)`, `load_public_key(path)` | Load keys (`(key_id, public_key)` for public keys) |
+| `generate_key(path, *, passphrase)` | Write `path` (0600; with a passphrase the AQT key format: scrypt + AES-256-GCM, else unencrypted PKCS#8 PEM) and `path.pub`; returns the key ID |
+| `load_signer(path, *, passphrase)`, `load_public_key(path)` | Load keys, AQT key format or PKCS#8 (`(key_id, public_key)` for public keys) |
+| `crypto.key_file_format(path)`, `crypto.upgrade_key(path, passphrase)` | `aqt-key`, `pkcs8-encrypted` or `pkcs8`; re-encrypt an earlier PKCS#8 key in the AQT key format |
 | `signer_from_seed(seed)`, `public_key_from_raw(raw)` | Keys from raw bytes (test vectors, fixtures) |
 | `key_id(public_key)`, `Signer` | Key IDs and the signer object |
 | `sign_record(record, signer)` | Append an envelope signature to `sig` (the writer's signature) |

@@ -43,6 +43,16 @@
   use `[0-9]`.
 - `verify_checkpoint` checked only the signature: a signed record reshaped as a checkpoint verified, and a
   `sig` list raised. It now requires the checkpoint shape and returns `False` otherwise.
+- Passphrase-protected keys used `BestAvailableEncryption`, i.e. PKCS#8 with PBKDF2-HMAC-SHA256 at 2048
+  iterations: offline guessing of a stolen key file was cheap. `generate_key(path, passphrase=...)` now writes
+  the AQT key format (version 1): the Ed25519 seed under AES-256-GCM with a key from scrypt (N=2^17, r=8, p=1,
+  128 MiB per guess), parameters authenticated. Earlier PKCS#8 keys still load; `upgrade_key(path, passphrase)`
+  re-encrypts one in place (aqt-signoff does it at the next unlock). `key_file_format(path)` tells the formats
+  apart. Keys without a passphrase stay unencrypted PKCS#8. A key directory that `generate_key` creates gets 0700.
+- `verify_statement` accepted any signed object: a record signature presented as a statement (same key, same
+  bytes) verified. It now requires a statement (`aqt_signature` "0.1", `signer` and `subject` objects,
+  `statement.key` equal to the block's `key`). `verify_record_signatures` returns `[(None, False)]` for a
+  malformed `sig` (e.g. `null`) instead of raising.
 - Deeply nested JSON raised `RecursionError` in the parser and the CLIs; it is now a `CanonicalError`
   (a parse problem).
 - Spec and README: checkpoints reveal truncation only down to their `seq` (§1, §7, §9); verifiers parse
