@@ -49,8 +49,9 @@ def test_full_workflow(human, monkeypatch, capsys, tmp_path):
 
     code, out, _ = run(monkeypatch, capsys, ["released", case_id])
     assert code == 1  # not released yet
-    code, out, _ = run(monkeypatch, capsys, ["release", case_id, "--reason", "quoted in a tutorial"])
+    code, out, err = run(monkeypatch, capsys, ["release", case_id, "--reason", "quoted in a tutorial"])
     assert code == 0 and "release: case" in out
+    assert f"releasing case {case_id} signs all" in err and "--full" in err
 
     code, out, _ = run(monkeypatch, capsys, ["hook", "claude-code"], json.dumps(fixture("user_prompt.json")))
     assert code == 0 and "Released by Alex Example" in json.loads(out)["hookSpecificOutput"]["additionalContext"]

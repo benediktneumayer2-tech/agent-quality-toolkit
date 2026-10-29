@@ -96,6 +96,25 @@ class TrustedSource:
         return (today or date.today()).isoformat() <= self.expires
 
 
+def _inert(value, limit: int = 80) -> str:
+    """Journal text for a message: control and format characters as <U+XXXX>, at most ``limit`` characters."""
+    text = str(value)[:limit]
+    return "".join(char if char.isprintable() else f"<U+{ord(char):04X}>" for char in text)
+
+
+@dataclass
+class JournalProblem:
+    """A journal line that ``Store.fold`` skipped: malformed, or a second opening record for a case.
+    Its fields come from the journal and are made inert (no control or format characters)."""
+    line: int
+    record_id: str | None
+    case_id: str | None
+    message: str
+
+    def __str__(self) -> str:
+        return f"journal line {self.line} (record {self.record_id or 'without id'}) ignored: {self.message}"
+
+
 Verifier = Callable[[dict], str]
 
 
@@ -107,6 +126,7 @@ class Store:
         self.cases_dir = self.root / "cases"
         self.sink_spec = sink
         self.ignored_sources: list[Decision] = []      # set by fold()
+        self.journal_problems: list[JournalProblem] = []  # set by fold()
 
     # -- writing ---------------------------------------------------------------------------------
     def ensure(self) -> None:
@@ -218,16 +238,20 @@ class Store:
     # -- reading ---------------------------------------------------------------------------------
     def records(self) -> Iterator[dict]:
         """Journal records in write order; torn or foreign lines are skipped."""
+        for _, record in self._numbered():
+            yield record
+
+    def _numbered(self) -> Iterator[tuple[int, dict]]:
         if not self.journal.exists():
             return
         with open(self.journal, "rb") as handle:
-            for line in handle:
+            for number, line in enumerate(handle, 1):
                 try:
                     record = json.loads(line)
                 except ValueError:
                     continue
                 if isinstance(record, dict) and str(record.get("type", "")).startswith("quarantine."):
-                    yield record
+                    yield number, record
 
     def fold(self, verify: Verifier, *, require_signed: bool) -> tuple[dict[str, Case], list[TrustedSource]]:
         """Cases and trusted sources from the journal.
@@ -237,23 +261,53 @@ class Store:
         ``mismatch``. Decisions take effect in the order they were signed (``statement.signed_at``; unsigned
         ones by record time), not in journal order, and a signed statement counts once: a copy of it, byte
         for byte or under a new record id, is a replay and has no effect. Source decisions that are not
-        honoured are kept in ``self.ignored_sources``; case decisions are listed in ``Case.decisions``."""
+        honoured are kept in ``self.ignored_sources``; case decisions are listed in ``Case.decisions``.
+
+        A case is what its first opening record (``quarantine.held``, or ``quarantine.passed`` with a case id)
+        says; a later opening record for the same case id cannot change its band, evidence or content hash.
+        Such lines, and lines too malformed to use, are skipped and listed in ``self.journal_problems``, so
+        one bad line neither changes a case nor stops the hook from reading the journal."""
         cases: dict[str, Case] = {}
         sources: dict[str, TrustedSource] = {}
         pending: list[tuple[datetime, int, dict]] = []
         self.ignored_sources = []
+        self.journal_problems = problems = []
 
         def honour(status: str) -> bool:
             return status == "valid" or (status == "unsigned" and not require_signed)
 
-        for index, record in enumerate(self.records()):
-            kind, data = record.get("type"), record.get("data") or {}
-            case = cases.get(data.get("case_id", ""))
-            if kind == "quarantine.held":
-                cases[data["case_id"]] = Case(data["case_id"], record, "hold", "held")
-            elif kind == "quarantine.passed" and data.get("case_id"):
-                cases[data["case_id"]] = Case(data["case_id"], record, "warn", "warned")
-            elif kind in DECISION_TYPES:
+        def skip(number: int, record: dict, case_id, message: str) -> None:
+            ident = record.get("id")
+            problems.append(JournalProblem(number, _inert(ident) if isinstance(ident, str) else None,
+                                           case_id if isinstance(case_id, str) and CASE_RE.match(case_id) else None,
+                                           message))
+
+        for index, (number, record) in enumerate(self._numbered()):
+            kind, data = record.get("type"), record.get("data")
+            shown_kind = _inert(kind, 40)
+            data = {} if data is None else data
+            if not isinstance(data, dict):
+                skip(number, record, None, f"{shown_kind}: data is not an object")
+                continue
+            case_id = data.get("case_id")
+            if kind == "quarantine.held" or (kind == "quarantine.passed" and case_id):
+                problem = opening_problem(data)
+                if problem:
+                    skip(number, record, case_id, f"{shown_kind}: {problem}")
+                elif case_id in cases:
+                    skip(number, record, case_id, f"case {case_id} was opened by record "
+                                                  f"{_inert(cases[case_id].opened.get('id'))}; a later {shown_kind} "
+                                                  "cannot change it")
+                elif kind == "quarantine.held":
+                    cases[case_id] = Case(case_id, record, "hold", "held")
+                else:
+                    cases[case_id] = Case(case_id, record, "warn", "warned")
+                continue
+            if case_id is not None and not isinstance(case_id, str):
+                skip(number, record, None, f"{shown_kind}: case_id is not a string")
+                continue
+            case = cases.get(case_id or "")
+            if kind in DECISION_TYPES:
                 pending.append((_signed_time(record), index, record))
             elif kind == "quarantine.delivered" and case:
                 case.delivered.append(record)
@@ -311,6 +365,37 @@ class Store:
 
 
 DECISION_TYPES = ("quarantine.released", "quarantine.threat.declared", "quarantine.source.trusted")
+_OBJECTS = ("source", "scores", "thresholds", "original", "trusted_source")
+_LISTS = ("evidence", "detectors", "errors", "fired")
+
+
+def opening_problem(data: dict) -> str | None:
+    """Why the data of an opening record (held, or passed with a case id) cannot be used, or None.
+    Checks the shape the readers (views, reports, the hook) rely on, not the values."""
+    if not isinstance(data.get("case_id"), str) or not CASE_RE.match(data["case_id"]):
+        return "no valid case_id"
+    if not isinstance(data.get("content_sha256"), str):
+        return "no content_sha256"
+    for key in _OBJECTS:
+        if key in data and not isinstance(data[key], dict):
+            return f"{key} is not an object"
+    for key in _LISTS:
+        if key in data and not isinstance(data[key], list):
+            return f"{key} is not a list"
+    for key in ("score_ppm", "chars"):
+        if key in data and (type(data[key]) is not int):
+            return f"{key} is not an integer"
+    for item in data.get("evidence", []):
+        if not isinstance(item, dict) or type(item.get("start")) is not int or type(item.get("end")) is not int \
+                or not all(isinstance(item.get(key), str) for key in ("label", "detector", "reason")) \
+                or not isinstance(item.get("excerpt", ""), str):
+            return "an evidence item is malformed"
+    for item in data.get("detectors", []):
+        if not isinstance(item, dict) or not isinstance(item.get("id"), str) or not isinstance(item.get("version"), str):
+            return "a detector entry is malformed"
+    if not all(isinstance(item, dict) for item in data.get("errors", [])):
+        return "an error entry is malformed"
+    return None
 _EARLIEST = datetime.min.replace(tzinfo=UTC)
 
 

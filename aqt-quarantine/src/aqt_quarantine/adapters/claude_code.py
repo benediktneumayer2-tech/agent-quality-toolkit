@@ -209,6 +209,8 @@ def run_hook(stdin, stdout, engine_factory) -> int:
             output = user_prompt_submit(event, engine, decider)
         else:
             output = {}
+        for problem in decider.store.journal_problems:      # skipped lines; the scan went on without them
+            print(f"aqt-quarantine hook: {problem}", file=sys.stderr)
     except Exception as error:  # noqa: BLE001 - the hook must fail closed, never crash open
         detail = f"{type(error).__name__}: {error}"
         print(f"aqt-quarantine hook error: {detail}", file=sys.stderr)

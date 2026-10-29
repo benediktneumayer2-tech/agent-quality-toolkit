@@ -60,6 +60,12 @@ def _out(args, value, text: str | None = None) -> None:
         sys.stdout.write(text if text.endswith("\n") else text + "\n")
 
 
+def _report_journal(store: Store) -> None:
+    """Journal lines the last fold skipped (malformed, or reopening a case), on stderr."""
+    for problem in store.journal_problems:
+        print(f"aqt-quarantine: {problem}", file=sys.stderr)
+
+
 def _setup(args) -> tuple[Config, Store, Engine, Decider]:
     config = load_config(args.config, state_dir=args.state_dir)
     store = Store(config.state_dir, sink=config.sink)
@@ -138,11 +144,13 @@ def _decide(args, call) -> int:
     try:
         outcome = call(decider)
     except DecisionError as error:
+        _report_journal(decider.store)
         print(f"aqt-quarantine: {error}", file=sys.stderr)
         return error.exit_code
     except StoreError as error:
         print(f"aqt-quarantine: {error}", file=sys.stderr)
         return 2
+    _report_journal(decider.store)
     if not outcome.ok:
         print(f"aqt-quarantine: {outcome.message} (recorded as {outcome.record['id']})", file=sys.stderr)
         return 1
@@ -150,13 +158,31 @@ def _decide(args, call) -> int:
     return 0
 
 
+def _binds(decider: Decider, case_id: str, verb: str) -> None:
+    """Before the passphrase prompt: what the signature will cover (all of the content, not only the
+    passages ``cases show`` highlights)."""
+    try:
+        content = decider.case_content(case_id)
+    except DecisionError:
+        return                    # the decision itself reports it (after the guard, which records refusals)
+    if content.text is not None:
+        print(f"aqt-quarantine: {verb} case {normalise_case_id(case_id)} signs all {len(content.text):,} characters "
+              f"of its content ({content.content_sha256}); `aqt-quarantine cases show {normalise_case_id(case_id)} "
+              "--full` shows all of it.", file=sys.stderr)
+
+
 def cmd_release(args) -> int:
-    return _decide(args, lambda d: d.release(args.case, args.reason, signer_id=args.as_,
-                                             overrule_threat=args.overrule_threat))
+    def call(d):
+        _binds(d, args.case, "releasing")
+        return d.release(args.case, args.reason, signer_id=args.as_, overrule_threat=args.overrule_threat)
+    return _decide(args, call)
 
 
 def cmd_threat(args) -> int:
-    return _decide(args, lambda d: d.declare_threat(args.case, args.reason, signer_id=args.as_))
+    def call(d):
+        _binds(d, args.case, "declaring")
+        return d.declare_threat(args.case, args.reason, signer_id=args.as_)
+    return _decide(args, call)
 
 
 def cmd_trust(args) -> int:
@@ -172,6 +198,7 @@ def cmd_released(args) -> int:
         print(f"aqt-quarantine: {error}", file=sys.stderr)
         return 2
     cases, _ = decider.fold()
+    _report_journal(store)
     case = cases.get(case_id)
     if case is None or case.state != "released" or case.band != "hold" or not case.released_by:
         print(f"aqt-quarantine: case {case_id} is not a released held case", file=sys.stderr)
@@ -205,8 +232,9 @@ def _case_row(case) -> dict:
 
 
 def cmd_cases_list(args) -> int:
-    _, _, _, decider = _setup(args)
+    _, store, _, decider = _setup(args)
     cases, _ = decider.fold()
+    _report_journal(store)
     rows = [_case_row(case) for case in cases.values()
             if (not args.state or case.state == args.state or (args.state == "open" and case.state in ("held", "warned")))
             and (not args.since or str(case.opened.get("time", "")) >= args.since)]
@@ -224,6 +252,7 @@ def cmd_cases_show(args) -> int:
         print(f"aqt-quarantine: {error}", file=sys.stderr)
         return 2
     cases, _ = decider.fold()
+    _report_journal(store)
     case = cases.get(case_id)
     if case is None:
         print(f"aqt-quarantine: no case {case_id}", file=sys.stderr)
@@ -248,6 +277,7 @@ def cmd_cases_show(args) -> int:
 def cmd_cases_export(args) -> int:
     _, store, _, decider = _setup(args)
     cases, _ = decider.fold()
+    _report_journal(store)
     count = 0
     fd = os.open(args.out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -275,6 +305,7 @@ def cmd_cases_export(args) -> int:
 def cmd_sources_list(args) -> int:
     _, _, _, decider = _setup(args)
     _, sources = decider.fold()
+    _report_journal(decider.store)
     for ignored in decider.store.ignored_sources:
         record = ignored.record
         print(f"aqt-quarantine: source decision {record.get('id')} ignored ({ignored.status}"
@@ -330,6 +361,14 @@ def cmd_doctor(args) -> int:
         else:
             check("signers", "fail" if config.require_signed_decisions else "warn",
                   f"no responsible person with a key in {config.keys_dir}; run aqt-quarantine init")
+        try:
+            decider.fold()
+            skipped = store.journal_problems
+            check("journal", "warn" if skipped else "ok",
+                  f"{len(skipped)} line(s) skipped (malformed, or reopening a case); first: {skipped[0]}"
+                  if skipped else str(store.journal))
+        except Exception as error:  # noqa: BLE001
+            check("journal", "fail", f"{type(error).__name__}: {error}")
         waiting = store.outbox_size()
         check("outbox", "ok" if not waiting else "warn",
               "empty" if not waiting else f"{waiting} record(s) waiting; run aqt-quarantine flush")

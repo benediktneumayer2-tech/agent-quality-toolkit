@@ -87,6 +87,7 @@ What the quarantine does:
 - Known-style injections that reach the hold band are not given to the agent through the covered tools.
 - Detector failures hold the content.
 - A forged decision record in the journal is ignored, because it carries no valid signature.
+- A case is what its first opening record says: a later `quarantine.held` for the same case cannot change its evidence or content hash, and malformed lines are skipped. Both are reported (`cases list`, `cases show`, `doctor`).
 - A copied signature does not help either: moved to another case or domain it is a `mismatch`, and appended again it is a replay.
 - Without the passphrase, an agent cannot sign a release, not even by typing into your terminal through tmux.
 

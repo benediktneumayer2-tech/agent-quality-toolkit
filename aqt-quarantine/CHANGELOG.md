@@ -16,6 +16,16 @@
   `release()` and `declare_threat()` take `expected_sha256` and refuse when the case is not the one shown.
 - Source decisions that are not honoured are kept in `Store.ignored_sources` and reported by `sources list`;
   a trust without a valid expiry date is not honoured.
+- Security fix: a case is what its first opening record (`quarantine.held`, or `quarantine.passed` with a
+  case id) says. A later opening record for the same case id no longer replaces it, so an appended line
+  cannot change a case's band, evidence spans or excerpts. A malformed line (data not an object, no valid
+  case id, evidence or source of the wrong shape, ...) is skipped instead of crashing every reader of the
+  journal, so the hook no longer withholds all tool output because of one bad line. Skipped lines are
+  listed in `Store.journal_problems` (`JournalProblem(line, record_id, case_id, message)`, journal text
+  made inert) and reported on stderr by the commands that read cases and by the hook, and as a warning
+  by `doctor`.
+- `release` and `declare-threat` say before the passphrase prompt that the signature covers all N characters
+  of the content (with its hash) and that `cases show CASE --full` shows all of it.
 - Fix: `init --id` no longer crashes when the key file exists (for example after `aqt-signoff init`). It reuses
   that key: an enrolled key is reported, an unenrolled one is enrolled after its passphrase unlocks it.
 - Fix: the shipped thresholds files validate against aqt-spec's `thresholds.schema.json` (optional fields are left
