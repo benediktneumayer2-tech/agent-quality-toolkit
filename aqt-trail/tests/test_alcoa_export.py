@@ -59,7 +59,8 @@ def test_export_bundle_verifies_and_detects_tampering(anchored, tmp_path):
     assert set(manifest["files"]) >= {"trail.jsonl", "checkpoints.jsonl", "keys/service.key.pub", "VERIFY.md",
                                       "tsa-ca.TEST-ONLY.pem"}
     report = verify_bundle(bundle)
-    assert report.ok and report.anchors_verified == 1
+    assert report.ok and report.anchors_verified == 0        # the bundle's own TEST ONLY CA is not trusted
+    assert verify_bundle(bundle, test_tsa=True).anchors_verified == 1
     trail = bundle / "trail.jsonl"
     trail.write_bytes(trail.read_bytes().replace(b'"one"', b'"ONE"'))
     broken = verify_bundle(bundle)

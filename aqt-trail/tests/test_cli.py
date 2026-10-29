@@ -122,3 +122,72 @@ def test_hook_never_fails_the_agent(env, monkeypatch):
 def test_usage_errors_exit_2(env):
     assert cli.main(["verify"]) in (1, 2)
     assert cli.main(["show", "rec_missing"]) == 2
+
+
+def _trail_with(records):
+    from aqt_trail.config import load_config
+    from aqt_trail.state import open_writer
+    from conftest import observed_stub
+    assert cli.main(["init", "--log-id", "trail_cli"]) == 0
+    config = load_config()
+    w = open_writer(config)
+    for record in records:
+        w.append(record, observed_stub())
+    w.close()
+    return config
+
+
+def test_review_sign_checks_the_trail_not_the_worksheet(env, monkeypatch, capsys, tmp_path):
+    """C-2: an edited worksheet (actors, or a 'trail' path to a forged copy) is refused or ignored."""
+    from conftest import event, human
+    _trail_with([event("edit", who=human("owner")), event("edit", who=human("owner"))])
+    capsys.readouterr()
+    assert cli.main(["--json", "review", "run"]) == 0
+    path = json.loads(capsys.readouterr().out)["worksheet"]
+    sheet = json.loads(open(path).read())
+    key = tmp_path / "owner.key"
+    generate_key(key)
+    monkeypatch.setattr(cli, "require_human", lambda: None)
+    edited = tmp_path / "edited.json"
+    edited.write_text(json.dumps({**sheet, "actors_reviewed": []}))
+    assert cli.main(["review", "sign", str(edited), "--reviewer", "human:owner", "--key", str(key),
+                     "--disposition", "all=ok", "--reason", "self review"]) == 1
+    assert "differ(s) from the trail" in capsys.readouterr().err
+    elsewhere = tmp_path / "elsewhere.json"
+    elsewhere.write_text(json.dumps({**sheet, "trail": str(tmp_path / "forged.jsonl")}))
+    assert cli.main(["review", "sign", str(elsewhere), "--reviewer", "human:dora", "--key", str(key),
+                     "--disposition", "all=ok", "--reason", "weekly"]) == 0
+    from aqt_trail.client import locked_spool
+    with locked_spool() as (entries, _):
+        codes = [e["data"].get("reason_code") for e in entries if e["type"] == "trail.refused"]
+        assert codes == ["worksheet_mismatch"] and entries[-1]["type"] == "trail.review"
+
+
+def test_review_run_writes_elsewhere_when_the_state_is_not_writable(env, capsys, tmp_path):
+    """C-18: separate-user mode, where the trail's state belongs to the writer's account."""
+    from conftest import event
+    config = _trail_with([event("one")])
+    capsys.readouterr()
+    config.state.chmod(0o555)
+    try:
+        assert cli.main(["--json", "review", "run"]) == 0
+        path = json.loads(capsys.readouterr().out)["worksheet"]
+        assert path.startswith(str(env / "state" / "aqt" / "trail-reviews"))
+        assert cli.main(["--json", "review", "run", "--out", str(tmp_path / "mine")]) == 0
+        assert json.loads(capsys.readouterr().out)["worksheet"].startswith(str(tmp_path / "mine"))
+    finally:
+        config.state.chmod(0o700)
+
+
+def test_client_strings_are_escaped_in_the_terminal_and_markdown(env, capsys, tmp_path):
+    """C-15: control characters and markup that a client wrote never reach the terminal or a renderer raw."""
+    from conftest import event
+    _trail_with([event("demo", reason="a\x1b[2Kb‮ <script>x</script> [link](http://x) |cell")])
+    assert cli.main(["list"]) == 0
+    out = capsys.readouterr().out
+    assert "\x1b" not in out and "‮" not in out and "\\x1b[2Kb" in out and "\\u202e" in out
+    assert cli.main(["report", "--format", "md"]) == 0
+    md = capsys.readouterr().out
+    assert "<script>" not in md and "&lt;script&gt;" in md and "\\[link\\]" in md and "\\|cell" in md
+    assert cli.main(["review", "run"]) == 0
+    capsys.readouterr()
