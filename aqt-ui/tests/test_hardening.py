@@ -106,6 +106,7 @@ def test_review_signs_the_worksheet_shown_even_if_the_file_is_edited(trail, held
     review = next(r for r in trail_records(trail) if r["id"] == result["record_id"])
     assert [f["id"] for f in review["data"]["findings"]] == shown
     assert review["data"]["actors_reviewed"] == sheet["actors_reviewed"]
+    assert review["data"]["worksheet_sha256"] == sheet["worksheet_sha256"]     # aqt-trail checked the same digest
 
 
 def test_review_of_a_worksheet_not_prepared_here_is_refused(trail, held_case, reviewer, ui_factory):
@@ -118,6 +119,60 @@ def test_review_of_a_worksheet_not_prepared_here_is_refused(trail, held_case, re
         "head": sheet["scope"]["head"], "worksheet_sha256": sheet["worksheet_sha256"], "dispositions": {"all": "ok"},
         "reason": "Reviewed", "passphrase": PASSPHRASE, "signer_id": REVIEWER})
     assert status == 409 and "nothing was signed" in result["message"]
+
+
+def test_review_runs_and_signs_when_the_trail_state_is_not_writable(trail, held_case, reviewer, ui_factory):
+    from aqt_evidence import state_dir
+    client = ui_factory()
+    client.login()
+    os.chmod(trail.state, 0o555)              # separate-user mode: the state belongs to the writer's account
+    try:
+        status, sheet, _ = client.post("/api/trail/review/run", {})
+        assert status == 200 and Path(sheet["path"]).parent.parent == state_dir() / "trail-reviews", sheet
+        status, result, _ = client.post(f"/api/trail/review/{sheet['id']}/sign", {
+            "head": sheet["scope"]["head"], "worksheet_sha256": sheet["worksheet_sha256"],
+            "dispositions": {"all": "ok"}, "reason": "Reviewed", "passphrase": PASSPHRASE, "signer_id": REVIEWER})
+    finally:
+        os.chmod(trail.state, 0o700)
+    assert status == 200 and result["record_type"] == "trail.review", result
+    assert not (trail.state / "reviews").exists()
+
+
+def test_needs_you_counts_only_valid_reviews_and_writer_anchors(trail, held_case, reviewer, ui_factory):
+    from aqt_evidence import new_record
+    from aqt_trail.client import TrailClient, request
+    client = ui_factory()
+    client.login()
+
+    def state():
+        status = client.get("/api/trail/status")[1]["status"]
+        return status["last_review"], status["last_anchor"], {n["code"] for n in client.get("/api/overview")[1]["needs"]}
+
+    last_review, last_anchor, needs = state()
+    assert last_review is None and last_anchor is None and {"review_due", "unanchored"} <= needs
+    status, sheet, _ = client.post("/api/trail/review/run", {})
+    status, result, _ = client.post(f"/api/trail/review/{sheet['id']}/sign", {
+        "head": sheet["scope"]["head"], "worksheet_sha256": sheet["worksheet_sha256"], "dispositions": {"all": "ok"},
+        "reason": "Reviewed", "passphrase": PASSPHRASE, "signer_id": REVIEWER})
+    assert status == 200, result
+    review = next(r for r in trail_records(trail) if r["id"] == result["record_id"])
+    assert state()[0] == review["time"] and "review_due" not in state()[2]
+
+    time.sleep(0.01)
+    fields = {key: review[key] for key in ("subject", "reason", "meaning")}
+    replayed = new_record("trail.review", review["actor"], review["action"], data=review["data"], **fields)
+    altered = json.loads(json.dumps(review["data"]))
+    altered["signature"]["statement"]["reason"] = "signed something else"
+    forged = new_record("trail.review", review["actor"], review["action"], data=altered, **fields)
+    for record in (replayed, forged):                       # the writer stores both (their shape is right)
+        TrailClient(trail.socket_path).append(record)
+    assert replayed["time"] != review["time"] and trail_records(trail)[-1]["id"] == forged["id"]
+    assert state()[0] == review["time"]                     # a copy counts once, a broken signature never
+
+    response = request(trail.socket_path, {"op": "checkpoint", "anchor": True, "tsa_url": "test:"})
+    assert response["ok"], response
+    _, last_anchor, needs = state()
+    assert last_anchor == response["anchor"]["time"] and "unanchored" not in needs
 
 
 # -- AQT-UI-003: an action approval binds the specification shown ------------------------------------------
@@ -153,6 +208,28 @@ def test_action_with_a_matching_spec_is_shown_as_checked(trail, signer, ui_facto
     client.login()
     status, shown, _ = client.get(f"/api/changes/actions/{prepared['id']}")
     assert status == 200 and shown["spec_ok"] is True and shown["spec_error"] is None
+
+
+def test_a_key_that_contradicts_its_enrolment_record_is_refused_in_plain_words(trail, signer, ui_factory):
+    from aqt_signoff import load_settings
+    first, second = prepare_action("deploy-a", ("true",))[1], prepare_action("deploy-b", ("true",))[1]
+    client = ui_factory()
+    client.login()
+
+    def approve(prepared):
+        return client.post(f"/api/changes/actions/{prepared['id']}/approve",
+                           {"reason": "Reviewed", "passphrase": PASSPHRASE,
+                            "expected_hash": prepared["action_sha256"], "signer_id": SIGNER})
+    assert approve(first)[0] == 200                  # the first unlock records the enrolment (adopted key)
+    path = load_settings().registry_path
+    registry = json.loads(path.read_text())
+    registry["signers"][0]["role"] = "auditor"        # the registry now contradicts the enrolment record
+    path.write_text(json.dumps(registry))
+    status, result, _ = approve(second)
+    assert status == 403 and result["reason_code"] == "registry_mismatch", result
+    assert result["reason_text"].startswith("The signer's registry entry does not match its enrolment record")
+    refusals = client.get("/api/overview")[1]["refusals"]
+    assert refusals[-1]["reason_code"] == "registry_mismatch" and refusals[-1]["reason_text"] == result["reason_text"]
 
 
 # -- AQT-UI-004: a trail changed after a good check is not shown as intact ---------------------------------

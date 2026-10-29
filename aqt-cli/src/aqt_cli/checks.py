@@ -400,11 +400,44 @@ def check_sink(ctx: Context) -> Result:
 
 
 def check_signer(ctx: Context) -> Result:
+    """A signer with an active key, and every registry key backed by its enrolment record
+    (``aqt_signoff.check_signers``, as ``aqt-signoff signers check``): a key that does not count is
+    ignored by every signature check, so it is a failure here."""
+    import aqt_signoff
     settings, registry = _signoff()
     active = _active_signers(registry)
-    if active:
-        return Result(OK, f"{len(active)} signer(s) enrolled: {', '.join(active)}")
-    return Result(FAIL, f"no signer with an active key in {settings.registry_path}", SIGNER_FIX)
+    if not active:
+        return Result(FAIL, f"no signer with an active key in {settings.registry_path}", SIGNER_FIX)
+    check_signers = getattr(aqt_signoff, "check_signers", None)
+    if check_signers is None:
+        return Result(WARN, f"{len(active)} signer(s) enrolled: {', '.join(active)}; aqt-signoff is too old to check "
+                            "their keys against the enrolment records", tools.install_command("aqt-signoff"),
+                      can_apply=False)
+    report = check_signers()
+    keys = report.get("keys", [])
+    data = {"registry": report.get("registry"), "evidence": report.get("evidence"),
+            "keys": [{name: key.get(name) for name in ("signer", "key_id", "state", "counts", "problems", "notes")}
+                     for key in keys]}
+    bad = [key for key in keys if not key.get("counts")]
+    if bad:
+        what = "; ".join(f"{key['signer']} key {key['key_id']}: {', '.join(key.get('problems') or ['does not count'])}"
+                         for key in bad)
+        unrecorded = [key for key in bad if not key.get("enrolment") and not key.get("revoked_at")
+                      and all(p.startswith("no signoff.key.enrolled record") for p in key.get("problems") or [])]
+        fix = ("; ".join(f"aqt-signoff rekey --signer {key['signer']}" for key in unrecorded)
+               if len(unrecorded) == len(bad) else "aqt-signoff signers check")
+        return Result(FAIL, f"{len(bad)} key(s) in {report.get('registry')} do not count: {what}", fix,
+                      data=data, can_apply=False)
+    counting = sorted({key["signer"] for key in keys if not key.get("revoked_at")})
+    if not counting:
+        return Result(FAIL, f"no active key that counts in {report.get('registry')} (revocation records apply)",
+                      "aqt-signoff signers check", data=data, can_apply=False)
+    notes = [f"{key['signer']}: {note}" for key in keys for note in key.get("notes") or []]
+    if notes:
+        return Result(WARN, f"{len(counting)} signer(s) enrolled ({', '.join(counting)}), to check: {'; '.join(notes)}",
+                      "aqt-signoff signers check", data=data, can_apply=False)
+    return Result(OK, f"{len(counting)} signer(s) enrolled and backed by enrolment records in the "
+                      f"{report.get('evidence')}: {', '.join(counting)}", data=data)
 
 
 def step_signer(ctx: Context) -> None:

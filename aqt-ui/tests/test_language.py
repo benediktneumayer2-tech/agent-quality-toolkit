@@ -36,6 +36,8 @@ def test_every_needs_you_entry_and_gate_reason_has_german_words():
     missing = keys - german_keys(i18n, "NEEDS")
     assert not missing, sorted(missing)
     assert set(REASONS) <= german_keys(i18n, "REASONS_DE")
+    from aqt_ui.views import REFUSALS
+    assert set(REFUSALS) <= german_keys(i18n, "REFUSALS_DE")
 
 
 def test_english_is_the_default_and_the_choice_is_remembered_safely():

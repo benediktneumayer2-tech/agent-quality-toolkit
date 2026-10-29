@@ -33,6 +33,38 @@ class NotInstalled(ViewProblem):
         self.package = package
 
 
+# Refusal codes of aqt-signoff and of the aqt-trail review in words; the code stays visible next to them.
+REFUSALS = {
+    "agent_context": "The request came from an agent session; only a person may decide",
+    "no_tty": "No person at a terminal confirmed the decision",
+    "auth_failed": "The passphrase did not unlock the key",
+    "self_approval": "Whoever prepared or wrote this may not decide on it",
+    "role_not_allowed": "The signer's role may not make this decision",
+    "registry_mismatch": "The signer's registry entry does not match its enrolment record, so the key does not "
+                         "count; check it with aqt-signoff signers check",
+    "payload_required": "The action binds a payload; it runs only when that exact payload is presented",
+    "payload_mismatch": "The payload presented differs from the approved payload",
+    "not_approved": "The action has no valid approval for this exact version",
+    "action_altered": "The stored action no longer matches its approved hash",
+    "claim_in_progress": "The action is still running or within its grace period",
+    "not_human": "Only a human identity can sign this",
+    "not_independent": "The reviewer acted in the reviewed period and may not review it",
+    "worksheet_changed": "The worksheet differs from the one shown",
+    "worksheet_mismatch": "The worksheet differs from what the trail gives",
+    "stale_worksheet": "The trail at the end of the worksheet's scope changed",
+    "trail_broken": "The trail does not verify up to the reviewed records",
+    "unknown_signer": "The reviewer is not in the signer registry",
+    "key_mismatch": "The key is registered to someone else",
+    "revoked_key": "The key is revoked",
+    "unknown_key": "The key is not registered for this signer",
+}
+
+
+def refusal_text(code) -> str | None:
+    """The words for a refusal code, or None for a code without words."""
+    return REFUSALS.get(code) if isinstance(code, str) else None
+
+
 def installed(module: str) -> bool:
     return importlib.util.find_spec(module) is not None
 

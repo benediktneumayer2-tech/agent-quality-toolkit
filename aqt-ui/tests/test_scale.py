@@ -83,5 +83,5 @@ def test_paging_and_cursor_on_a_small_trail(env, tmp_path):
     assert [r["chain"]["seq"] for r in page["rows"]] == [4, 3, 2, 1, 0] and not page["more"]
     assert [r["chain"]["seq"] for r in view.records(limit=3, before=10)["rows"]] == [9, 8, 7]
     assert view.records(type="trail.anchor")["total"] == 5
-    assert view.index.last_anchor == synthetic(24)["time"]
+    assert view.index.last_anchor is None     # an anchor the writer did not write (no RFC 3161 token) never counts
     assert view.record(f"rec_{7:026d}")["record"]["chain"]["seq"] == 7 and view.record("7")["record"]["id"]

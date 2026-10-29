@@ -9,7 +9,7 @@ from aqt_trail.state import init_state, open_writer
 from aqt_cli import checks
 from aqt_cli.checks import Context, run_checks
 from aqt_cli.cli import main
-from conftest import by_id
+from conftest import PASSPHRASE, by_id, enrol
 
 
 def _trail_with_records(count=3, checkpoint=True):
@@ -120,3 +120,54 @@ def test_time_zone_detection(monkeypatch):
     assert checks.detect_timezone() == "America/New_York"
     monkeypatch.setenv("TZ", "Not/AZone")
     assert checks.detect_timezone() != "Not/AZone"
+
+
+# -- signer: every registry key backed by its enrolment record (aqt_signoff.check_signers) ---------------------
+def _registry_edit(**fields):
+    from aqt_signoff.settings import load_settings
+    path = load_settings().registry_path
+    registry = json.loads(path.read_text())
+    registry["signers"][0].update(fields)
+    path.write_text(json.dumps(registry))
+
+
+def test_signer_enrolled_with_aqt_signoff_counts():
+    enrol()
+    signer = by_id(run_checks(Context()))["signer"]
+    assert signer.result == "ok" and "human:alice" in signer.explanation and "enrolment records" in signer.explanation
+    assert signer.data["keys"][0]["counts"] is True
+
+
+def test_key_without_enrolment_record_fails_with_rekey_as_fix():
+    from aqt_quarantine.config import load_config as quarantine_config
+    from aqt_quarantine.decisions import create_identity
+    create_identity(quarantine_config(), signer_id="human:bob", name="Bob Example", role="developer",
+                    passphrase=lambda _prompt: PASSPHRASE)      # a key enrolled by another tool, no record
+    signer = by_id(run_checks(Context()))["signer"]
+    assert signer.result == "fail" and not signer.can_apply
+    assert "human:bob" in signer.explanation and "no signoff.key.enrolled record" in signer.explanation
+    assert signer.fix == "aqt-signoff rekey --signer human:bob"
+
+
+def test_registry_that_contradicts_the_enrolment_record_fails():
+    enrol()
+    _registry_edit(role="auditor")                  # the role was changed in signers.json, not re-enrolled
+    signer = by_id(run_checks(Context()))["signer"]
+    assert signer.result == "fail" and "enrolled role" in signer.explanation
+    assert signer.fix == "aqt-signoff signers check" and signer.data["keys"][0]["counts"] is False
+
+
+def test_discrepancy_that_does_not_stop_the_key_is_a_warning():
+    enrol()
+    _registry_edit(name="Alice Renamed")
+    signer = by_id(run_checks(Context()))["signer"]
+    assert signer.result == "warn" and "enrolled name" in signer.explanation
+    assert signer.fix == "aqt-signoff signers check" and not signer.can_apply
+
+
+def test_signer_check_with_an_aqt_signoff_too_old_to_check_keys(monkeypatch):
+    import aqt_signoff
+    enrol()
+    monkeypatch.delattr(aqt_signoff, "check_signers")
+    signer = by_id(run_checks(Context()))["signer"]
+    assert signer.result == "warn" and "too old" in signer.explanation and "human:alice" in signer.explanation

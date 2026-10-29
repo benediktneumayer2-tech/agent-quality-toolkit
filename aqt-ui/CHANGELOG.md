@@ -26,6 +26,24 @@ Security review fixes (same version, not yet released):
   20-second socket timeout; at most 32 connections at once; file verification reads only regular
   files up to 64 MiB, hashed in pieces.
 
+Integration with the hardened packages (same version, not yet released):
+
+- The review worksheet's digest is aqt-trail's `worksheet_digest`; it is kept with the worksheet in
+  memory, compared with the one the page sends back and passed to `build_review` as `expected_sha256`,
+  together with the service keys (`keys=`) and the log id (`log_id=`), as `aqt-trail review sign` does.
+  The trail is read strictly for signing (`load_lines`). The signed review records the digest shown.
+- Worksheets go to `<state>/reviews`, or to `$XDG_STATE_HOME/aqt/trail-reviews` when the trail state
+  is not writable (separate-user mode), as `aqt-trail review run` chooses.
+- "Last anchor" counts only writer-written RFC 3161 anchors whose token covers the checkpoint
+  (`anchored_seq`); "last review" only reviews whose signature is `valid` against the signer registry
+  (`signature_status`), a copied statement once. A forged, unsigned or replayed review or anchor no
+  longer clears "Audit-trail review due" or "not anchored" in Needs you.
+- Refusal codes of aqt-signoff and of the review (`registry_mismatch`, `payload_required`,
+  `self_approval`, `not_independent`, ...) are shown in words (English and German) next to the code,
+  in decision results and in the Overview's refusal list; the Signatures table shows why a signature
+  is not valid (for example a replayed copy).
+- Tests use a cheap scrypt cost for their keys (the suite runs in about half the time).
+
 Second slice (same version, not yet released):
 
 - More decisions in the page, each with the passphrase, the hash or version shown, the read-only and

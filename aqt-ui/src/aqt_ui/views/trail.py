@@ -10,8 +10,14 @@ of "intact" as soon as the file was replaced, truncated or those bytes were modi
 appended after them count as not yet verified.
 
 An audit-trail review is signed over the worksheet this server prepared and showed: the
-worksheet stays in memory with a digest that the page sends back, so editing the saved
+worksheet stays in memory with its digest (``aqt_trail.review.worksheet_digest``), which the page
+sends back and aqt-trail checks again (``expected_sha256``), so editing the saved
 ``worksheet.json`` in between changes nothing that is signed.
+
+"Last anchor" counts only RFC 3161 anchors the writer wrote whose token covers its checkpoint
+(``aqt_trail.review.anchored_seq``); "last review" only reviews whose signature is valid against
+the signer registry (``aqt_trail.verify.signature_status``), each signed statement once. A client
+record of either type that claims more does not move them.
 """
 
 from __future__ import annotations
@@ -30,7 +36,7 @@ from typing import Callable
 
 from aqt_evidence import SinkError, spool_file
 
-from . import NotFound, Stale, UsageProblem
+from . import NotFound, Stale, UsageProblem, fingerprint, refusal_text
 
 REASON_CHARS = 200
 PAGE = 100          # records per page in the Trail view
@@ -70,6 +76,8 @@ def compact(record: dict, offset: int, length: int) -> dict:
         "meaning": record.get("meaning"),
         "reason": str(record.get("reason") or "")[:REASON_CHARS],
         "reason_code": data.get("reason_code") if str(record.get("type", "")).endswith(".refused") else None,
+        "reason_text": refusal_text(data.get("reason_code")) if str(record.get("type", "")).endswith(".refused")
+        else None,
         "signed": isinstance(data.get("signature"), dict),
         "_off": offset, "_len": length,
     }
@@ -99,8 +107,8 @@ class TrailIndex:
         self.identity = identity
         self.types: set[str] = set()
         self.last_time: dict[str, str] = {}      # last record time per tool prefix ("trail.", ...)
-        self.last_anchor: str | None = None
-        self.last_review: str | None = None
+        self.last_anchor: str | None = None       # time of the newest anchor that counts (anchored_seq)
+        self.reviews: list[dict] = []             # trail.review rows; their signatures are checked on use
         self.refused: list[dict] = []
         self.by_id: dict[str, int] = {}          # record id -> position in rows
         self.version = 0                          # grows with every change of rows
@@ -111,14 +119,15 @@ class TrailIndex:
         self.rows.append(row)
         self.types.add(kind)
         self.last_time[kind.split(".", 1)[0] + "."] = row["time"]
-        if kind == "trail.anchor":
+        if row.get("_anchored"):
             self.last_anchor = row["time"]
         elif kind == "trail.review":
-            self.last_review = row["time"]
+            self.reviews.append(row)
         if kind.endswith(".refused"):
             self.refused.append(row)
 
     def refresh(self) -> list[dict]:
+        from aqt_trail.review import anchored_seq
         with self.lock:
             try:
                 info = self.path.stat()
@@ -143,7 +152,10 @@ class TrailIndex:
                     if line.strip():
                         try:
                             record = json.loads(line)
-                            self._add(compact(record, position, len(line)))
+                            row = compact(record, position, len(line))
+                            if row["type"] == "trail.anchor":
+                                row["_anchored"] = _counts_as_anchor(record, anchored_seq)
+                            self._add(row)
                         except ValueError:
                             self.unreadable = f"byte {position}: line is not valid JSON"
                     position += len(line)
@@ -169,6 +181,13 @@ class TrailIndex:
         return self.full(rows[position]) if position is not None else None
 
 
+def _counts_as_anchor(record: dict, anchored_seq) -> bool:
+    try:
+        return anchored_seq(record) is not None
+    except Exception:  # noqa: BLE001 - a malformed anchor never counts and never breaks the index
+        return False
+
+
 def public_row(row: dict) -> dict:
     return {key: value for key, value in row.items() if not key.startswith("_")}
 
@@ -184,6 +203,7 @@ class TrailView:
         self._snapshot_lock = threading.Lock()
         self._selection: tuple = (None, [])     # (key, rows) of the last filtered selection
         self._sheets: dict[str, tuple[str, dict]] = {}   # worksheet id -> (digest, sheet) prepared here
+        self._review_cache: tuple = (None, None)         # (index version, registry, rows) -> last review time
 
     # -- writer and spool --------------------------------------------------------------------------
     def writer(self) -> dict:
@@ -299,9 +319,37 @@ class TrailView:
             "path": str(self.config.trail_path), "log_id": (check or {}).get("log_id"),
             "check": {k: v for k, v in (check or {}).items() if k != "alcoa" and not k.startswith("_")} or None,
             "changed": changed, "verifying": self.running, "appended_since_check": unverified,
-            "last_anchor": self.index.last_anchor, "last_review": self.index.last_review,
+            "last_anchor": self.index.last_anchor, "last_review": self.last_review(),
             "writer": self.writer(), "unreadable": self.index.unreadable,
         }
+
+    def last_review(self) -> str | None:
+        """Time of the newest ``trail.review`` whose signature is ``valid`` against the signer
+        registry. A statement copied into a later record counts once, at its first record."""
+        from aqt_evidence import content_hash
+        from aqt_trail.signers import load_registry, registry_path
+        from aqt_trail.verify import signature_status
+        rows = list(self.index.reviews)
+        key = (self.index.version, len(rows), fingerprint(registry_path()))
+        if self._review_cache[0] == key:
+            return self._review_cache[1]
+        try:
+            signers = load_registry()
+        except (ValueError, OSError):
+            signers = {}
+        seen, last = set(), None
+        for row in rows:
+            try:
+                record = self.index.full(row)
+                digest = content_hash(record["data"]["signature"]["statement"])
+                valid = signature_status(record, signers=signers)[0] == "valid"
+            except Exception:  # noqa: BLE001 - a malformed review never counts and never breaks the page
+                continue
+            if valid and digest not in seen:
+                last = row["time"]
+            seen.add(digest)
+        self._review_cache = (key, last)
+        return last
 
     def alcoa(self) -> list[dict]:
         return list((self.check or {}).get("alcoa") or [])
@@ -361,7 +409,7 @@ class TrailView:
     # -- audit-trail review and export (the CLI's review run / review sign / export) ----------------------
     def review_run(self, *, since: str | None = None, until: str | None = None) -> dict:
         """``aqt-trail review run``: risk queries over the period, saved as a worksheet. Writes no evidence."""
-        from aqt_trail.review import load_profile, run_review, save_worksheet, worksheet_markdown
+        from aqt_trail.review import load_profile, run_review, save_worksheet, worksheet_digest, worksheet_markdown
         from aqt_trail.state import read_records
         config = self.config
         if not config.trail_path.exists():
@@ -372,7 +420,7 @@ class TrailView:
                                since=since or None, until=until or None, trail=str(config.trail_path))
         except ValueError as error:
             raise UsageProblem(str(error)) from error
-        path = save_worksheet(sheet, config.state / "reviews")
+        path = save_worksheet(sheet, self.reviews_dir())
         shown = json.loads(json.dumps(sheet))           # exactly what the page receives
         digest = worksheet_digest(shown)
         with self._lock:
@@ -381,10 +429,19 @@ class TrailView:
                 self._sheets.pop(next(iter(self._sheets)))
         return {**shown, "path": str(path), "markdown": worksheet_markdown(shown), "worksheet_sha256": digest}
 
+    def reviews_dir(self) -> Path:
+        """Where worksheets go, as ``aqt-trail review run`` chooses: ``<state>/reviews`` when it is
+        writable, else the user's own ``$XDG_STATE_HOME/aqt/trail-reviews`` (separate-user mode)."""
+        from aqt_evidence import state_dir
+        target = self.config.state / "reviews"
+        if os.access(target if target.exists() else self.config.state, os.W_OK):
+            return target
+        return state_dir() / "trail-reviews"
+
     def worksheet(self, sheet_id: str) -> dict:
         if not re.fullmatch(r"rv_[0-9a-f]{12}", sheet_id or ""):
             raise UsageProblem("not a worksheet id")
-        path = self.config.state / "reviews" / sheet_id / "worksheet.json"
+        path = self.reviews_dir() / sheet_id / "worksheet.json"
         if not path.exists():
             raise NotFound(f"no worksheet {sheet_id}")
         return json.loads(path.read_text())
@@ -395,10 +452,12 @@ class TrailView:
         """``aqt-trail review sign``: same checks and the same records as the CLI. A refusal is
         recorded as ``trail.refused``; the reviewer must not be an actor of the reviewed period.
         Signed is the worksheet this server prepared and showed (``shown_sha256`` is its digest),
-        never a worksheet read back from disk."""
+        never a worksheet read back from disk; aqt-trail recomputes it from the trail, checks that
+        digest again (``expected_sha256``) and, with the service keys, that the trail verifies."""
         from aqt_evidence import HumanCheckError, load_signer
         from aqt_trail.review import ReviewRefused, build_review
         from aqt_trail.signers import key_file, load_registry
+        from aqt_trail.state import service_keys
         config = self.config
         reviewer = str(signer_id or "")
         try:
@@ -424,7 +483,9 @@ class TrailView:
                                   dispositions={str(k): str(v) for k, v in (dispositions or {}).items()},
                                   notes={str(k): str(v).strip() for k, v in (notes or {}).items() if str(v).strip()},
                                   reason=reason, conclusion=conclusion or "audit trail reviewed; dispositions as listed",
-                                  registry=load_registry(), tz=config.section("review")["timezone"])
+                                  registry=load_registry(), tz=config.section("review")["timezone"],
+                                  log_id=config.meta()["log_id"] if config.meta_path.exists() else None,
+                                  keys=service_keys(config), expected_sha256=digest)
         except ReviewRefused as refused:
             return self._refuse_review(reviewer, refused.code, refused.message)
         except ValueError as error:
@@ -449,8 +510,8 @@ class TrailView:
             self._send(record)
         except (UsageProblem, SinkError, OSError):
             pass
-        return {"ok": False, "message": f"refused: {message}", "reason_code": code, "markers": markers or [],
-                "record_id": record["id"]}
+        return {"ok": False, "message": f"refused: {message}", "reason_code": code, "reason_text": refusal_text(code),
+                "markers": markers or [], "record_id": record["id"]}
 
     def export(self) -> tuple[str, bytes]:
         """``aqt-trail export --tar``: a verification bundle, built in a temporary folder and sent as a file."""
@@ -463,12 +524,6 @@ class TrailView:
         with tempfile.TemporaryDirectory(prefix="aqt-ui-export-") as folder:
             archive = export_bundle(self.config, Path(folder) / name, tar=True)
             return archive.name, archive.read_bytes()
-
-
-def worksheet_digest(sheet: dict) -> str:
-    """Digest of a whole worksheet (findings, actors, scope, profile) as the page received it."""
-    text = json.dumps(sheet, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def _prefix_sha256(path: Path, size: int) -> str | None:
@@ -523,8 +578,9 @@ def snapshot_change(path: Path, snapshot: dict) -> str | None:
 
 
 def read_all(path: Path) -> list[dict]:
-    from aqt_trail.state import read_records
-    return read_records(path)
+    """The trail itself, strictly parsed as ``aqt-trail review sign`` reads it (up to an unreadable line)."""
+    from aqt_trail.verify import load_lines
+    return load_lines(path)[0] if Path(path).exists() else []
 
 
 def _count_lines(path: Path) -> int:
@@ -539,4 +595,4 @@ def _stamp() -> str:
     return _now().strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-__all__ = ["TrailIndex", "TrailView", "compact", "parse_time", "worksheet_digest"]
+__all__ = ["TrailIndex", "TrailView", "compact", "parse_time"]

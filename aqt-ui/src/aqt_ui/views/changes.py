@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from . import NotFound, Stale, UsageProblem, installed
+from . import NotFound, Stale, UsageProblem, installed, refusal_text
 from .signatures import open_signoff
 
 # Gate reason codes in words; the code stays visible next to the sentence.
@@ -230,11 +230,13 @@ def signoff_call(so, call: Callable) -> tuple:
     try:
         return call(), None
     except Refused as error:
-        return None, {"ok": False, "message": str(error), "reason_code": getattr(error, "code", None),
+        code = getattr(error, "code", None)
+        return None, {"ok": False, "message": str(error), "reason_code": code, "reason_text": refusal_text(code),
                       "record_id": _last_refusal(so)}
     except AuthFailed as error:
         return None, {"ok": False, "message": f"the key could not be unlocked ({getattr(error, 'code', 'auth_failed')})",
-                      "reason_code": "auth_failed", "record_id": _last_record(so, "signoff.auth.failed")}
+                      "reason_code": "auth_failed", "reason_text": refusal_text("auth_failed"),
+                      "record_id": _last_record(so, "signoff.auth.failed")}
     except Conflict as error:
         raise Stale(str(error)) from error
     except SignoffNotFound as error:

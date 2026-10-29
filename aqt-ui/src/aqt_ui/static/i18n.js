@@ -239,3 +239,28 @@ export const REASONS_DE = {
   scope_undeclared: "Der Plan nennt keine Pfade, daher lässt sich der Umfang nicht vergleichen",
   scope_unverifiable: "Es gibt keinen Git-Basis-Commit zum Vergleich",
 };
+
+// Refusal codes of aqt-signoff and of the audit-trail review in German (the code stays visible next to them).
+export const REFUSALS_DE = {
+  agent_context: "Die Anfrage kam aus einer Agenten-Sitzung; entscheiden darf nur ein Mensch",
+  no_tty: "Kein Mensch am Terminal hat die Entscheidung bestätigt",
+  auth_failed: "Die Passphrase hat den Schlüssel nicht entsperrt",
+  self_approval: "Wer dies vorbereitet oder geschrieben hat, darf nicht darüber entscheiden",
+  role_not_allowed: "Die Rolle des Unterzeichners darf diese Entscheidung nicht treffen",
+  registry_mismatch: "Der Registereintrag des Unterzeichners passt nicht zu seinem Registrierungsnachweis, daher zählt der Schlüssel nicht; prüfen mit aqt-signoff signers check",
+  payload_required: "Die Aktion ist an Nutzdaten gebunden; sie läuft nur mit genau diesen Nutzdaten",
+  payload_mismatch: "Die vorgelegten Nutzdaten weichen von den genehmigten ab",
+  not_approved: "Für genau diese Version der Aktion gibt es keine gültige Genehmigung",
+  action_altered: "Die gespeicherte Aktion passt nicht mehr zu ihrem genehmigten Hash",
+  claim_in_progress: "Die Aktion läuft noch oder ist in ihrer Karenzzeit",
+  not_human: "Nur eine menschliche Identität kann dies unterschreiben",
+  not_independent: "Der Prüfer hat im geprüften Zeitraum selbst gehandelt und darf ihn nicht prüfen",
+  worksheet_changed: "Das Arbeitsblatt weicht vom angezeigten ab",
+  worksheet_mismatch: "Das Arbeitsblatt weicht von dem ab, was der Audit-Trail ergibt",
+  stale_worksheet: "Der Audit-Trail am Ende des Arbeitsblatt-Umfangs hat sich geändert",
+  trail_broken: "Der Audit-Trail lässt sich bis zu den geprüften Einträgen nicht verifizieren",
+  unknown_signer: "Der Prüfer steht nicht im Unterzeichnerregister",
+  key_mismatch: "Der Schlüssel ist für jemand anderen registriert",
+  revoked_key: "Der Schlüssel ist widerrufen",
+  unknown_key: "Der Schlüssel ist für diesen Unterzeichner nicht registriert",
+};

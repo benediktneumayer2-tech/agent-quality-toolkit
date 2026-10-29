@@ -2,7 +2,7 @@
 // Every piece of data is put into the page with textContent or attributes, never as markup,
 // because evidence (quarantined pages, reasons, excerpts) is untrusted. All text goes through
 // vis(), which shows hidden characters (bidi controls, zero-width characters, ...) as <U+XXXX>.
-import { DE, NEEDS, REASONS_DE } from "./i18n.js";
+import { DE, NEEDS, REASONS_DE, REFUSALS_DE } from "./i18n.js";
 import { vis } from "./text.js";
 
 // ---- language: English by default, German on request; the choice stays in this browser ------------
@@ -110,6 +110,10 @@ const STATUS_KIND = {
   failed: "fail", stale: "warn", ok: "pass", fresh: "pass", signed: "pass", "signed-verified": "pass", implemented: "info",
   "awaiting-approval": "warn", unsigned: "warn", planned: "info", cancelled: "neutral", critical: "fail", major: "warn", minor: "info",
 };
+// A refusal code in words (the server sends the English words), or "" for a code without words.
+function refusalWords(code, english) {
+  return (LANG === "de" && REFUSALS_DE[code]) || english || "";
+}
 // A status word: its colour comes from the English key, the word shown from the chosen language.
 function stWord(word, label) {
   const key = String(word || "").toLowerCase();
@@ -352,7 +356,7 @@ function decisionPanel({ actions, subject, signers, submit, note, fields, noSign
       let text;
       if (data.ok) text = `${t("Recorded as {record}", { record: data.record_id || "a record" })}${data.time ? " · " + fmtTime(data.time) : ""}. ${data.message || ""}`;
       else if (status === 409) text = `${t("Not signed:")} ${data.message}`;
-      else text = `${t("Refused:")} ${data.message}${data.record_id ? ` (${t("refusal recorded as {record}", { record: data.record_id })})` : ""}`;
+      else text = `${t("Refused:")} ${refusalWords(data.reason_code, data.reason_text) ? refusalWords(data.reason_code, data.reason_text) + ". " : ""}${data.message}${data.record_id ? ` (${t("refusal recorded as {record}", { record: data.record_id })})` : ""}`;
       put(result, h("div", { class: `result ${kind}`, role: "status", text }));
       announce(text);
       if (data.ok) {
@@ -496,7 +500,7 @@ async function renderOverview(main) {
   put(main, section(t("Tool health"), tools));
 
   if (data.refusals.length) {
-    const rows = data.refusals.slice().reverse().map((r) => ({ data: r, cells: [h("td", { class: "small time", text: fmtTime(r.time) }), r.type, h("td", { class: "mono small hide-narrow", text: r.actor.id }), r.reason_code || ""] }));
+    const rows = data.refusals.slice().reverse().map((r) => ({ data: r, cells: [h("td", { class: "small time", text: fmtTime(r.time) }), r.type, h("td", { class: "mono small hide-narrow", text: r.actor.id }), refusalWords(r.reason_code, r.reason_text) ? `${refusalWords(r.reason_code, r.reason_text)} (${r.reason_code})` : r.reason_code || ""] }));
     const x = table([t("Time"), t("Type"), th(t("Claimed actor"), "hide-narrow"), t("Reason code")], rows, (r) => go(`/trail?type=*.refused#${r.id}`));
     put(main, section(t("Refusals in the last 24 h"), x.table));
   }
@@ -914,7 +918,7 @@ async function renderSignatures(main) {
     const params = new URLSearchParams({ [kind.value]: value.value.trim() });
     try {
       const r = await api(`/api/signatures/verify?${params}`);
-      const rows = r.rows.map((x) => ({ data: x, cells: [x.name, h("td", { class: "mono small", text: x.id }), x.role, t(x.meaning), h("td", { class: "small", text: x.local }), h("td", { class: "wrap small", text: x.reason }), h("td", {}, stWord(x.status))] }));
+      const rows = r.rows.map((x) => ({ data: x, cells: [x.name, h("td", { class: "mono small", text: x.id }), x.role, t(x.meaning), h("td", { class: "small", text: x.local }), h("td", { class: "wrap small", text: x.reason }), h("td", {}, stWord(x.status), x.status !== "valid" && x.detail ? h("span", { class: "small muted", text: ` ${x.detail}` }) : null)] }));
       put(out, section(t("Result"), h("p", {}, stWord(r.ok ? "valid" : "warn", r.summary)), kv([[t("Subject"), `${r.subject.kind}: ${r.subject.ref}`], [t("Content"), hashButton(r.subject.sha256, 20)]]),
         rows.length ? table([t("Printed name"), "ID", t("Role"), t("Meaning"), t("Local time"), t("Reason"), t("Status")], rows, (x) => setInspector(inspSection(t("Signature"), kv(Object.entries(x).map(([k, v]) => [k, String(v)]))))).table : h("p", { class: "muted", text: t("No signatures over this content.") }),
         h("p", { class: "small" }, t("Download the manifest:"), " ", downloadButton(`/api/signatures/manifest?${params}&format=md`, "signature-manifest.md", "Markdown", "btn small ghost"), " ",

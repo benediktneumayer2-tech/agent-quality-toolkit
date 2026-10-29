@@ -38,6 +38,12 @@ def pytest_unconfigure(config):
         shutil.rmtree(_SESSION_HOME, ignore_errors=True)
 
 
+@pytest.fixture(autouse=True)
+def fast_keys(monkeypatch):
+    """Cheap scrypt for keys made in tests (as in aqt-signoff); every key file records its own cost."""
+    monkeypatch.setattr("aqt_evidence.crypto.SCRYPT_N", 2**10)
+
+
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     runtime = Path(tempfile.mkdtemp(prefix="aqtui", dir="/tmp" if len(str(tmp_path)) > 60 else None))

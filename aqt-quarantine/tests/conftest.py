@@ -21,6 +21,12 @@ def fixture(name: str) -> dict:
     return json.loads((FIXTURES / name).read_text())
 
 
+@pytest.fixture(autouse=True)
+def fast_keys(monkeypatch):
+    """Cheap scrypt for keys made in tests (as in aqt-signoff); every key file records its own cost."""
+    monkeypatch.setattr("aqt_evidence.crypto.SCRYPT_N", 2**10)
+
+
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     """Isolated XDG dirs; no sink override, no agent markers."""
