@@ -7,9 +7,13 @@ the small DER module and the checks are done here:
 2. the signed ``messageDigest`` attribute equals the digest of the TSTInfo;
 3. the SignerInfo signature over the signed attributes verifies with the TSA
    certificate (RSA PKCS#1 v1.5, ECDSA or Ed25519);
-4. the certificate has the ``timeStamping`` extended key usage;
+4. the signed ``signingCertificate`` (v1 or v2) attribute names the signer
+   certificate, and that certificate has exactly one, critical extended key usage:
+   ``timeStamping`` (RFC 3161 §2.3, as ``openssl ts -verify`` requires);
 5. the certificate chains to a configured CA, each certificate valid at
-   ``genTime`` (no revocation checking).
+   ``genTime``; every issuer on the path is a CA (``basicConstraints cA``, with
+   ``keyCertSign`` when it has a key usage, path length respected), as in RFC 5280
+   §6.1.4 (no revocation checking).
 
 A token can also be checked independently:
 ``openssl ts -verify -digest <head hex> -in token.tsr -token_in -CAfile tsa-ca.pem``.
@@ -42,6 +46,7 @@ HASHLIB = {SHA256: "sha256", SHA384: "sha384", SHA512: "sha512"}
 SIGNED_DATA, TST_INFO = "1.2.840.113549.1.7.2", "1.2.840.113549.1.9.16.1.4"
 ATTR_CONTENT_TYPE, ATTR_MESSAGE_DIGEST = "1.2.840.113549.1.9.3", "1.2.840.113549.1.9.4"
 ATTR_SIGNING_CERT_V2 = "1.2.840.113549.1.9.16.2.47"
+ATTR_SIGNING_CERT = "1.2.840.113549.1.9.16.2.12"   # v1: SHA-1 certificate hash
 RSA_OIDS = {"1.2.840.113549.1.1.1": None, "1.2.840.113549.1.1.11": SHA256, "1.2.840.113549.1.1.12": SHA384,
             "1.2.840.113549.1.1.13": SHA512}
 ECDSA_OIDS = {"1.2.840.10045.4.3.2": SHA256, "1.2.840.10045.4.3.3": SHA384, "1.2.840.10045.4.3.4": SHA512}
@@ -166,11 +171,32 @@ def _valid_at(cert: x509.Certificate, moment: datetime) -> bool:
     return cert.not_valid_before_utc <= moment <= cert.not_valid_after_utc
 
 
+def _issuer_problem(issuer: x509.Certificate, below: int, anchor: bool) -> str | None:
+    """Why ``issuer`` may not issue the certificate under it (``below`` CA certificates lie between them and the
+    TSA certificate), or None. A trust anchor without a basicConstraints extension (a v1 root) is accepted."""
+    name = issuer.subject.rfc4514_string()
+    try:
+        constraints = issuer.extensions.get_extension_for_class(x509.BasicConstraints).value
+    except x509.ExtensionNotFound:
+        constraints = None
+    if constraints is None and not anchor or constraints is not None and not constraints.ca:
+        return f"certificate {name} is not a CA but issued a certificate on the TSA's path"
+    if constraints is not None and constraints.path_length is not None and below > constraints.path_length:
+        return f"certificate {name} allows a path length of {constraints.path_length}, the TSA's path is longer"
+    try:
+        usage = issuer.extensions.get_extension_for_class(x509.KeyUsage).value
+    except x509.ExtensionNotFound:
+        usage = None
+    if usage is not None and not usage.key_cert_sign:
+        return f"certificate {name} may not sign certificates (keyUsage without keyCertSign)"
+    return None
+
+
 def _chain(cert: x509.Certificate, pool: list[x509.Certificate], anchors: list[x509.Certificate],
            moment: datetime) -> str | None:
-    """None when ``cert`` chains to an anchor, else the reason."""
+    """None when ``cert`` chains to an anchor through CA certificates, else the reason."""
     anchor_prints = {a.fingerprint(hashes.SHA256()) for a in anchors}
-    current, seen = cert, set()
+    current, seen, below = cert, set(), 0
     for _ in range(8):
         if not _valid_at(current, moment):
             return f"certificate {current.subject.rfc4514_string()} not valid at genTime"
@@ -188,16 +214,64 @@ def _chain(cert: x509.Certificate, pool: list[x509.Certificate], anchors: list[x
                 break
         if issuer is None:
             return "TSA certificate does not chain to the configured CA"
+        if current is not cert and current.subject != current.issuer:
+            below += 1                       # a (non-self-issued) intermediate CA between the issuer and the TSA
+        problem = _issuer_problem(issuer, below, issuer.fingerprint(hashes.SHA256()) in anchor_prints)
+        if problem:
+            return problem
         current = issuer
     return "certificate chain too long"
 
 
+def _signing_cert_problem(attributes: dict[str, list[der.Node]], cert: x509.Certificate) -> str | None:
+    """The ESS signingCertificate(V2) attribute must name the certificate the token was verified with."""
+    try:
+        if ATTR_SIGNING_CERT_V2 in attributes:
+            first = attributes[ATTR_SIGNING_CERT_V2][0].child(0).child(0)   # SigningCertificateV2.certs[0]
+            parts = first.children()
+            algorithm = SHA256
+            if parts[0].tag == der.SEQUENCE:                                  # hashAlgorithm (DEFAULT sha256)
+                algorithm, parts = _alg(parts[0]), parts[1:]
+            if algorithm not in HASHES:
+                return "signingCertificateV2 uses an unsupported hash"
+            expected = cert.fingerprint(HASHES[algorithm]())
+        elif ATTR_SIGNING_CERT in attributes:
+            parts = attributes[ATTR_SIGNING_CERT][0].child(0).child(0).children()
+            expected = cert.fingerprint(hashes.SHA1())
+        else:
+            return "token has no signingCertificate attribute"
+        if parts[0].tag != der.OCTET_STRING or parts[0].content != expected:
+            return "signingCertificate does not name the signer certificate"
+    except (der.DerError, IndexError, ValueError):
+        return "signingCertificate attribute unreadable"
+    return None
+
+
+def _usage_problem(cert: x509.Certificate) -> str | None:
+    try:
+        extension = cert.extensions.get_extension_for_class(x509.ExtendedKeyUsage)
+    except x509.ExtensionNotFound:
+        return "certificate lacks the timeStamping key usage"
+    if ExtendedKeyUsageOID.TIME_STAMPING not in extension.value:
+        return "certificate lacks the timeStamping key usage"
+    if list(extension.value) != [ExtendedKeyUsageOID.TIME_STAMPING] or not extension.critical:
+        return "TSA certificate's extended key usage must be timeStamping only and critical (RFC 3161 2.3)"
+    return None
+
+
 def verify_token(token_der: bytes, digest: bytes, *, ca_certs: list[x509.Certificate] | None = None) -> TokenCheck:
-    """Check a token against the expected SHA-256 ``digest``; see the module docstring."""
+    """Check a token against the expected SHA-256 ``digest``; see the module docstring. Never raises."""
     try:
         token = parse_token(token_der)
     except TsaError as error:
         return TokenCheck(False, problems=[str(error)])
+    try:
+        return _verify_parsed(token, digest, ca_certs)
+    except (ValueError, TypeError, IndexError, der.DerError) as error:
+        return TokenCheck(False, problems=[f"unreadable time-stamp token: {error}"])
+
+
+def _verify_parsed(token: Token, digest: bytes, ca_certs) -> TokenCheck:
     check = TokenCheck(True, token.gen_time.strftime("%Y-%m-%dT%H:%M:%S.%fZ"), token.serial, token.policy)
     if token.hash_alg != SHA256 or token.imprint != digest:
         check.problems.append("message imprint does not match the head")
@@ -223,12 +297,12 @@ def verify_token(token_der: bytes, digest: bytes, *, ca_certs: list[x509.Certifi
                 _verify_signature(cert, token, b"\x31" + token.signed_attrs.raw[1:])
             except (InvalidSignature, TsaError, ValueError) as error:
                 check.problems.append(f"token signature invalid ({error or 'bad signature'})")
-        try:
-            usage = cert.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
-            if ExtendedKeyUsageOID.TIME_STAMPING not in usage:
-                check.problems.append("certificate lacks the timeStamping key usage")
-        except x509.ExtensionNotFound:
-            check.problems.append("certificate lacks the timeStamping key usage")
+            problem = _signing_cert_problem(attributes, cert)
+            if problem:
+                check.problems.append(problem)
+        problem = _usage_problem(cert)
+        if problem:
+            check.problems.append(problem)
         if ca_certs:
             pool = [x509.load_der_x509_certificate(raw) for raw in token.certificates]
             reason = _chain(cert, pool, list(ca_certs), token.gen_time)

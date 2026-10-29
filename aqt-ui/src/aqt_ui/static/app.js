@@ -1,7 +1,9 @@
 // aqt-ui front end: plain ES module, no build step.
 // Every piece of data is put into the page with textContent or attributes, never as markup,
-// because evidence (quarantined pages, reasons, excerpts) is untrusted.
+// because evidence (quarantined pages, reasons, excerpts) is untrusted. All text goes through
+// vis(), which shows hidden characters (bidi controls, zero-width characters, ...) as <U+XXXX>.
 import { DE, NEEDS, REASONS_DE } from "./i18n.js";
+import { vis } from "./text.js";
 
 // ---- language: English by default, German on request; the choice stays in this browser ------------
 let LANG = "en";
@@ -29,6 +31,7 @@ const VIEWS = [
   { id: "qualifications", path: "/qualifications", label: "Qualifications" },
 ];
 const S = { csrf: "", mode: null, overview: null, view: "overview", installed: {} };
+const TEXT_ATTRS = new Set(["title", "aria-label", "placeholder"]);
 const $ = (id) => document.getElementById(id);
 
 // ---- DOM helper: text and attributes only ---------------------------------------------------
@@ -37,9 +40,9 @@ function h(tag, attrs, ...children) {
   for (const [key, value] of Object.entries(attrs || {})) {
     if (value === null || value === undefined || value === false) continue;
     if (key === "class") el.className = value;
-    else if (key === "text") el.textContent = String(value);
+    else if (key === "text") el.textContent = vis(value);
     else if (key.startsWith("on") && typeof value === "function") el.addEventListener(key.slice(2), value);
-    else el.setAttribute(key, value === true ? "" : String(value));
+    else el.setAttribute(key, value === true ? "" : TEXT_ATTRS.has(key) ? vis(value) : String(value));
   }
   append(el, children);
   return el;
@@ -47,14 +50,14 @@ function h(tag, attrs, ...children) {
 function append(el, children) {
   for (const child of children.flat(Infinity)) {
     if (child === null || child === undefined || child === false) continue;
-    el.appendChild(child instanceof Node ? child : document.createTextNode(String(child)));
+    el.appendChild(child instanceof Node ? child : document.createTextNode(vis(child)));
   }
   return el;
 }
 // Native Element.append() would turn null into the text "null"; put() skips empty children.
 function put(el, ...children) { return append(el, children); }
 function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); return el; }
-function announce(text) { const live = $("live"); live.textContent = ""; setTimeout(() => { live.textContent = text; }, 30); }
+function announce(text) { const live = $("live"); clear(live); setTimeout(() => { live.textContent = vis(text); }, 30); }
 
 // ---- formatting --------------------------------------------------------------------------------
 function fmtTime(iso) {
@@ -101,7 +104,7 @@ const STATUS_KIND = {
   pass: "pass", intact: "pass", valid: "pass", go: "pass", released: "pass", effective: "pass", succeeded: "pass",
   approved: "pass", running: "pass", closed: "neutral",
   warn: "warn", warned: "warn", expiring: "warn", manual_verify_required: "warn", prepared: "warn", pending: "info",
-  unverified: "info", problems: "warn", missing: "warn", unknown: "warn", expired: "fail", open: "warn",
+  unverified: "info", problems: "warn", missing: "warn", unknown: "warn", expired: "fail", open: "warn", changed: "fail",
   fail: "fail", broken: "fail", held: "fail", threat: "fail", "no-go": "fail", invalid: "fail", invalidated: "fail",
   revoked: "fail", "unknown-signer": "warn", triggered: "fail", rejected: "neutral", "not-effective": "fail",
   failed: "fail", stale: "warn", ok: "pass", fresh: "pass", signed: "pass", "signed-verified": "pass", implemented: "info",
@@ -136,8 +139,21 @@ function tabs(items, current, onPick) {
 }
 
 // ---- API ----------------------------------------------------------------------------------------
+// The session key: handed over once by the login page (a meta tag), then kept in this tab's
+// sessionStorage, which other ports of 127.0.0.1 cannot read. Every API request carries it.
+function sessionKey() {
+  const meta = document.querySelector('meta[name="aqt-csrf"]');
+  if (meta && meta.content) {
+    const key = meta.content;
+    meta.remove();
+    try { sessionStorage.setItem("aqt-ui-key", key); } catch (e) { /* storage blocked: kept for this page only */ }
+    if (location.pathname === "/login") history.replaceState(null, "", "/");
+    return key;
+  }
+  try { return sessionStorage.getItem("aqt-ui-key") || ""; } catch (e) { return ""; }
+}
 async function api(path) {
-  const response = await fetch(path, { headers: { Accept: "application/json" }, credentials: "same-origin" });
+  const response = await fetch(path, { headers: { Accept: "application/json", "X-AQT-CSRF": S.csrf }, credentials: "same-origin" });
   const data = await response.json().catch(() => ({ message: `HTTP ${response.status}` }));
   if (!response.ok) throw Object.assign(new Error(data.message || `HTTP ${response.status}`), { status: response.status, data });
   return data;
@@ -151,14 +167,39 @@ async function post(path, body) {
   const data = await response.json().catch(() => ({ ok: false, message: `HTTP ${response.status}` }));
   return { status: response.status, data };
 }
+// A file from the API, saved through a blob link (a plain link would lack the session key).
+async function download(path, fallbackName) {
+  const response = await fetch(path, { headers: { "X-AQT-CSRF": S.csrf }, credentials: "same-origin" });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({ message: `HTTP ${response.status}` }));
+    throw new Error(data.message || `HTTP ${response.status}`);
+  }
+  const named = /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") || "");
+  const url = URL.createObjectURL(await response.blob());
+  const link = h("a", { href: url, download: (named && named[1]) || fallbackName, hidden: true });
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+function downloadButton(path, name, label, cls) {
+  const out = h("span", { class: "small", "aria-live": "polite" });
+  const button = h("button", { class: cls || "btn small", type: "button", text: label, onclick: async () => {
+    clear(out);
+    button.disabled = true;
+    try { await download(path, name); } catch (error) { put(out, " ", h("span", { class: "result refused", text: String(error.message || error) })); }
+    finally { button.disabled = false; }
+  } });
+  return h("span", {}, button, out);
+}
 
 // ---- shell: rail, top bar, inspector --------------------------------------------------------------
 function shellLabels() {
   document.documentElement.lang = LANG;
-  $("skip").textContent = t("Skip to content");
-  $("menu-btn").textContent = t("Views");
-  $("refresh").textContent = t("Refresh");
-  $("brand-sub").textContent = t("quality desk, this machine only");
+  $("skip").textContent = vis(t("Skip to content"));
+  $("menu-btn").textContent = vis(t("Views"));
+  $("refresh").textContent = vis(t("Refresh"));
+  $("brand-sub").textContent = vis(t("quality desk, this machine only"));
   $("rail").setAttribute("aria-label", t("Views"));
   inspector().setAttribute("aria-label", t("Details"));
   const lang = $("lang");
@@ -197,6 +238,11 @@ function renderTopbar() {
       text = t("Broken from seq {seq}", { seq: num(status.check && status.check.first_bad_seq) });
       broken.hidden = false;
       put(clear(broken), t("Trail broken from seq {seq}: {reason}", { seq: num(status.check.first_bad_seq), reason: status.check.reason || "" }));
+    } else if (status.state === "changed") {
+      kind = "fail";
+      text = t("Trail changed since the last check");
+      broken.hidden = false;
+      put(clear(broken), t("Trail changed since the last check: {reason}. Verify it again.", { reason: status.changed || "" }));
     } else if (status.state === "problems") { kind = "warn"; text = t("Trail: verification found problems"); }
     else if (status.state === "missing") { kind = "warn"; text = t("No trail yet"); }
     else text = status.verifying ? t("Trail: verifying…") : t("Trail: not verified yet");
@@ -284,7 +330,7 @@ function decisionPanel({ actions, subject, signers, submit, note, fields, noSign
       b.addEventListener("click", () => {
         chosen = a;
         for (const other of choice.children) { const on = other === b; other.setAttribute("aria-checked", String(on)); other.setAttribute("aria-pressed", String(on)); }
-        meaningCell.textContent = t(a.meaning); button.textContent = a.button; button.className = `btn ${a.danger ? "danger" : "primary"}`;
+        meaningCell.textContent = vis(t(a.meaning)); button.textContent = vis(a.button); button.className = `btn ${a.danger ? "danger" : "primary"}`;
       });
       return b;
     })) : null;
@@ -358,7 +404,7 @@ function setQuery(params) {
 async function route(keepInspector) {
   const view = VIEWS.find((v) => v.path === location.pathname) || VIEWS[0];
   S.view = view.id;
-  $("title").textContent = t(view.label);
+  $("title").textContent = vis(t(view.label));
   document.title = `${t(view.label)} · ${t("AQT quality desk")}`;
   renderRail();
   const main = clear($("main"));
@@ -417,10 +463,10 @@ async function renderOverview(main) {
   put(main, section(t("Needs you"), data.needs.length ? queue
     : h("div", { class: "allclear" }, h("strong", { text: t("Nothing needs you") }), t("Last check {time}.", { time: fmtTime(data.checked_at) }))));
 
-  const words = { intact: t("Intact"), broken: t("Broken from seq {seq}", { seq: num(check.first_bad_seq) }), problems: t("Problems found"),
+  const words = { intact: t("Intact"), broken: t("Broken from seq {seq}", { seq: num(check.first_bad_seq) }), problems: t("Problems found"), changed: t("Changed since the last check"),
     unverified: status.verifying ? t("Verifying…") : t("Not verified yet"), missing: t("No trail yet") };
   const verifyBtn = h("button", { class: "btn small", type: "button", text: status.verifying ? t("Verifying…") : t("Verify now"), disabled: status.verifying,
-    onclick: async () => { verifyBtn.disabled = true; verifyBtn.textContent = t("Verifying…"); await post("/api/trail/verify"); pollVerify(); } });
+    onclick: async () => { verifyBtn.disabled = true; verifyBtn.textContent = vis(t("Verifying…")); await post("/api/trail/verify"); pollVerify(); } });
   const band = h("dl", { class: "band" },
     [[t("Trail"), stWord(status.state, words[status.state])], [t("Records"), num(status.records)], [t("Head seq"), num(status.head_seq)],
      [t("Last full check"), check.checked_at ? `${ago(check.checked_at)}${status.appended_since_check ? ` · ${t("{n} newer not yet verified", { n: num(status.appended_since_check) })}` : ""}` : t("not yet")],
@@ -549,7 +595,7 @@ function pager(data) {
 function integrityPanel(open) {
   const status = S.overview && S.overview.status;
   const check = (status && status.check) || {};
-  const button = h("button", { class: "btn small", type: "button", text: t("Verify now"), onclick: async () => { button.disabled = true; button.textContent = t("Verifying…"); await post("/api/trail/verify"); pollVerify(); } });
+  const button = h("button", { class: "btn small", type: "button", text: t("Verify now"), onclick: async () => { button.disabled = true; button.textContent = vis(t("Verifying…")); await post("/api/trail/verify"); pollVerify(); } });
   const parts = [inspSection(t("Integrity"), status ? stWord(status.state) : null,
     h("p", { class: "break", text: check.summary || t("Not verified yet.") }),
     check.checked_at ? kv([[t("Checked"), fmtTime(check.checked_at)], [t("Took"), `${check.seconds ?? "?"} s`], [t("Signatures"), num(check.signatures)], [t("Anchors"), num(check.anchors)]]) : null,
@@ -609,7 +655,7 @@ function reviewPanel(sheet) {
     subject: { label: t("worksheet {id}, seq {from}–{to}", { id: sheet.id, from: scope.from_seq, to: scope.to_seq }), hash: scope.head },
     note: t("Independence: people who acted in the period may not sign its review."),
     submit: (a, values) => post(`/api/trail/review/${encodeURIComponent(sheet.id)}/sign`, {
-      ...values, head: scope.head,
+      ...values, head: scope.head, worksheet_sha256: sheet.worksheet_sha256,
       dispositions: Object.fromEntries(Object.entries(dispositions).map(([k, el]) => [k, el.value])),
       notes: Object.fromEntries(Object.entries(notes).map(([k, el]) => [k, el.value])),
     }),
@@ -625,7 +671,7 @@ function reviewPanel(sheet) {
 function exportSection() {
   return inspSection(t("Export"),
     h("p", { class: "small muted", text: t("A verification bundle: the trail, checkpoints, public keys and instructions, for an auditor to check offline. Creating it records nothing.") }),
-    h("a", { class: "btn small", href: "/api/trail/export", download: "", text: t("Download bundle (.tar.gz)") }));
+    downloadButton("/api/trail/export", "aqt-trail-bundle.tar.gz", t("Download bundle (.tar.gz)")));
 }
 
 async function openRecord(row) {
@@ -700,7 +746,7 @@ function trustForm(domain, signers) {
   const expires = h("input", { id: "trust-expires", type: "date", value: nextYear, min: new Date().toISOString().slice(0, 10) });
   const subdomains = h("input", { id: "trust-sub", type: "checkbox" });
   const label = h("span", {});
-  const describe = () => { label.textContent = t("domain {domain} until {date}{sub}", { domain: domainInput.value.trim() || "?", date: expires.value || "?", sub: subdomains.checked ? t(", with subdomains") : "" }); };
+  const describe = () => { label.textContent = vis(t("domain {domain} until {date}{sub}", { domain: domainInput.value.trim() || "?", date: expires.value || "?", sub: subdomains.checked ? t(", with subdomains") : "" })); };
   for (const el of [domainInput, expires, subdomains]) el.addEventListener("input", describe);
   subdomains.addEventListener("change", describe);
   describe();
@@ -735,7 +781,7 @@ async function openCase(caseId, full) {
     const pre = h("pre", { class: "text", tabindex: "0", "aria-label": t("Case content, untrusted") });
     for (const w of c.content.windows) {
       if (w.cut_before) put(pre, h("span", { class: "muted", text: "… " }));
-      for (const piece of w.pieces) put(pre, piece.mark ? h("mark", { title: piece.mark, text: piece.text }) : document.createTextNode(piece.text));
+      for (const piece of w.pieces) put(pre, piece.mark ? h("mark", { title: piece.mark, text: piece.text }) : document.createTextNode(vis(piece.text)));
       if (w.cut_after) put(pre, h("span", { class: "muted", text: " …" }));
       put(pre, "\n\n");
     }
@@ -837,12 +883,16 @@ function openGate(p, root, signers) {
 }
 async function openAction(id, signers) {
   const a = await api(`/api/changes/actions/${encodeURIComponent(id)}`);
-  const open = ["prepared", "approved", "expired"].includes(a.status);
+  const open = a.spec_ok && ["prepared", "approved", "expired"].includes(a.status);
+  const specText = JSON.stringify(a.spec, null, 2);
   setInspector(
     inspSection(t("Prepared action"), h("p", { class: "insp-title mono", text: a.id }), stWord(a.status), a.detail ? h("span", { class: "muted small", text: ` ${a.detail}` }) : null,
       kv([[t("Version"), a.version], [t("Prepared by"), (a.preparer && a.preparer.id) || "–"], ["Hash", hashButton(a.action_sha256, 16)], [t("Updated"), fmtTime(a.updated_at)],
         [t("Approvals"), a.approvals.length ? a.approvals.map((x) => `${x.signer} (${x.role})`).join(", ") : t("none")]])),
-    inspSection(t("What will run (text)"), h("pre", { class: "json", text: JSON.stringify(a.spec, null, 2) })),
+    inspSection(t("What will run (text)"),
+      a.spec_ok ? null : h("p", { class: "flag", role: "alert", text: `${t("Not decidable here:")} ${a.spec_error}` }),
+      vis(specText) !== specText ? h("p", { class: "flag", text: t("The specification contains hidden characters, shown as <U+XXXX>. Check exactly what will run.") }) : null,
+      h("pre", { class: "json", text: specText })),
     open ? decisionPanel({
       actions: [{ id: "approve", label: t("Approve"), meaning: "approved", button: t("Sign and approve") }, { id: "reject", label: t("Reject"), meaning: "rejected", button: t("Sign and reject"), danger: true }],
       signers, subject: { label: t("action {id} v{version}", { id: a.id, version: a.version }), hash: a.action_sha256 },
@@ -867,8 +917,8 @@ async function renderSignatures(main) {
       const rows = r.rows.map((x) => ({ data: x, cells: [x.name, h("td", { class: "mono small", text: x.id }), x.role, t(x.meaning), h("td", { class: "small", text: x.local }), h("td", { class: "wrap small", text: x.reason }), h("td", {}, stWord(x.status))] }));
       put(out, section(t("Result"), h("p", {}, stWord(r.ok ? "valid" : "warn", r.summary)), kv([[t("Subject"), `${r.subject.kind}: ${r.subject.ref}`], [t("Content"), hashButton(r.subject.sha256, 20)]]),
         rows.length ? table([t("Printed name"), "ID", t("Role"), t("Meaning"), t("Local time"), t("Reason"), t("Status")], rows, (x) => setInspector(inspSection(t("Signature"), kv(Object.entries(x).map(([k, v]) => [k, String(v)]))))).table : h("p", { class: "muted", text: t("No signatures over this content.") }),
-        h("p", { class: "small" }, t("Download the manifest:"), " ", h("a", { href: `/api/signatures/manifest?${params}&format=md`, download: "signature-manifest.md", text: "Markdown" }), " · ",
-          h("a", { href: `/api/signatures/manifest?${params}&format=html`, download: "signature-manifest.html", text: "HTML" })),
+        h("p", { class: "small" }, t("Download the manifest:"), " ", downloadButton(`/api/signatures/manifest?${params}&format=md`, "signature-manifest.md", "Markdown", "btn small ghost"), " ",
+          downloadButton(`/api/signatures/manifest?${params}&format=html`, "signature-manifest.html", "HTML", "btn small ghost")),
         h("p", { class: "small muted", text: t("Viewing never records anything. aqt-signoff verify in a terminal records a changed-content invalidation.") })));
     } catch (error) { put(out, errorBox(error)); }
   };
@@ -918,7 +968,7 @@ async function renderCapa(main) {
   const rows = data.deviations.map((d) => ({ data: d, cells: [h("td", { class: "mono", text: d.dev_id }), h("td", {}, d.overdue ? st("fail", t("overdue")) : stWord(d.state === "closed" ? "closed" : "open", t(d.state))),
     h("td", { class: "wrap", text: d.title }), h("td", { class: "hide-narrow", text: t(d.severity) }), h("td", { class: "hide-narrow small", text: d.due ? fmtTime(d.due) : "–" })] }));
   put(main, table([t("Deviation"), t("State"), t("Title"), th(t("Severity"), "hide-narrow"), th(t("Due"), "hide-narrow")], rows, (d) => openDeviation(d.dev_id)).table,
-    h("p", { class: "section small" }, h("a", { href: "/api/capa/trends", download: "capa-trends.md", text: t("Download the trend summary (Markdown)") })));
+    h("p", { class: "section small" }, downloadButton("/api/capa/trends", "capa-trends.md", t("Download the trend summary (Markdown)"), "btn small ghost")));
 }
 async function openDeviation(devId) {
   const d = await api(`/api/capa/${encodeURIComponent(devId)}`);
@@ -992,9 +1042,9 @@ async function start() {
     $("menu-btn").setAttribute("aria-expanded", String(open));
   });
   $("refresh").addEventListener("click", async () => { await refresh(); route(); announce(t("Refreshed")); });
+  S.csrf = sessionKey();
   try {
     const session = await api("/api/session");
-    S.csrf = session.csrf;
     S.mode = session.mode;
     S.installed = session.installed;
     renderTopbar();

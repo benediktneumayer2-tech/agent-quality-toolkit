@@ -2,13 +2,24 @@
 
 Reads only. The trail file is parsed incrementally from the last offset into compact rows
 (seq, id, type, actor, time, subject); a full record is read from its byte offset on demand.
-Verification and the ALCOA++ report run in a background thread at start and on demand and
-are cached with the record count they covered.
+Verification and the ALCOA++ report run in a background thread at start and on demand.
+
+A verification result holds only for the bytes it covered: before each check the file's
+identity, size and a SHA-256 of its content are noted, and the status shows "changed" instead
+of "intact" as soon as the file was replaced, truncated or those bytes were modified. Records
+appended after them count as not yet verified.
+
+An audit-trail review is signed over the worksheet this server prepared and showed: the
+worksheet stays in memory with a digest that the page sends back, so editing the saved
+``worksheet.json`` in between changes nothing that is signed.
 """
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
+import os
 import re
 import tempfile
 import threading
@@ -24,6 +35,7 @@ from . import NotFound, Stale, UsageProblem
 REASON_CHARS = 200
 PAGE = 100          # records per page in the Trail view
 MAX_PAGE = 500
+KEEP_SHEETS = 20    # worksheets kept for signing, newest
 
 
 def _now() -> datetime:
@@ -71,6 +83,13 @@ class TrailIndex:
         self.unreadable: str | None = None
         self.lock = threading.Lock()
         self._reset(None)
+
+    def invalidate(self) -> None:
+        """Read the whole file again on the next refresh (its content changed under the index)."""
+        with self.lock:
+            version = self.version
+            self._reset(None)
+            self.version = version + 1
 
     def _reset(self, identity: tuple | None) -> None:
         """Forget everything (new or rewritten file). The aggregates below are kept up to date
@@ -162,7 +181,9 @@ class TrailView:
         self.check: dict | None = None          # last verification + ALCOA++ result
         self.running = False
         self._lock = threading.Lock()
+        self._snapshot_lock = threading.Lock()
         self._selection: tuple = (None, [])     # (key, rows) of the last filtered selection
+        self._sheets: dict[str, tuple[str, dict]] = {}   # worksheet id -> (digest, sheet) prepared here
 
     # -- writer and spool --------------------------------------------------------------------------
     def writer(self) -> dict:
@@ -211,6 +232,7 @@ class TrailView:
         if not config.trail_path.exists():
             return {"ok": False, "missing": True, "checked_at": _stamp(), "count": 0, "alcoa": [],
                     "summary": f"no trail at {config.state}", "problems": [], "warnings": []}
+        snapshot = take_snapshot(config.trail_path)        # the bytes this result is about
         try:
             signer_keys = registry_keys(load_registry())
         except (ValueError, OSError):
@@ -226,31 +248,57 @@ class TrailView:
             alcoa = alcoa_report(records, report, skew_ms=int(params["skew_ms"]),
                                  unanchored_hours=int(params["unanchored_hours"]),
                                  export_check=lambda: export_dry_run(config))
-        return {"ok": report.ok, "summary": report.summary(), "count": report.count, "head_seq": report.head_seq,
-                "head": report.head, "first_bad_seq": report.first_bad_seq, "reason": report.reason,
-                "problems": report.problems, "warnings": report.warnings, "log_id": log_id,
-                "signatures": report.signatures, "anchors": report.anchors, "checked_at": _stamp(), "alcoa": alcoa}
+        result = {"ok": report.ok, "summary": report.summary(), "count": report.count, "head_seq": report.head_seq,
+                  "head": report.head, "first_bad_seq": report.first_bad_seq, "reason": report.reason,
+                  "problems": report.problems, "warnings": report.warnings, "log_id": log_id,
+                  "signatures": report.signatures, "anchors": report.anchors, "checked_at": _stamp(), "alcoa": alcoa,
+                  "_snapshot": snapshot}
+        changed = snapshot_change(config.trail_path, snapshot)
+        if changed:                                        # changed while it was being verified
+            snapshot["changed"] = f"{changed} while it was being verified"
+        return result
+
+    def changed_since_check(self, check: dict | None) -> str | None:
+        """Why the last result no longer describes the trail file, or None while it still does."""
+        snapshot = (check or {}).get("_snapshot")
+        if not snapshot:
+            return None
+        with self._snapshot_lock:
+            if not snapshot.get("changed"):
+                snapshot["changed"] = snapshot_change(self.config.trail_path, snapshot)
+                if snapshot["changed"]:
+                    self.index.invalidate()                # rows and offsets may no longer match the file
+            return snapshot["changed"]
 
     # -- status band -----------------------------------------------------------------------------------
     def status(self) -> dict:
-        rows = self.index.refresh()
         check = self.check
+        changed = self.changed_since_check(check) if self.config.trail_path.exists() else None
+        rows = self.index.refresh()
         if not self.config.trail_path.exists():
             state = "missing"
         elif check is None or check.get("error"):
             state = "unverified"
+        elif changed:
+            state = "changed"
         elif check.get("first_bad_seq") is not None:
             state = "broken"
         elif not check.get("ok"):
             state = "problems"
         else:
             state = "intact"
-        unverified = max(0, len(rows) - (check or {}).get("count", 0)) if state in ("intact", "problems") else 0
+        unverified = 0
+        if state in ("intact", "problems"):            # records after the bytes the check covered
+            covered = ((check or {}).get("_snapshot") or {}).get("size", 0)
+            for row in reversed(rows):
+                if row["_off"] < covered:
+                    break
+                unverified += 1
         return {
             "state": state, "records": len(rows), "head_seq": rows[-1]["chain"]["seq"] if rows else None,
             "path": str(self.config.trail_path), "log_id": (check or {}).get("log_id"),
-            "check": {k: v for k, v in (check or {}).items() if k != "alcoa"} or None,
-            "verifying": self.running, "appended_since_check": unverified,
+            "check": {k: v for k, v in (check or {}).items() if k != "alcoa" and not k.startswith("_")} or None,
+            "changed": changed, "verifying": self.running, "appended_since_check": unverified,
             "last_anchor": self.index.last_anchor, "last_review": self.index.last_review,
             "writer": self.writer(), "unreadable": self.index.unreadable,
         }
@@ -325,7 +373,13 @@ class TrailView:
         except ValueError as error:
             raise UsageProblem(str(error)) from error
         path = save_worksheet(sheet, config.state / "reviews")
-        return {**sheet, "path": str(path), "markdown": worksheet_markdown(sheet)}
+        shown = json.loads(json.dumps(sheet))           # exactly what the page receives
+        digest = worksheet_digest(shown)
+        with self._lock:
+            self._sheets[shown["id"]] = (digest, shown)
+            while len(self._sheets) > KEEP_SHEETS:
+                self._sheets.pop(next(iter(self._sheets)))
+        return {**shown, "path": str(path), "markdown": worksheet_markdown(shown), "worksheet_sha256": digest}
 
     def worksheet(self, sheet_id: str) -> dict:
         if not re.fullmatch(r"rv_[0-9a-f]{12}", sheet_id or ""):
@@ -336,9 +390,12 @@ class TrailView:
         return json.loads(path.read_text())
 
     def review_sign(self, sheet_id: str, *, shown_head: str, dispositions: dict, notes: dict, reason: str,
-                    conclusion: str, passphrase: str, signer_id: str, human_check: Callable) -> dict:
+                    conclusion: str, passphrase: str, signer_id: str, human_check: Callable,
+                    shown_sha256: str = "") -> dict:
         """``aqt-trail review sign``: same checks and the same records as the CLI. A refusal is
-        recorded as ``trail.refused``; the reviewer must not be an actor of the reviewed period."""
+        recorded as ``trail.refused``; the reviewer must not be an actor of the reviewed period.
+        Signed is the worksheet this server prepared and showed (``shown_sha256`` is its digest),
+        never a worksheet read back from disk."""
         from aqt_evidence import HumanCheckError, load_signer
         from aqt_trail.review import ReviewRefused, build_review
         from aqt_trail.signers import key_file, load_registry
@@ -348,9 +405,11 @@ class TrailView:
             human_check()
         except HumanCheckError as error:
             return self._refuse_review(reviewer, "agent_context", str(error), list(error.context.markers))
-        sheet = self.worksheet(sheet_id)
-        if not shown_head or sheet["scope"]["head"] != shown_head:
-            raise Stale("the worksheet is not the one shown; nothing was signed. Reload the review.")
+        with self._lock:
+            digest, sheet = self._sheets.get(sheet_id, (None, None))
+        same = bool(shown_sha256) and digest is not None and hmac.compare_digest(digest.encode(), shown_sha256.encode())
+        if not same or not shown_head or sheet["scope"]["head"] != shown_head:
+            raise Stale("the worksheet is not the one shown; nothing was signed. Prepare the worksheet again.")
         key_path = key_file(reviewer)
         if not key_path.exists():
             raise UsageProblem(f"no key at {key_path}; enrol the reviewer with aqt-signoff init")
@@ -371,6 +430,8 @@ class TrailView:
         except ValueError as error:
             raise UsageProblem(str(error)) from error
         stored = self._send(record)
+        with self._lock:
+            self._sheets.pop(sheet_id, None)              # signed once
         return {"ok": True, "message": f"review {record['id']} signed by {reviewer}", "record_id": record["id"],
                 "record_type": "trail.review", "time": (stored or record).get("time")}
 
@@ -404,6 +465,63 @@ class TrailView:
             return archive.name, archive.read_bytes()
 
 
+def worksheet_digest(sheet: dict) -> str:
+    """Digest of a whole worksheet (findings, actors, scope, profile) as the page received it."""
+    text = json.dumps(sheet, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _prefix_sha256(path: Path, size: int) -> str | None:
+    """SHA-256 of the first ``size`` bytes of ``path``; None when the file is shorter."""
+    digest, left = hashlib.sha256(), size
+    with open(path, "rb") as handle:
+        while left:
+            chunk = handle.read(min(left, 1 << 20))
+            if not chunk:
+                return None
+            digest.update(chunk)
+            left -= len(chunk)
+    return "sha256:" + digest.hexdigest()
+
+
+def take_snapshot(path: Path) -> dict:
+    """Identity, size and content hash of the trail file now: what a verification result is about."""
+    info = os.stat(path)
+    digest = _prefix_sha256(path, info.st_size)
+    after = os.stat(path)
+    same = (after.st_ctime_ns, after.st_size) == (info.st_ctime_ns, info.st_size)
+    return {"dev": info.st_dev, "ino": info.st_ino, "size": info.st_size, "sha256": digest,
+            "confirmed": (info.st_ctime_ns, info.st_size) if same else None, "changed": None}
+
+
+def snapshot_change(path: Path, snapshot: dict) -> str | None:
+    """None while the file still starts with the snapshot's bytes, else what happened. The
+    content is hashed again only when the file's ctime or size moved since the last look."""
+    try:
+        info = os.stat(path)
+    except FileNotFoundError:
+        return "the trail file was removed"
+    except OSError as error:
+        return f"the trail file cannot be read ({error.strerror})"
+    if (info.st_dev, info.st_ino) != (snapshot["dev"], snapshot["ino"]):
+        return "the trail file was replaced by another file"
+    if info.st_size < snapshot["size"]:
+        return "the trail file was truncated"
+    key = (info.st_ctime_ns, info.st_size)
+    if key == snapshot.get("confirmed"):
+        return None
+    try:
+        digest = _prefix_sha256(path, snapshot["size"])
+        again = os.stat(path)
+    except OSError as error:
+        return f"the trail file cannot be read ({error.strerror})"
+    if digest != snapshot["sha256"]:
+        return "records covered by the check were modified"
+    if (again.st_dev, again.st_ino, again.st_ctime_ns) == (info.st_dev, info.st_ino, info.st_ctime_ns):
+        snapshot["confirmed"] = key
+    return None
+
+
 def read_all(path: Path) -> list[dict]:
     from aqt_trail.state import read_records
     return read_records(path)
@@ -421,4 +539,4 @@ def _stamp() -> str:
     return _now().strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-__all__ = ["TrailIndex", "TrailView", "compact", "parse_time"]
+__all__ = ["TrailIndex", "TrailView", "compact", "parse_time", "worksheet_digest"]

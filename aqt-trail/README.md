@@ -19,7 +19,8 @@ aqt-trail applies audit-trail practice to agent work on a developer machine:
   gid from the kernel (`SO_PEERCRED`) and its process chain from `/proc`, for example
   `python3 ← bash ← claude`. A record that *claims* a human but was sent from inside an agent is kept and flagged.
 - **Tamper-evident.** Records are hash-chained and signed by the writer. Editing, inserting, deleting or reordering
-  anything breaks verification from that record on.
+  anything breaks verification from that record on — unless whoever edits can also read the service key (user
+  mode), in which case only head copies and anchors made after the edit reveal it.
 - **Anchored outside the writer's reach.** Signed head copies (`head --export`) and RFC 3161 time stamps over the
   head make truncation and full rewrites detectable.
 - **Nothing silently lost.** When the writer is down, clients spool; the writer later writes a `trail.gap` marker
@@ -42,14 +43,14 @@ export AQT_SINK=unix:$XDG_RUNTIME_DIR/aqt/trail.sock   # other AQT tools now wri
 aqt-trail event --action release.decided --actor human:alice --reason "plan approved in review"
 aqt-trail import claude-code tests/fixtures/claude-session.jsonl   # synthetic example
 aqt-trail checkpoint --anchor --tsa test:        # TEST ONLY time-stamp authority, offline
-aqt-trail head --export >> ~/trail-heads.jsonl   # keep head copies somewhere else, too
+aqt-trail head --export >> /media/usb/trail-heads.jsonl   # head copies out of the agent's reach
 
-aqt-trail verify --test-tsa --heads ~/trail-heads.jsonl
+aqt-trail verify --test-tsa --heads /media/usb/trail-heads.jsonl
 aqt-trail alcoa --test-tsa                       # fails 'attributable' if an agent claimed to be alice
 aqt-trail review run                             # writes a worksheet with findings
-aqt-trail review sign <worksheet.json> --reviewer human:dora --key dora.key \
-    --disposition all=ok --reason "weekly audit-trail review"
-aqt-trail export --out trail-bundle              # self-contained copy with checksums
+aqt-trail review sign <worksheet.json> --reviewer human:dora \
+    --disposition all=ok --reason "weekly audit-trail review"   # dora enrolled with aqt-signoff
+aqt-trail export --out trail-bundle              # copy with checksums; verify it with your own trust anchors
 ```
 
 For Claude Code, merge [`examples/claude-code-hooks.json`](examples/claude-code-hooks.json) into your settings:
@@ -87,9 +88,17 @@ flowchart LR
 - **Human signatures** (for example a signed review) travel as a detached statement in `data.signature`, so they
   survive chaining and re-signing.
 - **Verification** recomputes every hash, checks the service signatures, checkpoints, external heads, RFC 3161
-  tokens (imprint = the 32-byte head hash; signature, `timeStamping` usage and chain to your TSA CA) and detached
-  signatures against the shared signer registry. A token can also be checked independently with
+  tokens (imprint = the 32-byte head hash; signature, `timeStamping` usage and a chain of CA certificates to your
+  TSA CA) and detached signatures against the shared signer registry (the key must belong to the named signer and
+  be valid at signing time; a `trail.review` must be signed by its reviewer, who did not act in its scope). A token
+  can also be checked independently with
   `openssl ts -verify -digest <head hex> -in token.der -token_in -CAfile tsa-ca.pem`.
+- **What "intact" covers.** Every line is canonical and chained and signed by the service key you trust. Records
+  after the newest head copy you keep elsewhere, or after the newest RFC 3161 anchor verified to your CA, are not
+  protected against someone who can read the service key (user mode); `verify` says which seq range that is, and
+  how many records follow the newest checkpoint (dropping those would go unnoticed). Only RFC 3161 anchors the
+  writer itself wrote count. Bundles certify nothing about themselves: `verify --bundle` uses the service key,
+  TSA CA and signer registry you give (`--pin-key`, `--tsa-ca`, `--signers`), never the copies inside.
 
 Details: [docs/usage.md](docs/usage.md) (commands, records, configuration),
 [docs/review.md](docs/review.md) (risk queries and signing), [docs/separate-user.md](docs/separate-user.md).
@@ -118,10 +127,11 @@ Protection is against **agents**, not against the owner or root.
 
 | Attack | User mode (default) | Separate-user mode | Detected by |
 |---|---|---|---|
-| Edit, insert, delete, reorder records | possible | prevented | `verify` (broken from seq N) |
+| Edit, insert, delete, reorder records | possible | prevented | `verify` (broken from seq N); in user mode the service key is readable, so a re-signed edit is detected only by head copies or anchors made after it |
 | Truncate / roll back the log | possible | prevented | head copies, checkpoints, anchors |
 | Rewrite everything under a new key | possible (key readable) | prevented | `--pin-key`, head copies, anchors |
-| Append under a human's name | possible | possible | `attribution_mismatch` (observed process chain) |
+| Append under a human's name | possible | possible | `attribution_mismatch`, a heuristic on the observed process chain: an agent harness in it fails, a chain that could not be read completely is flagged |
+| Edit a review worksheet, or append a review | possible | possible | `review sign` recomputes the worksheet from the trail; `verify` checks a review's signature, reviewer key and scope |
 | Forge spooled records | possible | possible | marked `via: spool`, flagged in review |
 | Not calling the writer at all / disabling hooks | possible | possible | not by the trail alone; session imports help |
 | Agent with root or `docker` group | anything | anything | only anchors made before the attack |

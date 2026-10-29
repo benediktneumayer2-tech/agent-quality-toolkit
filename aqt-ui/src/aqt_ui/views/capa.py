@@ -5,9 +5,10 @@ human decisions (accept or dismiss a candidate, approve a corrective action, clo
 refreshes its SQLite working index (not evidence), exactly as the CLI's read commands do.
 
 Decisions: aqt-capa itself records accept, dismiss and close without a signature, under the
-identity it is given. The UI gives it the signer chosen in the panel and first unlocks that
-signer's key with the passphrase (a failed unlock is recorded by aqt-signoff as
-``signoff.auth.failed``), so the record names the person who proved who they are. A corrective
+identity it is given. The UI gives it the signer chosen in the panel and lets aqt-capa record
+the decision only after the passphrase has unlocked that signer's key (a failed unlock is
+recorded by aqt-signoff as ``signoff.auth.failed``). The record names that signer but carries
+no signature, so the record alone does not prove who decided (a limit of aqt-capa). A corrective
 action is approved as the CLI recommends: an aqt-signoff signature with the meaning
 "approved" over the implementation record (approval state ``signed-verified``).
 """

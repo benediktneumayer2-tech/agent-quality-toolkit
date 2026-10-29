@@ -1,5 +1,10 @@
 """Quarantine view: cases folded by aqt-quarantine, the evidence as inert text, and the two
-human decisions (release, declare threat) through ``aqt_quarantine.decisions.Decider``."""
+human decisions (release, declare threat) through ``aqt_quarantine.decisions.Decider``.
+
+A decision is signed over the content hash recorded when the case was opened. The stored
+original is shown only when it still has that hash (``Decider.case_content``), it is checked
+again right before a decision, and the hash shown is passed to the decision as
+``expected_sha256``, so the person signs over the text they were shown."""
 
 from __future__ import annotations
 
@@ -8,6 +13,8 @@ from typing import Callable
 from . import NotFound, Stale, UsageProblem, require
 
 FULL_LIMIT = 200_000      # characters of content shown at most, even with "full"
+CHANGED = ("{error}. Only content with the hash recorded when the case was opened is shown and decided on, so "
+           "nothing is shown and no decision can be made here.")
 CONTEXT = 300             # characters around each evidence span in the default view
 STATE_ORDER = {"held": 0, "warned": 1, "threat": 2, "released": 3}
 
@@ -108,6 +115,14 @@ class QuarantineView:
         return {"cases": rows, "counts": counts, "sources": trusted, "signers": self.signers(decider),
                 "state_dir": str(self.config.state_dir), "outbox": decider.store.outbox_size()}
 
+    @staticmethod
+    def original(decider, case) -> tuple[str | None, str | None]:
+        """(text, None) when the stored original has the case's recorded hash, else (None, why)."""
+        content = decider.case_content(case.case_id)
+        if content.text is None:
+            return None, CHANGED.format(error=content.error or "the stored original is not available")
+        return content.text, None
+
     def case(self, case_id: str, *, full: bool = False) -> dict:
         from aqt_quarantine.report import summary_lines, visible
         from aqt_quarantine.store import StoreError, normalise_case_id
@@ -120,10 +135,8 @@ class QuarantineView:
         case = cases.get(case_id)
         if case is None:
             raise NotFound(f"no case {case_id}")
-        try:
-            text, text_error = decider.store.load_original(case_id), None
-        except (StoreError, OSError) as error:
-            text, text_error = None, str(error)
+        text, text_error = self.original(decider, case)
+        shown = text is not None              # decisions only over content the person can see
         data = case.data
         evidence = [{"start": e.get("start"), "end": e.get("end"), "label": e.get("label"),
                      "detector": e.get("detector"), "reason": e.get("reason"),
@@ -150,13 +163,15 @@ class QuarantineView:
             "delivered": len(case.delivered), "opened_record": case.opened.get("id"),
             "content": segments(text, data.get("evidence", []), full=full, visible=visible) if text is not None else None,
             "content_error": text_error, "signers": self.signers(decider),
-            "can_release": case.state in ("held", "warned", "threat"),
-            "can_declare": case.state in ("held", "warned", "released"),
+            "content_verified": shown,
+            "can_release": shown and case.state in ("held", "warned", "threat"),
+            "can_declare": shown and case.state in ("held", "warned", "released"),
         }
 
     def decide(self, case_id: str, kind: str, *, reason: str, passphrase: str, shown_sha256: str,
                signer_id: str | None, human_check: Callable, overrule_threat: bool = False) -> dict:
         """Release or declare a threat. Refused as stale when the case content is not the one shown."""
+        from aqt_evidence import HumanCheckError
         from aqt_quarantine.decisions import DecisionError
         from aqt_quarantine.store import StoreError, normalise_case_id
         try:
@@ -168,14 +183,26 @@ class QuarantineView:
         case = cases.get(case_id)
         if case is None:
             raise NotFound(f"no case {case_id}")
+        stale = None
         if not shown_sha256 or case.data.get("content_sha256") != shown_sha256:
-            raise Stale("the case content is not the one shown; nothing was signed. Reload the case.")
+            stale = "the case content is not the one shown; nothing was signed. Reload the case."
+        else:
+            _, changed = self.original(decider, case)
+            stale = f"nothing was signed: {changed}" if changed else None
+        if stale:
+            try:
+                human_check()
+            except HumanCheckError:
+                pass                      # refused first: aqt-quarantine records the refusal below
+            else:
+                raise Stale(stale)
         try:
             if kind == "release":
                 outcome = decider.release(case_id, reason, signer_id=signer_id or None,
-                                          overrule_threat=overrule_threat)
+                                          overrule_threat=overrule_threat, expected_sha256=shown_sha256)
             elif kind == "threat":
-                outcome = decider.declare_threat(case_id, reason, signer_id=signer_id or None)
+                outcome = decider.declare_threat(case_id, reason, signer_id=signer_id or None,
+                                                 expected_sha256=shown_sha256)
             else:
                 raise UsageProblem(f"unknown decision {kind}")
         except DecisionError as error:

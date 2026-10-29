@@ -22,6 +22,11 @@ export const DE = {
   "Trail intact · seq {seq} · {anchor}": "Audit Trail intakt · Seq {seq} · {anchor}", "anchored {ago}": "verankert {ago}",
   "not anchored": "nicht verankert", "Broken from seq {seq}": "Beschädigt ab Seq {seq}",
   "Trail broken from seq {seq}: {reason}": "Audit Trail beschädigt ab Seq {seq}: {reason}",
+  "Trail changed since the last check": "Audit Trail seit der letzten Prüfung verändert",
+  "Trail changed since the last check: {reason}. Verify it again.": "Audit Trail seit der letzten Prüfung verändert: {reason}. Bitte erneut prüfen.",
+  "Changed since the last check": "Seit der letzten Prüfung verändert",
+  "Not decidable here:": "Hier nicht entscheidbar:",
+  "The specification contains hidden characters, shown as <U+XXXX>. Check exactly what will run.": "Die Spezifikation enthält verborgene Zeichen, angezeigt als <U+XXXX>. Genau prüfen, was ausgeführt wird.",
   "Trail: verification found problems": "Audit Trail: Prüfung fand Probleme", "No trail yet": "Noch kein Audit Trail",
   "Trail: verifying…": "Audit Trail: wird geprüft …", "Trail: not verified yet": "Audit Trail: noch nicht geprüft",
   "writer down": "Schreibdienst aus", "{n} spooled": "{n} zwischengespeichert", "Trail: loading": "Audit Trail: wird geladen",
@@ -40,7 +45,7 @@ export const DE = {
   // meanings, decisions and status words
   "released": "freigegeben", "approved": "genehmigt", "rejected": "abgelehnt", "reviewed": "geprüft", "accepted": "angenommen",
   "dismissed": "verworfen", "closed": "abgeschlossen", "authored": "verfasst", "acknowledged": "zur Kenntnis genommen",
-  "approve": "genehmigen", "reject": "ablehnen", "intact": "intakt", "broken": "beschädigt", "problems": "Probleme",
+  "approve": "genehmigen", "reject": "ablehnen", "intact": "intakt", "broken": "beschädigt", "problems": "Probleme", "changed": "verändert",
   "unverified": "nicht geprüft", "missing": "fehlt", "held": "zurückgehalten", "warned": "gewarnt", "threat": "Bedrohung",
   "valid": "gültig", "expired": "abgelaufen", "expiring": "läuft ab", "triggered": "ausgelöst", "prepared": "vorbereitet",
   "claimed": "übernommen", "succeeded": "erfolgreich", "unknown": "unbekannt", "open": "offen", "pending": "ausstehend",
@@ -193,6 +198,7 @@ export const DE = {
 export const NEEDS = {
   trail_broken: ["Audit Trail beschädigt ab Seq {seq}", null],
   trail_problems: ["Die Prüfung des Audit Trails fand Probleme", null],
+  trail_changed: ["Audit Trail seit der letzten Prüfung verändert", null],
   alcoa_fail: ["ALCOA++ {attribute} nicht erfüllt", null],
   refusals: ["{n} abgewiesene Entscheidungsversuche in den letzten 24 h", "Ein Agent oder ein anderer Prozess wollte entscheiden: {tools}"],
   writer_down: ["Der Schreibdienst des Audit Trails läuft nicht", "Starten mit: aqt-trail serve (Socket {socket})"],

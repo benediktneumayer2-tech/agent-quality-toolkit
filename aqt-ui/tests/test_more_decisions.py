@@ -264,8 +264,8 @@ def test_sign_a_review_as_an_independent_reviewer(trail, signer, reviewer, ui_fa
     sheet = run_review(client)
     assert SIGNER in sheet["actors_reviewed"] and REVIEWER not in sheet["actors_reviewed"]
     assert REVIEWER in {s["id"] for s in sheet["signers"]}
-    sign = {"head": sheet["scope"]["head"], "dispositions": {"all": "ok"}, "notes": {},
-            "conclusion": "Reviewed in the UI test"}
+    sign = {"head": sheet["scope"]["head"], "worksheet_sha256": sheet["worksheet_sha256"],
+            "dispositions": {"all": "ok"}, "notes": {}, "conclusion": "Reviewed in the UI test"}
     path = f"/api/trail/review/{sheet['id']}/sign"
     status, result, _ = client.post(path, body(**sign))
     assert status == 403 and result["reason_code"] == "not_independent"
@@ -275,7 +275,8 @@ def test_sign_a_review_as_an_independent_reviewer(trail, signer, reviewer, ui_fa
     assert status == 403 and result["reason_code"] == "auth_failed" and b"wrong-pass-123" not in raw
     sheet = run_review(client)       # the refusals moved the head on; prepare the worksheet again
     status, result, _ = client.post(f"/api/trail/review/{sheet['id']}/sign",
-                                    body(**{**sign, "head": sheet["scope"]["head"]}, signer_id=REVIEWER))
+                                    body(**{**sign, "head": sheet["scope"]["head"],
+                                            "worksheet_sha256": sheet["worksheet_sha256"]}, signer_id=REVIEWER))
     assert status == 200 and result["record_type"] == "trail.review", result
     review = next(r for r in trail_records(trail) if r["id"] == result["record_id"])
     assert review["actor"]["id"] == REVIEWER and review["data"]["signature"]["statement"]["meaning"] == "reviewed"

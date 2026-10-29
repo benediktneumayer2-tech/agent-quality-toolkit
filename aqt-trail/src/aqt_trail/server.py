@@ -2,7 +2,8 @@
 
 Protocol (one JSON request per connection, client closes its write side):
 ``append`` (aqt-spec spec §10.2), ``drain`` (spooled records), ``checkpoint``
-(signed head, optional RFC 3161 anchor or external-head note), ``head``, ``ping``.
+(signed head, optional RFC 3161 anchor from the configured TSA or external-head
+note), ``head``, ``ping``.
 Errors use the spec §10.2 codes ``invalid_record``, ``unauthorized``, ``duplicate_id``,
 ``unavailable`` and ``internal``.
 """
@@ -25,7 +26,7 @@ from . import __version__
 from .anchors import checkpoint, record_external_head
 from .client import locked_spool
 from .config import Config, spool_path
-from .observe import observe, peer_credentials
+from .observe import observe, peer_credentials, peer_pidfd
 from .state import open_writer
 from .writer import Refused, TrailWriter
 
@@ -70,7 +71,12 @@ class _Handler(socketserver.BaseRequestHandler):
     def _dispatch(self) -> dict:
         writer = self.server.writer
         pid, uid, gid = peer_credentials(self.request)
-        observed = observe(pid, uid, gid, via="socket")
+        pidfd = peer_pidfd(self.request)
+        try:
+            observed = observe(pid, uid, gid, via="socket", pidfd=pidfd)
+        finally:
+            if pidfd is not None:
+                os.close(pidfd)
         try:
             raw = self._read()
         except (OSError, ValueError) as error:
@@ -98,9 +104,14 @@ class _Handler(socketserver.BaseRequestHandler):
                 return {"ok": False, "code": refused.code, "message": refused.message}
             return {"ok": True, "record": stored, "created": created}
         if op == "checkpoint":
+            wanted = str(payload.get("tsa_url") or "")
+            if payload.get("anchor") and not self.server.tsa_allowed(wanted):
+                refused = writer.refuse("unauthorized", f"the writer anchors only with its configured TSA "
+                                        f"([anchor] tsa_url), not {wanted[:200]!r}", None, observed,
+                                        attempted_action="checkpoint")
+                return {"ok": False, "code": refused.code, "message": refused.message}
             point, anchor = self.server.checkpoint(anchor=bool(payload.get("anchor")),
-                                                   export=bool(payload.get("export")),
-                                                   tsa_url=str(payload.get("tsa_url") or ""))
+                                                   export=bool(payload.get("export")), tsa_url=wanted)
             return {"ok": True, "checkpoint": point, "anchor": anchor}
         if op == "drain":
             records = payload.get("records")
@@ -151,7 +162,15 @@ class TrailServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
             os.chown(path, -1, grp.getgrnam(group).gr_gid)
         os.chmod(path, mode)
 
+    def tsa_allowed(self, url: str) -> bool:
+        """A client may name only the configured TSA, or ``test:`` (the TEST ONLY authority in the
+        writer's own state directory, which ``verify`` trusts only with ``--test-tsa``). Any other URL,
+        and ``test:<dir>``, comes from the writer's configuration or not at all."""
+        return url in ("", "test:", str(self.anchor.get("tsa_url", "")))
+
     def checkpoint(self, *, anchor: bool = False, export: bool = False, tsa_url: str = ""):
+        if anchor and not self.tsa_allowed(tsa_url):
+            raise ValueError(f"the writer anchors only with its configured TSA, not {tsa_url[:200]!r}")
         url = (tsa_url or self.anchor.get("tsa_url", "")) if anchor else ""
         if anchor and not url:
             raise ValueError("no TSA configured ([anchor] tsa_url or --tsa)")

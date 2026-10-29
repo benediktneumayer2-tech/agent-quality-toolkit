@@ -4,6 +4,28 @@
 
 First version.
 
+Security review fixes (same version, not yet released):
+
+- What you see is what you sign: held content is shown and can be released only while it has the
+  recorded hash, and the hash shown is passed to aqt-quarantine (`expected_sha256`); a prepared
+  action is decidable only while its stored specification hashes to the action hash; the review is
+  signed over the worksheet this server prepared and showed (digest sent back), not the file on disk.
+- The trail status is bound to the bytes that were verified: a replaced, truncated or modified file
+  shows "changed since the last check" (critical in "Needs you") instead of "intact".
+- Login: the browser is started with a private `0600` page that forwards to the link, so the token is
+  in no command line; a fresh link replaces older unused ones; each use is printed in the terminal.
+  The answer to the link is the page itself, carrying a per-session key that every API request must
+  send in `X-AQT-CSRF`, so the cookie (sent by browsers to every port of 127.0.0.1) alone is no
+  session. The page shell is served without a session; download links fetch with the key.
+- The cookie header is parsed by hand: a foreign malformed cookie no longer locks you out.
+- Hidden characters are shown as `<U+XXXX>` in every text of the page (`static/text.js`); a prepared
+  action whose specification contains them is flagged.
+- The peer check also reads the agent markers in the peer's environment and refuses other users'
+  processes; the terminal log names the process (pid, uid, parents) behind every decision request.
+- Request limits: a negative or malformed `Content-Length` is refused and the body is read exactly;
+  20-second socket timeout; at most 32 connections at once; file verification reads only regular
+  files up to 64 MiB, hashed in pieces.
+
 Second slice (same version, not yet released):
 
 - More decisions in the page, each with the passphrase, the hash or version shown, the read-only and

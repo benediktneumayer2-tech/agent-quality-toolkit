@@ -83,3 +83,82 @@ def test_anchor_record_in_trail_verifies(config):
     assert unverified.ok and any("not checked" in w for w in unverified.warnings)
     token = base64.b64decode(read_records(config.trail_path)[-1]["data"]["tsa"]["token_b64"])
     assert tsa.parse_token(token).imprint == bytes.fromhex(point["head"][7:])
+
+
+# -- C-8, AQT-EI-009: every issuer on the TSA's path must be a CA ------------------------------------------
+def _cert(subject_cn, issuer_cn, public, signing_key, *, ca, path_length=None, key_cert_sign=None, eku=None,
+          eku_critical=True):
+    from datetime import UTC, datetime, timedelta
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.x509.oid import NameOID
+    now = datetime.now(UTC) - timedelta(hours=1)
+    builder = (x509.CertificateBuilder()
+               .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, subject_cn)]))
+               .issuer_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, issuer_cn)]))
+               .public_key(public).serial_number(x509.random_serial_number())
+               .not_valid_before(now).not_valid_after(now + timedelta(days=30))
+               .add_extension(x509.BasicConstraints(ca=ca, path_length=path_length), critical=True))
+    if key_cert_sign is not None:
+        builder = builder.add_extension(x509.KeyUsage(True, False, False, False, False, key_cert_sign, key_cert_sign,
+                                                      False, False), critical=True)
+    if eku:
+        builder = builder.add_extension(x509.ExtendedKeyUsage(eku), critical=eku_critical)
+    return builder.sign(signing_key, hashes.SHA256())
+
+
+@pytest.fixture(scope="module")
+def pki():
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import ExtendedKeyUsageOID
+    keys = {name: ec.generate_private_key(ec.SECP256R1()) for name in ("root", "mid", "leaf", "tsa")}
+    stamp = [ExtendedKeyUsageOID.TIME_STAMPING]
+    root = _cert("Root", "Root", keys["root"].public_key(), keys["root"], ca=True, key_cert_sign=True)
+    strict_root = _cert("Strict Root", "Strict Root", keys["root"].public_key(), keys["root"], ca=True, path_length=0,
+                        key_cert_sign=True)
+    return {
+        "keys": keys, "root": root, "strict_root": strict_root,
+        # an ordinary end-entity certificate (for example a TLS server) under the root
+        "leaf": _cert("Some server", "Root", keys["leaf"].public_key(), keys["root"], ca=False,
+                      eku=[ExtendedKeyUsageOID.SERVER_AUTH]),
+        "mid": _cert("Mid CA", "Root", keys["mid"].public_key(), keys["root"], ca=True, key_cert_sign=True),
+        "mid_strict": _cert("Mid CA", "Strict Root", keys["mid"].public_key(), keys["root"], ca=True,
+                            key_cert_sign=True),
+        "mid_no_sign": _cert("Mid CA", "Root", keys["mid"].public_key(), keys["root"], ca=True, key_cert_sign=False),
+        "tsa_under_leaf": _cert("Fake TSA", "Some server", keys["tsa"].public_key(), keys["leaf"], ca=False, eku=stamp),
+        "tsa_under_mid": _cert("TSA", "Mid CA", keys["tsa"].public_key(), keys["mid"], ca=False, eku=stamp),
+    }
+
+
+def test_end_entity_certificate_cannot_issue_a_tsa_certificate(pki):
+    from datetime import UTC, datetime
+    reason = tsa._chain(pki["tsa_under_leaf"], [pki["leaf"]], [pki["root"]], datetime.now(UTC))
+    assert reason and "not a CA" in reason
+
+
+def test_ca_constraints_on_the_path(pki):
+    from datetime import UTC, datetime
+    now = datetime.now(UTC)
+    assert tsa._chain(pki["tsa_under_mid"], [pki["mid"]], [pki["root"]], now) is None          # a proper path
+    assert "keyCertSign" in tsa._chain(pki["tsa_under_mid"], [pki["mid_no_sign"]], [pki["root"]], now)
+    assert "path length" in tsa._chain(pki["tsa_under_mid"], [pki["mid_strict"]], [pki["strict_root"]], now)
+
+
+def test_tsa_certificate_needs_a_sole_critical_timestamping_usage(authority, pki):
+    from cryptography.x509.oid import ExtendedKeyUsageOID
+    loose = _cert("Loose TSA", "AQT TEST TSA ROOT - TEST ONLY", pki["keys"]["tsa"].public_key(), authority.ca_key,
+                  ca=False, eku=[ExtendedKeyUsageOID.TIME_STAMPING, ExtendedKeyUsageOID.SERVER_AUTH],
+                  eku_critical=False)
+    token = authority.token(DIGEST, cert=loose, key=pki["keys"]["tsa"])
+    check = tsa.verify_token(token, DIGEST, ca_certs=[authority.ca_cert])
+    assert not check.ok and any("timeStamping only and critical" in p for p in check.problems)
+
+
+def test_garbage_certificates_in_a_token_are_a_problem_not_a_crash(authority):
+    from cryptography.hazmat.primitives.serialization import Encoding
+    from aqt_trail import der
+    token = authority.token(DIGEST)
+    good = authority.cert.public_bytes(Encoding.DER)
+    broken = token.replace(good, der.seq(der.integer(1)) + b"\x00" * (len(good) - 5))
+    check = tsa.verify_token(broken, DIGEST, ca_certs=[authority.ca_cert])
+    assert not check.ok and check.problems

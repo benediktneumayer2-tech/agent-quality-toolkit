@@ -13,7 +13,8 @@ from pathlib import Path
 
 from aqt_evidence import validate_record
 
-from .review import q_attribution_mismatch
+from .review import anchored_seq, attribution, is_writer_record
+from .text import md
 from .verify import TrailReport
 
 RELATED = {
@@ -44,19 +45,25 @@ def _result(attribute, status, detail):
 
 def alcoa_report(records: list[dict], report: TrailReport, *, skew_ms: int = 5000, unanchored_hours: int = 24,
                  export_check=None, now: datetime | None = None) -> list[dict]:
+    """``records`` may be a selection (``--since``/``--until``); ``report`` is the verification of the whole trail."""
     results = []
-    socket_records = [r for r in records if (r.get("observed") or {}).get("via") == "socket"]
-    spooled = [r for r in records if (r.get("observed") or {}).get("via") == "spool"]
-    mismatches = [f for f in q_attribution_mismatch(records, records, {}) if f["severity"] == "major"]
-    if mismatches:
-        results.append(_result("attributable", "fail", f"{len(mismatches)} record(s) claim a human but came from an "
-                                                      "agent harness"))
-    elif spooled:
-        results.append(_result("attributable", "warn", f"{len(spooled)} record(s) arrived via the spool; their "
-                                                      "sender was not observed"))
+    socket_records = [r for r in records if _observed(r).get("via") == "socket"]
+    spooled = [r for r in records if _observed(r).get("via") == "spool"]
+    states = [attribution(r) for r in records]
+    agent, unconfirmed, legacy = (states.count(state) for state in ("agent", "unconfirmed", "legacy"))
+    note = (f"; {legacy} human-claimed record(s) predate observed.chain_status and rest on the absence of agent "
+            "markers" if legacy else "")
+    if agent:
+        results.append(_result("attributable", "fail", f"{agent} record(s) claim a human but came from an "
+                                                      f"agent harness{note}"))
+    elif unconfirmed or spooled:
+        parts = ([f"{unconfirmed} record(s) claim a human but the sender's process chain was incomplete or "
+                  "unreadable"] if unconfirmed else []) + \
+                ([f"{len(spooled)} record(s) arrived via the spool; their sender was not observed"] if spooled else [])
+        results.append(_result("attributable", "warn", "; ".join(parts) + note))
     else:
         results.append(_result("attributable", "pass", f"every record has an actor; {len(socket_records)} of "
-                                                      f"{len(records)} carry observed peer attribution"))
+                                                      f"{len(records)} carry observed peer attribution{note}"))
 
     invalid = [r for r in records if validate_record(r)]
     results.append(_result("legible", "fail" if invalid else "pass",
@@ -65,10 +72,11 @@ def alcoa_report(records: list[dict], report: TrailReport, *, skew_ms: int = 500
 
     skewed = []
     for record in socket_records:
-        client, service = _time(record["observed"].get("client_time")), _time(record["time"])
+        client, service = _time(_observed(record).get("client_time")), _time(record.get("time"))
         if client and service and abs((service - client).total_seconds()) * 1000 > skew_ms:
             skewed.append(record)
-    imported = [r for r in records if r.get("type") == "trail.import" and "source_time" in (r.get("data") or {})]
+    imported = [r for r in records if r.get("type") == "trail.import" and isinstance(r.get("data"), dict)
+                and "source_time" in r["data"]]
     jumps = [r for r in records if r.get("action") == "clock.jump"]
     status = "warn" if skewed or jumps else "pass"
     results.append(_result("contemporaneous", status,
@@ -76,38 +84,51 @@ def alcoa_report(records: list[dict], report: TrailReport, *, skew_ms: int = 500
                            f"{len(jumps)} clock jump(s); {len(imported)} retrospective import(s) keep their "
                            f"source time in data.source_time"))
 
-    chain_ok = report.first_bad_seq is None and report.count == len(records)
+    # verification problems that are not about detached signatures: checkpoints, heads, anchors, payloads
+    integrity = [p for p in report.problems if p not in report.signature_problems]
+    truncated = [p for p in integrity if "truncated" in p]
+    chain_ok = report.first_bad_seq is None and not integrity
     results.append(_result("original", "pass" if chain_ok else "fail",
-                           f"hash chain and service signatures {'intact' if chain_ok else 'broken: ' + str(report.reason)}"))
+                           "hash chain, service signatures, checkpoints, heads and anchors intact" if chain_ok else
+                           "broken: " + "; ".join(([str(report.reason)] if report.first_bad_seq is not None else [])
+                                                  + integrity[:3])))
 
-    signature_problems = [p for p in report.problems if "detached signature" in p]
-    unknown = [w for w in report.warnings if "detached signature" in w]
-    results.append(_result("accurate", "fail" if signature_problems else ("warn" if unknown else "pass"),
-                           "; ".join(signature_problems or unknown) or
+    unknown = [w for w in report.warnings if "signature" in w and ("registry" in w or "not checked" in w)]
+    results.append(_result("accurate", "fail" if report.signature_problems else ("warn" if unknown else "pass"),
+                           "; ".join(report.signature_problems[:3] or unknown) or
                            f"{report.signatures} detached signature(s) verified; verification re-computes every hash"))
 
     gaps = [r for r in records if r.get("type") == "trail.gap" or r.get("action") == "log.repaired"]
-    results.append(_result("complete", "fail" if not chain_ok else ("warn" if gaps or spooled else "pass"),
-                           f"sequence {'continuous' if chain_ok else 'broken'}; {len(gaps)} gap marker(s), "
-                           f"{len(spooled)} spooled record(s)"))
+    complete_ok = report.first_bad_seq is None and not truncated
+    results.append(_result("complete", "fail" if not complete_ok else ("warn" if gaps or spooled else "pass"),
+                           f"sequence {'continuous' if complete_ok else 'broken or truncated'}; {len(gaps)} gap "
+                           f"marker(s), {len(spooled)} spooled record(s)"))
 
-    keys = {s.get("key") for r in records for s in r.get("sig", [])}
-    backwards = sum(1 for a, b in zip(records, records[1:]) if b["time"] < a["time"])
+    keys = {s.get("key") for r in records for s in (r.get("sig") if isinstance(r.get("sig"), list) else [])
+            if isinstance(s, dict)}
+    backwards = sum(1 for a, b in zip(records, records[1:]) if str(b.get("time")) < str(a.get("time")))
     results.append(_result("consistent", "warn" if backwards or len(keys) > 1 else "pass",
                            f"{len(keys)} service key(s); writer time went backwards {backwards} time(s)"))
 
-    anchors = [r for r in records if r.get("type") == "trail.anchor"]
+    anchors = [r for r in records if anchored_seq(r) is not None]
+    exported = [r for r in records if r.get("type") == "trail.anchor" and r.get("action") == "external-head"
+                and is_writer_record(r)]
+    forged = [r for r in records if r.get("type") == "trail.anchor" and not is_writer_record(r)]
+    ignored = f"; {len(forged)} trail.anchor record(s) not written by the writer were ignored" if forged else ""
     if not anchors:
-        results.append(_result("enduring", "fail", "no anchor: a rewrite of the whole trail would go unnoticed"))
+        results.append(_result("enduring", "warn" if exported else "fail",
+                               (f"no RFC 3161 anchor; {len(exported)} exported head(s) noted (they count only where "
+                                "you keep them: verify --heads)" if exported else
+                                "no anchor: a rewrite of the whole trail would go unnoticed") + ignored))
     else:
-        last = _time(anchors[-1]["time"])
-        newest = _time(records[-1]["time"]) if records else last
+        last = _time(anchors[-1].get("time"))
+        newest = _time(records[-1].get("time")) if records else last
         age = (newest - last) if last and newest else timedelta(0)
         verified = report.anchors_verified
         stale = age > timedelta(hours=unanchored_hours)
-        results.append(_result("enduring", "warn" if stale or not verified else "pass",
+        results.append(_result("enduring", "warn" if stale or not verified or forged else "pass",
                                f"{len(anchors)} anchor(s), {verified} RFC 3161 token(s) verified to a CA; newest "
-                               f"record is {int(age.total_seconds() // 3600)} h after the last anchor"))
+                               f"record is {int(age.total_seconds() // 3600)} h after the last anchor{ignored}"))
 
     if export_check is None:
         results.append(_result("available", "warn", "export not checked"))
@@ -115,15 +136,19 @@ def alcoa_report(records: list[dict], report: TrailReport, *, skew_ms: int = 500
         ok, detail = export_check()
         results.append(_result("available", "pass" if ok else "fail", detail))
 
-    ids = {r["id"] for r in records}
-    unresolved = [link["ref"] for r in records for link in r.get("links", [])
-                  if str(link.get("ref", "")).startswith("rec_") and link["ref"] not in ids]
-    external = [link["ref"] for r in records for link in r.get("links", [])
-                if not str(link.get("ref", "")).startswith("rec_")]
+    ids = {r.get("id") for r in records}
+    links = [link for r in records for link in (r.get("links") if isinstance(r.get("links"), list) else [])
+             if isinstance(link, dict)]
+    unresolved = [link["ref"] for link in links if str(link.get("ref", "")).startswith("rec_") and link["ref"] not in ids]
+    external = [link.get("ref") for link in links if not str(link.get("ref", "")).startswith("rec_")]
     results.append(_result("traceable", "warn" if unresolved else "pass",
                            f"{len(unresolved)} record link(s) point outside this trail; {len(external)} external "
                            "reference(s)"))
     return results
+
+
+def _observed(record) -> dict:
+    return record.get("observed") if isinstance(record.get("observed"), dict) else {}
 
 
 def export_dry_run(config) -> tuple[bool, str]:
@@ -141,6 +166,6 @@ def export_dry_run(config) -> tuple[bool, str]:
 def render(results: list[dict], fmt: str = "text") -> str:
     if fmt == "md":
         lines = ["| Attribute | Catalogue | Status | Detail |", "|---|---|---|---|"]
-        lines += [f"| {r['attribute']} | `{r['id']}` | {r['status']} | {r['detail']} |" for r in results]
+        lines += [f"| {r['attribute']} | `{r['id']}` | {r['status']} | {md(r['detail'])} |" for r in results]
         return "\n".join(lines) + "\n"
     return "\n".join(f"{r['status'].upper():5} {r['id']:24} {r['detail']}" for r in results) + "\n"
