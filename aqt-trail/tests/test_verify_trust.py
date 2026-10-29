@@ -386,3 +386,16 @@ def test_bundle_trust_comes_from_the_caller(worked, keys, env, tmp_path):
     trusted = registry(env, ("human:dora", keys["dora"], "2026-01-01T00:00:00Z", None))
     checked = verify_bundle(bundle, pin_key=pin, signers=trusted)
     assert not checked.ok and any("not in the signer registry" in p for p in checked.problems)
+
+
+# -- A-12: truncation is detected only up to the newest checkpoint kept outside the file ----------------------
+def test_verify_states_what_follows_the_newest_checkpoint(worked):
+    report = verify(worked)
+    assert any("no checkpoints file" in w for w in report.warnings)
+    assert any("no checkpoint matches" in w for w in report.warnings)
+    with opened(worked) as w:
+        anchors.save_checkpoint(w, anchors.current_checkpoint(w))
+    put(worked, event("after the checkpoint"))
+    report = verify(worked)
+    assert report.checkpoint_seq == 1
+    assert any("1 record(s) after the newest checkpoint (seq 1)" in w for w in report.warnings)

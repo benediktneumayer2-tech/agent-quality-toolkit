@@ -17,12 +17,12 @@ refused, 2 usage or runtime error.
 | `checkpoint [--anchor] [--tsa URL]` | sign the head into `checkpoints.jsonl`; with `--anchor` also an RFC 3161 token in a `trail.anchor` record |
 | `head [--export]` | print the head; `--export` prints a signed checkpoint (one JSON line) and notes it as `trail.anchor action=external-head` |
 | `drain` | send spooled records now (through the socket when the writer runs) |
-| `verify [--pin-key PEM] [--key PEM…] [--heads FILE] [--tsa-ca PEM] [--test-tsa] [--bundle DIR] [--trail FILE]` | intact / broken from seq N, plus checkpoint, anchor, head and detached-signature problems |
-| `list [filters]`, `show ID\|SEQ` | search and view; filters `--since --until --actor --type (prefix with *) --action --subject --session` |
-| `report --format md\|html [--out FILE] [filters]` | legible record view |
-| `export --out DIR [--tar]` | bundle with `MANIFEST.json` (SHA-256 per file), keys, signer registry, CA and `VERIFY.md` |
-| `alcoa [--since --until] [--format text\|md\|json]` | ALCOA++ report; exit 1 when an attribute fails |
-| `review run`, `review sign`, `review list` | see [review.md](review.md) |
+| `verify [--pin-key PEM] [--key PEM…] [--heads FILE] [--tsa-ca PEM] [--test-tsa] [--signers FILE] [--bundle DIR] [--trail FILE]` | intact / broken from seq N, plus checkpoint, anchor, head, review and detached-signature problems; warnings say which records no external head or CA-verified anchor covers and how many follow the newest checkpoint. With `--bundle` nothing inside the bundle is trusted: its keys are used only without `--pin-key` (with a warning), its `tsa-ca.pem` and `signers.json` never, its TEST ONLY CA only with `--test-tsa` |
+| `list [filters]`, `show ID\|SEQ` | search and view; filters `--since --until --actor --type (prefix with *) --action --subject --session`; control and invisible characters a client wrote are shown escaped (`\x1b`) |
+| `report --format md\|html [--out FILE] [filters]` | legible record view (client text escaped for Markdown and HTML) |
+| `export --out DIR [--tar]` | bundle with `MANIFEST.json` (SHA-256 per file, not signed), keys, signer registry, CA and `VERIFY.md`; the copies are for convenience, not trust anchors |
+| `alcoa [--since --until] [--format text\|md\|json] [--pin-key --key --heads --tsa-ca --test-tsa --signers]` | ALCOA++ report over the selection, with the verification of the whole trail (same trust options as `verify`); `original` and `complete` fail on chain, checkpoint, head or anchor problems; exit 1 when an attribute fails |
+| `review run [--out DIR]`, `review sign`, `review list` | see [review.md](review.md) |
 
 ## Socket protocol
 
@@ -58,7 +58,7 @@ same content counts as already stored, one with other content is refused (`dupli
 | `trail.gap` | `spool.drained` | `reason`, `count`, `first_time`, `last_time`, `spool_ids`, `source` |
 | `trail.refused` | `refused` | `attempted_action`, `reason_code`, `agent_markers`, `message`, `attempted_sha256`, `attempted_id`, `attempted_type` |
 | `trail.import` | `prompt`, `message`, `tool.call`, `tool.result`, `model.change`, `permission.mode`, `compaction`, `session.start`, `session.end`, `session.continued`, `turn.start`, `turn.end`, `rollback`, `stop` | `source {format, session, event_id}`, `source_hash`, `source_time`, `tool {name, use_id, input_sha256, input_excerpt, output_sha256, is_error}`, `prompt_sha256`, `prompt_excerpt`, `model`, … |
-| `trail.anchor` | `rfc3161`, `external-head` | `checkpoint`, `imprint`, `tsa {url, token_b64, gen_time, serial, policy, cert_sha256}` |
+| `trail.anchor` | `rfc3161`, `external-head` | `checkpoint`, `imprint`, `tsa {url, token_b64, gen_time, serial, policy, cert_sha256}`; only anchors the writer wrote itself (`observed.origin: writer`) count, others are a `verify` problem |
 | `trail.review` | `review.signed` | see [review.md](review.md) |
 
 `observed` (writer-owned): `pid`, `uid`, `gid`, `process_chain` (nearest first), `processes`
@@ -78,6 +78,7 @@ an existing terminal server on an agent's request looks `complete`. The writer's
 `origin: writer`. Records sent through the `drain` op carry `drained_by`, the observation of the client that
 sent them; the `trail.gap` before them carries it as its own `observed`. The gap's `reason`,
 `first_time` and `last_time` come from the spooled records, so they are the client's account.
+Review and `alcoa` count a record that claims a human as attributed only with `complete` and no agent marker. Older records have no `chain_status`; there `chain_complete: false` marked a chain with a process that had already exited.
 
 ## Importers
 
@@ -113,8 +114,10 @@ unit, [`examples/aqt-trail-system.service`](../examples/aqt-trail-system.service
 ## RFC 3161
 
 `[anchor] tsa_url` names a TSA you trust; only the 32-byte head hash leaves the machine. `tsa_ca` is used by
-`verify`. `test:` uses a built-in authority whose CA lives in `<state>/test-tsa/` and is named TEST ONLY — use it
-for demos and tests, never as evidence of time. Manual check against a real TSA (not part of the tests):
+`verify`; every issuer on the path to it must be a CA certificate (`basicConstraints cA`, `keyCertSign`, path
+length), and the TSA certificate must carry `timeStamping` as its only, critical extended key usage. Use your TSA's
+own CA, not a broad root. `test:` uses a built-in authority whose CA lives in `<state>/test-tsa/` and is named TEST
+ONLY — use it for demos and tests, never as evidence of time. Manual check against a real TSA (not part of the tests):
 
 ```sh
 aqt-trail checkpoint --anchor --tsa https://your-tsa.example/tsr

@@ -6,7 +6,8 @@ record is signed by a service key you gave. In user mode the service key is
 readable by the same user, so a rewrite that re-chains and re-signs passes; only an
 external head (``--heads``, kept out of the agent's reach) or an RFC 3161 anchor
 verified to a CA you trust, made *after* the edit, detects it. ``covered_seq`` and a
-warning say how far those reach.
+warning say how far those reach. Truncation (records dropped from the end) is detected
+only up to the newest checkpoint; ``checkpoint_seq`` and a warning give the records after it.
 
 Detached signatures are bound to the registry (``signers``): the key must belong to
 the signer the statement names, be enrolled before and not revoked at ``signed_at``,
@@ -25,8 +26,8 @@ import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from aqt_evidence import CanonicalError, canonical_json, content_hash, parse_record, record_hash, verify_chain
-from aqt_evidence import verify_checkpoint, verify_statement
+from aqt_evidence import (CanonicalError, checkpoint_problems, content_hash, parse_canonical_line, record_hash,
+                          verify_chain, verify_checkpoint, verify_statement)
 
 from . import tsa
 from .review import in_period, is_writer_record, scope_actors
@@ -53,6 +54,7 @@ class TrailReport:
     signatures: int = 0
     reviews: int = 0
     covered_seq: int | None = None          # highest seq covered by a matching external head or CA-verified anchor
+    checkpoint_seq: int | None = None       # newest matching checkpoint outside the file (truncation shows up to here)
     signature_problems: list[str] = field(default_factory=list)   # the part of ``problems`` about signatures
 
     def summary(self) -> str:
@@ -83,13 +85,14 @@ def load_lines(path: str | os.PathLike) -> tuple[list[dict], tuple[int, str] | N
             if not line.endswith(b"\n"):
                 return records, (number, "incomplete last line")
             try:
-                record = parse_record(line[:-1])
+                record = parse_canonical_line(line)
             except CanonicalError as error:
                 text = str(error)
-                return records, (number, "line is not valid JSON" if text.startswith("not valid JSON")
-                                 else f"line is not AQT JSON ({text})")
-            if canonical_json(record) != line[:-1]:
-                return records, (number, "line is not in canonical form (re-serialised or edited)")
+                if text.startswith("not valid JSON"):
+                    return records, (number, "line is not valid JSON")
+                if "canonical form" in text:
+                    return records, (number, "line is not in canonical form (re-serialised or edited)")
+                return records, (number, f"line is not AQT JSON ({text})")
             records.append(record)
     return records, None
 
@@ -123,17 +126,11 @@ def _load_points(path: str | os.PathLike, label: str, report: TrailReport) -> li
     return items
 
 
-def _point_shape(point) -> bool:
-    sig = point.get("sig") if isinstance(point, dict) else None
-    return (isinstance(point, dict) and type(point.get("seq")) is int and isinstance(point.get("head"), str)
-            and isinstance(point.get("log"), str) and isinstance(sig, dict) and isinstance(sig.get("key"), str)
-            and isinstance(sig.get("value"), str))
-
-
 def _check_point(point, records: list[dict], keys: dict, label: str, report: TrailReport) -> bool:
     """True when ``point`` is signed by a service key, names this log and matches the record at its seq."""
-    if not _point_shape(point):
-        report.problems.append(f"{label}: malformed checkpoint (needs log, seq, head and sig)")
+    shape = checkpoint_problems(point)
+    if shape:
+        report.problems.append(f"{label}: malformed checkpoint ({'; '.join(shape)})")
         return False
     try:
         valid = verify_checkpoint(point, keys)
@@ -148,7 +145,7 @@ def _check_point(point, records: list[dict], keys: dict, label: str, report: Tra
     if report.head_seq is None or point["seq"] > report.head_seq:
         report.problems.append(f"{label} at seq {point['seq']} is beyond the head: the trail was truncated")
         return False
-    if point["seq"] < 0 or record_hash(records[point["seq"]]) != point["head"]:
+    if record_hash(records[point["seq"]]) != point["head"]:
         report.problems.append(f"{label} at seq {point['seq']} does not match the record: the trail was rewritten")
         return False
     return True
@@ -156,6 +153,11 @@ def _check_point(point, records: list[dict], keys: dict, label: str, report: Tra
 
 def _cover(report: TrailReport, seq: int) -> None:
     report.covered_seq = seq if report.covered_seq is None else max(report.covered_seq, seq)
+
+
+def _outside(report: TrailReport, seq: int) -> None:
+    """A checkpoint kept outside the trail file matched: dropping records up to ``seq`` would show."""
+    report.checkpoint_seq = seq if report.checkpoint_seq is None else max(report.checkpoint_seq, seq)
 
 
 def _check_anchor(record: dict, seq: int, data: dict, records: list[dict], keys: dict, tsa_ca,
@@ -323,12 +325,17 @@ def verify_trail(path: str | os.PathLike, *, keys: dict, checkpoints: str | os.P
     if checkpoints and Path(checkpoints).exists():
         for point in _load_points(checkpoints, "checkpoints", report):
             report.checkpoints += 1
-            _check_point(point, records, keys, "checkpoint", report)
+            if _check_point(point, records, keys, "checkpoint", report):
+                _outside(report, point["seq"])
+    elif checkpoints and report.head_seq is not None:
+        report.warnings.append(f"no checkpoints file ({checkpoints}): only external heads and anchors can show "
+                               "that records were dropped from the end")
     if heads:
         for point in _load_points(heads, "heads", report):
             report.heads += 1
             if _check_point(point, records, keys, "external head", report):
                 _cover(report, point["seq"])
+                _outside(report, point["seq"])
     unknown, unbound, unchecked_reviews = 0, 0, 0
     for record in records:
         seq = record["chain"]["seq"]
@@ -365,8 +372,11 @@ def verify_trail(path: str | os.PathLike, *, keys: dict, checkpoints: str | os.P
             elif detail:
                 report.warnings.append(f"seq {seq}: {detail}")
         except (TypeError, AttributeError, KeyError, ValueError, IndexError) as error:
-            report._signature_problem(f"seq {seq}: malformed {record.get('type')} payload "
-                                      f"({type(error).__name__})")
+            text = f"seq {seq}: malformed {record.get('type')} payload ({type(error).__name__})"
+            if record.get("type") == "trail.anchor":
+                report.problems.append(text)
+            else:
+                report._signature_problem(text)
     if unknown:
         report.warnings.append(f"{unknown} detached signature(s) by keys not in the signer registry")
     if unchecked_reviews:
@@ -376,6 +386,11 @@ def verify_trail(path: str | os.PathLike, *, keys: dict, checkpoints: str | os.P
         report.warnings.append(f"{unbound} detached signature(s) verify, but key ownership was not checked "
                                "(no signer registry)")
     if report.head_seq is not None:
+        if report.checkpoint_seq is None:
+            report.warnings.append("no checkpoint matches the trail: records dropped from the end would go unnoticed")
+        elif report.checkpoint_seq < report.head_seq:
+            report.warnings.append(f"{report.head_seq - report.checkpoint_seq} record(s) after the newest checkpoint "
+                                   f"(seq {report.checkpoint_seq}): dropping them would go unnoticed")
         if report.covered_seq is None:
             report.warnings.append("no external head (--heads) or CA-verified RFC 3161 anchor covers this trail: in "
                                    "user mode an agent that reads the service key could rewrite and re-sign it "
