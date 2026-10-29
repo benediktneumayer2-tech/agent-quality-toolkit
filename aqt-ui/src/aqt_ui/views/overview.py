@@ -43,6 +43,10 @@ def build(app) -> dict:
         check = status["check"] or {}
         needs.append(item("critical", "trail", f"Trail broken from seq {check.get('first_bad_seq')}",
                           check.get("reason") or "", code="trail_broken", seq=check.get("first_bad_seq")))
+    elif status["state"] == "changed":
+        needs.append(item("critical", "trail", "Trail changed since the last check",
+                          f"{status['changed']}; the last result no longer applies. Verify the trail again.",
+                          code="trail_changed"))
     elif status["state"] == "problems":
         needs.append(item("critical", "trail", "Trail verification found problems",
                           "; ".join((status["check"] or {}).get("problems", [])[:2]), code="trail_problems"))

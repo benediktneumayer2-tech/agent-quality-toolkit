@@ -1,8 +1,15 @@
-"""The HTTP layer: one-time login, session cookie, CSRF and Origin checks, Host check, strict
-CSP, static files and the JSON API. Standard library only; bound to 127.0.0.1.
+"""The HTTP layer: one-time login, session cookie plus session key, Origin check, Host check,
+strict CSP, static files and the JSON API. Standard library only; bound to 127.0.0.1.
 
-Request logging records method, path without query, status and duration only. Request
-bodies (which carry the passphrase of a decision) are never logged or echoed.
+Browsers send a cookie for 127.0.0.1 to every port of that host, so the cookie alone is not a
+session: every API request must also carry the session's key in the ``X-AQT-CSRF`` header. The
+key reaches the page once, in the answer to the login link, and stays in the tab's
+``sessionStorage`` (which is separated by port). No answer to a cookie-only request contains it.
+
+Request logging records method, path without query, status and duration only, and for each
+decision request the process that sent it. Request bodies (which carry the passphrase of a
+decision) are never logged or echoed. Each connection has a read and write timeout, and the
+number of connections handled at once is limited.
 """
 
 from __future__ import annotations
@@ -17,9 +24,9 @@ import time
 import traceback
 from dataclasses import dataclass, field
 from http import HTTPStatus
-from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Callable
 from urllib.parse import parse_qs, urlsplit
 
 from . import __version__
@@ -36,6 +43,9 @@ CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self';
        "connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'")
 MAX_BODY = 64 * 1024
 BIND = "127.0.0.1"
+KEY_HEADER = "X-AQT-CSRF"     # the session key; required on every API request
+REQUEST_TIMEOUT = 20.0        # seconds for each read or write on a connection
+MAX_CONNECTIONS = 32          # connections handled at once; more are closed at once
 
 
 @dataclass
@@ -56,6 +66,7 @@ class App:
         self.tokens: set[str] = set()
         self.lock = threading.Lock()
         self.port = 0
+        self.on_login: Callable[[], None] | None = None     # called after a login link was used
         self.log = log or (lambda line: print(line, file=sys.stderr, flush=True))
         self.trail = TrailView()
         self.changes = ChangesView(config.projects)
@@ -76,24 +87,35 @@ class App:
     # -- login and sessions --------------------------------------------------------------------------
     @property
     def cookie_name(self) -> str:
-        return f"aqt_ui_{self.port}"     # cookies are not separated by port; the name is
+        return f"aqt_ui_{self.port}"     # names the server; the session key, not the cookie, guards the session
 
     def new_login_link(self) -> str:
+        """A fresh one-time link. Links handed out before it and not used yet stop working."""
         token = secrets.token_urlsafe(32)
         with self.lock:
-            self.tokens.add(token)
+            self.tokens = {token}
         return f"http://{BIND}:{self.port}/login?t={token}"
 
     def redeem(self, token: str) -> str | None:
-        """Exchange a one-time login token for a new session id."""
+        """Exchange a one-time login token for a new session id. Each use is logged, so a
+        session that someone else started with the link shows up in the terminal."""
         with self.lock:
-            match = next((known for known in self.tokens if hmac.compare_digest(known, token)), None)
+            match = next((known for known in self.tokens if hmac.compare_digest(known.encode(), token.encode())),
+                         None)
             if match is None:
                 return None
             self.tokens.discard(match)
             session_id = secrets.token_urlsafe(32)
             self.sessions[session_id] = Session(secrets.token_urlsafe(32))
-            return session_id
+            count = len(self.sessions)
+        self.log(f"aqt-ui: a login link was used; browser session {count} started. If that was not you, "
+                 "stop aqt-ui with Ctrl+C.")
+        if self.on_login:
+            try:
+                self.on_login()
+            except Exception:  # noqa: BLE001 - clean-up after login never breaks the login
+                pass
+        return session_id
 
     def session(self, session_id: str | None) -> Session | None:
         if not session_id:
@@ -106,16 +128,39 @@ class UiServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, app: App, port: int = 0):
+    def __init__(self, app: App, port: int = 0, *, max_connections: int = MAX_CONNECTIONS,
+                 request_timeout: float = REQUEST_TIMEOUT):
         self.app = app
+        self.request_timeout = request_timeout
+        self._slots = threading.BoundedSemaphore(max_connections)
         super().__init__((BIND, port), Handler)
         app.port = self.server_address[1]
+
+    def process_request(self, request, client_address) -> None:
+        if not self._slots.acquire(blocking=False):
+            self.shutdown_request(request)          # too many connections at once: close this one
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._slots.release()
 
 
 class Handler(BaseHTTPRequestHandler):
     server: UiServer
     server_version = "aqt-ui"
     sys_version = ""
+
+    def setup(self) -> None:
+        self.timeout = self.server.request_timeout    # applied to the socket by StreamRequestHandler
+        super().setup()
 
     # -- logging: method, path without query, status, duration; nothing else --------------------------
     def log_request(self, code="-", size="-") -> None:
@@ -184,37 +229,54 @@ class Handler(BaseHTTPRequestHandler):
         port = self.app.port
         return host in (f"{BIND}:{port}", f"localhost:{port}")
 
-    def current_session(self) -> Session | None:
-        raw = self.headers.get("Cookie")
-        if not raw:
-            return None
-        try:
-            cookie = SimpleCookie(raw)
-        except Exception:  # noqa: BLE001 - a malformed cookie is no cookie
-            return None
-        morsel = cookie.get(self.app.cookie_name)
-        return self.app.session(morsel.value if morsel else None)
+    def cookie_values(self) -> list[str]:
+        """Every value sent under this server's cookie name. Parsed by hand: other pages on
+        127.0.0.1 may set cookies that ``http.cookies`` rejects together with all the others."""
+        name = self.app.cookie_name
+        values = []
+        for header in self.headers.get_all("Cookie") or []:
+            for part in header.split(";"):
+                key, sep, value = part.partition("=")
+                if sep and key.strip() == name:
+                    values.append(value.strip().strip('"'))
+        return values
 
-    def state_change_ok(self, session: Session) -> str | None:
-        """None when Origin, CSRF header and content type are right, else the reason."""
+    def current_session(self) -> Session | None:
+        for value in self.cookie_values():
+            session = self.app.session(value)
+            if session is not None:
+                return session
+        return None
+
+    def key_ok(self, session: Session) -> bool:
+        token = self.headers.get(KEY_HEADER, "")
+        return bool(token) and hmac.compare_digest(token.encode(), session.csrf.encode())
+
+    def state_change_ok(self) -> str | None:
+        """None when Origin and content type are right, else the reason."""
         origin = self.headers.get("Origin", "")
         if origin != f"http://{self.headers.get('Host', '')}":
             return "bad or missing Origin"
-        token = self.headers.get("X-AQT-CSRF", "")
-        if not token or not hmac.compare_digest(token, session.csrf):
-            return "bad or missing CSRF token"
         if not self.headers.get("Content-Type", "").startswith("application/json"):
             return "JSON body required"
         return None
 
     def body(self) -> dict:
-        try:
-            length = int(self.headers.get("Content-Length", "0"))
-        except ValueError:
-            raise UsageProblem("bad Content-Length") from None
+        text = str(self.headers.get("Content-Length") or "0").strip()
+        if not re.fullmatch(r"[0-9]{1,9}", text):
+            raise UsageProblem("bad Content-Length")
+        length = int(text)
         if length > MAX_BODY:
             raise UsageProblem("request body too large")
-        raw = self.rfile.read(length) if length else b"{}"
+        raw = b"{}"
+        if length:
+            try:
+                raw = self.rfile.read(length)              # exactly the announced bytes, never "until EOF"
+            except TimeoutError:
+                self.close_connection = True
+                raise UsageProblem("the request body did not arrive in time") from None
+            if len(raw) != length:
+                raise UsageProblem("the request body is shorter than its Content-Length")
         try:
             value = json.loads(raw.decode("utf-8"))
         except (ValueError, UnicodeDecodeError):
@@ -244,27 +306,31 @@ class Handler(BaseHTTPRequestHandler):
             query = {key: values[-1] for key, values in parse_qs(url.query).items()}
             path = url.path
             if method == "GET" and path == "/login":
+                if self.command != "GET":          # a HEAD request would spend the token without the key
+                    self.problem(405, "open the login link with GET")
+                    return
                 self.login(query.get("t", ""))
                 return
             if method == "GET" and path.startswith("/static/"):
                 self.static(path[len("/static/"):])
                 return
-            session = self.current_session()
-            if session is None:
-                if path.startswith("/api/"):
-                    self.problem(401, "not logged in: open the login link printed by aqt-ui in its terminal")
-                else:
-                    self.send_page(401, "Login needed", "Open the login link that aqt-ui printed in its terminal. "
-                                   "Press Enter there to print a fresh link.")
-                return
             if method == "GET" and path in PAGES:
-                self.static("index.html")
+                self.static("index.html")         # the page shell holds no data; the API needs the session
                 return
             if not path.startswith("/api/"):
                 self.problem(404, "not found")
                 return
+            session = self.current_session()
+            if session is None:
+                self.problem(401, "not logged in: open the login link printed by aqt-ui in its terminal "
+                             "(press Enter there for a fresh link)")
+                return
+            if not self.key_ok(session):
+                self.problem(403, "refused: bad or missing CSRF token (the session key of this browser tab). "
+                             "Open a fresh login link: press Enter in the aqt-ui terminal.")
+                return
             if method == "POST":
-                reason = self.state_change_ok(session)
+                reason = self.state_change_ok()
                 if reason:
                     self.problem(403, f"refused: {reason}")
                     return
@@ -287,13 +353,19 @@ class Handler(BaseHTTPRequestHandler):
             self._secret = None
 
     def login(self, token: str) -> None:
+        """A used link answers with the page itself, which carries the session key once in a
+        meta tag; the page moves it to ``sessionStorage`` and its address to ``/``."""
         session_id = self.app.redeem(token) if token else None
-        if session_id is None:
-            self.send_page(403, "Login link not valid", "This login link was already used or does not belong to "
-                           "this server. Press Enter in the aqt-ui terminal to print a fresh link.")
+        session = self.app.session(session_id)
+        if session is None:
+            self.send_page(403, "Login link not valid", "This login link was already used, was replaced by a "
+                           "fresher one or does not belong to this server. Press Enter in the aqt-ui terminal to "
+                           "print a fresh link.")
             return
         cookie = f"{self.app.cookie_name}={session_id}; HttpOnly; SameSite=Strict; Path=/"
-        self.send_bytes(303, b"", "text/plain; charset=utf-8", {"Set-Cookie": cookie, "Location": "/"})
+        page = (STATIC / "index.html").read_text(encoding="utf-8")
+        page = page.replace("<head>\n", f'<head>\n<meta name="aqt-csrf" content="{session.csrf}">\n', 1)
+        self.send_bytes(200, page.encode("utf-8"), STATIC_TYPES[".html"], {"Set-Cookie": cookie})
 
     def static(self, name: str) -> None:
         if not re.fullmatch(r"[a-z0-9_-]+\.(js|css|svg|html)", name):
@@ -311,7 +383,7 @@ class Handler(BaseHTTPRequestHandler):
         parts = [part for part in path.split("/")[2:] if part]
         route = (method, *parts)
         if route == ("GET", "session"):
-            self.send_json(200, {"csrf": session.csrf, "mode": app.mode.as_dict(), "version": __version__,
+            self.send_json(200, {"mode": app.mode.as_dict(), "version": __version__,
                                  "installed": {name: installed(name) for name in
                                                ("aqt_quarantine", "aqt_signoff", "aqt_change", "aqt_capa",
                                                 "aqt_validate")},
@@ -339,7 +411,8 @@ class Handler(BaseHTTPRequestHandler):
                                  "signers": signer_list()})
         elif len(route) == 5 and route[:3] == ("POST", "trail", "review") and route[4] == "sign":
             self.decide(lambda body, check: app.trail.review_sign(
-                route[3], shown_head=str(body.get("head") or ""), dispositions=body.get("dispositions") or {},
+                route[3], shown_head=str(body.get("head") or ""),
+                shown_sha256=str(body.get("worksheet_sha256") or ""), dispositions=body.get("dispositions") or {},
                 notes=body.get("notes") or {}, reason=str(body.get("reason") or ""),
                 conclusion=str(body.get("conclusion") or ""), passphrase=self._secret or "",
                 signer_id=str(body.get("signer_id") or ""), human_check=check))
@@ -432,8 +505,18 @@ class Handler(BaseHTTPRequestHandler):
             self.problem(403, "refused: this aqt-ui server was started with --read-only")
             return
         check = self.app.guard.human_check(self.client_address, self.server.server_address)
-        result = call(body, check)
-        self.send_json(200 if result.get("ok") else 403, result)
+        peer = getattr(check, "peer", None)
+        outcome = "failed"
+        try:
+            result = call(body, check)
+            outcome = ("recorded " if result.get("ok") else "refused ") + str(result.get("record_id") or "-")
+            self.send_json(200 if result.get("ok") else 403, result)
+        except ViewProblem as error:
+            outcome = f"not signed ({error.status})"
+            raise
+        finally:
+            who = peer.describe() if peer is not None else "an unidentified process"
+            self.app.log(f"aqt-ui decision {urlsplit(self.path).path} from {who}: {outcome}")
 
 
 def signer_list() -> list[dict]:

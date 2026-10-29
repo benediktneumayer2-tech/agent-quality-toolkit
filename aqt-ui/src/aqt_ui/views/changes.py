@@ -1,5 +1,9 @@
 """Changes view: release gates of the configured projects (aqt-change) and prepared actions
-(aqt-signoff), with approval of one prepared action bound to the hash shown."""
+(aqt-signoff), with approval of one prepared action bound to the hash shown.
+
+The specification of an action is shown, and can be approved or rejected, only when its
+canonical hash (``aqt_evidence.content_hash``, as ``aqt-signoff prepare`` computes it) equals
+the stored action hash: the hash that is signed is then the hash of the text on screen."""
 
 from __future__ import annotations
 
@@ -131,19 +135,31 @@ class ChangesView:
         from aqt_signoff import SignoffError
         so = open_signoff()
         try:
-            return so.actions.show(action_id)
+            view = so.actions.show(action_id)
         except SignoffError as error:
             raise NotFound(str(error)) from error
+        problem = spec_problem(view)
+        return {**view, "spec_ok": problem is None, "spec_error": problem}
 
     @staticmethod
     def decide_action(action_id: str, kind: str, *, expected_hash: str, reason: str, passphrase: str,
                       signer_id: str | None, human_check: Callable) -> dict:
-        """Approve or reject the exact action version shown (aqt-signoff checks the hash)."""
+        """Approve or reject the exact action version shown: after the guard, the hash shown must be
+        the stored hash and the hash of the stored specification (aqt-signoff checks it again)."""
         so = open_signoff(passphrase=passphrase, human_check=human_check)
         call = {"approve": so.actions.approve, "reject": so.actions.reject}.get(kind)
         if call is None:
             raise UsageProblem(f"unknown decision {kind}")
-        view, refusal = signoff_call(so, lambda: call(action_id, expected_hash, reason, signer_id=signer_id or None))
+
+        def decide():
+            signer = so.signer_entry(signer_id or None)
+            so.require_human(kind, so.signer_actor(signer))           # the guard first; refusals are recorded
+            current = so.actions.show(action_id)
+            problem = spec_problem(current)
+            if problem or current["action_sha256"] != expected_hash:
+                raise Stale(f"nothing was signed: {problem or 'the action is not the version shown. Reload it.'}")
+            return call(action_id, expected_hash, reason, signer_id=signer.id)
+        view, refusal = signoff_call(so, decide)
         if refusal:
             return refusal
         row = so.actions.get(action_id)
@@ -191,6 +207,21 @@ class ChangesView:
             self._cache.pop(str(project), None)                       # the gate changes with the approval
         return {"ok": True, "message": f"plan {plan_id} approved", "record_id": stored.get("id"),
                 "record_type": stored.get("type"), "time": stored.get("time")}
+
+
+def spec_problem(view: dict) -> str | None:
+    """None when the stored specification has the stored action hash, else why not."""
+    from aqt_evidence import content_hash
+    spec = view.get("spec")
+    try:
+        computed = content_hash(spec)
+    except Exception:  # noqa: BLE001 - a specification that cannot be hashed cannot be approved
+        computed = None
+    if (computed != view.get("action_sha256") or not isinstance(spec, dict) or spec.get("action_id") != view.get("id")
+            or spec.get("version") != view.get("version")):
+        return ("the stored specification does not match its action hash; it may have been changed after it was "
+                "prepared. It cannot be approved or rejected here.")
+    return None
 
 
 def signoff_call(so, call: Callable) -> tuple:

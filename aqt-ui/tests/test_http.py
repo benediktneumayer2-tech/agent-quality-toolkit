@@ -1,4 +1,4 @@
-"""HTTP layer: login, session cookie, Host check, CSRF and Origin, headers, logging."""
+"""HTTP layer: login, session cookie and key, Host check, CSRF and Origin, headers, logging."""
 
 from aqt_ui.server import CSP
 
@@ -6,9 +6,9 @@ from aqt_ui.server import CSP
 def test_no_cookie_is_refused(trail, ui_factory):
     client = ui_factory()
     status, data, _ = client.get("/api/overview")
-    assert status == 401 and data["ok"] is False
-    status, body, response = client.get("/")
-    assert status == 401 and b"login link" in body.lower()
+    assert status == 401 and data["ok"] is False and "login link" in data["message"]
+    status, body, response = client.get("/")            # the page shell, without any data
+    assert status == 200 and b'<script type="module" src="/static/app.js">' in body and b"aqt-csrf" not in body
     assert response.getheader("Content-Security-Policy") == CSP
 
 
@@ -16,8 +16,9 @@ def test_login_link_works_once_and_sets_a_strict_cookie(trail, ui_factory):
     client = ui_factory()
     link = client.app.new_login_link()
     path = link.split(str(client.port), 1)[1]
-    response, _ = client.request("GET", path)
-    assert response.status == 303 and response.getheader("Location") == "/"
+    response, body = client.request("GET", path)
+    assert response.status == 200 and b'<meta name="aqt-csrf" content="' in body
+    assert response.getheader("Content-Security-Policy") == CSP and response.getheader("Cache-Control") == "no-store"
     cookie = response.getheader("Set-Cookie")
     assert "HttpOnly" in cookie and "SameSite=Strict" in cookie and "Path=/" in cookie
     assert "Expires" not in cookie and "Max-Age" not in cookie

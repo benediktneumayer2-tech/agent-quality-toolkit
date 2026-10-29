@@ -1,6 +1,7 @@
 import http.client
 import json
 import os
+import re
 import shutil
 import tempfile
 import threading
@@ -99,7 +100,7 @@ def held_case(trail, signer):
 
 
 class Client:
-    """http.client wrapper that controls Host, Origin, Cookie and CSRF headers."""
+    """http.client wrapper that controls Host, Origin, Cookie and session key (X-AQT-CSRF) headers."""
 
     def __init__(self, server, app):
         self.server, self.app = server, app
@@ -107,11 +108,13 @@ class Client:
         self.cookie = None
         self.csrf = None
 
-    def request(self, method, path, body=None, headers=None, host=None):
+    def request(self, method, path, body=None, headers=None, host=None, key=True):
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=30)
         all_headers = {"Host": host or f"127.0.0.1:{self.port}"}
         if self.cookie:
             all_headers["Cookie"] = self.cookie
+        if key and self.csrf:
+            all_headers["X-AQT-CSRF"] = self.csrf
         all_headers.update(headers or {})
         payload = json.dumps(body).encode() if isinstance(body, dict) else body
         connection.request(method, path, body=payload, headers=all_headers)
@@ -126,26 +129,27 @@ class Client:
             "application/json") else raw), response
 
     def login(self):
+        """Redeem a fresh link: the answer is the page with the session key in a meta tag."""
         link = self.app.new_login_link()
         path = link.split(str(self.port), 1)[1]
-        response, _ = self.request("GET", path)
-        assert response.status == 303, response.status
+        response, raw = self.request("GET", path)
+        assert response.status == 200, response.status
         cookie = SimpleCookie(response.getheader("Set-Cookie"))
         name = self.app.cookie_name
         self.cookie = f"{name}={cookie[name].value}"
+        found = re.search(rb'<meta name="aqt-csrf" content="([A-Za-z0-9_-]+)">', raw)
+        assert found, "the login page carries the session key"
+        self.csrf = found.group(1).decode()
         status, data, _ = self.get("/api/session")
         assert status == 200
-        self.csrf = data["csrf"]
         return response
 
     def post(self, path, body=None, *, csrf=True, origin=True, headers=None):
         all_headers = {"Content-Type": "application/json"}
-        if csrf:
-            all_headers["X-AQT-CSRF"] = self.csrf
         if origin:
             all_headers["Origin"] = f"http://127.0.0.1:{self.port}"
         all_headers.update(headers or {})
-        response, raw = self.request("POST", path, body=body or {}, headers=all_headers)
+        response, raw = self.request("POST", path, body=body or {}, headers=all_headers, key=csrf)
         return response.status, json.loads(raw) if raw else None, raw
 
 
