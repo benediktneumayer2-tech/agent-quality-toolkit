@@ -12,10 +12,12 @@ The value is an Ed25519 signature over ``canonical_json(statement)``. Statement 
      "signed_at": "<RFC 3339 UTC>", "tz": "<IANA zone>", "nonce": "<16 hex>",
      "subject": {"kind": "file|record|action|hash|key", "ref": "...", "sha256": "sha256:..."}}
 
-Optional: ``expires_at`` (approvals), ``outcome`` (resolutions). Because name, role,
-meaning, time and reason are inside the signed bytes, the manifestation cannot be
-changed without breaking the signature; because the subject hash is inside, the
-signature cannot be moved to other content.
+Optional: ``expires_at`` (approvals), ``outcome`` (resolutions), ``withdraws`` (a
+withdrawal: the ``statement_digest`` of the withdrawn statement), ``enrolled_at`` (an
+enrolment). Because name, role, meaning, time and reason are inside the signed bytes, the
+manifestation cannot be changed without breaking the signature; because the subject hash is
+inside, the signature cannot be moved to other content. A statement is identified by its
+digest, not by the record that carries it: a copy in another record counts once.
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ from __future__ import annotations
 import secrets
 from dataclasses import asdict, dataclass, field
 
-from aqt_evidence import MEANINGS, Signer, sign_statement, verify_statement
+from aqt_evidence import MEANINGS, Signer, content_hash, sign_statement, verify_statement
 
 from .registry import Registry, SignerEntry, parse_time
 
@@ -44,6 +46,14 @@ def build_statement(*, record_type: str, signer: SignerEntry, key: str, meaning:
     return statement
 
 
+def statement_digest(statement) -> str | None:
+    """Identity of a signed statement: ``content_hash`` of the statement (None if not canonical)."""
+    try:
+        return content_hash(statement) if isinstance(statement, dict) else None
+    except ValueError:
+        return None
+
+
 def sign(statement: dict, key: Signer) -> dict:
     """The ``data.signature`` block (``aqt_evidence.sign_statement``)."""
     return sign_statement(statement, key)
@@ -51,7 +61,9 @@ def sign(statement: dict, key: Signer) -> dict:
 
 @dataclass
 class SignatureStatus:
-    """One signature and what it is worth now."""
+    """One signature and what it is worth now. ``role`` is the signed (displayed) role;
+    ``authorized_role`` is the registry role, set only when it equals the signed role and the
+    key is backed by its enrolment record. Role policies use ``authorized_role``."""
     record_id: str | None
     record_type: str | None
     status: str
@@ -66,6 +78,8 @@ class SignatureStatus:
     key: str | None = None
     subject: dict = field(default_factory=dict)
     expires_at: str | None = None
+    statement_sha256: str | None = None
+    authorized_role: str | None = None
 
     @property
     def valid(self) -> bool:
@@ -84,7 +98,11 @@ def _is_hash(value) -> bool:
 
 
 def check_block(block, registry: Registry, *, record: dict | None = None) -> SignatureStatus:
-    """Verify a ``data.signature`` block against the pinned registry (no content check)."""
+    """Verify a ``data.signature`` block against the pinned registry (no content check).
+
+    With a reconciled registry (``Registry.reconcile``, done by ``Signoff``) a key counts only
+    when its enrolment record backs it, and the enrolment and revocation times come from the
+    evidence; with an unreconciled registry its own times are used."""
     rid = record.get("id") if isinstance(record, dict) else None
     rtype = record.get("type") if isinstance(record, dict) else None
     status = SignatureStatus(rid, rtype, "valid")
@@ -98,6 +116,7 @@ def check_block(block, registry: Registry, *, record: dict | None = None) -> Sig
     status.meaning, status.reason, status.signed_at, status.tz = (st.get("meaning"), st.get("reason"),
                                                                  st.get("signed_at"), st.get("tz"))
     status.key, status.subject, status.expires_at = block.get("key"), subject, st.get("expires_at")
+    status.statement_sha256 = statement_digest(st)
     problems = []
     if st.get("aqt_signature") != STATEMENT_VERSION:
         problems.append("unsupported statement version")
@@ -135,12 +154,22 @@ def check_block(block, registry: Registry, *, record: dict | None = None) -> Sig
     if not verify_statement(block, {key.key_id: key.public_key()}):
         status.worsen("invalid", "signature does not verify (statement altered or wrong key)")
         return status
+    enrolled_at, revoked_at = key.enrolled_at, key.revoked_at
+    evidence = registry.key_evidence(key.key_id, entry.id) if registry.reconciled else None
+    if registry.reconciled:
+        if evidence is None or not evidence.counts:
+            why = "; ".join(evidence.problems) if evidence else "no enrolment evidence"
+            status.worsen("unknown-signer", f"registry key not backed by its enrolment record: {why}")
+            return status
+        enrolled_at, revoked_at = evidence.enrolled_at, evidence.revoked_at
     if (entry.name, entry.role) != (signer.get("name"), signer.get("role")):
-        status.detail = "registry name or role changed since signing; the signed values are shown"
-    if signed_at < parse_time(key.enrolled_at):
+        status.detail = "registry name or role differs from the signed values; the signed values are shown"
+    if entry.role == signer.get("role"):
+        status.authorized_role = entry.role
+    if signed_at < parse_time(enrolled_at):
         status.worsen("unknown-signer", "signed before the key was enrolled")
-    elif key.revoked_at and signed_at >= parse_time(key.revoked_at):
-        status.worsen("revoked", f"key revoked at {key.revoked_at}")
+    elif revoked_at and signed_at >= parse_time(revoked_at):
+        status.worsen("revoked", f"key revoked at {revoked_at}")
     return status
 
 

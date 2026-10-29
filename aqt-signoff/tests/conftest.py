@@ -28,6 +28,7 @@ def isolated(tmp_path, monkeypatch):
                  "AQT_SIGNOFF_CONFIG", "AQT_ACTOR", "AQT_TRAIL_STATE"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("aqt_evidence.crypto.SCRYPT_N", 2**10)   # fast keys; files record their cost
     return tmp_path
 
 

@@ -1,6 +1,13 @@
 """Approved actions: prepare -> approve (exact hash, signed) -> claim (atomic) -> outcome.
 
 An unknown outcome is final until a human resolves it; nothing is retried here.
+
+The SQLite index is not the authority. Before an approval counts and before anything runs,
+the stored action body is hashed again and must equal the hash the approval signed; the
+executed argv and the payload check come from that verified body. An approval is only a
+``signoff.action.approved`` record whose signed subject is this action. A version runs at
+most once: a ``signoff.action.claimed`` record in the evidence refuses a second claim even
+when the index was rolled back.
 """
 
 from __future__ import annotations
@@ -53,8 +60,10 @@ class Claim:
     """Returned by ``claim``. Report exactly one outcome; leaving the ``with`` block without one,
     or with an exception, records ``unknown``."""
 
-    def __init__(self, actions: "Actions", action_id: str, claim_id: str, record: dict):
+    def __init__(self, actions: "Actions", action_id: str, claim_id: str, record: dict, *,
+                 body: dict | None = None, payload: bytes | None = None):
         self.actions, self.action_id, self.claim_id, self.record = actions, action_id, claim_id, record
+        self.body, self.payload = body, payload    # the verified action body and the checked payload
         self.outcome: dict | None = None
 
     def _report(self, outcome: str, basis: str, evidence: dict | None) -> dict:
@@ -94,19 +103,58 @@ class Actions:
             raise NotFound(f"no action {action_id}")
         return row
 
+    @staticmethod
+    def verified_body(row: dict) -> dict | None:
+        """The stored action body when it still hashes to the row's action hash, else None."""
+        body = row.get("spec")
+        try:
+            ok = (isinstance(body, dict) and content_hash(body) == row["action_sha256"]
+                  and body.get("action_id") == row["id"] and body.get("version") == row["version"])
+        except ValueError:
+            ok = False
+        return body if ok else None
+
+    @staticmethod
+    def authors(body: dict, row: dict) -> set[str]:
+        """Who prepared (or revised) this version: from the hashed body; the index column only for
+        actions prepared before the body carried it."""
+        if "preparer" in body:
+            return {i for i in (body.get("preparer"), body.get("revised_by")) if isinstance(i, str)}
+        return {row["preparer"].get("id")} - {None}
+
+    def _evidence_claim(self, action_sha256: str) -> dict | None:
+        for record in self.so.records():
+            data = record.get("data") if isinstance(record.get("data"), dict) else {}
+            if record.get("type") == "signoff.action.claimed" and data.get("action_sha256") == action_sha256:
+                return record
+        return None
+
     def valid_approvals(self, row: dict) -> tuple[list[SignatureStatus], list[SignatureStatus]]:
         """(counted approvals, approvals that are valid but expired)."""
         policy, now = self.so.settings.action_policy, self.so.clock()
-        counted, expired, seen = [], [], set()
+        counted, expired, seen, statements = [], [], set(), set()
+        body = self.verified_body(row)
+        if body is None:
+            return [], []
+        records = self.so.records()
+        registry = self.so.trust(records)
+        withdrawn = self.so._withdrawals(records, registry)
+        authors = self.authors(body, row)
         for record in row["approvals"]:
-            status = check_block(record.get("data", {}).get("signature"), self.so.registry, record=record)
+            if not isinstance(record, dict) or record.get("type") != "signoff.action.approved":
+                continue   # only an action approval authorises execution (not a file or record signature)
+            status = check_block((record.get("data") or {}).get("signature"), registry, record=record)
             subject = status.subject
-            if (not status.valid or subject.get("ref") != row["id"] or subject.get("sha256") != row["action_sha256"]
-                    or status.meaning != "approved"):
+            if (not status.valid or subject.get("kind") != "action" or subject.get("ref") != row["id"]
+                    or subject.get("sha256") != row["action_sha256"] or status.meaning != "approved"):
                 continue
-            if policy.distinct_from_author and status.signer_id == row["preparer"].get("id"):
+            if status.statement_sha256 in statements or any(
+                    w.signer_id == status.signer_id for w in withdrawn.get(status.statement_sha256, [])):
                 continue
-            if policy.roles and status.role not in policy.roles:
+            statements.add(status.statement_sha256)
+            if policy.distinct_from_author and status.signer_id in authors:
+                continue
+            if policy.roles and status.authorized_role not in policy.roles:
                 continue
             if status.expires_at and parse_time(status.expires_at) <= now:
                 expired.append(status)
@@ -120,13 +168,15 @@ class Actions:
         status, detail = row["status"], ""
         counted, expired = self.valid_approvals(row) if row["status"] in ("prepared", "approved") else ([], [])
         needed = self.so.settings.action_policy.min_signatures
-        if status == "approved" and len(counted) < needed:
+        if self.verified_body(row) is None and status in ("prepared", "approved"):
+            status, detail = "prepared", "the stored action no longer matches its hash; it cannot be approved or run"
+        elif status == "approved" and len(counted) < needed:
             status, detail = ("expired", "approval expired") if expired else ("prepared", "approval no longer valid")
         elif status == "prepared" and row["approvals"]:
             detail = f"{len(counted)} of {needed} approval(s)"
         elif status == "claimed":
             age_ms = int((self.so.clock() - parse_time(row["claimed_at"])).total_seconds() * 1000)
-            if age_ms > self.so.settings.claim_grace_ms:
+            if age_ms > self.so.settings.claim_grace:
                 status, detail = "unknown", "claimed, no outcome reported"
             else:
                 detail = "running or interrupted; within the grace period"
@@ -174,7 +224,11 @@ class Actions:
             raise Conflict(f"{revise} is {existing['status']}; it cannot be revised", code="not_revisable")
         action_id = existing["id"] if existing else action_id_for(request_key)
         version = existing["version"] + 1 if existing else 1
-        body = {"action_id": action_id, "version": version, **core}
+        body = {"action_id": action_id, "version": version, **core, "preparer": who.get("id")}
+        if revise:   # the first preparer stays an author; the reviser becomes one
+            previous = self.verified_body(existing) or {}
+            body["preparer"] = previous.get("preparer") or existing["preparer"].get("id")
+            body["revised_by"] = who.get("id")
         action_sha256 = content_hash(body)
         request_key_sha256 = existing["request_key_sha256"] if existing else content_hash(["key", request_key])
         data = {"action": body, "action_sha256": action_sha256, "request_key_sha256": request_key_sha256}
@@ -202,12 +256,16 @@ class Actions:
         if expected_hash != row["action_sha256"]:
             raise Conflict("the hash does not match the current action; run 'show' and review it again",
                            code="hash_mismatch")
+        body = self.verified_body(row)
+        if body is None:
+            raise Conflict("the stored action no longer matches its hash (the index was altered); prepare it again",
+                           code="action_altered")
         status = self.view(row)["status"]
         if status not in ("prepared", "approved", "expired"):
             raise Conflict(f"{row['id']} is {status}; no decision possible", code="not_open")
         policy = self.so.settings.action_policy
         subject = make_subject("action", row["id"], sha256=row["action_sha256"])
-        if policy.distinct_from_author and signer.id == row["preparer"].get("id"):
+        if policy.distinct_from_author and signer.id in self.authors(body, row):
             raise self.so.refuse(attempted, who, "self_approval",
                                  f"{signer.id} prepared this action and may not decide on it", subject=subject)
         if policy.roles and signer.role not in policy.roles:
@@ -283,18 +341,31 @@ class Actions:
         subject = make_subject("action", action_id, sha256=row["action_sha256"])
         if expected_hash != row["action_sha256"]:
             raise Conflict("the hash does not match the approved action", code="hash_mismatch")
+        body = self.verified_body(row)
+        if body is None:
+            raise self.so.refuse("claim", who, "action_altered",
+                                 f"{action_id}: the stored action does not match its approved hash; it is not run",
+                                 subject=subject)
         view = self.view(row)
         if row["status"] in ("claimed", "succeeded", "failed", "unknown"):
             raise AlreadyClaimed(f"{action_id} was already claimed ({view['status']}); it is never run twice",
                                  details={"claim_id": row["claim_id"], "status": view["status"]})
+        earlier = self._evidence_claim(row["action_sha256"])
+        if earlier is not None:
+            raise AlreadyClaimed(f"{action_id}: this version was already claimed (record {earlier.get('id')}); "
+                                 "it is never run twice", details={"claim_id": earlier["data"].get("claim_id"),
+                                                                   "status": "claimed", "record": earlier.get("id")})
         counted, expired = self.valid_approvals(row)
         if len(counted) < self.so.settings.action_policy.min_signatures:
             why = "approval expired" if expired else "no valid approval for this exact action"
             raise self.so.refuse("claim", who, "not_approved", f"{action_id}: {why}", subject=subject)
-        spec = row["spec"]
         payload_checked = False
+        if body.get("payload_sha256") and payload is None:
+            raise self.so.refuse("claim", who, "payload_required",
+                                 "this action binds a payload by hash; present the payload to claim it",
+                                 subject=subject)
         if payload is not None:
-            if spec.get("payload_sha256") != bytes_hash(payload):
+            if body.get("payload_sha256") != bytes_hash(payload):
                 raise self.so.refuse("claim", who, "payload_mismatch",
                                      "the presented payload differs from the approved payload hash", subject=subject)
             payload_checked = True
@@ -320,7 +391,7 @@ class Actions:
                            (action_id, claim_id))
             raise
         self.so.store.db.execute("UPDATE actions SET claim_record=? WHERE id=?", (stored["id"], action_id))
-        return Claim(self, action_id, claim_id, stored)
+        return Claim(self, action_id, claim_id, stored, body=body, payload=payload if payload_checked else None)
 
     def report_outcome(self, action_id: str, claim_id: str, outcome: str, *, basis: str = "executor-report",
                        extra: dict | None = None, who: dict | None = None) -> dict:
@@ -353,18 +424,23 @@ class Actions:
             return {**record, "_delivered": False, "_error": str(error)}
 
     def run(self, action_id: str, *, timeout_ms: int | None = None, payload: bytes | None = None) -> dict:
-        """Claim a command action, run its approved argv once (no shell) and record the outcome."""
+        """Claim a command action, run its approved argv once (no shell) and record the outcome.
+        A payload bound by hash must be presented; the command then reads it on stdin."""
         row = self.get(action_id)
-        if row["spec"]["kind"] != "command":
+        if (self.verified_body(row) or row["spec"]).get("kind") != "command":
             raise UsageError("only command actions can be run by aqt-signoff; claim others and report the outcome")
+        timeout_ms = timeout_ms or self.so.settings.run_timeout_ms
+        if timeout_ms > self.so.settings.claim_grace:
+            raise UsageError(f"the timeout ({timeout_ms} ms) is longer than the claim grace period "
+                             f"({self.so.settings.claim_grace} ms); raise claim_grace_ms first")
         claim = self.claim(action_id, row["action_sha256"], payload=payload)
-        argv = row["spec"]["spec"]["argv"]
-        timeout = (timeout_ms or self.so.settings.run_timeout_ms) / 1000
+        argv = claim.body["spec"]["argv"]       # the verified body, never the index column read earlier
+        feed = {"input": claim.payload} if claim.payload is not None else {"stdin": subprocess.DEVNULL}
+        timeout = timeout_ms / 1000
         started = time.monotonic()
         extra: dict = {}
         try:
-            done = subprocess.run(argv, capture_output=True, timeout=timeout, stdin=subprocess.DEVNULL,
-                                  env=os.environ.copy())
+            done = subprocess.run(argv, capture_output=True, timeout=timeout, env=os.environ.copy(), **feed)
         except subprocess.TimeoutExpired as error:
             outcome, basis = "unknown", "timeout"
             extra = {"stdout_sha256": bytes_hash(error.stdout or b""), "stderr_sha256": bytes_hash(error.stderr or b""),

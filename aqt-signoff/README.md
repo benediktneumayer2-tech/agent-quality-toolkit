@@ -29,7 +29,7 @@ aqt-signoff run act_…                        # succeeded / failed / unknown; a
 aqt-signoff resolve act_… --as not-applied --reason "Checked the server: nothing was uploaded"   # only for unknown
 ```
 
-Human-only commands (`init`, `sign`, `approve`, `reject`, `resolve`, `invalidate`, `revoke`) read the passphrase from the terminal and refuse to run inside a detected agent session.
+Human-only commands (`init`, `sign`, `approve`, `reject`, `resolve`, `invalidate`, `revoke`, `rekey`) read the passphrase from the terminal and refuse to run inside a detected agent session.
 
 ## How it works
 
@@ -47,10 +47,11 @@ flowchart LR
     Sink --> Verify
 ```
 
-- **Authority is cryptographic.** A claim succeeds only when the approvals it holds verify against the pinned signer registry for the exact action hash. Setting a status in the database does nothing.
-- **Signature status** is computed at verify time, worst first: `invalid` (statement altered, wrong key) › `unknown-signer` (key not in the registry, or signed before enrolment) › `revoked` › `invalidated` (content changed, or withdrawn by the signer) › `valid`. The first time a change is seen, one `signoff.invalidation` record is written. Signatures are never deleted.
-- **Two-person rule:** per meaning, `min_signatures`, allowed `roles`, and `distinct_from_author` (authors are the actor of a signed record, `authored` signatures on the same hash, or `--author`). Actions default to "approver ≠ preparer".
-- **Unknown is final.** A claim with no reported outcome becomes `unknown` after a grace period (default 5 min). Nothing retries it; `resolve` (signed, with a reason) closes it as `succeeded` or `not-applied`.
+- **Authority is cryptographic.** A claim succeeds only when `signoff.action.approved` records verify against the pinned signer registry for the exact action hash. The stored action is hashed again before every claim, and the command that runs is that verified body; setting a status, editing the stored action or offering another kind of signature (e.g. a file approval) does nothing. A version is claimed once: a `signoff.action.claimed` record in the evidence refuses a second claim even after the database was rolled back.
+- **The registry is checked against the evidence.** A key in `signers.json` counts only when its `signoff.key.enrolled` record (from the trail when there is one) matches it: same signer, key and role, signed by that key. Enrolment and revocation times come from those records, and a revocation record applies even if the file says the key is active. `aqt-signoff signers check` lists every key that does not count and why. A key enrolled by another tool (for example `aqt-quarantine init`) gets its enrolment record, marked `adopted`, the first time its owner unlocks it in aqt-signoff.
+- **Signature status** is computed at verify time, worst first: `invalid` (statement altered, wrong key, or a replayed copy of a statement already in another record) › `unknown-signer` (key not in the registry, not backed by its enrolment record, or signed before enrolment) › `revoked` › `invalidated` (content changed, or withdrawn by the signer) › `valid`. A signed statement counts once, whichever record carries it, and a withdrawal applies to every copy. The first time a change is seen, one `signoff.invalidation` record is written. Signatures are never deleted.
+- **Two-person rule:** per meaning, `min_signatures`, allowed `roles` (the registry role, which must also be the role in the signed statement), and `distinct_from_author` (authors are the actor of any evidence record whose content hash is the signed hash, `authored` signatures on the same hash, or `--author`; the same in `sign`, `verify` and `is_approved`). Actions default to "approver ≠ preparer"; the preparer is part of the hashed action.
+- **Unknown is final.** A claim with no reported outcome becomes `unknown` after a grace period (default 11 min: the run timeout plus one minute; never shorter than the run timeout, so a command `run` still executes is never offered for resolution). Nothing retries it; `resolve` (signed, with a reason) closes it as `succeeded` or `not-applied`.
 - **Nothing is silently lost.** Signatures are only reported as made when the record reached the sink. An outcome is stored locally first; if the sink is down it waits for `aqt-signoff sync`.
 
 ## Shared formats (owned by aqt-signoff)
@@ -85,8 +86,8 @@ Published as `aqt-spec/schemas/signature.schema.json` (also used by aqt-trail an
 - `record_type` is the type of the record that carries the statement; aqt-signoff rejects a statement found in a record of another type. `meaning` is one of the AQT meanings and equals the envelope `meaning` when the record has one (`signoff.signature` also repeats it as `data.meaning`).
 - `signed_at` is RFC 3339 UTC with `Z`; `tz` is the signer's IANA zone for display.
 - `subject.sha256` binds the content: files `bytes_hash(content)` with `ref` relative to the project; records `aqt_evidence.record_content_hash(record)` with `ref` = record id (survives storage in aqt-trail); actions the action hash; `hash` for any externally computed digest.
-- Optional fields: `expires_at` (approvals), `outcome` (human resolutions). Tools may add fields; verifiers sign and check the whole statement.
-- Verification: look up `key` in the registry, require that the key's signer equals `statement.signer.id` and `statement.key` equals the block `key`, verify `value` over `canonical_json(statement)`, require `enrolled_at ≤ signed_at`, and treat `signed_at ≥ revoked_at` as revoked.
+- Optional fields: `expires_at` (approvals), `outcome` (human resolutions), `withdraws` (withdrawals: the statement digest, `content_hash(statement)`, of the withdrawn statement), `enrolled_at` (enrolments). Tools may add fields; verifiers sign and check the whole statement.
+- Verification: look up `key` in the registry and require its enrolment record; require that the key's signer equals `statement.signer.id` and `statement.key` equals the block `key`, verify `value` over `canonical_json(statement)`, require `enrolled_at ≤ signed_at`, and treat `signed_at ≥ revoked_at` as revoked. Identify a statement by its digest: count it once, and apply a withdrawal by the same signer to it wherever it appears. A withdrawal without `withdraws` (earlier versions) applies to the record its signed subject names, when that record's `record_content_hash` still matches; the unsigned `data.signature_record` is never used.
 - Every record aqt-signoff writes validates against the aqt-spec envelope, payload and signature schemas; a sink file from an end-to-end run passes `aqt-evidence conform --level 1` (tested).
 - The envelope `sig` is separate (the writer's signature). aqt-signoff signs the envelope only for a JSONL sink and never sends `sig` to aqt-trail.
 
@@ -101,7 +102,7 @@ Published as `aqt-spec/schemas/signers.schema.json`.
                         "enrolled_at": "2026-10-21T13:00:00.000000Z", "revoked_at": null}]}]}
 ```
 
-- Keys: `$XDG_CONFIG_HOME/aqt/keys/<slug>.key` (passphrase-encrypted PKCS#8 PEM, mode 0600) and `<slug>.key.pub`; slug = signer id with `:` → `-` (`human:alice` → `human-alice.key`). A revoked key's files are renamed `<slug>.<key hex>.revoked.key`.
+- Keys: `$XDG_CONFIG_HOME/aqt/keys/<slug>.key` (mode 0600, directory 0700) and `<slug>.key.pub`; slug = signer id with `:` → `-` (`human:alice` → `human-alice.key`). The key file uses the AQT key format of `aqt_evidence.crypto` (scrypt N=2^17, r=8, p=1, then AES-256-GCM); a passphrase-encrypted PKCS#8 key from an earlier version is re-encrypted at its next unlock (or with `rekey`). A revoked key's files are renamed `<slug>.<key hex>.revoked.key`.
 - Signer ids look like `human:<name>` and are never reused. `revoked_at` is the revocation time, or the declared start of a compromise.
 - Overrides: `--registry` / `AQT_SIGNERS`, `--keys-dir` / `AQT_KEYS_DIR`. Passphrases are only read interactively — no flag, no environment variable.
 
@@ -113,6 +114,8 @@ All commands accept `--json`, `--config`, `--registry`, `--keys-dir`, `--state-d
 |---|---|
 | `init --id ID --name NAME --role ROLE [--add-key]` | Create a signer and an encrypted key; records `signoff.key.enrolled` |
 | `signers list` · `signers export [FILE]` | Show or export the registry (for verification elsewhere) |
+| `signers check` | Every registry key against its enrolment record in the evidence (the trail when there is one); exit 1 when a key does not count |
+| `rekey [--signer ID]` | Unlock the key once: re-encrypt a key file from an earlier version with scrypt, record a missing enrolment |
 | `revoke ID --reason R [--compromised-since T] [--lost]` | Revoke the active key; records `signoff.key.revoked` |
 | `sign FILE \| --record ID \| --hash H [--kind K --ref R] --meaning M --reason R [--signer ID] [--author ID]` | Sign; records `signoff.signature` |
 | `verify FILE \| --record ID \| --hash H [--require MEANING] [--no-record]` | Status of every signature, policies; exit 0 only with a valid signature on the current content, no invalid signature, and required policies met |
@@ -122,8 +125,8 @@ All commands accept `--json`, `--config`, `--registry`, `--keys-dir`, `--state-d
 | `prepare --revise ACT …` | New version; earlier approvals no longer apply |
 | `show ACT` · `status ACT` · `list [--status S]` | Inspect actions |
 | `approve ACT --hash H --reason R [--valid-for 24h]` · `reject ACT --hash H --reason R` | Human decision on the exact hash |
-| `claim ACT --hash H [--payload FILE]` · `outcome ACT --claim C --status succeeded\|failed\|unknown` | For effects the caller executes itself (HTTP, other) |
-| `run ACT [--timeout 10m] [--payload FILE]` | Claim and run an approved command once (no shell): exit 0 → succeeded, non-zero → failed, timeout or signal → unknown |
+| `claim ACT --hash H [--payload FILE]` · `outcome ACT --claim C --status succeeded\|failed\|unknown` | For effects the caller executes itself (HTTP, other); an action that binds a payload needs `--payload` with exactly those bytes |
+| `run ACT [--timeout 10m] [--payload FILE]` | Claim and run an approved command once (no shell): exit 0 → succeeded, non-zero → failed, timeout or signal → unknown. A bound payload must be given and is passed on stdin; the timeout may not exceed the claim grace |
 | `resolve ACT --as succeeded\|not-applied --reason R` | Close an unknown outcome after checking |
 | `sync` | Deliver records that could not reach the sink |
 
@@ -143,7 +146,9 @@ with so.actions.claim(act["id"], act["action_sha256"], payload=b"...") as claim:
     claim.succeeded({"http_status": 201})              # no report or an exception -> "unknown"
 
 verify_subject("sha256:…")                             # list[SignatureStatus] (for other AQT tools)
-is_approved("sha256:…", meaning="approved", policy={"min_signatures": 2, "distinct_from_author": True})
+is_approved("sha256:…", meaning="approved", policy={"min_signatures": 2, "distinct_from_author": True},
+            authors=["agent:…"])                       # authors: optional, record actors are added
+check_signers()                                        # {"ok", "keys": [{signer, key_id, counts, problems, notes, …}]}
 ```
 
 ## Configuration
@@ -172,8 +177,9 @@ Still the user's job: verifying identities before enrolment, written accountabil
 
 ## Threat model and limits
 
-- **Agents running as the same user** can read the encrypted key file and the state; they cannot sign without the passphrase. Flags in the database are not authority: claims verify the signed approvals.
-- **The registry is the trust anchor.** An unsandboxed same-user agent could add its own key. Enrolment is recorded (and attributed by aqt-trail), signatures dated before a key's enrolment are rejected, and agents should run sandboxed with the key directory hidden. aqt-signoff makes this detectable, not impossible.
+- **Agents running as the same user** can read the encrypted key file and the state; they cannot sign without the passphrase, and scrypt makes offline guessing of a stolen key file expensive (choose a long passphrase all the same). Flags and stored actions in the database are not authority: claims verify the signed approvals against the re-hashed action.
+- **The registry is checked, not trusted.** An unsandboxed same-user agent can edit `signers.json`, but a key without its enrolment record does not count, and edits of a role, an enrolment time or a revocation do not take effect. An agent that passes the human guard with a key and passphrase of its own can still record an enrolment; that record is then in the trail (attributed by aqt-trail) and shown by `signers check` (adopted enrolments are flagged). Review new enrolments; run agents sandboxed with the key directory hidden. aqt-signoff makes this detectable, not impossible.
+- **At most once relies on the evidence.** A claim refuses when the evidence holds a claim record for the same version. In the trail that record cannot be removed unnoticed; with a plain JSONL sink a same-user agent could delete it together with the database state.
 - **The agent-session guard is heuristic** (environment markers and process ancestry via `aqt_evidence.require_human`); the passphrase is the real control. Never type a passphrase into an agent chat.
 - **Time** is the host clock unless records go to aqt-trail (service time, anchors). Not an eIDAS qualified or advanced signature; no trusted timestamp of its own; single host; HTTP actions are described and guarded, not executed; no PDF signing.
 

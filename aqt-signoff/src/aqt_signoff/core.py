@@ -12,11 +12,12 @@ from aqt_evidence import (MEANINGS, HumanCheckError, JsonlSink, SinkError, actor
                           iter_evidence, new_record, open_sink, record_content_hash, require_human, sign_record,
                           subject as make_subject)
 from aqt_evidence import detect_agent_context, generate_key, load_public_key
+from aqt_evidence.crypto import key_file_format
 
 from .errors import AuthFailed, NotFound, Refused, SignoffError, UsageError
 from .registry import Authenticator, Registry, SignerEntry, TtyAuthenticator, parse_time, unlock
 from .settings import Policy, Settings, load_settings
-from .statements import SignatureStatus, build_statement, check_block, sign, statement_of
+from .statements import SignatureStatus, build_statement, check_block, sign, statement_digest, statement_of
 from .store import Store
 
 SERVICE = actor("service", "service:aqt-signoff")
@@ -57,6 +58,7 @@ class VerifyReport:
     policies: dict[str, PolicyResult] = field(default_factory=dict)
     required: list[str] = field(default_factory=list)
     recorded: list[str] = field(default_factory=list)
+    registry_problems: list[dict] = field(default_factory=list)   # registry keys that do not count
 
     @property
     def current(self) -> list[SignatureStatus]:
@@ -72,7 +74,7 @@ class VerifyReport:
 
     def summary(self) -> str:
         if any(s.status == "invalid" for s in self.signatures):
-            return "INVALID: at least one signature does not verify"
+            return "INVALID: at least one signature does not verify or is a replayed copy"
         if not any(s.valid for s in self.current):
             return "UNSIGNED: no valid signature on the current content"
         unmet = [m for m in self.required if not self.policies[m].met]
@@ -82,7 +84,7 @@ class VerifyReport:
         return {"ok": self.ok, "summary": self.summary(), "subject": self.subject,
                 "signatures": [s.as_dict() for s in self.signatures],
                 "policies": {m: p.as_dict() for m, p in self.policies.items()}, "required": self.required,
-                "recorded": self.recorded}
+                "recorded": self.recorded, "registry_problems": self.registry_problems}
 
 
 class Signoff:
@@ -99,6 +101,7 @@ class Signoff:
         self._registry: Registry | None = None
         self._store: Store | None = None
         self._sink = None
+        self._records: tuple | None = None    # (stamp of the sources, records)
         from .actions import Actions
         self.actions = Actions(self)
 
@@ -138,12 +141,61 @@ class Signoff:
         if self.settings.evidence is not None:
             return list(self.settings.evidence)
         paths = evidence_sources(self.environ)
-        if isinstance(self.sink, JsonlSink) and self.sink.path.exists() and self.sink.path not in paths:
-            paths.insert(0, self.sink.path)
+        spec = self.settings.sink or ""
+        sink_file = Path(spec[5:]) if spec.startswith("file:") else (
+            self.sink.path if isinstance(self.sink, JsonlSink) else None)
+        if sink_file is not None and sink_file.exists() and sink_file not in paths:
+            paths.insert(0, sink_file)
         return paths
 
+    def _stamp(self, paths: list[Path]) -> tuple:
+        out = []
+        for path in paths:
+            try:
+                info = os.stat(path)
+                out.append((str(path), info.st_mtime_ns, info.st_size))
+            except OSError:
+                out.append((str(path), None, None))
+        return tuple(out)
+
     def records(self) -> list[dict]:
-        return list(iter_evidence(self.sources()))
+        """All evidence records (``iter_evidence``), re-read whenever a source file changed."""
+        sources = self.sources()
+        stamp = self._stamp(sources)
+        if self._records is None or self._records[0] != stamp:
+            self._records = (stamp, [r for r in iter_evidence(sources) if isinstance(r, dict)])
+        return list(self._records[1])
+
+    def trail_sources(self) -> list[Path]:
+        """The evidence sources that are aqt-trail logs (``trail.jsonl`` next to its ``trail.json``)."""
+        return [p for p in self.sources() if p.name == "trail.jsonl" and (p.parent / "trail.json").exists()]
+
+    def trust(self, records: list[dict] | None = None) -> Registry:
+        """The registry, reconciled with the enrolment and revocation records (see ``Registry.reconcile``).
+        Enrolments count from the chained trail when there is one, else from every evidence source."""
+        registry = self.registry
+        trail = self.trail_sources()
+        stamp = (self._stamp([self.settings.registry_path]), self._stamp(self.sources()))
+        if registry.reconciled and getattr(registry, "_stamp", None) == stamp:
+            return registry
+        records = self.records() if records is None else records
+        enrolments = list(iter_evidence(trail)) if trail else records
+        registry.reconcile(enrolments, records, source="trail" if trail else "evidence")
+        registry._stamp = stamp
+        return registry
+
+    def check_signers(self) -> dict:
+        """Every registry key and whether its enrolment evidence backs it (``aqt-signoff signers check``).
+        ``ok`` is False when a key does not count; ``notes`` are discrepancies that do not stop it."""
+        registry = self.trust()
+        keys = []
+        for signer in registry.signers:
+            for key in signer.keys:
+                ev = registry.key_evidence(key.key_id, signer.id)
+                keys.append({"name": signer.name, "role": signer.role,
+                             "state": "revoked" if key.revoked_at else "active", **ev.as_dict()})
+        return {"ok": all(k["counts"] for k in keys), "registry": str(self.settings.registry_path),
+                "evidence": "trail" if self.trail_sources() else "evidence", "keys": keys}
 
     def emit(self, record: dict, key=None) -> dict:
         """Append to the sink. The envelope is signed only for a JSONL sink (aqt-trail signs its own)."""
@@ -194,9 +246,12 @@ class Signoff:
             code = "agent_context" if error.context.is_agent else "no_tty"
             raise self.refuse(attempted, who, code, str(error), error.context.markers) from None
 
-    def unlock(self, signer: SignerEntry, purpose: str):
+    def unlock(self, signer: SignerEntry, purpose: str, *, adopt: bool = True):
+        """The signer's key, unlocked with a freshly entered passphrase. A key that is in the registry
+        but has no enrolment record yet (made by another tool) gets one now (``adopt``); a key whose
+        registry entry contradicts its enrolment record is refused."""
         try:
-            return unlock(self.registry, signer, self.authenticator, purpose)
+            key = unlock(self.registry, signer, self.authenticator, purpose)
         except AuthFailed as error:
             try:
                 self.emit(self.record("signoff.auth.failed", self.signer_actor(signer), "auth.failed",
@@ -205,6 +260,27 @@ class Signoff:
             except (SinkError, ValueError):
                 pass
             raise
+        if adopt:
+            self._ensure_enrolled(signer, key)
+        return key
+
+    def _ensure_enrolled(self, signer: SignerEntry, key) -> None:
+        evidence = self.trust().key_evidence(key.key_id, signer.id)
+        if evidence is not None and evidence.counts:
+            return
+        if evidence is None or not evidence.missing:
+            why = "; ".join(evidence.problems) if evidence else "the key is not in the registry"
+            raise self.refuse("sign", self.signer_actor(signer), "registry_mismatch",
+                              f"the registry entry of {signer.id} does not match its enrolment record ({why}); "
+                              "run 'aqt-signoff signers check'")
+        entry = signer.active_key()
+        self.emit(self.signed_record(
+            "signoff.key.enrolled", "enroll", signer=signer, key=key, meaning="acknowledged",
+            reason="Enrolment recorded at first use of a key enrolled outside aqt-signoff init",
+            envelope_meaning=False, enrolled_at=entry.enrolled_at,
+            subject=make_subject("key", entry.key_id, sha256=bytes_hash(entry.public_pem.encode("ascii"))),
+            data={"signer": signer.id, "name": signer.name, "role": signer.role, "key_id": entry.key_id,
+                  "public_pem": entry.public_pem, "adopted": True}), key)
 
     def signed_record(self, type: str, action: str, *, signer: SignerEntry, key, meaning: str, reason: str,
                       subject: dict, data: dict | None = None, links=None, envelope_meaning: bool = True,
@@ -232,6 +308,8 @@ class Signoff:
         path = registry.key_path(signer_id)
         if path.exists():
             raise UsageError(f"{path} already exists; move it away or revoke the old key", code="key_exists")
+        registry.keys_dir.mkdir(parents=True, exist_ok=True)
+        os.chmod(registry.keys_dir, 0o700)
         generate_key(path, passphrase=passphrase)
         try:
             _, public = load_public_key(f"{path}.pub")
@@ -240,7 +318,7 @@ class Signoff:
             key = load_signer(path, passphrase=passphrase)
             record = self.signed_record(
                 "signoff.key.enrolled", "enroll", signer=signer, key=key, meaning="acknowledged",
-                reason="Key enrolled for electronic signatures", envelope_meaning=False,
+                reason="Key enrolled for electronic signatures", envelope_meaning=False, enrolled_at=entry.enrolled_at,
                 subject=make_subject("key", entry.key_id, sha256=bytes_hash(entry.public_pem.encode("ascii"))),
                 data={"signer": signer.id, "name": signer.name, "role": signer.role,
                       "key_id": entry.key_id, "public_pem": entry.public_pem})
@@ -252,6 +330,21 @@ class Signoff:
             self.reload_registry()
             raise
         return stored
+
+    def rekey(self, signer_id: str | None = None) -> dict:
+        """Unlock the signer's key once: a key file from an earlier version (PKCS#8, PBKDF2) is
+        re-encrypted with scrypt, and a key without an enrolment record gets one."""
+        signer = self.signer_entry(signer_id)
+        self.require_human("rekey", self.signer_actor(signer))
+        path = self.registry.key_path(signer.id)
+        before = key_file_format(path) if path.exists() else None
+        active = signer.active_key()
+        evidence = self.trust().key_evidence(active.key_id, signer.id) if active else None
+        self.unlock(signer, "re-encrypt your key file")
+        after = key_file_format(path)
+        return {"signer": signer.id, "path": str(path), "format": after,
+                "upgraded": before != after and after == "aqt-key",
+                "enrolled": not (evidence and evidence.counts)}
 
     def revoke(self, signer_id: str, reason: str, *, compromised_since: str | None = None,
                lost: bool = False) -> dict:
@@ -282,7 +375,7 @@ class Signoff:
             record, key = self.record("signoff.key.revoked", who, "revoke", subject=subject, reason=reason,
                                       data=data), None
         else:
-            key = self.unlock(signer, "revoke this key")
+            key = self.unlock(signer, "revoke this key", adopt=False)
             record = self.signed_record("signoff.key.revoked", "revoke", signer=signer, key=key,
                                         meaning="acknowledged", reason=reason, subject=subject, data=data,
                                         envelope_meaning=False)
@@ -326,8 +419,10 @@ class Signoff:
             raise self.refuse("sign", who, "role_not_allowed",
                               f"role {signer.role!r} may not sign with meaning {meaning!r} "
                               f"(allowed: {', '.join(policy.roles)})", subject=subject)
-        statuses = self.signatures_for(subject["sha256"])
-        all_authors = set(authors) | {s.signer_id for s in statuses if s.valid and s.meaning == "authored"}
+        records = self.records()
+        statuses = self.signatures_for(subject["sha256"], records=records)
+        all_authors = (set(authors) | {s.signer_id for s in statuses if s.valid and s.meaning == "authored"}
+                       | self.record_authors(subject["sha256"], records))
         if policy.distinct_from_author and signer.id in all_authors:
             raise self.refuse("sign", who, "self_approval",
                               f"{signer.id} is an author of this content and may not sign it as {meaning!r}",
@@ -356,30 +451,71 @@ class Signoff:
             "signoff.invalidation", "withdraw", signer=signer, key=key, meaning="rejected", reason=reason,
             subject=subject, envelope_meaning=False, links=[{"rel": "invalidates", "ref": signature_id}],
             data={"signature_record": signature_id, "cause": "withdrawn",
-                  "signed_sha256": st["subject"]["sha256"]})
+                  "signed_sha256": st["subject"]["sha256"]},
+            withdraws=statement_digest(st))
         return self.emit(record, key)
 
     # ---- verification --------------------------------------------------------------------------
-    def _withdrawals(self, records: list[dict]) -> dict[str, SignatureStatus]:
-        found = {}
+    def record_authors(self, sha256: str, records: list[dict]) -> set[str]:
+        """Actor ids of the evidence records whose ``record_content_hash`` is ``sha256``: the authors of
+        a signed record, whichever check (file, record, hash) asks."""
+        authors = set()
         for record in records:
-            if record.get("type") == "signoff.invalidation" and record.get("action") == "withdraw":
-                status = check_block(record.get("data", {}).get("signature"), self.registry, record=record)
-                target = record.get("data", {}).get("signature_record")
-                if status.valid and target:
-                    found[target] = status
+            who = record.get("actor") if isinstance(record, dict) else None
+            if not isinstance(who, dict) or not isinstance(who.get("id"), str):
+                continue
+            try:
+                if record_content_hash(record) == sha256:
+                    authors.add(who["id"])
+            except ValueError:
+                continue
+        return authors
+
+    def _withdrawals(self, records: list[dict], registry: Registry) -> dict[str, list[SignatureStatus]]:
+        """Valid signed withdrawals, keyed by the digest of the statement they withdraw. A withdrawal
+        names it in its signed ``withdraws``; earlier withdrawals name the carrying record by id and
+        content hash (their signed subject), which must match exactly. The unsigned
+        ``data.signature_record`` is never used."""
+        by_id = {r["id"]: r for r in records if isinstance(r, dict) and isinstance(r.get("id"), str)}
+        found: dict[str, list[SignatureStatus]] = {}
+        for record in records:
+            if record.get("type") != "signoff.invalidation" or record.get("action") != "withdraw":
+                continue
+            status = check_block((record.get("data") or {}).get("signature"), registry, record=record)
+            if not status.valid:
+                continue
+            digest = statement_of(record).get("withdraws")
+            if not isinstance(digest, str):
+                target = by_id.get(status.subject.get("ref"))
+                try:
+                    exact = target is not None and record_content_hash(target) == status.subject.get("sha256")
+                except ValueError:
+                    exact = False
+                digest = statement_digest(statement_of(target)) if exact else None
+            if digest:
+                found.setdefault(digest, []).append(status)
         return found
 
     def _evaluate(self, records: list[dict], match: Callable[[dict], bool]) -> list[SignatureStatus]:
-        withdrawals = self._withdrawals(records)
-        results = []
+        """One status per carrying record. A statement counts once: a copy of the same signed statement
+        in another record is reported ``invalid`` (replay), and a withdrawal applies to every copy."""
+        registry = self.trust(records)
+        withdrawals = self._withdrawals(records, registry)
+        results, first = [], {}
         for record in records:
             st = statement_of(record)
             if st is None or record.get("type") == "signoff.invalidation" or not match(st):
                 continue
-            status = check_block(record["data"]["signature"], self.registry, record=record)
-            withdrawal = withdrawals.get(record.get("id"))
-            if withdrawal and withdrawal.signer_id == status.signer_id:
+            status = check_block(record["data"]["signature"], registry, record=record)
+            digest = status.statement_sha256
+            if digest and status.status != "invalid":
+                if digest in first:
+                    status.worsen("invalid", f"replayed copy of the statement signed in record "
+                                             f"{first[digest].record_id}; it counts once")
+                else:
+                    first[digest] = status
+            withdrawal = next((w for w in withdrawals.get(digest, []) if w.signer_id == status.signer_id), None)
+            if withdrawal:
                 status.worsen("invalidated", f"withdrawn by the signer: {withdrawal.reason}")
             results.append(status)
         return results
@@ -398,7 +534,7 @@ class Signoff:
         for meaning in sorted({s.meaning for s in current} | set(required)):
             policy = (policies or {}).get(meaning) or self.settings.policy(meaning)
             signers = sorted({s.signer_id for s in current if s.meaning == meaning
-                              and (not policy.roles or s.role in policy.roles)
+                              and (not policy.roles or s.authorized_role in policy.roles)
                               and not (policy.distinct_from_author and s.signer_id in all_authors)})
             note = ""
             if len(signers) < policy.min_signatures:
@@ -428,6 +564,7 @@ class Signoff:
                             record=record_invalidations)
 
     def verify_hash(self, sha256: str, *, required=(), authors=()) -> VerifyReport:
+        """Signatures over ``sha256``. The actors of records with that content hash count as authors."""
         records = self.records()
         statuses = self.signatures_for(sha256, records=records)
         return self._finish({"kind": "hash", "ref": sha256, "sha256": sha256}, statuses, records,
@@ -436,6 +573,8 @@ class Signoff:
     def _finish(self, current: dict, statuses: list[SignatureStatus], records: list[dict], *, required=(),
                 authors=(), record: bool) -> VerifyReport:
         report = VerifyReport(current, statuses, required=list(required))
+        authors = set(authors) | self.record_authors(current["sha256"], records)
+        report.registry_problems = [k for k in self.check_signers()["keys"] if not k["counts"]]
         for status in statuses:
             if status.subject.get("sha256") != current["sha256"] and status.status != "invalid":
                 status.worsen("invalidated", f"content changed since signing (signed {status.subject.get('sha256')})")

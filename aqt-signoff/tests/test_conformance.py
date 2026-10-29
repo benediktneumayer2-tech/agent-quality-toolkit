@@ -38,7 +38,7 @@ def scenario(people, make, clock, isolated):
     lost = alice.actions.prepare("other", "lost", {"text": "manual step"}, who=AGENT)
     alice.actions.approve(lost["id"], lost["action_sha256"], "ok")
     alice.actions.claim(lost["id"], lost["action_sha256"], who=AGENT)
-    clock.advance(minutes=10)
+    clock.advance(minutes=12)                     # past the claim grace (run timeout + 1 min)
     alice.actions.resolve(lost["id"], "not-applied", "checked by hand")
     bob.revoke("human:bob", "rotation", compromised_since=None)
 

@@ -55,11 +55,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--role", default="", help="role, e.g. quality-manager")
     p.add_argument("--add-key", action="store_true", help="new key for an existing signer (old key revoked)")
 
-    signers = sub.add_parser("signers", parents=common, help="list or export the signer registry")
+    signers = sub.add_parser("signers", parents=common, help="list, check or export the signer registry")
     signers_sub = signers.add_subparsers(dest="signers_command", required=True)
     signers_sub.add_parser("list", parents=common)
+    signers_sub.add_parser("check", parents=common,
+                           help="check every registry key against its enrolment record in the evidence")
     export = signers_sub.add_parser("export", parents=common)
     export.add_argument("file", nargs="?")
+
+    p = sub.add_parser("rekey", parents=common,
+                       help="re-encrypt a key from an earlier version with scrypt (also records a missing enrolment)")
+    p.add_argument("--signer")
 
     p = sub.add_parser("revoke", parents=common, help="revoke a signer's active key")
     p.add_argument("signer")
@@ -172,6 +178,27 @@ def _report_text(report: VerifyReport) -> str:
                      f"({result.count}/{result.policy.min_signatures}) {result.note}".rstrip())
     for rid in report.recorded:
         lines.append(f"  recorded invalidation {rid}")
+    if report.registry_problems:
+        lines.append(f"  registry: {len(report.registry_problems)} key(s) without matching enrolment evidence do not "
+                     "count; run 'aqt-signoff signers check'")
+    return "\n".join(lines)
+
+
+def _signers_text(result: dict) -> str:
+    lines = [f"registry {result['registry']}, enrolments from the {result['evidence']}"]
+    for k in result["keys"]:
+        where = k["enrolment"] or {}
+        state = "ok" if k["counts"] else "DOES NOT COUNT"
+        lines.append(f"  {k['signer']}  {k['key_id']}  {k['state']}  {state}"
+                     + (f"  (enrolment {where.get('id')}{', adopted' if where.get('adopted') else ''})"
+                        if where else ""))
+        lines.extend(f"    problem: {text}" for text in k["problems"])
+        lines.extend(f"    note: {text}" for text in k["notes"])
+    if not result["keys"]:
+        lines.append("  no signers")
+    lines.append("all keys are backed by enrolment records" if result["ok"] else
+                 "keys without matching enrolment evidence are ignored by every check; a key enrolled by another "
+                 "tool gets its record at the next signing (or 'aqt-signoff rekey --signer ID')")
     return "\n".join(lines)
 
 
@@ -219,6 +246,10 @@ def run(args) -> int:
         return 0
     if cmd == "signers":
         data = so.registry.as_dict()
+        if args.signers_command == "check":
+            result = so.check_signers()
+            _out(args, result, _signers_text(result))
+            return 0 if result["ok"] else 1
         if args.signers_command == "export":
             text = json.dumps(data, indent=2, sort_keys=True) + "\n"
             if args.file:
@@ -233,6 +264,12 @@ def run(args) -> int:
                 lines.append(f"{s['id']}  {s['name']} ({s['role']})  {k['key_id']}  "
                              f"{'revoked ' + k['revoked_at'] if k['revoked_at'] else 'active'}")
         _out(args, data, "\n".join(lines) or "no signers")
+        return 0
+    if cmd == "rekey":
+        result = so.rekey(args.signer)
+        _out(args, result, f"{result['signer']}: key file {result['path']} "
+                           + ("re-encrypted with scrypt" if result["upgraded"] else f"already in the {result['format']} format")
+                           + ("; enrolment recorded" if result["enrolled"] else ""))
         return 0
     if cmd == "revoke":
         record = so.revoke(args.signer, args.reason, compromised_since=args.compromised_since, lost=args.lost)

@@ -63,10 +63,16 @@ class Settings:
     tz: str = "UTC"
     signer: str | None = None
     passphrase_min_length: int = 12
-    claim_grace_ms: int = 300_000
+    claim_grace_ms: int = 660_000      # never shorter than run_timeout_ms (see claim_grace)
     run_timeout_ms: int = 600_000
     policies: dict[str, Policy] = field(default_factory=dict)
     action_policy: Policy = field(default_factory=lambda: Policy(1, [], True))
+
+    @property
+    def claim_grace(self) -> int:
+        """Milliseconds after a claim before it shows ``unknown``: at least ``run_timeout_ms``, so a
+        command that ``run`` still executes is never offered for resolution."""
+        return max(self.claim_grace_ms, self.run_timeout_ms)
 
     def policy(self, meaning: str) -> Policy:
         return self.policies.get(meaning, Policy())
@@ -104,9 +110,10 @@ def load_settings(*, config: str | os.PathLike | None = None, registry=None, key
         tz=main.get("tz", "UTC"),
         signer=main.get("signer"),
         passphrase_min_length=int(main.get("passphrase_min_length", 12)),
-        claim_grace_ms=int(main.get("claim_grace_ms", 300_000)),
         run_timeout_ms=int(main.get("run_timeout_ms", 600_000)),
     )
+    # A shorter configured grace (the old example said 300000) is raised to run_timeout_ms by ``claim_grace``.
+    settings.claim_grace_ms = int(main.get("claim_grace_ms", settings.run_timeout_ms + 60_000))
     for meaning, value in data.get("policy", {}).items():
         if meaning not in MEANINGS:
             raise UsageError(f"policy for unknown meaning {meaning!r}")

@@ -3,7 +3,7 @@
 signer = "human:alice"          # default signer for sign/approve/resolve
 tz = "Europe/Berlin"            # IANA zone shown in manifestations
 passphrase_min_length = 12
-claim_grace_ms = 300000         # a claim without outcome counts as unknown after 5 minutes
+claim_grace_ms = 660000         # a claim without outcome counts as unknown after 11 minutes (>= run_timeout_ms)
 run_timeout_ms = 600000
 
 [paths]

@@ -7,6 +7,8 @@
 - Do not paste the signature block into the signed file: that changes the file. Render it separately (`manifest --out`) or sign the file that already contains the text you want.
 - Use `--author` (or an `authored` signature) so the two-person rule can exclude the author from approving.
 - Share `signers export` with anyone who verifies elsewhere; they pass it with `--registry`.
+- Run `aqt-signoff signers check` after enrolling someone and in periodic reviews: every key must be backed by its enrolment record, and an enrolment you do not recognise (notes mark keys enrolled outside `aqt-signoff init`) is an incident. To change a signer's role, revoke the key and enrol a new one (`init --add-key`); an edited role in `signers.json` makes the key stop counting.
+- Keys created before this version use PKCS#8 with a weak passphrase KDF; they are re-encrypted with scrypt at their next use, or now with `aqt-signoff rekey --signer <id>`.
 
 ## Statuses at a glance
 
@@ -15,13 +17,13 @@
 | `valid` | Nothing |
 | `invalidated` | Content changed or the signer withdrew: review the new content and sign again |
 | `revoked` | The key was revoked (or compromised) before this signature: investigate, re-sign with a new key |
-| `unknown-signer` | Key not in your registry (or signed before enrolment): obtain the signer's registry entry, or treat as unsigned |
-| `invalid` | The statement was altered or signed with another key: treat as a data-integrity event (raise a deviation) |
+| `unknown-signer` | Key not in your registry, not backed by its enrolment record (`aqt-signoff signers check` says why), or signed before enrolment: obtain the signer's registry entry and enrolment evidence, or treat as unsigned |
+| `invalid` | The statement was altered, signed with another key, or copied into a second record (replay): treat as a data-integrity event (raise a deviation) |
 
 ## Approved actions for agents
 
 1. The agent prepares the action and tells the human its id: `aqt-signoff prepare --request-key <stable key> --description "…" -- <argv>`. Re-running the same command returns the same action; changing the argv under the same key is refused.
-2. The human inspects `aqt-signoff show <id>` (argv, payload hash, preparer) and approves the shown hash: `aqt-signoff approve <id> --hash <hash> --reason "…"`.
+2. The human inspects `aqt-signoff show <id>` (argv, payload hash, preparer) and approves the shown hash: `aqt-signoff approve <id> --hash <hash> --reason "…"`. A payload bound by hash must be presented to `claim`/`run` (`--payload FILE`); `run` passes it to the command on stdin, so write commands that read the payload from stdin rather than from a file path.
 3. The executor runs `aqt-signoff run <id>` (commands) or, for HTTP and manual effects, `claim` → do the effect once → `outcome`. In Python, use `with so.actions.claim(...) as claim:`; leaving the block without a report records `unknown`.
 4. `failed` means a definite failure: prepare a revision (`prepare --revise <id> …`) and approve again. `unknown` means nobody knows: check the external system, then `resolve --as succeeded|not-applied --reason "…"`. Nothing is ever retried automatically.
 
@@ -34,9 +36,11 @@ The passphrase is the control; the agent-session guard only catches accidents. F
 ## Use from other tools
 
 ```python
-from aqt_signoff import is_approved, verify_subject
+from aqt_signoff import check_signers, is_approved, verify_subject
 statuses = verify_subject(sha256, sources=[trail_log])          # list[SignatureStatus]
 ok = is_approved(sha256, meaning="approved", policy={"min_signatures": 2, "distinct_from_author": True})
+# authors: the actor of any record with this content hash is excluded automatically; pass more with authors=[...]
+problems = [k for k in check_signers()["keys"] if not k["counts"]]   # registry keys without enrolment evidence
 ```
 
 To sign a record from another tool, use `subject = {"kind": "record", "ref": record["id"], "sha256": aqt_evidence.record_content_hash(record)}` and `Signoff.open().sign(subject, meaning, reason)`.

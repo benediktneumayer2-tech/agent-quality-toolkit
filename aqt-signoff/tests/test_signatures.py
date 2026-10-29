@@ -176,7 +176,8 @@ def test_signature_over_record_survives_trail_storage(people, make, clock):
     assert {"rel": "signs", "ref": target["id"]} in signature["links"]
     # simulate aqt-trail: chain, restamp time, add observed, drop sig
     trail = []
-    for seq, record in enumerate([target, signature]):
+    enrolments = [r for r in records(make) if r["type"] == "signoff.key.enrolled"]
+    for seq, record in enumerate([*enrolments, target, signature]):
         stored = link(record, seq=seq, prev=GENESIS)
         stored["observed"] = {"pid": 1, "client_time": stored["time"]}
         stored["time"] = "2026-10-21T13:00:00.000000Z"

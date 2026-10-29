@@ -93,7 +93,7 @@ def test_crash_after_claim_is_unknown_until_human_resolves(people, make, clock, 
     with pytest.raises(Refused) as refused:
         alice.actions.resolve(view["id"], "not-applied", "checked")
     assert refused.value.code == "claim_in_progress"
-    clock.advance(minutes=6)
+    clock.advance(minutes=12)                  # default grace: run timeout (10 min) + 1 min
     status = alice.actions.show(view["id"])
     assert status["status"] == "unknown" and "no outcome" in status["detail"]
     with pytest.raises(AlreadyClaimed):
