@@ -81,9 +81,9 @@ Unverändert aus einem Demo-Lauf vom 22. Oktober 2026 ([Übersicht](../../exampl
 - **Kein validiertes System.** Es macht keinen Prozess GMP-, GDP-, Part-11- oder Annex-11-konform. Die Validierung für den eigenen Verwendungszweck bleibt beim Anwender.
 - **Erkennungsprogramme sind ein erster Filter.** Angepasste Angriffe überwinden laut veröffentlichter Forschung jedes getestete; Abschottung und Netzwerkgrenzen gehören dazu.
 - **Manipulation wird erkennbar, nicht unmöglich** (tamper-evident, nicht tamper-proof). Schlüssel und Zeitstempel gehören außer Reichweite der Agenten.
-- **Noch keine unabhängige Sicherheitsprüfung** des Codes für Unterschrift und Verifizierung.
+- **Sicherheitsprüfung KI-gestützt, kein professionelles Audit.** Im Oktober 2026 haben KI-Prüfer mit Modellen zweier Anbieter das Toolkit aus Sicht eines Agenten angegriffen, der unter demselben Linux-Benutzer läuft. Befunde, Korrekturen und verbleibende Grenzen stehen im [Prüfbericht](../security-review-2026-10.md) (englisch).
 - **Version 0.1.** Schnittstellen können sich noch ändern.
 
 ## Entstehung
 
-Benedikt Neumayer hat das Toolkit mit KI-Coding-Agenten gebaut; Anforderungen, Architektur und Review kamen von ihm. Stand: acht Pakete plus die optionale lokale Weboberfläche aqt-ui, 580 automatisierte Tests, eine Demo mit 42 geprüften Ergebnissen; Linux, Python (Programmiersprache) 3.11–3.13. Lizenzen: Apache-2.0 für den Code, CC BY 4.0 für Spezifikation und Kataloge.
+Benedikt Neumayer hat das Toolkit mit KI-Coding-Agenten gebaut; Anforderungen, Architektur und Review kamen von ihm. Stand: acht Pakete plus der Befehl `aqt` und die optionale lokale Weboberfläche aqt-ui, 884 automatisierte Tests, eine Demo mit 42 geprüften Ergebnissen; Linux, Python (Programmiersprache) 3.11–3.13. Lizenzen: Apache-2.0 für den Code, CC BY 4.0 für Spezifikation und Kataloge.

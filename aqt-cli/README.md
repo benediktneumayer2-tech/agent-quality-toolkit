@@ -45,7 +45,7 @@ Each check has a result (`ok`, `warn`, `fail` or `skip`), a one-line explanation
 | `writer` | the writer answers on its socket | `systemctl --user start aqt-trail`; without systemd it prints the foreground command |
 | `spool` | no records wait in the spool | `aqt-trail drain` |
 | `sink` | where records go; a fallback to the side file is a warning | – |
-| `signer` | a signer with an active key is enrolled | `aqt-signoff init` (needs you) |
+| `signer` | a signer with an active key is enrolled, and every key in the signer registry is backed by its enrolment record (`aqt_signoff.check_signers()`, the check behind `aqt-signoff signers check`): `fail` when a key does not count, `warn` for a discrepancy that does not stop a key | `aqt-signoff init` (needs you). For a key that only lacks its enrolment record, for example one made by `aqt-quarantine init`, the fix is `aqt-signoff rekey --signer ID` (needs your passphrase, so `aqt setup` cannot do it); otherwise `aqt-signoff signers check` |
 | `signoff.config` | `signoff.toml` names an enrolled signer | writes `signoff.toml` (signer, the system's time zone) |
 | `trail.config` | `trail.toml` sets the review time zone and hours | writes `trail.toml` with defaults |
 | `trail.intact` | the last record is signed by the service key and matches the writer's head and the last checkpoint; `--verify` checks the whole trail | – |
@@ -58,7 +58,7 @@ Pass-through: `aqt trail`, `aqt signoff`, `aqt change`, `aqt sensei`, `aqt quara
 ## Threat model and limits
 
 - **Status is a quick look, not a verification.** Without `--verify`, `trail.intact` checks only the end of the trail (the last record, the writer's head, the last checkpoint). A change in the middle of the log is found by `aqt status --verify` or `aqt-trail verify`.
-- **Same-user agents.** An agent running as you can run `aqt setup` too. It cannot enrol a signer without the passphrase prompt, and the enrolment is recorded, as with `aqt-signoff init`. Keep agents out of `~/.config/aqt` (see the manual).
+- **Same-user agents.** An agent running as you can run `aqt setup` too. It cannot enrol a signer without the passphrase prompt, and the enrolment is recorded, as with `aqt-signoff init`. A key added to `signers.json` by hand, without its enrolment record, does not count in aqt-signoff, and the `signer` check fails. An agent can still write an enrolment record for a key of its own; that record is in the trail with the agent's process chain, so review the keys that `aqt-signoff signers check` lists. Keep agents out of `~/.config/aqt` (see the manual).
 - **Separate-user mode** (manual 3.8) is not set up by `aqt setup`. When a writer answers but this account has no trail state, `aqt status` reports the external writer and does not offer a user service.
 - **Linux only**, like the rest of the toolkit. Without `systemd --user` (some containers, WSL) you start the writer yourself.
 

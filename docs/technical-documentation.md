@@ -30,7 +30,7 @@ Paths in this document use the XDG base directories. `$XDG_CONFIG_HOME` defaults
 
 ### 1.1 The eight packages
 
-The repository is a monorepo of eight Python packages, plus the optional local web interface `aqt-ui` (see its README). Each package has its own `pyproject.toml`, `README.md`, `CHANGELOG.md`, `docs/`, `examples/` and an offline test suite. All need Python 3.11 or later and run on Linux.
+The repository is a monorepo of eight Python packages, plus the optional local web interface `aqt-ui` and the `aqt` command (package `aqt-cli`), each described in its README. Each package has its own `pyproject.toml`, `README.md`, `CHANGELOG.md`, `docs/`, `examples/` and an offline test suite. All need Python 3.11 or later and run on Linux.
 
 | Package | Import name | Command | Role | Runtime dependencies |
 |---|---|---|---|---|
@@ -166,7 +166,7 @@ Hashes and signatures need one exact byte form of a record. AQT canonical JSON (
 
 For every valid record this is byte-identical to RFC 8785 (the JSON Canonicalization Scheme), so a JCS library in another language produces the same hash.
 
-Strict parsing (`parse_record`, `parse_json`) rejects what could make two parsers see two different records under one hash: duplicate keys, any number with a fraction or exponent (also `1.0`), out-of-range integers, unpaired surrogates and invalid UTF-8. JSON Schema cannot express these rules (it treats `1.0` as an integer), so the canonicaliser checks them. `read_jsonl` stays lenient for everyday reading; `aqt-evidence conform` uses the strict reader.
+Strict parsing (`parse_record`, `parse_json`) rejects what could make two parsers see two different records under one hash: duplicate keys, any number with a fraction or exponent (also `1.0`), out-of-range integers, unpaired surrogates and invalid UTF-8. JSON Schema cannot express these rules (it treats `1.0` as an integer), so the canonicaliser checks them. `read_jsonl` stays lenient for everyday reading. Verifiers read strictly (spec §4): `aqt-evidence verify` and `aqt-trail verify` parse every line with the strict parser and require it to be exactly the canonical form of its record (`read_jsonl(path, strict=True)`, `parse_canonical_line`), so the stored bytes are the record; `aqt-evidence validate` and `conform` parse strictly as well. Deeply nested input is a parse problem, not a crash.
 
 ```text
 >>> canonical_json({"b": 1, "a": [True, None, "Grüße"]})
@@ -218,7 +218,7 @@ broken from seq 1: invalid signature
 
 ### 2.6 Signatures
 
-Signatures use Ed25519 (RFC 8032). A key ID is `ed25519:` plus the first 16 hex digits of the SHA-256 of the raw 32-byte public key. Private keys are PKCS#8 PEM files with mode 0600; human keys are passphrase-encrypted. There are two kinds of signatures, and they must not be confused.
+Signatures use Ed25519 (RFC 8032). A key ID is `ed25519:` plus the first 16 hex digits of the SHA-256 of the raw 32-byte public key. Private key files have mode 0600; a key directory that `generate_key` creates gets 0700. Unattended service keys are unencrypted PKCS#8 PEM. Human keys use the **AQT key format**, version 1: an ASCII-armoured block (`-----BEGIN AQT ENCRYPTED PRIVATE KEY-----`) around the base64 of the canonical JSON `{format: "aqt-key", version: 1, key_id, kdf: {name: "scrypt", n: 131072, r: 8, p: 1, salt}, cipher: {name: "aes-256-gcm", nonce}, ciphertext}`. The 32-byte Ed25519 seed is encrypted with AES-256-GCM under a key that scrypt derives from the passphrase (about 128 MiB of memory per guess); every field except `ciphertext` is authenticated as associated data. Keys from earlier versions (passphrase-encrypted PKCS#8 with PBKDF2 at 2,048 iterations) still load; `upgrade_key` re-encrypts one in place, and `key_file_format` tells the formats apart. Public keys are SubjectPublicKeyInfo PEM. There are two kinds of signatures, and they must not be confused.
 
 **Envelope signatures (`sig`) belong to the writer of the stored record.** Each entry signs the canonical record without `sig`, which are the same bytes as the record hash, so adding a co-signature does not change the hash. In a trail log the aqt-trail service key signs every record. The trail writer refuses client records that already carry `sig`, `chain` or `observed` (`invalid_record`). A tool that writes to its own JSONL file may sign the envelope (aqt-signoff does this for a file sink) but must not send `sig` to aqt-trail.
 
@@ -255,10 +255,12 @@ Signatures use Ed25519 (RFC 8032). A key ID is `ed25519:` plus the first 16 hex 
 | `subject` | yes | `{kind, ref, sha256}`; the hash binds the signature to exact content |
 | `reason`, `tz`, `record_type`, `nonce` | recommended | Why; the signer's zone for display; the type of the record that carries the statement; 16 random hex digits |
 | `expires_at`, `outcome` | optional | Expiry of an approval; outcome of a human resolution (aqt-signoff) |
+| `withdraws` | optional | In a withdrawal: the statement digest (`content_hash(statement)`) of the withdrawn statement |
+| `enrolled_at` | optional | In an enrolment record: the enrolment time it states |
 
 The value is an Ed25519 signature over `canonical_json(statement)` (`aqt_evidence.sign_statement` / `verify_statement`). Because name, role, meaning, time and reason are inside the signed bytes, the manifestation cannot be changed without breaking the signature. Because the subject hash is inside, the signature cannot be moved to other content.
 
-A verifier reports a statement as `valid`, `invalid` (does not verify), `unknown-signer` (key not pinned), `revoked`, or `invalidated` (valid, but the subject's current hash differs). aqt-signoff adds three checks on top of `verify_statement`: the key must belong to `statement.signer.id` in the signer registry, `statement.key` must equal the block's `key`, and `signed_at` must not be earlier than the key's `enrolled_at`. `signed_at` at or after `revoked_at` counts as revoked.
+A verifier reports a statement as `valid`, `invalid` (does not verify), `unknown-signer` (key not pinned), `revoked`, or `invalidated` (valid, but the subject's current hash differs). `verify_statement` accepts only a statement (`aqt_signature` "0.1", `signer` and `subject` objects, `statement.key` equal to the block's `key`), so a record signature cannot pose as one. aqt-signoff adds checks on top: the key must belong to `statement.signer.id` in the signer registry and be backed by its enrolment record (section 4.1); `signed_at` must not be earlier than the enrolment; `signed_at` at or after the revocation counts as revoked; the role a policy uses is the registry role, which must equal the signed role. A statement is identified by its **statement digest** (`statement_digest`, `content_hash(statement)`): it counts once, a copy in another record is `invalid` (replay), and a withdrawal by the same signer applies to every copy. A withdrawal names its target in the signed field `withdraws`; one without it (earlier versions) applies only to the record its signed subject names, while that record's content hash still matches.
 
 **Key pinning.** A signature only proves that the holder of *some* key signed. Verifiers must check against keys obtained independently of the log (the signer registry, or `--pin-key`). A log rewritten and re-signed under a fresh key otherwise verifies (vector `tampered/rewritten-fresh-key`).
 
@@ -279,10 +281,10 @@ An **RFC 3161 anchor** sends only the 32-byte head hash to a time-stamp authorit
 1. the message imprint equals the head hash;
 2. the signed `messageDigest` attribute equals the digest of the TSTInfo;
 3. the signature over the signed attributes verifies with the TSA certificate (RSA PKCS#1 v1.5, ECDSA or Ed25519);
-4. the certificate has the `timeStamping` extended key usage;
-5. the certificate chains to a configured CA, each certificate valid at `genTime`.
+4. the certificate has `timeStamping` as its only extended key usage, marked critical, and the `signingCertificate` attribute names it;
+5. the certificate chains to a configured CA, each certificate valid at `genTime`, and every issuer on the path is a CA certificate (`basicConstraints cA`, `keyCertSign`, path length).
 
-There is no revocation checking of TSA certificates. A token can also be checked independently with `openssl ts -verify`. The built-in authority `test:` (a CA under `<trail state>/test-tsa/`) is for tests and demos only; its certificates say TEST ONLY.
+Configure the TSA's own CA, not a broad root. Only anchors that the writer itself wrote (`observed.origin: writer`) count; the writer refuses `trail.anchor` records from clients. There is no revocation checking of TSA certificates. A token can also be checked independently with `openssl ts -verify`. The built-in authority `test:` (a CA under `<trail state>/test-tsa/`) is for tests and demos only; its certificates say TEST ONLY.
 
 ### 2.8 Conformance levels and test vectors
 
@@ -302,11 +304,11 @@ $ aqt-evidence conform ~/.local/state/aqt/trail/trail.jsonl --level 3 \
 L3 reached (target L3), 11 records
 ```
 
-**Test vectors** in `aqt-spec/vectors/` are language-neutral JSON files, generated deterministically by `aqt-spec/scripts/gen_vectors.py`. There are 57 vectors in six folders: `canonical` (13), `valid` (6), `invalid` (17), `chained` (2), `tampered` (10) and `signed` (9). Signed vectors use the published RFC 8032 TEST 1 and TEST 2 keys from `vectors/keys.json`; anyone can sign with them, so records signed with them prove nothing. An implementation in another language conforms when it agrees with every vector; [`aqt-spec/docs/implementers.md`](../aqt-spec/docs/implementers.md) describes the file format.
+**Test vectors** in `aqt-spec/vectors/` are language-neutral JSON files, generated deterministically by `aqt-spec/scripts/gen_vectors.py`. There are 87 vectors in six folders: `canonical` (13), `valid` (6), `invalid` (34), `chained` (2), `tampered` (20) and `signed` (12). Since the security review of October 2026 they include a tamper corpus (wrong member types, `null` members, trailing newlines, non-ASCII digits, impossible dates; stripped, moved, re-signed and `null` signatures, duplicated and unchained records, signatures required without a key, malformed checkpoints) and the vector kind `log`, a stored JSON-lines log that must be parsed strictly before its chain is verified. Signed vectors use the published RFC 8032 TEST 1 and TEST 2 keys from `vectors/keys.json`; anyone can sign with them, so records signed with them prove nothing. An implementation in another language conforms when it agrees with every vector; [`aqt-spec/docs/implementers.md`](../aqt-spec/docs/implementers.md) describes the file format.
 
 ```text
 $ aqt-evidence vectors
-57 of 57 vectors agree
+87 of 87 vectors agree
 ```
 
 ### 2.9 Units, naming and the registry
@@ -325,8 +327,8 @@ $ aqt-evidence vectors
 
 | `AQT_SINK` | Sink | Behaviour |
 |---|---|---|
-| unset | `JsonlSink($XDG_STATE_HOME/aqt/evidence.jsonl)` | Validates the envelope, appends one canonical line under an exclusive `flock`, `fsync`s, file mode 0600. Does not chain |
-| `file:/path.jsonl` | `JsonlSink(/path.jsonl)` | As above |
+| unset | Discovered (`resolve_sink()`): the aqt-trail writer's socket (`[writer] socket` in `trail.toml`, else `$XDG_RUNTIME_DIR/aqt/trail.sock`) when a writer answers or a trail exists (a trail whose writer is down gets the records through the spool); otherwise `JsonlSink($XDG_STATE_HOME/aqt/evidence.jsonl)` | As `unix:` or `file:` below |
+| `file:/path.jsonl` | `JsonlSink(/path.jsonl)` | Validates the envelope, appends one canonical line under an exclusive `flock`, `fsync`s, file mode 0600. Does not chain |
 | `unix:/path.sock` | `SocketSink(/path.sock)` | Sends the record to an aqt-trail writer and returns the stored record (with the writer's `time`, `observed`, `chain` and `sig`) |
 
 ```python
@@ -342,15 +344,15 @@ stored = open_sink().append(record)
 
 ### 3.2 The trail writer
 
-`aqt-trail serve` runs `TrailWriter` (`aqt-trail/src/aqt_trail/writer.py`) behind a Unix socket (`server.py`). It is the only process that appends to `trail.jsonl`. A file lock (`trail.lock`, non-blocking `flock`) ensures one writer per trail. For each client record it:
+`aqt-trail serve` runs `TrailWriter` (`aqt-trail/src/aqt_trail/writer.py`) behind a Unix socket (`server.py`). It is the only process that appends to `trail.jsonl`. A file lock (`trail.lock`, mode 0600, non-blocking `flock`) ensures one writer per trail. For each client record it:
 
-1. checks that the client did not send `sig`, `chain` or `observed`, that the envelope is valid, and that a human actor who sets `meaning` also gives `reason`;
+1. checks that the client did not send `sig`, `chain` or `observed`, that the envelope is valid, and that a human actor who sets `meaning` also gives `reason`; it refuses records that would pass for its own (the actor `service:aqt-trail`, the types `trail.anchor` and `trail.gap`, the actions `service.start`, `service.stop`, `clock.jump` and `log.repaired`), and client `trail.review` and `trail.refused` records without their payload shape;
 2. checks idempotence by `id` (section 3.5);
 3. reads the clock and records a `trail.event` `clock.jump` first when the wall clock moved more than `clock_jump_ms` (default 2000) away from the monotonic clock, or went backwards;
 4. moves the client's `time` to `observed.client_time` and sets `time` to its own clock;
 5. adds `observed` (section 3.4);
 6. links the record into the chain and signs it with the service key;
-7. writes one canonical JSON line and `fsync`s, then answers the client.
+7. writes one canonical JSON line (completing short writes) and `fsync`s, then answers the client. A failed write or `fsync` is cut back to the last acknowledged record; if that fails too, the writer answers `unavailable` until it is restarted.
 
 Every refusal is itself a record: `trail.refused` with `data` = `{attempted_action, reason_code, agent_markers, message, attempted_sha256, attempted_id?, attempted_type?, attempted_record_action?}` and the claimed actor. The writer also records its own life: `trail.event` with `service.start` (version, log ID, key ID, pid, socket, configuration hash), `service.stop` (signal), and `log.repaired` when it removed an incomplete last line that was never acknowledged at start. The writer refuses to continue a log that no longer links (`LogBroken`); run `aqt-trail verify` and decide.
 
@@ -364,7 +366,7 @@ One request per connection: the client sends one JSON object followed by a newli
 |---|---|
 | `{"op": "append", "record": {…}}` | `{"ok": true, "record": <stored record>, "created": true\|false}` |
 | `{"op": "drain", "records": […], "source": "…"}` | `{"ok": true, "appended": n, "already_stored": n, "refused": n, "gap": "<trail.gap id>"\|null}` |
-| `{"op": "checkpoint", "anchor": bool, "export": bool, "tsa_url": "…"}` | `{"ok": true, "checkpoint": {…}, "anchor": <record>\|null}` |
+| `{"op": "checkpoint", "anchor": bool, "export": bool, "tsa_url": "…"}` | `{"ok": true, "checkpoint": {…}, "anchor": <record>\|null}`; `tsa_url` may only be empty, the configured `[anchor] tsa_url` or `test:`, anything else is `unauthorized` |
 | `{"op": "head"}` | `{"ok": true, "log_id": "…", "seq": n, "head": "sha256:…"}` |
 | `{"op": "ping"}` | `{"ok": true, "version": "0.1.0"}` |
 
@@ -373,9 +375,9 @@ Errors are `{"ok": false, "code": "<code>", "message": "…"}`:
 | Code | Meaning |
 |---|---|
 | `invalid_record` | Envelope invalid, the client sent `sig`, `chain` or `observed`, the request is not JSON, or the op is unknown |
-| `unauthorized` | The peer's uid may not use the writer |
-| `duplicate_id` | A *different* record with this `id` is already stored |
-| `unavailable` | The writer cannot store records now |
+| `unauthorized` | The peer's uid may not use the writer, or a checkpoint names a TSA that is not configured |
+| `duplicate_id` | A *different* record with this `id` is already stored (also within one drain batch) |
+| `unavailable` | The writer cannot store records now, for example after a write it could not undo |
 | `internal` | Any other failure (the writer catches it and keeps running) |
 
 A real exchange, sent from Python:
@@ -397,10 +399,13 @@ A real exchange, sent from Python:
 | `harness` | The first agent harness found in the chain, using the process markers of `aqt_evidence.session` (`claude`, `codex`, `pi`, `pi-omni`, `aider`, `goose`, `opencode`, `gemini`, `cursor-agent`, `amp`, `crush`), or `null` |
 | `client_time` | The `time` the client sent |
 | `via` | `socket` (observed live) or `spool` (delivered later; no process attribution) |
-| `chain_complete` | `false` when a process in the chain had already exited |
+| `chain_status` | How far the observed chain goes: `complete` (read up to init, nothing below applies); `partial` (an ancestor exited during the walk, more than 16 ancestors, a parent started after its child, or a process was reparented to init or a subreaper such as the systemd user manager, so whoever started it is no longer visible); `unavailable` (no peer pid, the sender's own `/proc` entry unreadable, or the sender exited before the walk ended, checked with `SO_PEERPIDFD` on Linux 6.5 and later) |
+| `chain_detail` | Why a chain is not `complete` |
+| `chain_complete` | `false` when the walk did not reach init; kept for older readers |
+| `drained_by` | On records delivered through the `drain` op: the observation of the client that sent them |
 | `origin` | `writer` on records the writer creates itself (these have no `via`) |
 
-The writer does not reject a record whose claim and observation disagree. It stores both. The review query `attribution_mismatch` and the ALCOA++ check *attributable* compare them later: a record that claims `human:alice` but was sent by a process below `claude` is a major finding. A tool that observes peers on its own sockets (aqt-sensei) puts the same fields into `data.peer`, because the envelope's `observed` belongs to the trail writer.
+The writer does not reject a record whose claim and observation disagree. It stores both. The review query `attribution_mismatch` and the ALCOA++ check *attributable* compare them later: a record that claims `human:alice` but was sent by a process below `claude` is a major finding, and one whose chain is `partial` or `unavailable` is a minor finding (ALCOA++ warns). A human claim counts as attributed only with a `complete` chain and no agent marker. Even then this is a heuristic: a process that detaches into a new session (`setsid -f`) or is started by a service manager (`systemd-run --user`) or an existing terminal server (`tmux send-keys` into a person's shell) on an agent's request looks `complete`. Records written before `chain_status` existed have only `chain_complete`. A tool that observes peers on its own sockets (aqt-sensei) puts the same fields into `data.peer`, because the envelope's `observed` belongs to the trail writer.
 
 ### 3.5 Idempotent appends, the spool and gap markers
 
@@ -408,7 +413,7 @@ The writer does not reject a record whose claim and observation disagree. It sto
 
 **Spool.** When the socket cannot be reached, `SocketSink` (and `aqt_trail.client.TrailClient`, used by the `aqt-trail` command itself) appends the record to the shared spool `$XDG_STATE_HOME/aqt/spool/spool.jsonl` (locked, mode 0600) and sets `last_spooled = True`. `SocketSink(path, spool=False)` raises `SinkUnavailable` instead.
 
-**Drain.** The writer drains the spool at start and every `drain_interval_s` (default 30 s) while it runs; `aqt-trail drain` does it on demand (through the socket when the writer runs, so that a separate-user writer can receive a user's spool). The writer first writes one `trail.gap` record, then each spooled record with `observed.via = "spool"` and no process attribution. Unparseable spool lines become `trail.refused` records instead of disappearing.
+**Drain.** The writer drains the spool at start and every `drain_interval_s` (default 30 s) while it runs; `aqt-trail drain` does it on demand (through the socket when the writer runs, so that a separate-user writer can receive a user's spool). The writer first writes one `trail.gap` record, then each spooled record with `observed.via = "spool"` and no process attribution. When the records come through the socket's `drain` op, each carries `observed.drained_by`, the observation of the client that sent them, and the `trail.gap` before them carries it as its own `observed`. A drain stores each record ID once: a repeat with the same content counts as already stored, one with other content is refused (`duplicate_id`). Unparseable spool lines become `trail.refused` records instead of disappearing.
 
 A real sequence: the writer was stopped, a client wrote one record, the writer was started again.
 
@@ -420,16 +425,16 @@ $ aqt-trail list
      8 2026-10-22T13:10:05.044455Z trail.event      note               agent:claude-code:unknown  — written while the writer is down
 ```
 
-The `trail.gap` payload is `{reason: "writer-unavailable", count, first_time, last_time, spool_ids, source}`; record 8 carries `observed = {"via": "spool", "process_chain": [], "processes": [], "harness": null, "client_time": "…"}`. The review query `gaps` and the ALCOA++ check *complete* report both.
+The `trail.gap` payload is `{reason: "writer-unavailable", count, first_time, last_time, spool_ids, source}`. Its `reason`, `first_time` and `last_time` come from the spooled records, so they are the client's account, not the writer's observation. Record 8 carries `observed = {"via": "spool", "process_chain": [], "processes": [], "harness": null, "client_time": "…"}`. The review query `gaps` and the ALCOA++ check *complete* report both.
 
 ### 3.6 Reading evidence
 
 Consumers read files, never the socket. `aqt_evidence.iter_evidence(paths=None)` yields records file by file and de-duplicates them by `id`. Without `paths` it uses `evidence_sources()`:
 
 1. `AQT_EVIDENCE`, a colon-separated list of JSONL paths, when set;
-2. otherwise the default sink file (the `file:` path in `AQT_SINK`, or `$XDG_STATE_HOME/aqt/evidence.jsonl`) plus the trail log `$XDG_STATE_HOME/aqt/trail/trail.jsonl`, each only if it exists.
+2. otherwise the trail log (`trail.jsonl` in the trail state directory: `[trail] state` in `trail.toml`, else `AQT_TRAIL_STATE`, else `$XDG_STATE_HOME/aqt/trail/`), the default sink file (the `file:` path in `AQT_SINK`, or `$XDG_STATE_HOME/aqt/evidence.jsonl`) and the spool, each only if it exists.
 
-The default trail path is fixed. It does not follow `AQT_TRAIL_STATE` or a separate-user state directory such as `/var/lib/aqt-trail`; in those set-ups, pass the log explicitly. Every consuming command accepts `--evidence PATH` (repeatable), and aqt-signoff, aqt-capa and aqt-validate also accept an evidence list in their configuration files.
+Files named `trail.jsonl` are always read first, whatever the order of `paths`, so a record in a side file (sink file, spool) can neither hide nor replace a trail record with the same `id`. A later copy with other content is not used; it is reported (`iter_evidence(paths, conflicts=list)` collects `{id, kept, dropped}`, otherwise one warning on stderr). Copies with the same content are deduplicated silently. A separate-user log such as `/var/lib/aqt-trail/trail.jsonl` is not in the user's default places; name it in `AQT_EVIDENCE` (or `--evidence`) and keep its file name, because readers recognise trail logs by it. Records that exist only in side files are not chained or writer-signed, and consumers do not yet require trail records when a trail exists (spec §10.5). Every consuming command accepts `--evidence PATH` (repeatable), and aqt-signoff, aqt-capa and aqt-validate also accept an evidence list in their configuration files.
 
 Some tools additionally keep a local mirror of their own records as a working store: aqt-quarantine's `journal.jsonl` and aqt-change's `records.jsonl`. These mirrors are indexes for the tool; the sink is the evidence.
 
@@ -450,11 +455,12 @@ The signer registry `$XDG_CONFIG_HOME/aqt/signers.json` (schema `aqt-spec/schema
 ```
 
 - **Signer IDs** match `human:[a-z0-9][a-z0-9._-]{0,63}` in aqt-signoff and are never reused.
-- **Key files** are `$XDG_CONFIG_HOME/aqt/keys/<slug>.key` (passphrase-encrypted PKCS#8 PEM, mode 0600) and `<slug>.key.pub`. The slug is the signer ID with `:` replaced by `-` (`human:alice` → `human-alice.key`).
+- **Key files** are `$XDG_CONFIG_HOME/aqt/keys/<slug>.key` (the AQT key format of section 2.6, mode 0600; the folder 0700) and `<slug>.key.pub`. The slug is the signer ID with `:` replaced by `-` (`human:alice` → `human-alice.key`).
 - **Revocation** sets `revoked_at` (the revocation time, or the declared start of a compromise with `--compromised-since`) and renames the key files to `<slug>.<key hex>.revoked.key`, so that a new key can take the standard name. Signatures made at or after `revoked_at` show as `revoked`.
 - **Enrolment and revocation are records** (`signoff.key.enrolled`, `signoff.key.revoked`). A failed passphrase entry is recorded as `signoff.auth.failed`.
+- **The registry is checked against those records** (aqt-signoff, and through `is_approved` aqt-change and aqt-capa). A key counts only when a `signoff.key.enrolled` record matches it: same signer, key ID, public key and role, signed by that key. The records come from the trail when there is one, else from every evidence source. Enrolment and revocation times are taken from the records, and a revocation record applies even when `signers.json` says the key is active. A key enrolled by another tool (for example `aqt-quarantine init`) gets its enrolment record, marked `data.adopted`, the first time its owner unlocks it in aqt-signoff; a key whose entry contradicts its record is refused (`registry_mismatch`). `aqt-signoff signers check` and `check_signers()` report every key with `counts`, `problems` and `notes`. aqt-quarantine and aqt-trail read `signers.json` without this check.
 - **Overrides.** aqt-signoff, aqt-quarantine and aqt-trail honour `AQT_SIGNERS` and `AQT_KEYS_DIR`; aqt-signoff and aqt-quarantine also take the matching flags or configuration keys, and aqt-trail `--key PEM` for the reviewer key.
-- **Sharing.** `aqt-signoff signers export` writes the registry for verification on another machine; aqt-trail's export bundle includes it.
+- **Sharing.** `aqt-signoff signers export` writes the registry for verification on another machine; aqt-trail's export bundle includes a copy, which `verify --bundle` does not trust (pass `--signers`).
 
 ### 4.2 Passphrases
 
@@ -511,9 +517,9 @@ Each subsection summarises one package. The packages' own `docs/` hold full comm
 |---|---|
 | `canonical.py` | `canonical_json`, `content_hash`, `bytes_hash`, strict `parse_json` / `parse_record` |
 | `record.py` | `new_record`, `actor`, `subject`, `validate_record`, `record_hash`, `record_content_hash`, `MEANINGS` |
-| `crypto.py` | `generate_key`, `load_signer`, `load_public_key`, `key_id`, `sign_record`, `verify_record_signatures`, `sign_statement`, `verify_statement` |
+| `crypto.py` | `generate_key`, `load_signer`, `load_public_key`, `key_id`, `upgrade_key`, `key_file_format`, `sign_record`, `verify_record_signatures`, `sign_statement`, `verify_statement` |
 | `chain.py` | `GENESIS`, `link`, `verify_chain`, `make_checkpoint`, `verify_checkpoint`, `checkpoint_matches` |
-| `sink.py` | `open_sink`, `JsonlSink`, `SocketSink`, `read_jsonl`, `evidence_sources`, `iter_evidence`, `state_dir`, `spool_file`, `ERROR_CODES` |
+| `sink.py` | `open_sink`, `resolve_sink`, `JsonlSink`, `SocketSink`, `read_jsonl` (`strict=True` for verifiers), `parse_canonical_line`, `RecordLineError`, `evidence_sources`, `iter_evidence`, `state_dir`, `spool_file`, `ERROR_CODES` |
 | `session.py` | `detect_agent_context`, `require_human`, `process_chain`, the marker tables |
 | `conformance.py` | `conformance`, `read_strict` (levels L1–L3) |
 | `schemas.py` | Registry and schema access; validation with the optional `jsonschema` |
@@ -522,7 +528,7 @@ Each subsection summarises one package. The packages' own `docs/` hold full comm
 
 The API is listed in [`aqt-spec/docs/api.md`](../aqt-spec/docs/api.md); it is stable since 0.1.0 and changes only additively.
 
-**CLI** `aqt-evidence`: `validate FILE`, `hash FILE`, `verify FILE [--key PEM]… [--require-signature]`, `keygen PATH [--passphrase]`, `conform FILE --level N …`, `vectors [DIR]`.
+**CLI** `aqt-evidence`: `validate FILE`, `hash FILE`, `verify FILE [--key PEM]… [--require-signature]` (`--require-signature` without `--key` is a usage error), `keygen PATH [--passphrase]`, `conform FILE --level N …`, `vectors [DIR]`.
 
 **Generated files.** `schemas/` and `schemas/registry.json` come from `scripts/build_schemas.py`; `vectors/` from `scripts/gen_vectors.py`; `crosswalk.md` and `catalogues/catalogues.json` from `scripts/build_crosswalk.py`. The tests fail when a generated file is out of date. Wheels package the schemas, vectors and `catalogues.json` under `aqt_evidence/_data/`.
 
@@ -540,7 +546,7 @@ The API is listed in [`aqt-spec/docs/api.md`](../aqt-spec/docs/api.md); it is st
 
 **Records written.** `trail.event` (`service.start`, `service.stop`, `clock.jump`, `log.repaired`, or a user action), `trail.gap`, `trail.refused`, `trail.import`, `trail.anchor` (`rfc3161`, `external-head`), `trail.review` (`review.signed`).
 
-**Verification** (`aqt-trail verify`). It recomputes every hash; checks the service signatures (all keys in `<state>/keys/*.pub`, or only `--pin-key`); checks stored checkpoints, exported heads (`--heads FILE`) and the checkpoints inside RFC 3161 anchors; verifies anchor tokens (the CA from `--tsa-ca`, `[anchor] tsa_ca`, or `--test-tsa`); and verifies every detached statement against the signer registry. Without `--pin-key` it warns that a full rewrite under a new key is only caught by external heads or anchors. A truncated copy checked against exported heads:
+**Verification** (`aqt-trail verify`). It recomputes every hash; checks the service signatures (all keys in `<state>/keys/*.pub`, or only `--pin-key`); checks stored checkpoints, exported heads (`--heads FILE`) and the checkpoints inside RFC 3161 anchors; verifies anchor tokens (the CA from `--tsa-ca`, `[anchor] tsa_ca`, or `--test-tsa`), counting only anchors the writer wrote; and verifies every detached statement against the signer registry (or `--signers FILE`): the key must belong to the named signer, be registered before `signed_at` and not revoked at it, and the statement must be for the record's type and meaning. A `trail.review` is a problem when it is unsigned, signed by someone other than its actor, not about its own content, with a wrong head, or with actors that differ from the trail or include the reviewer. Malformed anchor and review payloads are problems, never crashes. Lines must be canonical (section 2.3). Without `--pin-key` it warns that a full rewrite under a new key is only caught by external heads or anchors, and it always warns which records no external head or CA-verified anchor covers and how many follow the newest checkpoint. A truncated copy checked against exported heads:
 
 ```text
 $ aqt-trail verify --trail truncated.jsonl --heads heads.jsonl
@@ -551,7 +557,7 @@ problem: external head at seq 9 is beyond the head: the trail was truncated
 **Importers** (`importers.py`). The `READERS` dictionary maps `claude-code`, `codex` and `pi` to readers for Claude Code transcripts (`~/.claude/projects/<key>/<uuid>.jsonl`), Codex rollouts (`~/.codex/sessions/YYYY/MM/DD/rollout-….jsonl`) and pi v3 session JSONL. `hook claude-code` reads one hook payload from standard input and always exits 0 so that it never blocks the agent. Import rules:
 
 - only regular files owned by the caller, not symlinks, with one hard link; a partly written last line is left for the next import;
-- records carry hashes (`input_sha256`, `prompt_sha256`, `output_sha256`) and excerpts of at most `excerpt_chars` (default 160; 0 disables them) with obvious secrets masked (`sk-…`, `ghp_…`, `github_pat_…`, `AKIA…`, Slack tokens, JWTs, `password=…`);
+- records carry hashes (`input_sha256`, `prompt_sha256`, `output_sha256`) and excerpts of at most `excerpt_chars` (default 160; 0 disables them) with secrets masked: assignments, `--flag value` pairs and JSON fields whose name contains password, passphrase, secret, token, api-key, access-key, private-key or credential, `Authorization:` headers and bearer tokens, passwords in URLs and `curl -u`, PEM private keys, and token formats such as `sk-…`, `ghp_…`, `github_pat_…`, `AKIA…`, Slack tokens and JWTs. Masking is a safety net; the log cannot be redacted later;
 - record IDs are derived from the source time and the source hash (`rec_<12 hex ms><16 hex of the source hash>`), and events whose `source_hash` is already in the trail or the spool are skipped, so re-imports never duplicate.
 
 **Review** (`review.py`). `review run [--since --until --profile FILE]` runs risk queries over the records whose writer time falls in the scope and writes a worksheet: `self_approval`, `missing_reason`, `attribution_mismatch`, `gaps`, `out_of_hours`, `repeated_failures`, `time_anomalies`, `actor_changes`, `invalidated_signatures`, `unanchored_head`. Real worksheet excerpt:
@@ -562,9 +568,9 @@ problem: external head at seq 9 is beyond the head: the trail was truncated
 | F2 | gaps                 | major | rec_01a1… | 1 record(s) spooled between …; their attribution was not observed |
 ```
 
-`review sign` refuses (and records `trail.refused`) when the caller fails `require_human`, when the reviewer is not a `human:` ID, when the reviewer was an actor in scope (`not_independent`), or when the trail no longer has the worksheet's head (`stale_worksheet`). Every finding needs a disposition (`ok`, `explained`, `deviation`; the last two need a note). The `trail.review` record carries `meaning: reviewed` and a detached statement whose subject hash is the content hash of `data` without `signature`; `verify` checks both. Findings with disposition `deviation` feed aqt-capa.
+`review sign` recomputes the worksheet's scope, profile, actors and findings from the trail (never from the `trail` path written in the worksheet) and signs only the recomputed values. It refuses (and records `trail.refused`) when the caller fails `require_human`, when the reviewer is not a `human:` ID, when the reviewer was an actor in scope (`not_independent`), when the trail no longer has the worksheet's head (`stale_worksheet`), does not verify up to there (`trail_broken`) or disagrees with the worksheet (`worksheet_mismatch`), and, with a signer registry, when the reviewer is not registered (`unknown_signer`) or uses another signer's key (`key_mismatch`). A UI binds the worksheet it showed with `worksheet_digest` and `expected_sha256` (`worksheet_changed`). Worksheets go to `review run --out DIR`, else `<state>/reviews`, else `$XDG_STATE_HOME/aqt/trail-reviews` when the state is not writable. Every finding needs a disposition (`ok`, `explained`, `deviation`; the last two need a note). The `trail.review` record carries `meaning: reviewed` and a detached statement whose subject hash is the content hash of `data` without `signature`; `verify` checks both. Findings with disposition `deviation` feed aqt-capa.
 
-**ALCOA++ report** (`alcoa.py`). `aqt-trail alcoa` evaluates the ten attributes (attributable, legible, contemporaneous, original, accurate, complete, consistent, enduring, available, traceable) as `pass`, `warn` or `fail`, each citing `alcoa:<attribute>` and related catalogue IDs. It exits 1 when an attribute fails. Real output after the spool sequence above:
+**ALCOA++ report** (`alcoa.py`). `aqt-trail alcoa` evaluates the ten attributes (attributable, legible, contemporaneous, original, accurate, complete, consistent, enduring, available, traceable) as `pass`, `warn` or `fail`, each citing `alcoa:<attribute>` and related catalogue IDs. It exits 1 when an attribute fails. It verifies the whole trail with the trust options of `verify`; *original* and *complete* fail on chain, checkpoint, head or anchor problems, *attributable* warns on human claims whose process chain was incomplete, and *enduring* counts only RFC 3161 anchors the writer wrote. Real output after the spool sequence above:
 
 ```text
 FAIL  alcoa:attributable       1 record(s) claim a human but came from an agent harness
@@ -573,17 +579,17 @@ WARN  alcoa:complete           sequence continuous; 1 gap marker(s), 1 spooled r
 PASS  alcoa:enduring           2 anchor(s), 1 RFC 3161 token(s) verified to a CA; newest record is 0 h after the last anchor
 ```
 
-**Export.** `export --out DIR [--tar]` writes `trail.jsonl`, `checkpoints.jsonl`, the service public keys, `signers.json`, the TSA CA when configured, `VERIFY.md` and `MANIFEST.json` (SHA-256 of each file, log ID, head, key IDs). `verify --bundle DIR` re-verifies a bundle on its own.
+**Export.** `export --out DIR [--tar]` writes `trail.jsonl`, `checkpoints.jsonl`, the service public keys, `signers.json`, the TSA CA when configured, `VERIFY.md` and `MANIFEST.json` (SHA-256 of each file, log ID, head, key IDs). `MANIFEST.json` is not signed, and the copies are for convenience, not trust anchors: `verify --bundle DIR` uses the service key, TSA CA and signer registry the caller passes (`--pin-key`, `--tsa-ca`, `--signers`), the bundle's own keys only without `--pin-key` (with a warning), and its TEST ONLY CA only with `--test-tsa`.
 
-**Separate-user mode.** `scripts/setup-system-user.sh` (run with `sudo`, never by the tests) creates a system user `aqt-trail` and a group `aqt-trail-clients`, writes `/etc/aqt/trail.toml` (state `/var/lib/aqt-trail`, socket `/run/aqt-trail/trail.sock` mode 0660, log mode 0640, your uid in `allowed_uids`) and installs `examples/aqt-trail-system.service` as `/etc/systemd/system/aqt-trail.service`. The unit runs as user `aqt-trail` with `Group=aqt-trail-clients`, so `/run/aqt-trail` (0750), the socket and the log (0640) are reachable for the clients group, while the service key stays 0600. With `ProtectHome=true` the service cannot run an `aqt-trail` (or a Python) inside a home folder; the script refuses such a path, and `aqt-trail/docs/separate-user.md` shows an install under `/opt`. The aim is that agents running as you can append but can neither edit the log nor read the service key. For user mode, `examples/aqt-trail.service` is a systemd user unit.
+**Separate-user mode.** `scripts/setup-system-user.sh` (run with `sudo`, never by the tests) creates a system user `aqt-trail` and a group `aqt-trail-clients`, writes `/etc/aqt/trail.toml` (state `/var/lib/aqt-trail`, socket `/run/aqt-trail/trail.sock` mode 0660, log mode 0640, your uid in `allowed_uids`) and installs `examples/aqt-trail-system.service` as `/etc/systemd/system/aqt-trail.service`. The unit runs as user `aqt-trail` with `Group=aqt-trail-clients`, so `/run/aqt-trail` (0750), the socket and the log (0640) are reachable for the clients group, while the service key stays 0600. With `ProtectHome=true` the service cannot run an `aqt-trail` (or a Python) inside a home folder; the script refuses such a path, and any part of the installation that is not owned by root or is writable by group or others (`--check` runs only these checks), and `aqt-trail/docs/separate-user.md` shows an install under `/opt`. The aim is that agents running as you can append but can neither edit the log nor read the service key. For user mode, `examples/aqt-trail.service` is a systemd user unit.
 
 ### 5.3 aqt-signoff
 
 **Purpose.** Signatures with a stated meaning, bound to exact content, that visibly stop applying when the content changes; and approved actions that run at most once and are never retried blindly.
 
-**Signing.** `sign FILE | --record ID | --hash H --meaning M --reason R [--signer ID] [--author ID]` writes a `signoff.signature` record with the statement in `data.signature` and `data.meaning`. For record subjects it also adds a `signs` link. Before unlocking the key it checks the policy for that meaning (`[policy.<meaning>]`: `min_signatures`, `roles`, `distinct_from_author`); a signer who authored the content cannot approve it when `distinct_from_author` is set (`self_approval` refusal).
+**Signing.** `sign FILE | --record ID | --hash H --meaning M --reason R [--signer ID] [--author ID]` writes a `signoff.signature` record with the statement in `data.signature` and `data.meaning`. For record subjects it also adds a `signs` link. Before unlocking the key it checks the policy for that meaning (`[policy.<meaning>]`: `min_signatures`, `roles`, `distinct_from_author`); a signer who authored the content cannot approve it when `distinct_from_author` is set (`self_approval` refusal). Authors are the actor of every evidence record whose content hash is the signed hash, `authored` signatures on that hash and `--author`; `sign`, `verify` and `is_approved` use the same rule. Roles for a policy come from the registry and must equal the signed role.
 
-**Verifying.** `verify FILE | --record ID | --hash H [--require MEANING]` finds every signature over the subject in the evidence, verifies each against the registry and computes a status, worst first: `invalid` › `unknown-signer` › `revoked` › `invalidated` › `valid`. The first time it sees that signed content has changed, it writes one `signoff.invalidation` record (`action: content-changed`). Signatures are never deleted; a signer can withdraw one with `invalidate SIG --reason R` (`signoff.invalidation`, `action: withdraw`). `manifest` renders a signature block (Markdown or HTML) with printed name, ID, role, meaning, local time with zone and UTC, reason, status and content hash.
+**Verifying.** `verify FILE | --record ID | --hash H [--require MEANING]` finds every signature over the subject in the evidence, verifies each against the registry and computes a status, worst first: `invalid` (also a replayed copy of a statement already in another record) › `unknown-signer` (also a key without its enrolment record) › `revoked` › `invalidated` › `valid`. The first time it sees that signed content has changed, it writes one `signoff.invalidation` record (`action: content-changed`). Signatures are never deleted; a signer can withdraw one with `invalidate SIG --reason R` (`signoff.invalidation`, `action: withdraw`, with the withdrawn statement's digest in the signed `withdraws`). `manifest` renders a signature block (Markdown or HTML) with printed name, ID, role, meaning, local time with zone and UTC, reason, status and content hash.
 
 **Approved actions.** An action is a command (`argv`, run without a shell), an HTTP call description, or any other effect, plus an optional payload hash.
 
@@ -602,8 +608,10 @@ stateDiagram-v2
 ```
 
 - The action ID is `act_` plus 24 hex digits of a hash of the request key, so `prepare` is idempotent per key; a different action under the same key is refused (`request_key_conflict`).
-- The action hash covers `{action_id, version, kind, description, spec, payload_sha256}`. Approvals sign that exact hash; a revision changes it.
-- `claim` succeeds only when the signed approvals verify against the registry for the current hash, meet `[actions]` policy (default one approval, approver ≠ preparer), and have not expired. The claim is an atomic SQLite update guarded by the status and the hash, so double execution is impossible. A status in the database is not authority.
+- The action hash covers `{action_id, version, kind, description, spec, payload_sha256, preparer}` (and `revised_by` after a revision), so the author exclusion uses the hashed preparer. Approvals sign that exact hash; a revision changes it.
+- `claim` first hashes the stored action again; it succeeds only when `signoff.action.approved` records (subject kind `action`) verify against the registry for that hash, meet `[actions]` policy (default one approval, approver ≠ preparer), have not expired and were not withdrawn. `run` executes that verified body. The claim is an atomic SQLite update guarded by the status and the hash, and a `signoff.action.claimed` record in the evidence refuses a second claim of the same version even after the database was rolled back. With a plain JSONL sink, an agent could delete that record together with the database state; in the trail the deletion is detected. A status in the database is not authority.
+- An action that binds a payload needs exactly those bytes at `claim` and `run` (`payload_required` otherwise); `run` passes them on standard input. A command that reads its payload from a file path is not bound.
+- A claim with no outcome becomes `unknown` only after the claim grace (`claim_grace_ms`, default 11 minutes), which is never shorter than `run_timeout_ms` (default 10 minutes); `run --timeout` may not exceed it.
 - `unknown` is final for automation: nothing retries it. `resolve` records a human `signoff.action.outcome` with `meaning: verified`. A `not-applied` resolution is stored as status `failed` with `data.resolution = "not-applied"`.
 - Records: `signoff.action.prepared` (`prepare`, `revise`), `.approved`, `.rejected`, `.claimed`, `.outcome` (`outcome`, `resolve`). `run` exits 0 only for `succeeded`, 1 for failed, unknown or refused, and 2 when the record could not reach the sink (the outcome is kept; run `sync`).
 
@@ -629,7 +637,9 @@ The command is split with `shlex` and run without a shell. The front-matter pars
 
 **Finish.** `finish PATH --key K --summary S [--path F…]` runs as a phase machine stored in `attempts/<plan>/<key>.json`: preflight (nothing written on failure) → `plan_written_commit_pending` → `commit_created_record_pending` → `completed`. It ticks verified items, sets `status: completed`, commits exactly the plan and the named paths with trailers `AQT-Plan`, `AQT-Task`, `AQT-Receipts`, `AQT-Finish`, verifies the trailers and writes `change.finish`. Re-running with the same key resumes after a hook failure or crash; the same key with different inputs fails (`idempotency_conflict`). With `lifecycle_owner = "external"`, aqt-change never writes the plan or commits; it only records.
 
-**Gate.** `gate PATH` derives `GO`, `NO-GO` or `MANUAL_VERIFY_REQUIRED` from the records only. NO-GO codes: `plan_unreconciled`, `receipt_missing`, `receipt_stale`, `receipt_failed`, `unapproved_change`, `review_fail`, `not_finished`, and `anti_gaming_warning` when `warnings_block = true`. MANUAL codes include `waiver_present`, `manual_item_agent_attested`, `approval_stale`, `approval_invalid`, `approval_unsigned` / `approval_unverified` (with `require_signed_approval`), `review_concerns`, `review_waived`, `review_independence_below_policy`, `scope_undeclared`, `scope_unverifiable`. `--rerun` re-executes the declared commands instead of trusting stored receipts. Real output of the offline quick start (`aqt-change/examples/quickstart.sh`):
+**Gate.** `gate PATH` derives `GO`, `NO-GO` or `MANUAL_VERIFY_REQUIRED` from the records only. NO-GO codes: `plan_unreconciled`, `receipt_missing`, `receipt_stale`, `receipt_failed`, `receipt_unverified` / `review_unverified` (the trail lacks or contradicts the record), `hidden_worktree_change`, `unapproved_change`, `review_fail`, `not_finished`, and `anti_gaming_warning` when `warnings_block = true`. MANUAL codes include `waiver_present`, `manual_item_agent_attested`, `receipt_unverified` / `review_unverified` (the record came through the spool, or no trail log is readable), `sparse_checkout`, `approval_stale`, `approval_invalid`, `approval_unsigned` / `approval_unverified` (with `require_signed_approval`), `review_concerns`, `review_waived`, `review_independence_below_policy`, `scope_undeclared`, `scope_unverifiable`. `--rerun` re-executes the declared commands instead of trusting stored receipts.
+
+**Trail confirmation.** `gate`, `finish` and the hooks read receipts and reviews from the ledger's `records.jsonl`, which the agent's user can edit. When a trail is in use (a trail log exists, or `resolve_sink()` names a writer; `AQT_SINK=file:` does not switch this off), a receipt or review counts only if the trail log holds a record with the same ID and content hash that the writer received over its socket (`observed.via = socket`). The log is each `AQT_EVIDENCE` entry named `trail.jsonl`, else `trail.jsonl` in the trail state directory; the sink file and the spool never count. The gate JSON reports `trail: {checked, logs}`. The local copy still decides which records belong to the plan and in which order, and `change.finish` and the approval target are read from it. Files marked `skip-worktree` or `assume-unchanged` are fingerprinted by their working-tree content. Real output of the offline quick start (`aqt-change/examples/quickstart.sh`):
 
 ```text
 completed: s01 record rec_01a163bc4f17… commit 1a983e55… gate GO
@@ -690,7 +700,7 @@ gate: NO-GO ['receipt_stale']
 
 Case IDs are `Q` plus six characters from a Crockford-style alphabet (`Q7SEGGW`). Case states: `held`, `warned`, `released`, `threat`. The `quarantine.held` record (`case_id`, `band`, `score_ppm`, `scores`, `source {tool, ref, domain, …}`, evidence spans with short excerpts, detector versions, and the thresholds `{sha256, version, calibrated}`) is shown in part in section 2.6.
 
-**Decisions** (`decisions.py`). `release CASE --reason R`, `declare-threat CASE --reason R` and `trust-source DOMAIN --reason R --expires DATE [--revoke]` by a responsible person (`[policy] responsible`, empty means every registered signer). Each passes `require_human`, unlocks the person's key with a passphrase and stores a detached statement in `data.signature`. Records: `quarantine.released` (`meaning: released`), `quarantine.threat.declared` (`rejected`), `quarantine.source.trusted` (`trust` with `approved`, `revoke` with `rejected`), `quarantine.refused`. With `require_signed_decisions = true` (the default), the hooks honour only decisions whose signature verifies against the registry; a forged decision line in the journal is ignored.
+**Decisions** (`decisions.py`). `release CASE --reason R`, `declare-threat CASE --reason R` and `trust-source DOMAIN --reason R --expires DATE [--revoke]` by a responsible person (`[policy] responsible`, empty means every registered signer). Each passes `require_human`, unlocks the person's key with a passphrase and stores a detached statement in `data.signature`. Records: `quarantine.released` (`meaning: released`), `quarantine.threat.declared` (`rejected`), `quarantine.source.trusted` (`trust` with `approved`, `revoke` with `rejected`), `quarantine.refused`. With `require_signed_decisions = true` (the default), the hooks honour only decisions whose signature verifies against the registry, made after the key's enrolment and before its revocation; a forged decision line in the journal is ignored. A decision acts only through its signed `data.decision` (case ID and content hash, or domain, subdomain flag and expiry): a record whose unsigned fields differ is `mismatch` and has no effect. A signed statement counts once (a copy is a replay), and decisions take effect in signed order (`signed_at`), not in journal order. `release` refuses when the stored original no longer hashes to the case's content hash; front ends use `Decider.case_content()` and pass `expected_sha256`. Deleting a later decision from the agent-writable journal brings back the earlier one; with aqt-trail as the sink, the deleted record is still in the trail.
 
 **Claude Code adapter** (`adapters/claude_code.py`). `PostToolUse` for `WebFetch`, `WebSearch` and `mcp__.*` returns `hookSpecificOutput.updatedToolOutput`: a deep copy of `tool_response` with only its content-bearing string leaves rewritten (metadata keys such as `url`, `query`, `tool_use_id` stay), plus `additionalContext` for warn and hold. `UserPromptSubmit` delivers released content and threat notes to the session the case came from, once each (`quarantine.delivered`). `hooks print claude-code` also prints `permissions.deny` rules that stop the agent from running decision commands or reading the quarantine state. A generic filter is `aqt-quarantine scan --source URL` (stdin → stdout; exit 1 when held).
 
@@ -727,9 +737,9 @@ Case IDs are `Q` plus six characters from a Crockford-style alphabet (`Q7SEGGW`)
 
 **Effectiveness.** The default criterion is no recurrence within N agent sessions and/or D days (`--window-sessions`, `--window-days`). Sessions are counted from `actor.agent.session` in later records. The result is `effective` only when the window is complete, no matching deviation occurred after approval, no matching candidate is undecided, no `trail.gap` falls in the window, and the control file still has the approved hash; otherwise `pending` (with reasons) or `not-effective`. `capa.effectiveness` `evaluated` is written only when the result or reasons change.
 
-**Approval states.** `recorded-unsigned` (a recorded human approval), `signed-verified` (aqt-signoff installed and `is_approved` confirms the signature), `signed-unverified` (a matching `signoff.signature` record but aqt-signoff is not installed to check it). `action verify` reports `changed-since-approval` when the control file later changes.
+**Approval states.** `recorded-unsigned` (a recorded human approval), `signed-verified` (aqt-signoff installed and the signature verifies; independence and the `approved` policy are checked on exactly the verified signatures, and an aqt-signoff error is `signature-not-valid`, never an approval), `signed-unverified` (a matching `signoff.signature` record but aqt-signoff is not installed to check it). `action verify` reports `changed-since-approval` when the control file later changes.
 
-**Files.** Configuration `$XDG_CONFIG_HOME/aqt/capa.toml` (`[identity]`, `[evidence]`, `[project]`, `[scan]`, `[due_days]`, `[similarity]`, `[approval]`). State: the SQLite working index `$XDG_STATE_HOME/aqt/capa/capa.db` (`AQT_CAPA_DB` or `[state] db`) and `snapshots/<sha256>` of control files beside it. The index is not evidence; `aqt-capa rebuild` recreates it from the `capa.*` records. aqt-capa does not verify chains or signatures of the evidence it reads; run `aqt-trail verify` for that.
+**Files.** Configuration `$XDG_CONFIG_HOME/aqt/capa.toml` (`[identity]`, `[evidence]`, `[project]`, `[scan]`, `[due_days]`, `[similarity]`, `[approval]`). State: the SQLite working index `$XDG_STATE_HOME/aqt/capa/capa.db` (`AQT_CAPA_DB` or `[state] db`) and `snapshots/<sha256>` of control files beside it. The index is not evidence; `aqt-capa rebuild` recreates it from the `capa.*` records. Accept, dismiss, classify, investigation, recorded approval, cancel, extend and close are unsigned records, so in a plain JSONL sink `rebuild` replays a forged closure. aqt-capa does not verify chains or signatures of the evidence it reads; run `aqt-trail verify` for that.
 
 ---
 
@@ -778,9 +788,13 @@ statuses = verify_subject("sha256:…", meaning=None, sources=None)
 #    invalidated), signer_id, name, role, meaning, subject, …
 
 ok = is_approved("sha256:…", meaning="approved",
-                 policy={"min_signatures": 2, "distinct_from_author": True}, sources=None)
+                 policy={"min_signatures": 2, "distinct_from_author": True}, sources=None, authors=None)
 # -> True when valid signatures with that meaning satisfy the policy
-#    (argument, else [policy.<meaning>] in signoff.toml, else one signature)
+#    (argument, else [policy.<meaning>] in signoff.toml, else one signature);
+#    the actors of records with this content hash are always added to authors
+
+check_signers()
+# -> {"ok", "registry", "evidence", "keys": [{signer, key_id, state, counts, problems, notes, …}]}
 ```
 
 `sources` is a list of JSONL paths; the default is `iter_evidence`'s sources, with the signoff configuration's `[paths] evidence` taking precedence. To sign a record from another tool, use the subject `{"kind": "record", "ref": record["id"], "sha256": aqt_evidence.record_content_hash(record)}`. Consumers import aqt-signoff only when it is installed and otherwise report matching `signoff.signature` records as unverified.
@@ -829,7 +843,8 @@ Everything the suite writes, with the defaults. "umask" means the file is create
 |---|---|---|---|
 | **Configuration** `$XDG_CONFIG_HOME/aqt/` | | | |
 | `signers.json` | aqt-signoff, `aqt-quarantine init` | Signer registry (public keys only); replaced atomically | umask |
-| `keys/<slug>.key` | aqt-signoff, `aqt-quarantine init` | Passphrase-encrypted Ed25519 private key | 0600 |
+| `keys/` | aqt-signoff, `aqt-quarantine init` | Key folder | 0700 (set by `aqt-signoff init`, and by `generate_key` when it creates the folder) |
+| `keys/<slug>.key` | aqt-signoff, `aqt-quarantine init` | Passphrase-encrypted Ed25519 private key (AQT key format, section 2.6) | 0600 |
 | `keys/<slug>.key.pub` | same | Public key | umask |
 | `keys/<slug>.<hex>.revoked.key[.pub]` | aqt-signoff `revoke` | Retired key files | as before |
 | `trail.toml`, `signoff.toml`, `change.toml`, `quarantine.toml`, `validate.toml`, `capa.toml`, `sensei.toml` | You (`aqt-quarantine init` and `aqt-sensei init` write starter files) | Per-tool configuration | umask |
@@ -839,9 +854,11 @@ Everything the suite writes, with the defaults. "umask" means the file is create
 | `spool/spool.jsonl` | `SocketSink`, `aqt-trail` client | Records waiting for the writer | 0600 |
 | `trail/` (`AQT_TRAIL_STATE`) | aqt-trail | Trail state directory | 0700 (not changed when `log_mode` is 0640) |
 | `trail/trail.jsonl`, `trail/checkpoints.jsonl` | aqt-trail writer | The chained log; signed checkpoints | `log_mode` (0600; 0640 in separate-user mode) |
-| `trail/trail.json`, `trail/trail.lock` | aqt-trail | Log ID, key ID, creation time; writer lock | umask |
+| `trail/trail.json` | aqt-trail | Log ID, key ID, creation time | umask |
+| `trail/trail.lock` | aqt-trail writer | Writer lock | 0600 |
 | `trail/keys/service.key`, `.pub` | `aqt-trail init` | Unencrypted service key; public key | 0600; umask |
-| `trail/reviews/<rv_id>/worksheet.json`, `.md` | `aqt-trail review run` | Review worksheets | umask |
+| `trail/reviews/<rv_id>/worksheet.json`, `.md` | `aqt-trail review run` | Review worksheets (working copies; `review sign` recomputes them) | umask |
+| `trail-reviews/<rv_id>/` | `aqt-trail review run`, aqt-ui | Worksheets when the trail state is not writable (separate-user mode) | umask |
 | `trail/test-tsa/` | `--tsa test:` | TEST ONLY CA, certificate and key (`tsa.key` 0600) | umask |
 | `signoff/signoff.db` (`AQT_SIGNOFF_STATE`) | aqt-signoff | Action index and undelivered records (SQLite) | 0600 |
 | `change/<16 hex>/` | aqt-change outside a Git repository | Ledger (as below) | files 0600 |
@@ -875,16 +892,16 @@ Record contents to keep in mind for data protection: actor IDs and display names
 
 | Control | Protects against | Does not protect against |
 |---|---|---|
-| Separate trail writer with `observed` attribution | An actor claiming another identity unnoticed: the claim and the observed process chain are both stored, and review flags mismatches | A same-user process that detaches from its agent parent before writing; records delivered through the spool (marked `via: spool`, not observed); tools or hooks that never write |
+| Separate trail writer with `observed` attribution | An actor claiming another identity unnoticed: the claim and the observed process chain are both stored, review flags mismatches and incomplete chains (`chain_status`), and clients cannot write records in the writer's name | A same-user process that detaches into a new session or is started by a service manager or a terminal server on an agent's request (its chain looks complete); records delivered through the spool (marked `via: spool`, not observed); tools or hooks that never write |
 | Hash chain plus writer signature | Unnoticed edits, inserts, deletes and reordering, for a verifier with the writer's public key | Truncation and a full rewrite under a new key, unless the key is pinned and head copies or anchors exist |
-| Head copies (`head --export`) and RFC 3161 anchors | Truncation, rollback and rewrite before the anchor's time, as long as the copies are out of the agents' reach | Changes after the last anchor; a TSA you should not trust (no revocation check) |
+| Head copies (`head --export`) and RFC 3161 anchors | Truncation, rollback and rewrite before the anchor's time, as long as the copies are out of the agents' reach; `verify` names the records they do not cover | Changes after the last anchor; a TSA you should not trust (no revocation check); a TEST ONLY anchor that a client requests resets the review query `unanchored_head`, which does not check the certificate chain |
 | Separate-user mode | Agents editing the log or reading the service key | Root and root-equivalent users |
-| Detached statements with passphrase keys | Signing without the passphrase, moving a signature to other content, altering the printed name, meaning, time or reason | An agent that obtains the passphrase (never type it into an agent chat); a same-user agent that adds its own key to the registry (detectable: enrolment is a record, and signatures dated before enrolment are rejected; hide the key directory from sandboxed agents) |
+| Detached statements with passphrase keys | Signing without the passphrase, moving a signature to other content, replaying it in another record, altering the printed name, role, meaning, time or reason; offline guessing of a copied key file is slow (scrypt) | An agent that obtains the passphrase (never type it into an agent chat); a same-user agent that enrols a key of its own with a passphrase it chose (detectable: the enrolment record is in the trail, and `aqt-signoff signers check` lists the key; aqt-quarantine and aqt-trail do not check enrolment records); old backup copies of PBKDF2 key files |
 | `require_human` and per-tool owner checks | Agents deciding by accident or on injected instructions; every attempt is recorded as `<tool>.refused` | A determined same-user process that clears its environment, detaches and fakes a terminal |
 | aqt-quarantine detectors and fail-closed bands | Known-style injections reaching the agent through the covered tools | Adaptive attacks; other channels (`curl` in a shell, downloaded files, uncovered tools); content in the warn band, which the model has already seen; a hook that does not run (Claude Code then passes the original) |
 | aqt-sensei bubblewrap sandbox | An advisor writing to the project, reading the bridge state, the owner token, sockets, other pairs or the owner's agent homes | Confidentiality: with the network shared (the default) the advisor can send what it reads to the internet; a same-user process outside the panes that reads the token |
-| aqt-change receipts and gate | A careless agent claiming "done" without running anything; silent plan changes; stale evidence | A determined local attacker forging the ledger or a plain JSONL sink (use aqt-trail and `gate --rerun`); inadequate tests (reviews and aqt-validate address that) |
-| aqt-capa | Deviations disappearing as anecdotes; unapproved or reverted changes to agent instructions (hash-bound) | Failures that no control records; tampered input evidence (aqt-capa does not verify chains or signatures) |
+| aqt-change receipts and gate | A careless agent claiming "done" without running anything; silent plan changes; stale evidence; with aqt-trail, receipts and reviews forged or edited in the local ledger; changes hidden with `skip-worktree` | Without aqt-trail, a forged ledger or plain JSONL sink (use `gate --rerun`); a made-up receipt sent through the writer's socket (the trail keeps the sender's process chain); deleting a later failing run from the local ledger; inadequate tests (reviews and aqt-validate address that) |
+| aqt-capa | Deviations disappearing as anecdotes; unapproved or reverted changes to agent instructions (hash-bound); an unverified record posing as an independent approval | Failures that no control records; tampered input evidence (aqt-capa does not verify chains); forged unsigned steps such as a closure in a plain JSONL sink |
 
 ### 8.3 Where tamper evidence comes from
 
@@ -901,14 +918,14 @@ Tamper evidence is not tamper prevention. A record set is trustworthy to the deg
 
 ### 8.4 Known limitations
 
-- **No independent security review** of the signing and verification code has been done yet (see `SECURITY.md`).
+- **Security review.** The code had an AI-assisted security review in October 2026, not a professional audit. The [review report](security-review-2026-10.md) lists every finding, its fix and the limits that remain.
 - **Linux only.** Attribution needs `SO_PEERCRED` and `/proc`; locking uses `fcntl`; the advisor sandbox needs bubblewrap and unprivileged user namespaces (on Ubuntu, AppArmor can block them; `aqt-sensei doctor` detects that).
 - **Time** is the writer's clock unless anchored. Clock jumps are recorded, not prevented.
 - **Separate-user mode is scripted but not exercised by the tests.** The units pass `systemd-analyze verify`, but the script itself has not run in CI. Check once that a client user can write through `/run/aqt-trail/trail.sock` and read the log before relying on this mode.
 - **The advisor sandbox does not use `bwrap --new-session`.** The advisor runs in the pane's terminal session.
 - **Importers** depend on undocumented, changing session formats. Codex's SQLite history store is not imported.
 - **Excerpts** can contain personal data; set `excerpt_chars = 0` (aqt-trail) or `excerpt_lines = 0` (aqt-change) where that matters.
-- **Default evidence sources** use the fixed trail path `$XDG_STATE_HOME/aqt/trail/trail.jsonl` (section 3.6).
+- **Default evidence sources** do not include a separate-user log; name it in `AQT_EVIDENCE` (section 3.6).
 - **AF_UNIX path length** (about 104 bytes) limits socket locations, including the temporary directories used by tests.
 - **Not implemented in 0.1:** an MCP server for approvals, a query service, in-toto or SCITT export, multi-host replication, eIDAS-qualified signatures, PDF signing.
 
@@ -918,22 +935,23 @@ Tamper evidence is not tamper prevention. A record set is trustworthy to the deg
 
 ### 9.1 Suites
 
-Each package has an offline pytest suite in `<package>/tests/` with synthetic fixtures: no network, no real agents or models, no GPU. Counts observed on 2026-10-22 (Python 3.13):
+Each package has an offline pytest suite in `<package>/tests/` with synthetic fixtures: no network, no real agents or models, no GPU. Counts observed on 2026-10-29 (Python 3.13), after the fixes of the security review:
 
 | Suite | Passed | Skipped | Notes |
 |---|---|---|---|
-| aqt-spec | 101 | 0 | Vectors, schemas, catalogues (every cited catalogue ID exists), spec documents agree with the code |
-| aqt-trail | 70 | 0 | Writer, server, tamper cases, TSA, importers, review, ALCOA++ |
-| aqt-signoff | 34 | 0 | Signatures, statuses, actions, CLI, L1 conformance of its records |
-| aqt-change | 71 | 0 | Plan format, reconciliation, receipts, finish, gate, hooks, quick start |
+| aqt-spec | 200 | 0 | Vectors, schemas, catalogues (every cited catalogue ID exists), spec documents agree with the code; Hypothesis property tests for canonical JSON, hashing, chain and signature verification |
+| aqt-trail | 176 | 0 | Writer, server, tamper cases, TSA, importers, review, ALCOA++, bundles |
+| aqt-signoff | 50 | 0 | Signatures, statuses, replays, registry check, key format, actions, CLI, L1 conformance of its records |
+| aqt-change | 81 | 0 | Plan format, reconciliation, receipts, trail confirmation, finish, gate, hooks, quick start |
 | aqt-sensei | 55 | 3 | The skipped tests need real tmux and bubblewrap (opt-in) |
-| aqt-quarantine | 65 | 0 | Detectors, engine, decisions, Claude Code adapter, payload conformance of every record type |
+| aqt-quarantine | 78 | 0 | Detectors, engine, decisions and their replays, Claude Code adapter, payload conformance of every record type |
 | aqt-validate | 110 | 0 | Statistics against reference values, loaders, detector and reviewer runs |
-| aqt-capa | 20 | 0 | Units, CLI, end to end |
-| aqt-ui | 53 | 0 | Login, Host, CSRF and Origin, read-only and peer checks for every decision, each decision end to end, German labels, paging and a 50,000-record trail |
+| aqt-capa | 23 | 0 | Units, CLI, end to end, signature-based approval |
+| aqt-ui | 84 | 0 | Login, Host, CSRF and Origin, session key, request limits, read-only and peer checks for every decision, substituted content, each decision end to end, German labels, paging and a 50,000-record trail |
+| aqt-cli | 26 | 0 | `aqt status`, `aqt setup`, tool pass-through |
 | demo | 1 | 0 | `examples/demo/test_demo.py`: the full story, 42 expected outcomes |
 
-In total 580 tests pass: 579 package tests (including the optional aqt-ui) plus the demo test. Some tests skip themselves when a tool is missing: `openssl` (aqt-trail token cross-check) and `git` (aqt-change quick start).
+In total 884 tests pass: 883 package tests (including the optional aqt-ui and aqt-cli) plus the demo test. Some tests skip themselves when a tool is missing: `openssl` (aqt-trail token cross-check) and `git` (aqt-change quick start).
 
 ### 9.2 Running them
 
@@ -963,7 +981,7 @@ Started from inside an agent session, the demo's ALCOA++ report fails *attributa
 
 ### 9.4 CI
 
-`.github/workflows/ci.yml` runs on every push and pull request on `ubuntu-latest` with Python 3.11, 3.12 and 3.13. It installs `uv`, `bubblewrap` and `tmux`, then runs `scripts/test_all.sh`. The `.github/workflows/ci.yml` files inside the package folders are path-filtered workflows for a package that lives in its own repository; GitHub Actions runs only the root workflow in this monorepo.
+`.github/workflows/ci.yml` runs on every push and pull request on `ubuntu-latest` with Python 3.11, 3.12 and 3.13. It installs `uv`, `bubblewrap` and `tmux`, then runs `scripts/test_all.sh`; further jobs run `scripts/clean_install_check.sh` and audit the third-party dependencies of all packages with `pip-audit`. The `.github/workflows/ci.yml` files inside the package folders are path-filtered workflows for a package that lives in its own repository; GitHub Actions runs only the root workflow in this monorepo.
 
 ---
 
@@ -1059,8 +1077,8 @@ New features go into `catalogues/features.yaml` (`package`, `description`, `reco
 
 | Variable | Used by | Meaning |
 |---|---|---|
-| `AQT_SINK` | All tools | `file:/path.jsonl` or `unix:/path.sock`; default `$XDG_STATE_HOME/aqt/evidence.jsonl` |
-| `AQT_EVIDENCE` | All readers | Colon-separated JSONL files to read records from |
+| `AQT_SINK` | All tools | `file:/path.jsonl` or `unix:/path.sock`; unset: the trail writer when one answers or a trail exists, else `$XDG_STATE_HOME/aqt/evidence.jsonl` (section 3.1) |
+| `AQT_EVIDENCE` | All readers | Colon-separated JSONL files to read records from; files named `trail.jsonl` are read first (section 3.6) |
 | `AQT_ACTOR` | aqt-trail, aqt-signoff, aqt-change, aqt-validate, aqt-capa | Claimed actor ID (never turns an agent context into a human in aqt-change) |
 | `AQT_AGENT_SESSION` | Human check; aqt-change, aqt-capa, aqt-validate session IDs | Marks an agent session; set to `1` inside the aqt-sensei sandbox |
 | `AQT_TRAIL_STATE` | aqt-trail | Trail state directory |

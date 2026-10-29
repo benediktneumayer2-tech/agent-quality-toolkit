@@ -11,6 +11,8 @@
 | Aufbau | Validierungsplan, URS, Risikoanalyse, Testspezifikation, Testprotokoll und Bericht wären real getrennte, einzeln freigegebene Dokumente; hier sind sie zusammengefasst. |
 | Protokollstand | Kapitel 1–6 festgelegt am 2026-10-22, 19:52 MESZ, vor der Erstdurchführung auf `917db6e`; danach nur redaktionell gekürzt. Für die Wiederholung auf `eb920b1` (Kapitel 7) inhaltlich unverändert übernommen; angepasst wurden nur die Commit-Angaben. |
 
+> **Hinweis zum heutigen Stand (29.10.2026).** Dieses Dokument beschreibt Commit `eb920b1`; Testspezifikation und Ergebnisse bleiben unverändert, denn sie gelten für diesen Stand. Seitdem hat eine KI-gestützte Sicherheitsprüfung Befunde ergeben, die behoben wurden ([Prüfbericht](../security-review-2026-10.md), englisch). Dabei hat sich auch der Prüfgegenstand geändert. Die Spezifikation hat jetzt 87 statt 57 Testvektoren, `aqt-evidence vectors` meldet also „87 of 87 vectors agree“ (TC-06). `verify` liest jede Zeile strikt in kanonischer Form und nennt die Datensätze, die keine Kopfkopie und kein geprüfter Anker abdeckt. `verify --bundle` vertraut der TEST-ONLY-CA eines Bundles nur noch mit `--test-tsa` (TC-12) sowie dessen `tsa-ca.pem` und `signers.json` gar nicht mehr. Eine Wiederholung auf einem aktuellen Commit braucht deshalb eine angepasste Testspezifikation (Änderungskontrolle, Kapitel 9). O-5 (unabhängiges Code- und Security-Review) bleibt in diesem Dokument offen: Die Prüfung war KI-gestützt, kein professionelles Audit.
+
 ## 1. Zweck und Geltungsbereich
 
 **Zweck:** an einer Funktion zeigen, wie eine risikobasierte Validierung nach GAMP 5 (2. Ausgabe, 2022) dokumentiert wird.

@@ -127,7 +127,7 @@ Each first result runs offline. The package READMEs have a 60-second quick start
 | [aqt-validate](aqt-validate/README.md) | `python aqt-validate/examples/demo.py /tmp/aqt-validate-demo` tests a toy detector and a stub reviewer and prints `conclusion: meets` for both. This shows the workflow on made-up data, not a real validation. | Valid only for the data and settings tested. |
 | [aqt-capa](aqt-capa/README.md) | `python aqt-capa/examples/demo.py` runs the loop from deviation to closure and prints a trend review. | Sees only failures that some tool recorded. |
 | [aqt-trail](aqt-trail/README.md) | In its quick start, `aqt-trail verify` prints `intact: … records`; change one stored line and it prints `broken from seq …`. | Tamper-evident, not tamper-proof. |
-| [aqt-spec](aqt-spec/README.md) | `aqt-evidence vectors` prints `57 of 57 vectors agree`. | The catalogues paraphrase the rules; they are not legal advice. |
+| [aqt-spec](aqt-spec/README.md) | `aqt-evidence vectors` prints `87 of 87 vectors agree`. | The catalogues paraphrase the rules; they are not legal advice. |
 
 ## Why not use an existing tool?
 
@@ -166,11 +166,11 @@ The [catalogues](aqt-spec/catalogues/) hold 121 paraphrased requirements from 11
 - **Not a validated system.** Agent Quality Toolkit supports quality-management practices; it is not a validated system and does not by itself make any process compliant with GMP, GDP, 21 CFR Part 11 or EU Annex 11. Validation for your intended use stays with you.
 - **Detectors are a first filter, not a guarantee.** Published research shows that adaptive attackers defeat every injection detector tested. Add sandbox and network limits.
 - **Tamper-evident, not tamper-proof.** The evidence is only as strong as its keys and time stamps; keep them out of the agents' reach. The check for an agent session is a guard that a determined program can fool: the passphrase is the real control, so never type it into an agent chat.
-- **No independent security review yet** of the signing and verification code.
+- **Security review: AI-assisted, not a professional audit.** In October 2026, AI reviewers running models from two vendors attacked the toolkit as a same-user agent would. The [review report](docs/security-review-2026-10.md) lists every finding, its fix and the limits that remain.
 - **Some checks are manual.** The Claude Code hooks, a live advisor pairing and the AI-reviewer command lines have documented manual checks, not automated tests. The trail's separate-user mode is not yet tested.
 - **Demo shortcuts.** The demo's people use fixed passphrases (DEMO ONLY), and its time stamps come from a local test authority (TEST ONLY).
 - **Preview.** Version 0.1; interfaces may change before 1.0. Linux only. Not on PyPI (the Python package index) yet: install from this repository. Ready-made hooks exist for Claude Code only; with Codex or pi you run the commands yourself, and aqt-trail imports their session logs.
-- **Tests.** `scripts/test_all.sh` runs 610 offline tests (609 in the ten packages, including the optional aqt-ui and the `aqt` command, and one for the demo) with a throw-away home folder. `scripts/clean_install_check.sh` builds every package, installs only the built packages into a fresh environment outside the checkout and runs every tool, `aqt status` and the demo there (`--docker` does the same in a throw-away container). GitHub's automatic checks (CI) run both, the tests on Python 3.11, 3.12 and 3.13.
+- **Tests.** `scripts/test_all.sh` runs 884 offline tests (883 in the ten packages, including the optional aqt-ui and the `aqt` command, and one for the demo) with a throw-away home folder. `scripts/clean_install_check.sh` builds every package, installs only the built packages into a fresh environment outside the checkout and runs every tool, `aqt status` and the demo there (`--docker` does the same in a throw-away container). GitHub's automatic checks (CI) run both, the tests on Python 3.11, 3.12 and 3.13.
 
 ## Privacy and security
 
@@ -185,6 +185,7 @@ The [catalogues](aqt-spec/catalogues/) hold 121 paraphrased requirements from 11
 |---|---|
 | Install, set up and use every tool, with real error messages | [User manual](docs/manual.md) |
 | How it is built: record format, chaining, security model, tests | [Technical documentation](docs/technical-documentation.md) |
+| What the October 2026 security review found, and what is still open | [Security review report](docs/security-review-2026-10.md) |
 | Rule → feature → evidence → what you still must do | [GxP crosswalk](aqt-spec/crosswalk.md) |
 | The shared record format, for any language | [Evidence record specification](aqt-spec/spec/evidence-records-0.1.md) |
 | The demo step by step, its outputs and its isolation | [Integration demo](examples/demo/README.md) |
