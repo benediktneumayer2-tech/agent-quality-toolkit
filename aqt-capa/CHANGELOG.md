@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Security fix: with aqt-signoff installed, an approval counts only from signatures that verify. Independence
+  (the implementer is excluded unless `allow_self_approval`) and the `approved` policy are checked on exactly
+  those signatures, and `by`, `at` (the signed time) and `record` name the signature that completed the
+  approval, plus `signers`. An unverified record claiming another signer no longer combines with a valid
+  self-approval, and an aqt-signoff error (for example an unreadable registry) is `signature-not-valid`, never
+  an approval.
+- README: the threat model states that accept, dismiss, classify, investigation, recorded approval, cancel,
+  extend and close are unsigned, and that `rebuild` replays a forged closure.
 - Global options (`--json`, `--config`, `--db`, `--evidence`, `--root`, `--repo`) are accepted before or after
   the subcommand, as in aqt-trail, aqt-quarantine and aqt-validate.
 

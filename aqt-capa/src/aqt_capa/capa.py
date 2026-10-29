@@ -397,14 +397,21 @@ class Capa:
 
     # -------------------------------------------------------------- approval
     def approval(self, act, records: list[dict] | None = None) -> dict:
-        """How (and whether) the implemented change was approved. See aqt-spec spec §6.3 and the aqt-signoff Python API."""
+        """How (and whether) the implemented change was approved. See aqt-spec spec §6.3 and the aqt-signoff Python API.
+
+        With aqt-signoff installed, only signatures that verify count: the implementer is excluded (unless
+        ``allow_self_approval``) and the configured "approved" policy is applied to exactly those signatures,
+        and the approval is attributed to the signatures that satisfy it (signer, record, signed time).
+        Without aqt-signoff, a matching ``signoff.signature`` record is reported as ``signed-unverified``."""
         if act["state"] in ("planned", "cancelled") or not act["implemented_hash"]:
             return {"approved": False, "status": "not-implemented"}
         if act["approved_record"]:
             return {"approved": True, "status": "recorded-unsigned", "at": act["approved_at"], "by": act["approver"]}
         wanted = act["implemented_hash"]
-        sigs = []
-        for r in records if records is not None else self.evidence():
+        excluded = set() if self.cfg.allow_self_approval else {act["implementer"]}
+        records = records if records is not None else self.evidence()
+        claims = []                                          # what the records say, not yet verified
+        for r in records:
             if r.get("type") != "signoff.signature":
                 continue
             data = r.get("data") or {}
@@ -413,28 +420,37 @@ class Capa:
             hashes = {(r.get("subject") or {}).get("sha256"), (statement.get("subject") or {}).get("sha256")}
             meaning = statement.get("meaning") or data.get("meaning") or r.get("meaning")
             signer = (statement.get("signer") or {}).get("id") or (r.get("actor") or {}).get("id")
-            if wanted in hashes and meaning == "approved":
-                if signer == act["implementer"] and not self.cfg.allow_self_approval:
-                    continue
-                sigs.append((r["time"], signer, r["id"]))
-        if not sigs:
+            if wanted in hashes and meaning == "approved" and signer not in excluded:
+                claims.append((r["time"], signer, r["id"]))
+        if not claims:                                       # every verified signature is also a claim
             return {"approved": False, "status": "awaiting-approval"}
-        sigs.sort()
-        at, by, rec = sigs[0]
+        claims.sort()
         try:
             import aqt_signoff  # optional
         except ImportError:
+            at, by, rec = claims[0]
             return {"approved": True, "status": "signed-unverified", "at": at, "by": by, "record": rec,
                     "note": "aqt-signoff not installed; signature not verified"}
         try:
-            ok = bool(aqt_signoff.is_approved(wanted, meaning="approved",
-                                              sources=self.readable_paths()))
+            so = aqt_signoff.Signoff(aqt_signoff.load_settings(evidence=self.readable_paths()))
+            statuses = so.signatures_for(wanted, meaning="approved", records=records)
+            eligible = [s for s in statuses if s.valid and s.signer_id not in excluded]
+            policy = so.evaluate_policies(eligible, wanted, authors=sorted(excluded), required=["approved"])["approved"]
         except Exception as error:  # noqa: BLE001 - report, never pretend
-            return {"approved": True, "status": "signed-unverified", "at": at, "by": by, "record": rec,
-                    "note": f"aqt-signoff verification failed: {error}"}
-        if ok:
-            return {"approved": True, "status": "signed-verified", "at": at, "by": by, "record": rec}
-        return {"approved": False, "status": "signature-not-valid", "by": by, "record": rec}
+            return {"approved": False, "status": "signature-not-valid", "by": claims[0][1], "record": claims[0][2],
+                    "note": f"aqt-signoff could not verify the approval: {error}"}
+        if policy.met:
+            first: dict[str, object] = {}                    # signer -> their earliest counting signature
+            for status in sorted(eligible, key=lambda s: parse_time(s.signed_at)):
+                if status.signer_id in policy.signers:
+                    first.setdefault(status.signer_id, status)
+            counted = list(first.values())
+            done = counted[policy.policy.min_signatures - 1]   # the signature that completed the approval
+            return {"approved": True, "status": "signed-verified", "at": done.signed_at, "by": done.signer_id,
+                    "record": done.record_id, "signers": [s.signer_id for s in counted]}
+        if not eligible:
+            return {"approved": False, "status": "signature-not-valid", "by": claims[0][1], "record": claims[0][2]}
+        return {"approved": False, "status": "awaiting-approval", "note": policy.note}
 
     # ---------------------------------------------------------- effectiveness
     def criterion(self, act) -> dict:

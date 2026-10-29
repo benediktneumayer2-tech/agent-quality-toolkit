@@ -64,7 +64,9 @@ def _implemented(env, capa, *, window_days=None, window_sessions=None):
     return dev, aid, impl
 
 
-def test_signoff_signature_counts_as_unverified_approval(env):
+def test_signoff_signature_counts_as_unverified_approval(env, monkeypatch):
+    import sys
+    monkeypatch.setitem(sys.modules, "aqt_signoff", None)      # as without aqt-signoff (see test_signed_approval)
     capa = env.capa()
     dev, aid, impl = _implemented(env, capa, window_sessions=1)
     act = capa.store.action(aid)
@@ -82,26 +84,6 @@ def test_signoff_signature_counts_as_unverified_approval(env):
     assert status["approved"] and status["status"] == "signed-unverified"
     env.add(sessions(1))
     assert capa.evaluate(aid)["result"] == "effective"
-
-
-def test_signoff_api_used_when_importable(env, monkeypatch):
-    import sys
-    import types
-    capa = env.capa()
-    _, aid, impl = _implemented(env, capa, window_sessions=1)
-    act = capa.store.action(aid)
-    env.add([rec("signoff.signature", "sign", who=actor("human", HUMAN), meaning="approved", reason="ok",
-                 subject=subject("record", impl["id"], sha256=act["implemented_hash"]), data={"meaning": "approved"})])
-    calls = []
-    fake = types.ModuleType("aqt_signoff")
-    fake.is_approved = lambda sha, *, meaning, sources: calls.append((sha, meaning, sources)) or verdict["ok"]
-    verdict = {"ok": True}
-    monkeypatch.setitem(sys.modules, "aqt_signoff", fake)
-    assert capa.approval(act)["status"] == "signed-verified"
-    assert calls[0][0] == act["implemented_hash"] and calls[0][1] == "approved"
-    verdict["ok"] = False
-    assert capa.approval(act) == {"approved": False, "status": "signature-not-valid", "by": HUMAN,
-                                  "record": capa.approval(act)["record"]}
 
 
 def test_days_window_with_injected_clock(env):

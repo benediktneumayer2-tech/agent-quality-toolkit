@@ -58,7 +58,7 @@ flowchart LR
   - reverted git commits.
 
   A human accepts or dismisses each candidate with a reason. The dismissal is evidence too.
-- **Actions bound by hash.** An action names one control file. `implement` records the before and after hashes and a diff excerpt. Approval is bound to that implementation record's content hash. It is either a recorded human approval (unsigned) or an aqt-signoff signature, verified with `aqt_signoff.is_approved` when aqt-signoff is installed and otherwise reported as `signed-unverified`. If the file later changes, `verify` reports `changed-since-approval`.
+- **Actions bound by hash.** An action names one control file. `implement` records the before and after hashes and a diff excerpt. Approval is bound to that implementation record's content hash. It is either a recorded human approval (unsigned) or an aqt-signoff signature. With aqt-signoff installed, only signatures that verify count: the implementer's own signature is left out unless `allow_self_approval` is set, the configured `approved` policy is applied to the remaining signatures, and the approval is attributed to the signatures that meet it. A verification error never counts as approval. Without aqt-signoff, a signature record is reported as `signed-unverified`. If the file later changes, `verify` reports `changed-since-approval`.
 - **Honest effectiveness.** The default criterion is `no-recurrence` within N agent sessions and/or D days. The result is `effective` only when all of these hold:
   - the window is complete;
   - no matching deviation occurred after approval;
@@ -93,9 +93,10 @@ The features are designed along these concepts and support them. Clause IDs foll
 - **Self-asserted actors.** In a plain JSONL sink, an agent with shell access could write a `capa.*` record claiming a human actor, or edit the SQLite index. Three things limit this:
   - the index is never evidence, and `rebuild` restores it;
   - with aqt-trail, every record carries writer-observed process attribution;
-  - with aqt-signoff, approvals need a passphrase-protected key.
+  - with aqt-signoff, an approval can be a signature made with a passphrase-protected key, and aqt-capa verifies it.
 
   Without aqt-signoff, a `signoff.signature` record found in the evidence is reported as `signed-unverified`.
+- **Unsigned human steps.** Accept, dismiss, classify, record an investigation, a recorded approval (`action approve`), cancel, extend and close are unsigned records. In a plain JSONL sink, an agent can forge them, for example a closure with basis `effective`. `rebuild` then shows the deviation as closed: the effectiveness gate is enforced when `close` runs, not when records are read back. With aqt-trail, such a record is attributed to the process that wrote it; review closures there. Only the approval of an action can carry a signature today.
 - **Coverage.** Absence of candidates is not absence of failures. Effectiveness needs minimum activity and stays `pending` on trail gaps, but it cannot see failures that no control records.
 - **Heuristic sources.** A revert can be benign and a red test can be intended. This is why a human decides every candidate.
 - **Lexical similarity** misses paraphrased recurrences. Link recurrences manually with `deviation classify --recurrence-of`.
