@@ -36,8 +36,8 @@ import tomllib
 from pathlib import Path
 from typing import Iterator, Protocol
 
-from .canonical import canonical_json
-from .record import validate_record
+from .canonical import CanonicalError, canonical_json, parse_canonical_line
+from .record import record_content_hash, validate_record
 
 
 class SinkError(RuntimeError):
@@ -46,6 +46,14 @@ class SinkError(RuntimeError):
 
 class SinkUnavailable(SinkError):
     """The aqt-trail socket could not be reached (nothing was stored by the service)."""
+
+
+class RecordLineError(SinkError):
+    """A line of a JSON-lines file could not be read (``path``, 1-based ``line``, ``reason``)."""
+
+    def __init__(self, path, line: int, reason: str):
+        super().__init__(f"{path}:{line}: {reason}")
+        self.path, self.line, self.reason = str(path), line, reason
 
 
 ERROR_CODES = ("invalid_record", "unauthorized", "duplicate_id", "unavailable", "internal")
@@ -235,39 +243,80 @@ def open_sink(spec: str | None = None) -> Sink:
     raise SinkError("AQT_SINK must start with file: or unix:")
 
 
-def read_jsonl(path: str | os.PathLike) -> Iterator[dict]:
-    """Yield records from a JSON-lines file; a bad line raises with its line number."""
+def read_jsonl(path: str | os.PathLike, *, strict: bool = False) -> Iterator[dict]:
+    """Yield records from a JSON-lines file; a bad line raises ``RecordLineError`` (a
+    ``SinkError``) with its line number. Blank lines are skipped.
+
+    ``strict=True`` is for verifiers (spec §4): every line must be a record in canonical form
+    (``parse_canonical_line``: no duplicate keys, floats, lone surrogates or other bytes than
+    the canonical ones), so what is verified is exactly what every reader sees."""
     with open(path, "rb") as handle:
         for number, line in enumerate(handle, 1):
             if not line.strip():
                 continue
             try:
-                yield json.loads(line)
-            except ValueError as error:
-                raise SinkError(f"{path}:{number}: not valid JSON") from error
+                record = parse_canonical_line(line) if strict else json.loads(line)
+            except CanonicalError as error:
+                raise RecordLineError(path, number, str(error)) from error
+            except (ValueError, RecursionError) as error:
+                raise RecordLineError(path, number, "not valid JSON") from error
+            yield record
+
+
+TRAIL_LOG_NAME = "trail.jsonl"
 
 
 def evidence_sources(environ: dict | None = None) -> list[Path]:
     """Files other tools read records from: ``AQT_EVIDENCE`` (colon-separated paths) or, by
-    default, the sink file, the aqt-trail log and the spool (records not yet in the trail),
+    default, the aqt-trail log, the sink file and the spool (records not yet in the trail),
     when they exist."""
     environ = os.environ if environ is None else environ
     if environ.get("AQT_EVIDENCE"):
         return [Path(part) for part in environ["AQT_EVIDENCE"].split(":") if part]
     sink = environ.get("AQT_SINK", "")
-    candidates = [Path(sink[5:])] if sink.startswith("file:") else [state_dir() / "evidence.jsonl"]
-    candidates += [_trail_location(environ)[0] / "trail.jsonl", spool_file()]
-    return [path for path in candidates if path.exists()]
+    candidates = [_trail_location(environ)[0] / TRAIL_LOG_NAME]
+    candidates.append(Path(sink[5:]) if sink.startswith("file:") else state_dir() / "evidence.jsonl")
+    candidates.append(spool_file())
+    unique = list(dict.fromkeys(candidates))
+    return [path for path in unique if path.exists()]
 
 
-def iter_evidence(paths: list[Path] | None = None) -> Iterator[dict]:
-    """All records from ``paths`` (default ``evidence_sources()``), file by file, deduplicated by id."""
-    seen: set[str] = set()
-    for path in evidence_sources() if paths is None else paths:
+def _same_content(first: dict, second: dict) -> bool:
+    try:
+        return record_content_hash(first) == record_content_hash(second)
+    except CanonicalError:
+        return False
+
+
+def iter_evidence(paths: list[Path] | None = None, *, conflicts: list[dict] | None = None) -> Iterator[dict]:
+    """All records from ``paths`` (default ``evidence_sources()``), file by file, deduplicated by id.
+
+    aqt-trail logs (files named ``trail.jsonl``) are read first, then the other files in the
+    given order, so a record in a side file (sink file, spool) can neither hide nor replace a
+    trail record with the same id. The first copy of an id is used. A later copy with other
+    content (``record_content_hash`` differs) is not used and is reported as a conflict
+    ``{"id", "kept", "dropped"}`` (file paths): appended to ``conflicts`` when a list is given,
+    otherwise printed once as a warning on stderr. Copies with the same content (a spooled
+    record that the trail stored later) are deduplicated silently."""
+    paths = evidence_sources() if paths is None else list(paths)
+    ordered = [path for path in paths if Path(path).name == TRAIL_LOG_NAME]
+    ordered += [path for path in paths if Path(path).name != TRAIL_LOG_NAME]
+    seen: dict[str, tuple[str, dict]] = {}
+    for path in ordered:
         for record in read_jsonl(path):
             identity = record.get("id") if isinstance(record, dict) else None
-            if identity in seen:
+            if not isinstance(identity, str) or not identity:
+                yield record
                 continue
-            if identity:
-                seen.add(identity)
+            if identity in seen:
+                kept_path, kept = seen[identity]
+                if not _same_content(kept, record):
+                    conflict = {"id": identity, "kept": kept_path, "dropped": str(path)}
+                    if conflicts is not None:
+                        conflicts.append(conflict)
+                    else:
+                        _warn_once(f"record {identity} in {path} differs from the copy in {kept_path}; "
+                                   f"only the copy in {kept_path} is used")
+                continue
+            seen[identity] = (str(path), record)
             yield record

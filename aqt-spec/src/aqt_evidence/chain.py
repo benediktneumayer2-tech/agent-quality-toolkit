@@ -14,9 +14,9 @@ from typing import Iterable
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-from .canonical import canonical_json
+from .canonical import CanonicalError, canonical_json
 from .crypto import Signer, verify_record_signatures, verify_signature
-from .record import record_hash, utc_now, validate_record
+from .record import is_hash, is_time, record_hash, utc_now, validate_record
 
 GENESIS = "sha256:" + "0" * 64
 
@@ -47,9 +47,14 @@ class ChainResult:
 def verify_chain(records: Iterable[dict], *, keys: dict[str, Ed25519PublicKey] | None = None,
                  require_signature: bool = False, start_prev: str = GENESIS,
                  start_seq: int = 0) -> ChainResult:
-    """Verify structure, sequence, links and (when ``keys`` are given) signatures."""
+    """Verify structure, sequence, links and (when ``keys`` are given) signatures.
+
+    ``require_signature=True`` needs pinned ``keys``; without any it fails at ``start_seq``
+    instead of checking nothing."""
     prev, expected, count, head = start_prev, start_seq, 0, None
     warnings: list[str] = []
+    if require_signature and not keys:
+        return ChainResult(False, 0, None, None, start_seq, "signatures required, but no pinned public key given")
     for record in records:
         chain = record.get("chain") if isinstance(record, dict) else None
         seq = chain.get("seq") if isinstance(chain, dict) else None
@@ -86,16 +91,57 @@ def make_checkpoint(*, log_id: str, seq: int, head: str, signer: Signer, time: s
     return {**body, "sig": {"alg": "ed25519", "key": signer.key_id, "value": signer.sign(canonical_json(body))}}
 
 
+CHECKPOINT_MEMBERS = frozenset({"aqt_checkpoint", "log", "seq", "head", "time", "sig"})
+
+
+def checkpoint_problems(checkpoint) -> list[str]:
+    """Shape check of a checkpoint (``schemas/checkpoint.schema.json``); empty means well formed."""
+    if not isinstance(checkpoint, dict):
+        return ["a checkpoint must be a JSON object"]
+    problems = []
+    if set(checkpoint) != CHECKPOINT_MEMBERS:
+        problems.append("a checkpoint has exactly aqt_checkpoint, log, seq, head, time and sig")
+    if checkpoint.get("aqt_checkpoint") != "0.1":
+        problems.append('aqt_checkpoint must be "0.1"')
+    if not isinstance(checkpoint.get("log"), str) or not checkpoint["log"]:
+        problems.append("log must be a non-empty string")
+    if type(checkpoint.get("seq")) is not int or checkpoint["seq"] < 0:
+        problems.append("seq must be an integer >= 0")
+    if not is_hash(checkpoint.get("head")):
+        problems.append("head must be sha256:<64 hex>")
+    if not is_time(checkpoint.get("time")):
+        problems.append("time must be RFC 3339 UTC with a Z suffix")
+    sig = checkpoint.get("sig")
+    if not isinstance(sig, dict) or sig.get("alg") != "ed25519" or not isinstance(sig.get("key"), str) \
+            or not isinstance(sig.get("value"), str):
+        problems.append("sig must be one object {alg: ed25519, key, value}")
+    return problems
+
+
 def verify_checkpoint(checkpoint: dict, keys: dict[str, Ed25519PublicKey]) -> bool:
+    """True when ``checkpoint`` is well formed and signed by one of the pinned ``keys``."""
+    if checkpoint_problems(checkpoint):
+        return False
     body = {key: value for key, value in checkpoint.items() if key != "sig"}
-    sig = checkpoint.get("sig") or {}
-    public = keys.get(sig.get("key"))
-    return public is not None and verify_signature(public, canonical_json(body), sig.get("value", ""))
+    sig = checkpoint["sig"]
+    public = keys.get(sig["key"])
+    try:
+        data = canonical_json(body)
+    except CanonicalError:
+        return False
+    return public is not None and verify_signature(public, data, sig["value"])
 
 
 def checkpoint_matches(checkpoint: dict, records: list[dict]) -> bool:
     """True when the record at the checkpoint's seq has exactly the checkpoint's head hash."""
+    seq = checkpoint.get("seq") if isinstance(checkpoint, dict) else None
+    if type(seq) is not int:
+        return False
     for record in records:
-        if record.get("chain", {}).get("seq") == checkpoint.get("seq"):
-            return record_hash(record) == checkpoint.get("head")
+        chain = record.get("chain") if isinstance(record, dict) else None
+        if isinstance(chain, dict) and type(chain.get("seq")) is int and chain["seq"] == seq:
+            try:
+                return record_hash(record) == checkpoint.get("head")
+            except CanonicalError:
+                return False
     return False

@@ -52,7 +52,7 @@ flowchart LR
 
 - **Canonical JSON** (sorted keys, no whitespace, integers only, no duplicate keys) is byte-identical to RFC 8785 for every valid record, so the SHA-256 record hash is the same in every language.
 - **Signatures**: the writer signs stored records (`sig`); people sign records or files with a detached statement in `data.signature` that contains name, role, meaning, time and the subject hash.
-- **Chain and checkpoints**: each stored record links to the previous record's hash; a signed checkpoint of the head, kept outside the writer's reach, reveals truncation and rewrites.
+- **Chain and checkpoints**: each stored record links to the previous record's hash; a signed checkpoint of the head, kept outside the writer's reach, reveals rewrites and truncation of the records up to its `seq` (records written after the newest checkpoint are not covered).
 - **Conformance levels**: L1 valid records, L2 intact chain, L3 signed by pinned keys and anchored.
 
 ## QM mapping
@@ -71,9 +71,10 @@ The full mapping for the whole suite, including what each clause still requires 
 
 ## Threat model and limits
 
-- **Tamper evidence, not prevention.** Changes become detectable for a verifier with pinned keys and an external checkpoint; without both, a complete rewrite is undetectable. Editing the last record of an unsigned chain, and truncation, are invisible to the chain alone (the vectors show this).
+- **Tamper evidence, not prevention.** Changes become detectable for a verifier with pinned keys and an external checkpoint; without both, a complete rewrite is undetectable. Editing the last record of an unsigned chain, and truncation, are invisible to the chain alone (the vectors show this); a checkpoint reveals truncation only down to its own `seq`.
 - **Same-user writers** can be rewritten and re-signed by any process that can read the writer's key. Run aqt-trail as a separate user where that matters.
 - **Time** is the writer's clock unless anchored by RFC 3161 (aqt-trail).
+- **Side files.** Readers (`iter_evidence`) read the trail log first; a record in the sink file or spool cannot hide or replace a trail record with the same `id` (a differing copy is reported, not used). Records that exist only in those files are not chained or writer-signed.
 - **Agent-context checks** (`require_human`) detect known harness markers; they are a guard against agents deciding by accident or by injected instruction, not a security boundary.
 - **Catalogues are paraphrases**, not legal advice. Drafts (Annex 11 2025, Chapter 4, Annex 22) will change; every catalogue states its source version, consultation date and how it was checked.
 - **Test keys** in `vectors/keys.json` are the published RFC 8032 keys. Never use them for real evidence.
@@ -84,7 +85,7 @@ The full mapping for the whole suite, including what each clause still requires 
 - [`docs/implementers.md`](docs/implementers.md): implementing the spec in another language and running the vectors.
 - CLI `aqt-evidence`: `validate`, `hash`, `verify`, `keygen`, `conform`, `vectors`; exit 0 ok, 1 check failed, 2 usage or runtime error.
 
-Runtime dependency: `cryptography`. Optional: `jsonschema` (`[schema]` extra) for payload validation. Development: `uv pip install --python .venv/bin/python -e ".[test]"`, then `.venv/bin/python -m pytest -q`. Generated files are rebuilt with `scripts/build_schemas.py`, `scripts/gen_vectors.py` and `scripts/build_crosswalk.py`; tests fail when they are out of date.
+Runtime dependency: `cryptography`. Optional: `jsonschema` (`[schema]` extra) for payload validation. Development (the `[test]` extra includes Hypothesis for the property tests): `uv pip install --python .venv/bin/python -e ".[test]"`, then `.venv/bin/python -m pytest -q`. Generated files are rebuilt with `scripts/build_schemas.py`, `scripts/gen_vectors.py` and `scripts/build_crosswalk.py`; tests fail when they are out of date.
 
 ## Licence
 

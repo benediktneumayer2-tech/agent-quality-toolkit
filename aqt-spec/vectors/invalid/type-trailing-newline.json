@@ -1,0 +1,25 @@
+{
+  "name": "type-trailing-newline",
+  "category": "invalid",
+  "kind": "record",
+  "description": "A type followed by a newline is invalid (see id-trailing-newline).",
+  "input": {
+    "aqt": "0.1",
+    "id": "rec_019a0f3c2b00000000000000004a",
+    "type": "trail.event\n",
+    "time": "2026-10-21T12:00:74.000000Z",
+    "actor": {
+      "kind": "agent",
+      "id": "agent:claude-code:s-0001",
+      "agent": {
+        "harness": "claude-code",
+        "model": "example-model",
+        "session": "s-0001"
+      }
+    },
+    "action": "step-74"
+  },
+  "expect": {
+    "valid": false
+  }
+}

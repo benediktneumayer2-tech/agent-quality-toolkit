@@ -1,0 +1,27 @@
+{
+  "name": "before-not-object",
+  "category": "invalid",
+  "kind": "record",
+  "description": "before and after are objects {sha256?, value?}.",
+  "input": {
+    "aqt": "0.1",
+    "id": "rec_019a0f3c2b00000000000000003f",
+    "type": "trail.event",
+    "time": "2026-10-21T12:00:63.000000Z",
+    "actor": {
+      "kind": "agent",
+      "id": "agent:claude-code:s-0001",
+      "agent": {
+        "harness": "claude-code",
+        "model": "example-model",
+        "session": "s-0001"
+      }
+    },
+    "action": "step-63",
+    "before": "old value"
+  },
+  "expect": {
+    "valid": false,
+    "schema_valid": false
+  }
+}

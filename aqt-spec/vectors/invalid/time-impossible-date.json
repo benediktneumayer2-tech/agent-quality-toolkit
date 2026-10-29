@@ -1,0 +1,26 @@
+{
+  "name": "time-impossible-date",
+  "category": "invalid",
+  "kind": "record",
+  "description": "time is a real UTC time: 30 February is invalid (the schema pattern alone cannot see this).",
+  "input": {
+    "aqt": "0.1",
+    "id": "rec_019a0f3c2b00000000000000004c",
+    "type": "trail.event",
+    "time": "2026-02-30T12:00:00.000000Z",
+    "actor": {
+      "kind": "agent",
+      "id": "agent:claude-code:s-0001",
+      "agent": {
+        "harness": "claude-code",
+        "model": "example-model",
+        "session": "s-0001"
+      }
+    },
+    "action": "step-76"
+  },
+  "expect": {
+    "valid": false,
+    "schema_valid": true
+  }
+}

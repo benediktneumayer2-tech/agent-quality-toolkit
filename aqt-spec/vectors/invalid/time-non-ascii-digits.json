@@ -1,0 +1,26 @@
+{
+  "name": "time-non-ascii-digits",
+  "category": "invalid",
+  "kind": "record",
+  "description": "Digits are ASCII 0-9; other Unicode digits are invalid.",
+  "input": {
+    "aqt": "0.1",
+    "id": "rec_019a0f3c2b00000000000000004b",
+    "type": "trail.event",
+    "time": "٢٠٢٦-١٠-٢١T١٢:٠٠:٠١Z",
+    "actor": {
+      "kind": "agent",
+      "id": "agent:claude-code:s-0001",
+      "agent": {
+        "harness": "claude-code",
+        "model": "example-model",
+        "session": "s-0001"
+      }
+    },
+    "action": "step-75"
+  },
+  "expect": {
+    "valid": false,
+    "schema_valid": false
+  }
+}

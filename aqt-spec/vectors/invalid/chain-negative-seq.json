@@ -1,0 +1,30 @@
+{
+  "name": "chain-negative-seq",
+  "category": "invalid",
+  "kind": "record",
+  "description": "chain.seq starts at 0.",
+  "input": {
+    "aqt": "0.1",
+    "id": "rec_019a0f3c2b000000000000000046",
+    "type": "trail.event",
+    "time": "2026-10-21T12:00:70.000000Z",
+    "actor": {
+      "kind": "agent",
+      "id": "agent:claude-code:s-0001",
+      "agent": {
+        "harness": "claude-code",
+        "model": "example-model",
+        "session": "s-0001"
+      }
+    },
+    "action": "step-70",
+    "chain": {
+      "seq": -1,
+      "prev": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  "expect": {
+    "valid": false,
+    "schema_valid": false
+  }
+}

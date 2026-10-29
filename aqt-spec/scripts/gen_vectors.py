@@ -192,6 +192,37 @@ record_bad("lone-surrogate", "A lone surrogate in a string makes the record inva
            text=json.dumps(minimal(19)).replace('"action": "step-19"', '"action": "step-19", "reason": "\\udc00"'),
            schema_valid=None)
 
+# Types fixed by the envelope schema; optional members are left out, never null.
+record_bad("actor-id-not-string", "actor.id is a non-empty string, not a list.",
+           {**minimal(60), "actor": {"kind": "human", "id": ["human:alice", "human:bob"]}})
+record_bad("actor-kind-not-string", "actor.kind is one of the strings human, agent, service.",
+           {**minimal(61), "actor": {"kind": ["human"], "id": "human:alice"}})
+record_bad("tz-not-string", "tz is an IANA zone name, a string.", minimal(62, tz=12))
+record_bad("before-not-object", "before and after are objects {sha256?, value?}.", minimal(63, before="old value"))
+record_bad("subject-ref-not-string", "subject.ref is a non-empty string.",
+           minimal(64, subject={"kind": "file", "ref": {"path": "a"}}))
+record_bad("link-ref-not-string", "links[].ref is a non-empty string.", minimal(65, links=[{"rel": "case", "ref": 5}]))
+record_bad("null-member", "An absent optional member is left out; null is not a value for it.",
+           minimal(66, subject=None))
+record_bad("sig-null", "sig is a list; null is not 'no signature'.", minimal(67, sig=None))
+record_bad("data-not-object", "data is an object.", minimal(68, data=["x"]))
+record_bad("meaning-not-string", "meaning is one string from the vocabulary.", minimal(69, meaning=["approved"]))
+record_bad("chain-negative-seq", "chain.seq starts at 0.", minimal(70, chain={"seq": -1, "prev": GENESIS}))
+record_bad("sig-key-not-key-id", "sig[].key is a key ID, ed25519:<16 hex>.",
+           minimal(71, sig=[{"alg": "ed25519", "key": "alice", "value": "AAAA"}]))
+record_bad("observed-bad-type", "observed members have fixed types (pid is an integer).",
+           minimal(72, observed={"pid": "4242", "via": "socket"}))
+# Patterns match the whole string with ASCII digits only.
+record_bad("id-trailing-newline", "A pattern matches the whole value: an ID followed by a newline is invalid. "
+           "(Python's jsonschema lets $ match before a final newline, so the schema result is left open.)",
+           {**minimal(73), "id": rid(73) + "\n"}, schema_valid=None)
+record_bad("type-trailing-newline", "A type followed by a newline is invalid (see id-trailing-newline).",
+           {**minimal(74), "type": "trail.event\n"}, schema_valid=None)
+record_bad("time-non-ascii-digits", "Digits are ASCII 0-9; other Unicode digits are invalid.",
+           {**minimal(75), "time": "2026-10-21T12:00:01Z".translate({ord(d): 0x0660 + int(d) for d in "0123456789"})})
+record_bad("time-impossible-date", "time is a real UTC time: 30 February is invalid (the schema pattern alone cannot "
+           "see this).", {**minimal(76), "time": "2026-02-30T12:00:00.000000Z"}, schema_valid=True)
+
 # --- chains --------------------------------------------------------------------------------------
 base = [minimal(20 + i) for i in range(4)]
 unsigned = chain_of(base)
@@ -240,6 +271,55 @@ chain_vector("tampered", "rewritten-fresh-key", "A complete rewrite signed with 
 chain_vector("tampered", "unsigned-but-required", "Signatures required, but the records carry none.", unsigned,
              False, first_bad=0, pinned=["rfc8032-test1"], require=True)
 
+stripped = copy.deepcopy(signed)
+del stripped[2]["sig"]
+chain_vector("tampered", "signature-stripped", "The signature of record 2 removed: with signatures required the chain "
+             "breaks at seq 2.", stripped, False, first_bad=2, pinned=["rfc8032-test1"], require=True)
+moved = copy.deepcopy(signed)
+moved[1]["sig"] = copy.deepcopy(signed[2]["sig"])
+chain_vector("tampered", "signature-moved", "Record 2's valid signature copied onto record 1 does not verify there.",
+             moved, False, first_bad=1, pinned=["rfc8032-test1"], require=True)
+resigned = copy.deepcopy(signed)
+resigned[1] = sign_record({key: value for key, value in signed[1].items() if key != "sig"}, OTHER)
+chain_vector("tampered", "resigned-other-key", "Record 1 re-signed with an unpinned key only: no valid signature from "
+             "a known key at seq 1.", resigned, False, first_bad=1, pinned=["rfc8032-test1"], require=True)
+nulled = copy.deepcopy(signed)
+nulled[1]["sig"] = None
+chain_vector("tampered", "signature-null", "sig: null makes record 1 an invalid envelope; it is not an unsigned "
+             "record.", nulled, False, first_bad=1, pinned=["rfc8032-test1"], require=True)
+chain_vector("tampered", "signature-required-no-keys", "Signatures required but no key pinned: verification fails "
+             "instead of checking nothing.", unsigned, False, first_bad=0, require=True)
+chain_vector("tampered", "duplicated", "Record 1 stored twice: seq 1 appears where seq 2 is expected.",
+             [*unsigned[:2], copy.deepcopy(unsigned[1]), *unsigned[2:]], False, first_bad=2)
+unchained = copy.deepcopy(unsigned)
+del unchained[2]["chain"]
+chain_vector("tampered", "chain-removed", "Record 2 lost its chain member: it is not chained (seq 2).", unchained,
+             False, first_bad=2)
+
+# --- logs: stored JSON lines, parsed strictly (spec section 4) before the chain is verified --------
+signed_lines = [canonical_json(record).decode("utf-8") for record in signed]
+
+
+def log_vector(name: str, description: str, lines: list[str], ok: bool, *, first_bad_line: int | None = None) -> None:
+    expect: dict = {"ok": ok, "first_bad_line": first_bad_line, "require_signature": True}
+    if ok:
+        expect["head_hash"] = record_hash(signed[-1])
+    add("tampered", name, "log", description, expect, input_text="\n".join(lines) + "\n",
+        pinned_keys=["rfc8032-test1"])
+
+
+log_vector("log-intact", "The signed chain as stored JSON lines (input_text): every line parses strictly and the "
+           "chain and signatures verify.", signed_lines, True)
+log_vector("log-duplicate-key-first", "Line 2 edited: a forged first copy of action before the signed one. A "
+           "last-wins parser still sees the signed record, so hash and signature verify, while a first-wins parser "
+           "shows the forged value. Strict parsing rejects line 2.",
+           [signed_lines[0], signed_lines[1].replace('"action":"step-21"', '"action":"forged","action":"step-21"', 1),
+            *signed_lines[2:]], False, first_bad_line=2)
+log_vector("log-duplicate-key-last", "Line 2 edited: a forged copy of action after the signed one, which first-wins "
+           "parsers verify while last-wins parsers show the forged value. Strict parsing rejects line 2.",
+           [signed_lines[0], signed_lines[1].replace('"action":"step-21"', '"action":"step-21","action":"forged"', 1),
+            *signed_lines[2:]], False, first_bad_line=2)
+
 # --- checkpoints ---------------------------------------------------------------------------------
 checkpoint = make_checkpoint(log_id="example-log", seq=3, head=record_hash(signed[3]), signer=SIGNER, time=ts(30))
 add("signed", "checkpoint-valid", "checkpoint", "A signed checkpoint of the head (seq 3) that matches the chain.",
@@ -258,6 +338,18 @@ foreign_cp = make_checkpoint(log_id="example-log", seq=3, head=record_hash(rewri
 add("signed", "checkpoint-unpinned-key", "checkpoint", "A checkpoint signed by a key that is not pinned is not "
     "valid.", {"valid": False}, input={"checkpoint": foreign_cp, "records": rewritten},
     pinned_keys=["rfc8032-test1"])
+
+as_checkpoint = {**{key: value for key, value in signed[0].items() if key != "sig"}, "sig": signed[0]["sig"][0]}
+add("signed", "checkpoint-record-as-checkpoint", "checkpoint", "A signed record reshaped as a checkpoint (its envelope "
+    "signature moved to sig): the Ed25519 signature verifies, but it is not a checkpoint (no aqt_checkpoint).",
+    {"valid": False}, input={"checkpoint": as_checkpoint, "records": signed}, pinned_keys=["rfc8032-test1"])
+add("signed", "checkpoint-sig-list", "checkpoint", "The sig of a checkpoint is one object, not a list as in records.",
+    {"valid": False}, input={"checkpoint": {**checkpoint, "sig": [checkpoint["sig"]]}, "records": signed},
+    pinned_keys=["rfc8032-test1"])
+bool_seq = make_checkpoint(log_id="example-log", seq=True, head=record_hash(signed[1]), signer=SIGNER, time=ts(32))
+add("signed", "checkpoint-seq-not-integer", "checkpoint", "seq true is signed correctly but is not an integer "
+    "(some languages compare it equal to 1).", {"valid": False, "matches": False},
+    input={"checkpoint": bool_seq, "records": signed}, pinned_keys=["rfc8032-test1"])
 
 # --- detached signed statements (data.signature) -------------------------------------------------
 target = minimal(50, type="change.finish", actor=AGENT,

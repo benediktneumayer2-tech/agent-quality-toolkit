@@ -1,0 +1,27 @@
+{
+  "name": "sig-null",
+  "category": "invalid",
+  "kind": "record",
+  "description": "sig is a list; null is not 'no signature'.",
+  "input": {
+    "aqt": "0.1",
+    "id": "rec_019a0f3c2b000000000000000043",
+    "type": "trail.event",
+    "time": "2026-10-21T12:00:67.000000Z",
+    "actor": {
+      "kind": "agent",
+      "id": "agent:claude-code:s-0001",
+      "agent": {
+        "harness": "claude-code",
+        "model": "example-model",
+        "session": "s-0001"
+      }
+    },
+    "action": "step-67",
+    "sig": null
+  },
+  "expect": {
+    "valid": false,
+    "schema_valid": false
+  }
+}

@@ -114,6 +114,21 @@ def run_vector(vector: dict, keys: dict[str, dict]) -> VectorResult:
         if chain.ok:
             _same(out, "head_seq", chain.head_seq, expect.get("head_seq"))
             _same(out, "head_hash", chain.head_hash, expect.get("head_hash"))
+    elif kind == "log":
+        records, bad_line = [], None
+        for number, line in enumerate(vector["input_text"].encode("utf-8").split(b"\n"), 1):
+            if not line.strip():
+                continue
+            try:
+                records.append(parse_record(line))
+            except CanonicalError:
+                bad_line = number
+                break
+        chain = verify_chain(records, keys=pinned or None, require_signature=expect.get("require_signature", False))
+        _same(out, "ok", chain.ok and bad_line is None, expect["ok"])
+        _same(out, "first_bad_line", bad_line, expect.get("first_bad_line"))
+        if chain.ok and bad_line is None:
+            _same(out, "head_hash", chain.head_hash, expect.get("head_hash"))
     elif kind == "checkpoint":
         checkpoint = vector["input"]["checkpoint"]
         _same(out, "valid", verify_checkpoint(checkpoint, pinned), expect["valid"])

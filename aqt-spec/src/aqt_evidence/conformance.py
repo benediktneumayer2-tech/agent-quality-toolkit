@@ -1,12 +1,14 @@
 """Conformance levels of an evidence file (spec §9).
 
-- **L1 valid:** every line parses strictly, every envelope is valid, types are
-  registered (or ``x-`` extensions), ``data`` is an object, registered payloads and
-  ``observed`` match their schemas (when ``jsonschema`` is installed), record IDs
-  are unique, human decisions of decision types carry a reason.
+- **L1 valid:** every line parses strictly, every envelope is valid (``validate_record``
+  and, when ``jsonschema`` is installed, the envelope schema), types are registered (or
+  ``x-`` extensions), registered payloads match their schemas (when ``jsonschema`` is
+  installed), record IDs are unique, human decisions of decision types carry a reason.
 - **L2 chained:** L1, and the hash chain verifies.
 - **L3 signed and anchored:** L2, every record carries a valid signature by a pinned
   key, and at least one signed checkpoint from outside the writer matches the chain.
+  A checkpoint covers the log only up to its seq: ``anchored_seq`` is the newest matching
+  checkpoint and ``unanchored`` counts the records after it (shown in the summary).
 """
 
 from __future__ import annotations
@@ -32,6 +34,8 @@ class ConformanceResult:
     warnings: list[str] = field(default_factory=list)
     payloads_checked: bool = False
     chain: ChainResult | None = None
+    anchored_seq: int | None = None  # L3: seq of the newest matching checkpoint
+    unanchored: int | None = None  # L3: records after it, whose removal no checkpoint would reveal
 
     @property
     def ok(self) -> bool:
@@ -39,12 +43,18 @@ class ConformanceResult:
 
     def summary(self) -> str:
         head = f"L{self.level} reached (target L{self.target}), {self.count} records"
-        return head if self.ok else f"{head}; first problem: {self.problems[0] if self.problems else 'unknown'}"
+        if not self.ok:
+            return f"{head}; first problem: {self.problems[0] if self.problems else 'unknown'}"
+        if self.unanchored:
+            head += (f"; anchored up to seq {self.anchored_seq}, {self.unanchored} later record(s) not covered by "
+                     "a checkpoint")
+        return head
 
     def as_dict(self) -> dict:
         return {"target": self.target, "level": self.level, "ok": self.ok, "count": self.count,
                 "problems": self.problems, "warnings": self.warnings, "payloads_checked": self.payloads_checked,
-                "chain": None if self.chain is None else self.chain.__dict__}
+                "chain": None if self.chain is None else self.chain.__dict__, "anchored_seq": self.anchored_seq,
+                "unanchored": self.unanchored}
 
 
 def read_strict(path: str | os.PathLike) -> tuple[list[dict], list[str]]:
@@ -86,9 +96,6 @@ def check_level1(records: list[dict], *, check_payloads: bool = True) -> tuple[l
         seen.add(record["id"])
         if not schemas.is_registered(type_):
             problems.append(f"{where}: type {type_} is not registered (use the x-<org>. prefix for extensions)")
-        if "data" in record and not isinstance(record["data"], dict):
-            problems.append(f"{where}: data must be an object")
-            continue
         entry = types.get(type_)
         if entry:
             if entry["human_reason"] and record["actor"]["kind"] == "human" and "reason" not in record:
@@ -96,10 +103,8 @@ def check_level1(records: list[dict], *, check_payloads: bool = True) -> tuple[l
             if entry["meanings"] and "meaning" in record and record["meaning"] not in entry["meanings"]:
                 warnings.append(f"{where}: meaning {record['meaning']} is unusual for {type_}")
         if payloads:
+            problems.extend(f"{where}: {problem}" for problem in schemas.validate_schema(record, "envelope"))
             problems.extend(f"{where}: {problem}" for problem in schemas.validate_payload(record))
-            if "observed" in record:
-                problems.extend(f"{where}: observed/{problem}"
-                                for problem in schemas.validate_schema(record["observed"], "observed"))
     if check_payloads and not payloads:
         warnings.append('payload schemas not checked (install "aqt-spec[schema]")')
     return problems, warnings, payloads
@@ -152,4 +157,6 @@ def conformance(records: Iterable[dict], level: int = 1, *, keys: dict[str, Ed25
         result.problems.append(f"checkpoint seq {cp.get('seq')} does not match the file (truncated or rewritten)")
         return result
     result.level = 3
+    result.anchored_seq = max(cp["seq"] for cp in good)
+    result.unanchored = signed.head_seq - result.anchored_seq
     return result

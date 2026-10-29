@@ -1,0 +1,24 @@
+{
+  "name": "actor-id-not-string",
+  "category": "invalid",
+  "kind": "record",
+  "description": "actor.id is a non-empty string, not a list.",
+  "input": {
+    "aqt": "0.1",
+    "id": "rec_019a0f3c2b00000000000000003c",
+    "type": "trail.event",
+    "time": "2026-10-21T12:00:60.000000Z",
+    "actor": {
+      "kind": "human",
+      "id": [
+        "human:alice",
+        "human:bob"
+      ]
+    },
+    "action": "step-60"
+  },
+  "expect": {
+    "valid": false,
+    "schema_valid": false
+  }
+}

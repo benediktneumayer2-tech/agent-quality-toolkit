@@ -1,6 +1,6 @@
 {
   "aqt": "0.1",
-  "count": 57,
+  "count": 87,
   "vectors": [
     {
       "file": "canonical/key-order.json",
@@ -183,6 +183,91 @@
       "description": "A lone surrogate in a string makes the record invalid."
     },
     {
+      "file": "invalid/actor-id-not-string.json",
+      "kind": "record",
+      "description": "actor.id is a non-empty string, not a list."
+    },
+    {
+      "file": "invalid/actor-kind-not-string.json",
+      "kind": "record",
+      "description": "actor.kind is one of the strings human, agent, service."
+    },
+    {
+      "file": "invalid/tz-not-string.json",
+      "kind": "record",
+      "description": "tz is an IANA zone name, a string."
+    },
+    {
+      "file": "invalid/before-not-object.json",
+      "kind": "record",
+      "description": "before and after are objects {sha256?, value?}."
+    },
+    {
+      "file": "invalid/subject-ref-not-string.json",
+      "kind": "record",
+      "description": "subject.ref is a non-empty string."
+    },
+    {
+      "file": "invalid/link-ref-not-string.json",
+      "kind": "record",
+      "description": "links[].ref is a non-empty string."
+    },
+    {
+      "file": "invalid/null-member.json",
+      "kind": "record",
+      "description": "An absent optional member is left out; null is not a value for it."
+    },
+    {
+      "file": "invalid/sig-null.json",
+      "kind": "record",
+      "description": "sig is a list; null is not 'no signature'."
+    },
+    {
+      "file": "invalid/data-not-object.json",
+      "kind": "record",
+      "description": "data is an object."
+    },
+    {
+      "file": "invalid/meaning-not-string.json",
+      "kind": "record",
+      "description": "meaning is one string from the vocabulary."
+    },
+    {
+      "file": "invalid/chain-negative-seq.json",
+      "kind": "record",
+      "description": "chain.seq starts at 0."
+    },
+    {
+      "file": "invalid/sig-key-not-key-id.json",
+      "kind": "record",
+      "description": "sig[].key is a key ID, ed25519:<16 hex>."
+    },
+    {
+      "file": "invalid/observed-bad-type.json",
+      "kind": "record",
+      "description": "observed members have fixed types (pid is an integer)."
+    },
+    {
+      "file": "invalid/id-trailing-newline.json",
+      "kind": "record",
+      "description": "A pattern matches the whole value: an ID followed by a newline is invalid. (Python's jsonschema lets $ match before a final newline, so the schema result is left open.)"
+    },
+    {
+      "file": "invalid/type-trailing-newline.json",
+      "kind": "record",
+      "description": "A type followed by a newline is invalid (see id-trailing-newline)."
+    },
+    {
+      "file": "invalid/time-non-ascii-digits.json",
+      "kind": "record",
+      "description": "Digits are ASCII 0-9; other Unicode digits are invalid."
+    },
+    {
+      "file": "invalid/time-impossible-date.json",
+      "kind": "record",
+      "description": "time is a real UTC time: 30 February is invalid (the schema pattern alone cannot see this)."
+    },
+    {
       "file": "chained/intact.json",
       "kind": "chain",
       "description": "Four records chained from GENESIS (64 zeros)."
@@ -243,6 +328,56 @@
       "description": "Signatures required, but the records carry none."
     },
     {
+      "file": "tampered/signature-stripped.json",
+      "kind": "chain",
+      "description": "The signature of record 2 removed: with signatures required the chain breaks at seq 2."
+    },
+    {
+      "file": "tampered/signature-moved.json",
+      "kind": "chain",
+      "description": "Record 2's valid signature copied onto record 1 does not verify there."
+    },
+    {
+      "file": "tampered/resigned-other-key.json",
+      "kind": "chain",
+      "description": "Record 1 re-signed with an unpinned key only: no valid signature from a known key at seq 1."
+    },
+    {
+      "file": "tampered/signature-null.json",
+      "kind": "chain",
+      "description": "sig: null makes record 1 an invalid envelope; it is not an unsigned record."
+    },
+    {
+      "file": "tampered/signature-required-no-keys.json",
+      "kind": "chain",
+      "description": "Signatures required but no key pinned: verification fails instead of checking nothing."
+    },
+    {
+      "file": "tampered/duplicated.json",
+      "kind": "chain",
+      "description": "Record 1 stored twice: seq 1 appears where seq 2 is expected."
+    },
+    {
+      "file": "tampered/chain-removed.json",
+      "kind": "chain",
+      "description": "Record 2 lost its chain member: it is not chained (seq 2)."
+    },
+    {
+      "file": "tampered/log-intact.json",
+      "kind": "log",
+      "description": "The signed chain as stored JSON lines (input_text): every line parses strictly and the chain and signatures verify."
+    },
+    {
+      "file": "tampered/log-duplicate-key-first.json",
+      "kind": "log",
+      "description": "Line 2 edited: a forged first copy of action before the signed one. A last-wins parser still sees the signed record, so hash and signature verify, while a first-wins parser shows the forged value. Strict parsing rejects line 2."
+    },
+    {
+      "file": "tampered/log-duplicate-key-last.json",
+      "kind": "log",
+      "description": "Line 2 edited: a forged copy of action after the signed one, which first-wins parsers verify while last-wins parsers show the forged value. Strict parsing rejects line 2."
+    },
+    {
       "file": "signed/checkpoint-valid.json",
       "kind": "checkpoint",
       "description": "A signed checkpoint of the head (seq 3) that matches the chain."
@@ -266,6 +401,21 @@
       "file": "signed/checkpoint-unpinned-key.json",
       "kind": "checkpoint",
       "description": "A checkpoint signed by a key that is not pinned is not valid."
+    },
+    {
+      "file": "signed/checkpoint-record-as-checkpoint.json",
+      "kind": "checkpoint",
+      "description": "A signed record reshaped as a checkpoint (its envelope signature moved to sig): the Ed25519 signature verifies, but it is not a checkpoint (no aqt_checkpoint)."
+    },
+    {
+      "file": "signed/checkpoint-sig-list.json",
+      "kind": "checkpoint",
+      "description": "The sig of a checkpoint is one object, not a list as in records."
+    },
+    {
+      "file": "signed/checkpoint-seq-not-integer.json",
+      "kind": "checkpoint",
+      "description": "seq true is signed correctly but is not an integer (some languages compare it equal to 1)."
     },
     {
       "file": "signed/statement-record.json",

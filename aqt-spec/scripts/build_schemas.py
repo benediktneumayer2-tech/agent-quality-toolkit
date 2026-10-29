@@ -56,8 +56,8 @@ COMMON = {
     "$schema": DIALECT, "$id": BASE + "common", "title": "AQT common definitions",
     "$defs": {
         "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-        "time": {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$"},
-        "date": {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}$"},
+        "time": {"type": "string", "pattern": r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?Z$"},
+        "date": {"type": "string", "pattern": r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
         "record_id": {"type": "string", "pattern": "^rec_[0-9a-f]{28}$"},
         "key_id": {"type": "string", "pattern": "^ed25519:[0-9a-f]{16}$"},
         "ppm": {"type": "integer", "minimum": 0, "maximum": 1000000},

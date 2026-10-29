@@ -1,0 +1,25 @@
+{
+  "name": "id-trailing-newline",
+  "category": "invalid",
+  "kind": "record",
+  "description": "A pattern matches the whole value: an ID followed by a newline is invalid. (Python's jsonschema lets $ match before a final newline, so the schema result is left open.)",
+  "input": {
+    "aqt": "0.1",
+    "id": "rec_019a0f3c2b000000000000000049\n",
+    "type": "trail.event",
+    "time": "2026-10-21T12:00:73.000000Z",
+    "actor": {
+      "kind": "agent",
+      "id": "agent:claude-code:s-0001",
+      "agent": {
+        "harness": "claude-code",
+        "model": "example-model",
+        "session": "s-0001"
+      }
+    },
+    "action": "step-73"
+  },
+  "expect": {
+    "valid": false
+  }
+}

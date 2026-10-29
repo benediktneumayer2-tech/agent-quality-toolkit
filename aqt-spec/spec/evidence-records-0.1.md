@@ -36,7 +36,7 @@ Four mechanisms build on the hash:
 
 1. **Signatures** (Ed25519) over the same canonical bytes show who vouches for a record.
 2. A **chain** (`chain.seq`, `chain.prev`) links each stored record to the hash of the one before it, so editing, inserting, deleting or reordering becomes visible.
-3. A **checkpoint** is a signed statement of the chain head; kept outside the writer's reach it reveals truncation and wholesale rewriting.
+3. A **checkpoint** is a signed statement of the chain head; kept outside the writer's reach it reveals rewriting and truncation of the log up to that head (records written after the newest checkpoint are not covered).
 4. A **detached signed statement** in `data.signature` binds a person's signature, with its meaning, to the content hash of any record or file.
 
 Who does what: tools create records and deliver them to a **sink** (a JSONL file, or the aqt-trail writer service over a Unix socket). Only the aqt-trail writer sets `time`, `observed` and `chain` and signs the stored record. A file can be checked at three **conformance levels**: L1 valid records, L2 intact chain, L3 signed by pinned keys and anchored by an external checkpoint (§9).
@@ -70,6 +70,8 @@ A record MUST be a JSON object. It MUST NOT contain top-level members other than
 | `data` | | object | Type-specific payload (§11, schemas) | — |
 | `chain` | | object | `{seq, prev}`, set by the writer (§7) | Original, Complete |
 | `sig` | | array | `[{alg: "ed25519", key, value}]`, signatures of the stored record (§6.2) | Original, Accurate |
+
+An optional member without a value is left out; `null` is not a valid value for any member in this table. Patterns written `^…$` match the whole string (a trailing newline is not part of it), and digits are ASCII `0`–`9`. `time` is a real calendar date and time.
 
 ### 3.1 Actor
 
@@ -127,7 +129,7 @@ The canonical form of a JSON value is UTF-8 text with:
 
 For every valid AQT record this is byte-identical to RFC 8785 (JCS), so a JCS library produces the same hash.
 
-**Parsing.** A verifier MUST reject a record whose JSON text contains duplicate object keys, a number with a fraction or exponent (also `1.0`), a value outside the integer range, or a string with an unpaired surrogate escape. Parsers disagree on these cases, which would let two readers see two different records under one hash. JSON Schema cannot express these rules (it treats `1.0` as an integer); they are checked by the canonicaliser. Producers SHOULD write records in canonical form, one per line; verifiers MUST recompute hashes and never rely on stored bytes.
+**Parsing.** A verifier MUST reject a record whose JSON text contains duplicate object keys, a number with a fraction or exponent (also `1.0`), a value outside the integer range, or a string with an unpaired surrogate escape. Parsers disagree on these cases, which would let two readers see two different records under one hash. JSON Schema cannot express these rules (it treats `1.0` as an integer); they are checked by the canonicaliser. Producers SHOULD write records in canonical form, one per line; verifiers MUST recompute hashes and never rely on stored bytes. These rules apply to every verifier that reads a log (chain, signatures, checkpoints), not only to conformance checks (vectors `tampered/log-*`). The reference verifier `aqt-evidence verify` also requires every line to be exactly its record's canonical form, so the stored bytes are what was hashed and signed.
 
 ## 5. Hashes
 
@@ -176,13 +178,13 @@ A verifier reports a statement as valid, invalid (signature does not verify), un
 
 ### 6.4 Key pinning
 
-A signature proves only that the holder of *some* key signed. Verifiers MUST check signatures against pinned keys; a log rewritten and re-signed under a fresh key verifies otherwise (vector `tampered/rewritten-fresh-key`).
+A signature proves only that the holder of *some* key signed. Verifiers MUST check signatures against pinned keys; a log rewritten and re-signed under a fresh key verifies otherwise (vector `tampered/rewritten-fresh-key`). A verifier asked to require signatures without any pinned key MUST fail, not skip the check (vector `tampered/signature-required-no-keys`).
 
 ## 7. Chain
 
 A writer that chains its log sets `chain = {seq, prev}` on every stored record: `seq` starts at 0 and increases by 1; `prev` is the record hash (§5.1) of the previous record, and `GENESIS` (`sha256:` + 64 zeros) for seq 0. Verification walks the log in order and reports either *intact* (count, head seq, head hash) or *broken from seq N* with the reason: an invalid record, a missing chain, an unexpected seq, a `prev` that does not match, or an invalid or missing signature when signatures are required.
 
-Limits (shown by vectors): without signatures an edit of record N is detected at record N+1; an edit of the last record, and truncation, are not detectable by the chain alone. Signatures (§6.2) and checkpoints (§8) close these gaps.
+Limits (shown by vectors): without signatures an edit of record N is detected at record N+1; an edit of the last record, and truncation, are not detectable by the chain alone. A signature by a pinned key (§6.2) reveals an edited last record. Truncation is revealed only by a checkpoint (§8), and only down to that checkpoint's `seq`: removing records written after the newest checkpoint leaves a valid, shorter log (vector `tampered/truncated`). Checkpoint often and keep the checkpoints outside the writer's reach.
 
 ## 8. Checkpoints and anchors
 
@@ -193,7 +195,7 @@ A checkpoint is a signed statement of a log head:
  "sig": {"alg": "ed25519", "key": "ed25519:…", "value": "<base64>"}}
 ```
 
-The signature covers the canonical checkpoint without `sig`. Note that `sig` is a single object here, not a list. A checkpoint *matches* a log when the record at `seq` has exactly the record hash `head`. A checkpoint is useful only when a copy is kept outside the writer's reach (another machine, an exported head file, an RFC 3161 timestamp token over it stored in a `trail.anchor` record). Schema: `schemas/checkpoint.schema.json`.
+The signature covers the canonical checkpoint without `sig`. Note that `sig` is a single object here, not a list. A verifier MUST reject an object that does not have exactly these members with these types (`aqt_checkpoint` `"0.1"`, `seq` an integer, never `true`) before it checks the signature, so that bytes signed for another purpose do not count as a checkpoint (vectors `signed/checkpoint-record-as-checkpoint`, `signed/checkpoint-seq-not-integer`). A checkpoint *matches* a log when the record at `seq` has exactly the record hash `head`. A checkpoint is useful only when a copy is kept outside the writer's reach (another machine, an exported head file, an RFC 3161 timestamp token over it stored in a `trail.anchor` record). Schema: `schemas/checkpoint.schema.json`.
 
 ## 9. Conformance levels
 
@@ -201,7 +203,7 @@ The signature covers the canonical checkpoint without `sig`. Note that `sig` is 
 |---|---|---|
 | **L1 valid** | Every line parses strictly (§4); every envelope is valid (§3); types are registered or `x-` extensions; `data` is an object; registered payloads and `observed` match their schemas; IDs are unique; human decisions of types marked *reason* in §11 carry `reason` | Malformed, ambiguous and incomplete records |
 | **L2 chained** | L1, and the chain verifies from GENESIS (§7); unavailability appears only as explicit `trail.gap` records | Edit, insert, delete and reorder inside the file |
-| **L3 signed and anchored** | L2, every record carries a valid `sig` by a pinned key, and at least one signed checkpoint kept outside the writer verifies and matches | Truncation, rollback and rewrite under a fresh key |
+| **L3 signed and anchored** | L2, every record carries a valid `sig` by a pinned key, and at least one signed checkpoint kept outside the writer verifies and matches | Rewrite under a fresh key; truncation and rollback down to the newest checkpoint (records after it are not covered; `aqt-evidence conform` reports how many there are) |
 
 `aqt-evidence conform FILE --level N [--key PEM]… [--checkpoint FILE]…` reports the highest level reached.
 
@@ -237,7 +239,9 @@ When the socket cannot be reached, a client SHOULD append the record to `$XDG_ST
 
 ### 10.5 Reading records
 
-Consumers read files, not the socket. `AQT_EVIDENCE` lists JSONL paths separated by colons; the default is the sink file, the trail log (`trail.jsonl` in the trail state directory, §10.1) and the spool, deduplicated by `id` (`aqt_evidence.iter_evidence`). Tools that consume records accept `--evidence PATH` (repeatable).
+Consumers read files, not the socket. `AQT_EVIDENCE` lists JSONL paths separated by colons; the default is the trail log (`trail.jsonl` in the trail state directory, §10.1), the sink file and the spool, deduplicated by `id` (`aqt_evidence.iter_evidence`). Tools that consume records accept `--evidence PATH` (repeatable).
+
+The sink file and the spool are neither chained nor signed by the writer, and anyone who can write them can add lines. A reader MUST therefore read trail logs first and MUST NOT let a record from another file hide or replace a trail record with the same `id`; a copy with different content (another `record_content_hash`, §5.2) is reported as a conflict and not used. A copy with the same content (a spooled record that the trail stored later) is the same record.
 
 ## 11. Record-type registry
 

@@ -52,10 +52,13 @@ def _check(value: Any, path: str) -> None:
 
 def canonical_json(value: Any) -> bytes:
     """Serialise ``value`` as AQT canonical JSON bytes."""
-    _check(value, "$")
-    return json.dumps(
-        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
-    ).encode("utf-8")
+    try:
+        _check(value, "$")
+        return json.dumps(
+            value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+        ).encode("utf-8")
+    except RecursionError as error:
+        raise CanonicalError("value is nested too deeply") from error
 
 
 def sha256_hex(data: bytes) -> str:
@@ -104,7 +107,12 @@ def parse_json(text: str | bytes) -> Any:
         raise
     except ValueError as error:
         raise CanonicalError(f"not valid JSON: {error}") from error
-    _check(value, "$")
+    except RecursionError as error:
+        raise CanonicalError("JSON is nested too deeply") from error
+    try:
+        _check(value, "$")
+    except RecursionError as error:
+        raise CanonicalError("JSON is nested too deeply") from error
     return value
 
 
@@ -115,3 +123,21 @@ def parse_record(text: str | bytes) -> dict:
     if not isinstance(value, dict):
         raise CanonicalError("a record must be a JSON object")
     return value
+
+
+def parse_canonical_line(line: str | bytes) -> dict:
+    """Strictly parse one stored line of a JSON-lines log, for verifiers.
+
+    The line (without one final ``\\n``) must parse with ``parse_record`` and be exactly
+    the record's canonical form, so the stored bytes are the record that is hashed and
+    signed. Raises ``CanonicalError``."""
+    if isinstance(line, str):
+        try:
+            line = line.encode("utf-8")
+        except UnicodeEncodeError as error:
+            raise CanonicalError("line is not valid Unicode") from error
+    body = line[:-1] if line.endswith(b"\n") else line
+    record = parse_record(body)
+    if canonical_json(record) != body:
+        raise CanonicalError("line is not in canonical form (spec §4)")
+    return record

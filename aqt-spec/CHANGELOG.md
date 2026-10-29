@@ -7,10 +7,48 @@
   default place (`[writer] socket` in `trail.toml`, `$XDG_RUNTIME_DIR/aqt/trail.sock`). An initialised trail
   whose writer is down gets the records through the spool; the fallback file is used only when no trail is
   found. `resolve_sink()` reports the route (`kind`, `target`, `source`, `writer`, `warning`).
+- Tamper corpus in the vectors (87 vectors, was 57): wrong member types, `null` members, trailing newlines,
+  non-ASCII digits, impossible dates; stripped, moved, re-signed and `null` signatures, duplicated and unchained
+  records, signatures required without a key; checkpoints of the wrong shape; and the new vector kind `log`
+  (a stored JSON-lines log, parsed strictly before the chain is verified).
+- `read_jsonl(path, strict=True)` and `parse_canonical_line(line)` for log verifiers; `RecordLineError`
+  (a `SinkError` with `path`, `line`, `reason`) for unreadable lines; `checkpoint_problems(cp)`.
+- `iter_evidence(paths, conflicts=list)` collects id conflicts between files.
+- `ConformanceResult.anchored_seq` and `.unanchored`: how far the newest checkpoint reaches at L3, and how many
+  records follow it (also in the summary line).
+- Property tests with Hypothesis (in the `[test]` extra) for canonical JSON, record hashing, chain and
+  signature verification. CI audits the third-party dependencies of all packages with pip-audit.
 
 ### Changed
 - `SocketSink` prints one warning per process on stderr when it spools.
 - `evidence_sources()` also reads the spool, and finds the trail log under `AQT_TRAIL_STATE` or `[trail] state`.
+  It lists the trail log first.
+
+### Security
+- A side file could shadow the trail: `iter_evidence` kept the first copy of an id and read the agent-writable
+  sink file before the trail log, so a same-id line there hid or replaced a chained, writer-signed record for
+  every consumer. Trail logs (`trail.jsonl`) are now read first whatever the order of `paths`; a later copy
+  with other content is not used and is reported (`conflicts`, else one stderr warning).
+- `aqt-evidence verify` parsed leniently, so a line with a duplicate key (one copy for Python, another for
+  first-wins readers) still verified. It now reads every line strictly and requires the canonical form;
+  `validate` parses strictly, and `conform` reads checkpoint files strictly.
+- `--require-signature` without `--key` checked nothing and reported an unsigned chain intact. The CLI now
+  refuses it (usage error); `verify_chain(require_signature=True)` without keys fails.
+- `validate_record` did not check member types, so L1 conformance (up to L3) accepted envelopes that the
+  envelope schema rejects (e.g. a list as `actor.id`, `tz` 5, `before` a string, `null` members), and
+  `sig: null` crashed `verify_chain`. It now applies the schema's types and rejects `null` for optional
+  members; L1 also applies the envelope schema when `jsonschema` is installed. No 0.1 tool writes such records.
+- Patterns used `re.match` with `$` and `\d`: a trailing newline and non-ASCII digits were accepted. They now
+  match the whole string with ASCII digits, `time` must be a real date, and the `time`/`date` schema patterns
+  use `[0-9]`.
+- `verify_checkpoint` checked only the signature: a signed record reshaped as a checkpoint verified, and a
+  `sig` list raised. It now requires the checkpoint shape and returns `False` otherwise.
+- Deeply nested JSON raised `RecursionError` in the parser and the CLIs; it is now a `CanonicalError`
+  (a parse problem).
+- Spec and README: checkpoints reveal truncation only down to their `seq` (§1, §7, §9); verifiers parse
+  strictly wherever they read a log (§4); requiring signatures without a key fails (§6.4); checkpoint shape
+  (§8); readers must not let side files shadow trail records (§10.5); no `null` members, whole-string patterns
+  (§3).
 
 ### Fixed
 - Registry aligned with what the 0.1 tools write: actions `signoff.action.prepared` `revise`,

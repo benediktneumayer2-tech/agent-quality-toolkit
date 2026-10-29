@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import re
 import time
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from .canonical import CanonicalError, canonical_json, content_hash
@@ -24,10 +24,12 @@ TOP_LEVEL = frozenset({
     "aqt", "id", "type", "time", "tz", "actor", "observed", "action", "subject", "before", "after",
     "reason", "meaning", "links", "data", "chain", "sig",
 })
-_TYPE = re.compile(r"^[a-z0-9-]+\.[a-z0-9_.-]+$")
-_ID = re.compile(r"^rec_[0-9a-f]{12}[0-9a-f]{16}$")
-_HASH = re.compile(r"^sha256:[0-9a-f]{64}$")
-_TIME = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$")
+# Used with fullmatch (``$`` would also match before a final newline) and ASCII digits only.
+_TYPE = re.compile(r"[a-z0-9-]+\.[a-z0-9_.-]+")
+_ID = re.compile(r"rec_[0-9a-f]{28}")
+_HASH = re.compile(r"sha256:[0-9a-f]{64}")
+_KEY_ID = re.compile(r"ed25519:[0-9a-f]{16}")
+_TIME = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})(\.[0-9]{1,6})?Z")
 
 
 def new_id() -> str:
@@ -102,51 +104,115 @@ def record_hash(record: dict) -> str:
     return content_hash(unsigned(record))
 
 
+def is_time(value: Any) -> bool:
+    """True for an RFC 3339 UTC time as records use it (``Z``, up to 6 fractional digits)."""
+    match = _TIME.fullmatch(value) if isinstance(value, str) else None
+    if not match:
+        return False
+    year, month, day, hour, minute, second = (int(part) for part in match.groups()[:6])
+    try:
+        date(year, month, day)
+    except ValueError:
+        return False
+    return hour < 24 and minute < 60 and second <= 60  # 60: leap second
+
+
+def is_hash(value: Any) -> bool:
+    """True for ``sha256:`` plus 64 lower-case hex digits."""
+    return isinstance(value, str) and _HASH.fullmatch(value) is not None
+
+
+def _text(value: Any) -> bool:
+    return isinstance(value, str) and value != ""
+
+
+def _strings(value: Any, names: tuple[str, ...]) -> bool:
+    return all(isinstance(value[name], str) for name in names if name in value)
+
+
+def _actor_ok(who: Any) -> bool:
+    if not isinstance(who, dict) or not isinstance(who.get("kind"), str) or who["kind"] not in ACTOR_KINDS:
+        return False
+    agent = who.get("agent", {})
+    return (_text(who.get("id")) and _strings(who, ("role", "display")) and isinstance(agent, dict)
+            and _strings(agent, ("harness", "model", "version", "session")))
+
+
+def _integer(value: Any) -> bool:
+    return type(value) is int  # bool is not an integer here
+
+
+def _observed_ok(seen: Any) -> bool:
+    if not isinstance(seen, dict):
+        return False
+    chain, processes = seen.get("process_chain", []), seen.get("processes", [])
+    return (all(_integer(seen[name]) for name in ("pid", "uid", "gid") if name in seen)
+            and isinstance(chain, list) and all(isinstance(item, str) for item in chain)
+            and isinstance(processes, list)
+            and all(isinstance(p, dict) and _integer(p.get("pid")) and _strings(p, ("comm",))
+                    and ("start_time" not in p or _integer(p["start_time"])) for p in processes)
+            and (seen.get("harness") is None or isinstance(seen["harness"], str))
+            and ("client_time" not in seen or is_time(seen["client_time"]))
+            and seen.get("via", "socket") in ("socket", "spool"))
+
+
 def validate_record(record: Any) -> list[str]:
-    """Structural check of the envelope. Returns a list of problems; empty means valid."""
+    """Check the envelope (spec §3; the same rules as ``schemas/envelope.schema.json``, plus
+    real calendar dates and the canonical-JSON rules). Returns a list of problems; empty means
+    valid. Optional members are left out when absent: ``null`` is not a value for any of them."""
     if not isinstance(record, dict):
         return ["record must be a JSON object"]
     errors = []
     unknown = set(record) - TOP_LEVEL
     if unknown:
-        errors.append(f"unknown top-level fields: {', '.join(sorted(unknown))}")
+        errors.append(f"unknown top-level fields: {', '.join(sorted(map(str, unknown)))}")
     if record.get("aqt") != SPEC_VERSION:
         errors.append(f"aqt must be {SPEC_VERSION!r}")
-    if not isinstance(record.get("id"), str) or not _ID.match(record["id"]):
+    if not isinstance(record.get("id"), str) or not _ID.fullmatch(record["id"]):
         errors.append("id must look like rec_<28 hex>")
-    if not isinstance(record.get("type"), str) or not _TYPE.match(record["type"]):
+    if not isinstance(record.get("type"), str) or not _TYPE.fullmatch(record["type"]):
         errors.append("type must be '<tool>.<kind>' in lower case")
-    if not isinstance(record.get("time"), str) or not _TIME.match(record["time"]):
+    if not is_time(record.get("time")):
         errors.append("time must be RFC 3339 UTC with a Z suffix")
-    if not isinstance(record.get("action"), str) or not record["action"]:
+    if "tz" in record and not _text(record["tz"]):
+        errors.append("tz, when present, must be a non-empty string")
+    if not _text(record.get("action")):
         errors.append("action must be a non-empty string")
-    who = record.get("actor")
-    if not isinstance(who, dict) or who.get("kind") not in ACTOR_KINDS or not who.get("id"):
-        errors.append("actor needs kind (human|agent|service) and id")
+    if not _actor_ok(record.get("actor")):
+        errors.append("actor needs kind (human|agent|service) and id (strings; role, display and agent.* "
+                      "are strings too)")
+    if "observed" in record and not _observed_ok(record["observed"]):
+        errors.append("observed does not match its schema (pid, uid, gid integers; via socket|spool; ...)")
     what = record.get("subject")
-    if what is not None and (not isinstance(what, dict) or not what.get("kind") or not what.get("ref")):
+    if "subject" in record and (not isinstance(what, dict) or not _text(what.get("kind"))
+                                or not _text(what.get("ref"))):
         errors.append("subject needs kind and ref")
+    for key in ("before", "after"):
+        if key in record and not isinstance(record[key], dict):
+            errors.append(f"{key}, when present, must be an object")
     for key in ("subject", "before", "after"):
         value = record.get(key)
-        if isinstance(value, dict) and "sha256" in value and not _HASH.match(str(value["sha256"])):
+        if isinstance(value, dict) and "sha256" in value and not is_hash(value["sha256"]):
             errors.append(f"{key}.sha256 must be sha256:<64 hex>")
-    if "meaning" in record and record["meaning"] not in MEANINGS:
+    if "meaning" in record and (not isinstance(record["meaning"], str) or record["meaning"] not in MEANINGS):
         errors.append(f"meaning must be one of {', '.join(sorted(MEANINGS))}")
     if "reason" in record and (not isinstance(record["reason"], str) or not record["reason"].strip()):
         errors.append("reason, when present, must be a non-empty string")
     links = record.get("links")
-    if links is not None and (not isinstance(links, list) or any(
-            not isinstance(link, dict) or not link.get("rel") or not link.get("ref") for link in links)):
+    if "links" in record and (not isinstance(links, list) or any(
+            not isinstance(link, dict) or not _text(link.get("rel")) or not _text(link.get("ref")) for link in links)):
         errors.append("links must be a list of {rel, ref}")
+    if "data" in record and not isinstance(record["data"], dict):
+        errors.append("data must be an object")
     chain = record.get("chain")
-    if chain is not None and (not isinstance(chain, dict) or type(chain.get("seq")) is not int
-                              or not _HASH.match(str(chain.get("prev", "")))):
-        errors.append("chain needs integer seq and prev sha256:<64 hex>")
+    if "chain" in record and (not isinstance(chain, dict) or type(chain.get("seq")) is not int
+                              or chain["seq"] < 0 or not is_hash(chain.get("prev"))):
+        errors.append("chain needs integer seq >= 0 and prev sha256:<64 hex>")
     sig = record.get("sig")
-    if sig is not None and (not isinstance(sig, list) or any(
-            not isinstance(s, dict) or s.get("alg") != "ed25519" or not s.get("key") or not s.get("value")
-            for s in sig)):
-        errors.append("sig must be a list of {alg: ed25519, key, value}")
+    if "sig" in record and (not isinstance(sig, list) or any(
+            not isinstance(s, dict) or s.get("alg") != "ed25519" or not isinstance(s.get("key"), str)
+            or not _KEY_ID.fullmatch(s["key"]) or not _text(s.get("value")) for s in sig)):
+        errors.append("sig must be a list of {alg: ed25519, key: ed25519:<16 hex>, value}")
     try:
         canonical_json(record)
     except CanonicalError as error:

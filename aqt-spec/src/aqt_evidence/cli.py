@@ -9,16 +9,43 @@ import sys
 
 from pathlib import Path
 
-from .chain import verify_chain
+from .canonical import CanonicalError, parse_json, parse_record
+from .chain import ChainResult, verify_chain
 from .conformance import conformance, read_strict
 from .crypto import generate_key, load_public_key
 from .record import record_hash, validate_record
-from .sink import SinkError, read_jsonl
+from .sink import RecordLineError, SinkError, read_jsonl
 from .vectors import run_all
 
 
 def _keys(paths):
     return dict(load_public_key(path) for path in paths or [])
+
+
+def _verify_file(path, *, keys=None, require_signature: bool = False) -> ChainResult:
+    """Verify a stored chained JSON-lines log: every line strictly parsed and canonical
+    (``read_jsonl(strict=True)``), then the chain (and signatures with ``keys``). An unreadable
+    line breaks the chain at the seq it would have had."""
+    bad: list[RecordLineError] = []
+
+    def records():
+        try:
+            yield from read_jsonl(path, strict=True)
+        except RecordLineError as error:
+            bad.append(error)
+
+    result = verify_chain(records(), keys=keys, require_signature=require_signature)
+    if result.ok and bad:
+        return ChainResult(False, result.count, result.head_seq, result.head_hash, result.count,
+                           f"line {bad[0].line}: {bad[0].reason}", result.warnings)
+    return result
+
+
+def _checkpoint(path):
+    try:
+        return parse_json(Path(path).read_bytes())
+    except CanonicalError as error:
+        raise ValueError(f"checkpoint {path}: {error}") from error
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -31,7 +58,8 @@ def main(argv: list[str] | None = None) -> int:
     verify = sub.add_parser("verify", help="verify a chained file (and signatures with --key)")
     verify.add_argument("file")
     verify.add_argument("--key", action="append", help="public key PEM; repeatable")
-    verify.add_argument("--require-signature", action="store_true")
+    verify.add_argument("--require-signature", action="store_true",
+                        help="every record needs a valid signature by a --key")
     verify.add_argument("--json", action="store_true")
     keygen = sub.add_parser("keygen", help="create an Ed25519 key pair (PATH and PATH.pub)")
     keygen.add_argument("path")
@@ -51,8 +79,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "validate":
             bad = 0
-            for number, record in enumerate(read_jsonl(args.file), 1):
-                for problem in validate_record(record):
+            with open(args.file, "rb") as handle:
+                lines = [line for line in handle if line.strip()]
+            for number, line in enumerate(lines, 1):
+                try:
+                    problems = validate_record(parse_record(line))
+                except CanonicalError as error:  # strict parsing (spec §4)
+                    problems = [str(error)]
+                for problem in problems:
                     bad += 1
                     print(f"record {number}: {problem}")
             print("valid" if not bad else f"{bad} problem(s)")
@@ -62,8 +96,10 @@ def main(argv: list[str] | None = None) -> int:
                 print(record.get("id"), record_hash(record))
             return 0
         if args.command == "verify":
+            if args.require_signature and not args.key:
+                parser.error("--require-signature needs the pinned public key: add --key PEM")
             keys = _keys(args.key) if args.key else None
-            result = verify_chain(read_jsonl(args.file), keys=keys, require_signature=args.require_signature)
+            result = _verify_file(args.file, keys=keys, require_signature=args.require_signature)
             if args.json:
                 print(json.dumps(result.__dict__))
             else:
@@ -73,7 +109,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0 if result.ok else 1
         if args.command == "conform":
             records, problems = read_strict(args.file)
-            checkpoints = [json.loads(Path(path).read_text(encoding="utf-8")) for path in args.checkpoint or []]
+            checkpoints = [_checkpoint(path) for path in args.checkpoint or []]
             result = conformance(records, args.level, keys=_keys(args.key) if args.key else None,
                                  checkpoints=checkpoints, check_payloads=not args.no_payloads,
                                  parse_problems=problems)
