@@ -4,7 +4,13 @@ human decisions (release, declare threat) through ``aqt_quarantine.decisions.Dec
 A decision is signed over the content hash recorded when the case was opened. The stored
 original is shown only when it still has that hash (``Decider.case_content``), it is checked
 again right before a decision, and the hash shown is passed to the decision as
-``expected_sha256``, so the person signs over the text they were shown."""
+``expected_sha256``, so the person signs over the text they were shown.
+
+A release or threat declaration also needs the whole of that text on screen first. The default
+view shows only the passages around the detector evidence, and the full view shows the content in
+pages of ``FULL_LIMIT`` characters. The browser session notes which pages of which content (case
+id and hash) it was sent; release and declare are offered, and accepted, only once every page was
+shown in that session (a default view that covers the whole text counts as all pages)."""
 
 from __future__ import annotations
 
@@ -12,17 +18,26 @@ from typing import Callable
 
 from . import NotFound, Stale, UsageProblem, require
 
-FULL_LIMIT = 200_000      # characters of content shown at most, even with "full"
+FULL_LIMIT = 200_000      # characters per page of the full view
 CHANGED = ("{error}. Only content with the hash recorded when the case was opened is shown and decided on, so "
            "nothing is shown and no decision can be made here.")
 CONTEXT = 300             # characters around each evidence span in the default view
 STATE_ORDER = {"held": 0, "warned": 1, "threat": 2, "released": 3}
 
 
-def segments(text: str, evidence: list[dict], *, full: bool, visible: Callable[[str], str]) -> dict:
-    """The content split into plain and highlighted pieces. Hidden characters are made visible
-    by aqt-quarantine's own ``visible()``; the browser renders every piece as text."""
+def pages_of(length: int) -> int:
+    """Number of full-view pages for content of ``length`` characters (at least one)."""
+    return max(1, -(-length // FULL_LIMIT))
+
+
+def segments(text: str, evidence: list[dict], *, full: bool, visible: Callable[[str], str], page: int = 0) -> dict:
+    """The content split into plain and highlighted pieces: the evidence passages, or with
+    ``full`` one page of ``FULL_LIMIT`` characters. ``complete`` says whether this view shows the
+    whole text. Hidden characters are made visible by aqt-quarantine's own ``visible()``; the
+    browser renders every piece as text."""
     length = len(text)
+    pages = pages_of(length)
+    page = min(max(0, int(page)), pages - 1)
     spans: list[list] = []
     for item in sorted(evidence, key=lambda e: (e.get("start", 0), e.get("end", 0))):
         start, end = max(0, int(item.get("start", 0))), min(length, int(item.get("end", 0)))
@@ -35,8 +50,10 @@ def segments(text: str, evidence: list[dict], *, full: bool, visible: Callable[[
                 spans[-1][2] += "; " + reason
         else:
             spans.append([start, end, reason])
-    if full or not spans:
-        windows = [[0, min(length, FULL_LIMIT if full else 2 * CONTEXT)]]
+    if full:
+        windows = [[page * FULL_LIMIT, min(length, (page + 1) * FULL_LIMIT)]]
+    elif not spans:
+        windows = [[0, min(length, 2 * CONTEXT)]]
     else:
         windows = []
         for start, end, _ in spans:
@@ -59,7 +76,8 @@ def segments(text: str, evidence: list[dict], *, full: bool, visible: Callable[[
         if b > cursor:
             pieces.append({"text": visible(text[cursor:b])})
         parts.append({"from": a, "to": b, "pieces": pieces, "cut_before": a > 0, "cut_after": b < length})
-    return {"chars": length, "full": full, "truncated": full and length > FULL_LIMIT, "windows": parts}
+    return {"chars": length, "full": full, "page": page if full else None, "pages": pages,
+            "complete": windows == [[0, length]], "truncated": full and pages > 1, "windows": parts}
 
 
 class QuarantineView:
@@ -113,7 +131,9 @@ class QuarantineView:
                     "record": s.record.get("id"), "by": (s.record.get("actor") or {}).get("id"),
                     "reason": s.record.get("reason")} for s in sources]
         return {"cases": rows, "counts": counts, "sources": trusted, "signers": self.signers(decider),
-                "state_dir": str(self.config.state_dir), "outbox": decider.store.outbox_size()}
+                "state_dir": str(self.config.state_dir), "outbox": decider.store.outbox_size(),
+                "journal_problems": [str(p) for p in decider.store.journal_problems[:20]],
+                "journal_problem_count": len(decider.store.journal_problems)}
 
     @staticmethod
     def original(decider, case) -> tuple[str | None, str | None]:
@@ -123,7 +143,9 @@ class QuarantineView:
             return None, CHANGED.format(error=content.error or "the stored original is not available")
         return content.text, None
 
-    def case(self, case_id: str, *, full: bool = False) -> dict:
+    def case(self, case_id: str, *, full: bool = False, page: int = 0, shown: dict | None = None) -> dict:
+        """One case. ``shown`` is the browser session's record of the content pages it was sent
+        (``(case_id, content_sha256) -> set of pages``); this view's pages are added to it."""
         from aqt_quarantine.report import summary_lines, visible
         from aqt_quarantine.store import StoreError, normalise_case_id
         try:
@@ -136,8 +158,15 @@ class QuarantineView:
         if case is None:
             raise NotFound(f"no case {case_id}")
         text, text_error = self.original(decider, case)
-        shown = text is not None              # decisions only over content the person can see
+        verified = text is not None           # decisions only over content the person can see
         data = case.data
+        content = segments(text, data.get("evidence", []), full=full, visible=visible, page=page) \
+            if verified else None
+        unseen: list[int] = []
+        if content is not None:
+            seen = (shown if shown is not None else {}).setdefault((case_id, data.get("content_sha256")), set())
+            seen.update(range(content["pages"]) if content["complete"] else [content["page"]] if full else [])
+            unseen = [number for number in range(content["pages"]) if number not in seen]
         evidence = [{"start": e.get("start"), "end": e.get("end"), "label": e.get("label"),
                      "detector": e.get("detector"), "reason": e.get("reason"),
                      "excerpt": visible(str(e.get("excerpt", "")))} for e in data.get("evidence", [])]
@@ -161,16 +190,19 @@ class QuarantineView:
                            "calibrated": bool(thresholds.get("calibrated"))},
             "chars": data.get("chars"), "evidence": evidence, "decisions": decisions, "refusals": refused,
             "delivered": len(case.delivered), "opened_record": case.opened.get("id"),
-            "content": segments(text, data.get("evidence", []), full=full, visible=visible) if text is not None else None,
-            "content_error": text_error, "signers": self.signers(decider),
-            "content_verified": shown,
-            "can_release": shown and case.state in ("held", "warned", "threat"),
-            "can_declare": shown and case.state in ("held", "warned", "released"),
+            "content": content, "content_error": text_error, "signers": self.signers(decider),
+            "content_verified": verified, "unseen_pages": unseen,
+            "needs_full_view": verified and bool(unseen) and case.state in ("held", "warned", "threat", "released"),
+            "can_release": verified and not unseen and case.state in ("held", "warned", "threat"),
+            "can_declare": verified and not unseen and case.state in ("held", "warned", "released"),
+            "journal_problems": [str(p) for p in decider.store.journal_problems if p.case_id == case_id],
         }
 
     def decide(self, case_id: str, kind: str, *, reason: str, passphrase: str, shown_sha256: str,
-               signer_id: str | None, human_check: Callable, overrule_threat: bool = False) -> dict:
-        """Release or declare a threat. Refused as stale when the case content is not the one shown."""
+               signer_id: str | None, human_check: Callable, overrule_threat: bool = False,
+               shown: dict | None = None) -> dict:
+        """Release or declare a threat. Refused as stale when the case content is not the one shown,
+        or when not all of it was shown in this browser session (``shown``, as in ``case``)."""
         from aqt_evidence import HumanCheckError
         from aqt_quarantine.decisions import DecisionError
         from aqt_quarantine.store import StoreError, normalise_case_id
@@ -187,8 +219,16 @@ class QuarantineView:
         if not shown_sha256 or case.data.get("content_sha256") != shown_sha256:
             stale = "the case content is not the one shown; nothing was signed. Reload the case."
         else:
-            _, changed = self.original(decider, case)
+            text, changed = self.original(decider, case)
             stale = f"nothing was signed: {changed}" if changed else None
+            if text is not None:
+                seen = (shown or {}).get((case_id, shown_sha256), set())
+                missing = [number + 1 for number in range(pages_of(len(text))) if number not in seen]
+                if missing:
+                    stale = (f"nothing was signed: the whole content of case {case_id} ({len(text):,} characters) "
+                             "has not been shown in this browser session (page "
+                             f"{', '.join(map(str, missing[:10]))}{' …' if len(missing) > 10 else ''} not shown). "
+                             "Show the full content first.")
         if stale:
             try:
                 human_check()

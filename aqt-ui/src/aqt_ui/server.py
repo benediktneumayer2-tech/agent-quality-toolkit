@@ -52,6 +52,7 @@ MAX_CONNECTIONS = 32          # connections handled at once; more are closed at 
 class Session:
     csrf: str
     created: float = field(default_factory=time.time)
+    shown: dict = field(default_factory=dict)      # (case id, content hash) -> quarantine pages sent
 
 
 class App:
@@ -428,7 +429,9 @@ class Handler(BaseHTTPRequestHandler):
         elif route == ("GET", "quarantine"):
             self.send_json(200, app.quarantine().cases(query.get("state")))
         elif len(route) == 3 and route[:2] == ("GET", "quarantine"):
-            self.send_json(200, app.quarantine().case(route[2], full=query.get("full") == "1"))
+            page = query.get("page") or "0"
+            self.send_json(200, app.quarantine().case(route[2], full=query.get("full") == "1",
+                                                      page=int(page) if page.isdigit() else 0, shown=session.shown))
         elif len(route) == 4 and route[:3] == ("POST", "quarantine", "sources") and route[3] in ("trust", "revoke"):
             self.decide(lambda body, check: app.quarantine().trust(
                 str(body.get("domain") or ""), reason=str(body.get("reason") or ""), passphrase=self._secret or "",
@@ -439,7 +442,7 @@ class Handler(BaseHTTPRequestHandler):
             self.decide(lambda body, check: app.quarantine().decide(
                 route[2], route[3], reason=str(body.get("reason") or ""), passphrase=self._secret or "",
                 shown_sha256=str(body.get("content_sha256") or ""), signer_id=body.get("signer_id"),
-                human_check=check, overrule_threat=bool(body.get("overrule_threat"))))
+                human_check=check, overrule_threat=bool(body.get("overrule_threat")), shown=session.shown))
         elif route == ("GET", "changes"):
             self.send_json(200, app.changes.summary())
         elif len(route) == 4 and route[:3] == ("GET", "changes", "actions"):

@@ -106,7 +106,7 @@ const STATUS_KIND = {
   warn: "warn", warned: "warn", expiring: "warn", manual_verify_required: "warn", prepared: "warn", pending: "info",
   unverified: "info", problems: "warn", missing: "warn", unknown: "warn", expired: "fail", open: "warn", changed: "fail",
   fail: "fail", broken: "fail", held: "fail", threat: "fail", "no-go": "fail", invalid: "fail", invalidated: "fail",
-  revoked: "fail", "unknown-signer": "warn", triggered: "fail", rejected: "neutral", "not-effective": "fail",
+  revoked: "fail", "unknown-signer": "warn", "unknown-key": "warn", unbound: "warn", unconfirmed: "warn", triggered: "fail", rejected: "neutral", "not-effective": "fail",
   failed: "fail", stale: "warn", ok: "pass", fresh: "pass", signed: "pass", "signed-verified": "pass", implemented: "info",
   "awaiting-approval": "warn", unsigned: "warn", planned: "info", cancelled: "neutral", critical: "fail", major: "warn", minor: "info",
 };
@@ -559,14 +559,17 @@ async function renderTrail(main) {
     return;
   }
   const rows = data.rows.map((r) => {
-    const mismatch = r.actor.kind === "human" && r.observed.harness;
+    const mismatch = r.attribution === "agent";
+    const observedCell = mismatch ? h("span", { class: "flag", title: t("claims a human but came from an agent harness"), text: `! ${r.observed.harness || r.observed.drained_by || r.observed.via}` })
+      : r.attribution === "unconfirmed" ? h("span", { class: "flag", title: t("claims a human, but the sender was not confirmed (chain status {status})", { status: r.observed.chain_status || r.observed.via || "–" }), text: `? ${t("unconfirmed")}` })
+      : (r.observed.via ? `${r.observed.via}${r.observed.harness ? " · " + r.observed.harness : ""}` : "–");
     return { data: r, cells: [
       h("td", { class: "seq", text: r.chain.seq ?? "" }),
       h("td", { class: "small time", text: fmtTime(r.time) }),
-      h("td", {}, r.type, r.signed ? h("span", { class: "muted small", text: ` · ${t("signed")}` }) : null),
+      h("td", {}, r.type, r.signed ? h("span", { class: "muted small", text: ` · ${t("signature attached")}` }) : null),
       h("td", { class: "hide-narrow", text: r.action }),
       h("td", { class: "mono small wrap", text: r.actor.id }),
-      h("td", { class: "hide-narrow small" }, mismatch ? h("span", { class: "flag", title: t("claims a human but came from an agent harness"), text: `! ${r.observed.harness}` }) : (r.observed.via ? `${r.observed.via}${r.observed.harness ? " · " + r.observed.harness : ""}` : "–")),
+      h("td", { class: "hide-narrow small" }, observedCell),
       h("td", { class: "hide-narrow mono small wrap", text: (r.subject && r.subject.ref) || "" }),
     ] };
   });
@@ -678,10 +681,20 @@ function exportSection() {
     downloadButton("/api/trail/export", "aqt-trail-bundle.tar.gz", t("Download bundle (.tar.gz)")));
 }
 
+// How far the writer's observation backs a human claim, in the review's words (aqt-trail attribution).
+function attributionNote(a) {
+  if (!a || a.state === "human") return null;
+  const text = a.state === "agent" ? (a.drained ? t("This record claims a human; it came through the spool and was drained by an agent harness ({harness}).", { harness: a.harness || "?" }) : t("This record claims a human but came from an agent harness."))
+    : a.state === "unconfirmed" ? (a.via === "spool" ? t("Unconfirmed: this record claims a human, but it came through the spool, so its sender was not observed.") : t("Unconfirmed: this record claims a human, but the sender's process chain was incomplete or unreadable (chain status {status}).", { status: a.chain_status || "–" }))
+    : t("Legacy: written before chain status existed; only the absence of agent markers speaks for a human.");
+  return h("p", { class: a.state === "legacy" ? "small muted" : "flag", text });
+}
 async function openRecord(row) {
   const data = await api(`/api/trail/record/${encodeURIComponent(row.id)}`);
   const r = data.record;
   const obs = data.observed || {};
+  const drained = obs.drained_by || null;
+  const sig = data.signature;
   setInspector(
     inspSection(t("Record"), h("p", { class: "insp-title mono", text: r.id }), kv([
       [t("Type"), r.type], [t("Action"), r.action], [t("Time"), fmtTime(r.time)], ["UTC", h("span", { class: "mono", text: r.time })],
@@ -692,9 +705,12 @@ async function openRecord(row) {
       [t("Claimed"), `${r.actor.id}${r.actor.role ? " (" + r.actor.role + ")" : ""}`],
       [t("Observed"), obs.process_chain && obs.process_chain.length ? obs.process_chain.join(" ← ") : (obs.via || obs.origin || t("not observed"))],
       [t("Harness"), obs.harness || t("none detected")], [t("Via"), obs.via || obs.origin || "–"],
-    ]), data.attribution_mismatch ? h("p", { class: "flag", text: t("This record claims a human but came from an agent harness.") }) : null),
+      [t("Chain status"), obs.chain_status ? `${obs.chain_status}${obs.chain_detail ? " (" + obs.chain_detail + ")" : ""}` : "–"],
+      drained ? [t("Drained by"), `${(drained.process_chain || []).join(" ← ") || "–"}${drained.harness ? " · " + drained.harness : ""} · ${drained.chain_status || "–"}`] : null,
+    ]), attributionNote(data.attribution)),
     inspSection(t("Signatures"), (r.sig || []).map((s) => kv([[t("Writer key"), h("code", { text: s.key })]])),
-      r.data && r.data.signature ? kv([[t("Detached"), `${r.data.signature.statement && t(r.data.signature.statement.meaning)} · ${r.data.signature.statement && r.data.signature.statement.signer && r.data.signature.statement.signer.id}`]]) : null),
+      sig ? kv([[t("Detached"), h("span", {}, stWord(sig.status), ` ${sig.meaning ? t(sig.meaning) : "–"} · ${sig.signer || "–"}`)],
+        sig.detail ? [t("Check"), sig.detail] : null, [t("Key"), h("code", { text: sig.key || "–" })]]) : null),
     inspSection(t("Stored record (text)"), h("pre", { class: "json", text: JSON.stringify(r, null, 2) })),
   );
 }
@@ -723,7 +739,8 @@ async function renderQuarantine(main) {
     [["held", t("Held")], ["warned", t("Warned")], ["released", t("Released")], ["threat", t("Threat")], ["all", t("All")]].map(([id, label]) =>
       h("button", { class: "chip-btn", type: "button", "aria-pressed": state === id ? "true" : "false",
         text: `${label}${id === "all" ? "" : ` ${counts[id] || 0}`}`, onclick: () => { setQuery({ state: id }); route(); } }))),
-    data.outbox ? h("span", { class: "small", text: t("{n} record(s) waiting in the quarantine outbox (aqt-quarantine flush)", { n: data.outbox }) }) : null);
+    data.outbox ? h("span", { class: "small", text: t("{n} record(s) waiting in the quarantine outbox (aqt-quarantine flush)", { n: data.outbox }) }) : null,
+    data.journal_problem_count ? h("span", { class: "small flag", title: data.journal_problems.join("\n"), text: t("{n} journal line(s) ignored: malformed, or reopening a case (aqt-quarantine doctor)", { n: data.journal_problem_count }) }) : null);
   put(main, bar);
   if (!data.cases.length) {
     put(main, empty(state === "held" ? t("No held cases") : t("No cases in this state"), state === "held" ? t("Nothing waits for a quarantine decision.") : ""));
@@ -778,9 +795,12 @@ function openSource(s, signers) {
     }) : null);
 }
 
-async function openCase(caseId, full) {
-  const c = await api(`/api/quarantine/${encodeURIComponent(caseId)}${full ? "?full=1" : ""}`);
+// Release and declare are offered only after every page of the content was shown in this session.
+async function openCase(caseId, full, page) {
+  page = page || 0;
+  const c = await api(`/api/quarantine/${encodeURIComponent(caseId)}${full ? `?full=1&page=${page}` : ""}`);
   const content = h("div");
+  const unseen = c.unseen_pages || [];
   if (c.content) {
     const pre = h("pre", { class: "text", tabindex: "0", "aria-label": t("Case content, untrusted") });
     for (const w of c.content.windows) {
@@ -790,9 +810,12 @@ async function openCase(caseId, full) {
       put(pre, "\n\n");
     }
     put(content, h("p", { class: "untrusted", text: t("Untrusted third-party text. Highlighted passages are detector evidence; hidden characters are shown as <U+XXXX>.") }), pre,
-      !full && c.content.windows.some((w) => w.cut_before || w.cut_after) ? h("button", { class: "btn small", type: "button", text: t("Show full content ({n} characters)", { n: num(c.content.chars) }), onclick: () => openCase(caseId, true) }) : null,
-      c.content.truncated ? h("p", { class: "small muted", text: t("Shown up to 200,000 characters.") }) : null);
+      !full && !c.content.complete ? h("button", { class: "btn small", type: "button", text: t("Show full content ({n} characters)", { n: num(c.content.chars) }), onclick: () => openCase(caseId, true, unseen.length ? unseen[0] : 0) }) : null,
+      full && c.content.pages > 1 ? contentPager(c, (p) => openCase(caseId, true, p)) : null);
   } else put(content, h("p", { class: "muted", text: c.content_error || t("Content not available.") }));
+  const fullFirst = c.needs_full_view ? h("div", { class: "note-box" },
+    h("p", { class: "small", text: t("Release and threat declaration need the whole content on screen first. Not shown yet: {n} of {pages} page(s).", { n: unseen.length, pages: c.content.pages }) }),
+    h("button", { class: "btn small primary", type: "button", text: t("Show page {page}", { page: unseen[0] + 1 }), onclick: () => openCase(caseId, true, unseen[0]) })) : null;
   const actions = [];
   if (c.can_release) actions.push({ id: "release", label: t("Release"), meaning: "released", button: t("Sign and release") });
   if (c.can_declare) actions.push({ id: "threat", label: t("Declare threat"), meaning: "rejected", button: t("Sign and declare threat"), danger: true });
@@ -810,11 +833,21 @@ async function openCase(caseId, full) {
       c.domain ? h("p", { class: "small" }, h("a", { href: `/quarantine?tab=sources&trust=${encodeURIComponent(c.domain)}`, onclick: (e) => { e.preventDefault(); go(`/quarantine?tab=sources&trust=${encodeURIComponent(c.domain)}`); }, text: t("Trust {domain} for later content…", { domain: c.domain }) })) : null),
     c.evidence.length ? inspSection(t("Evidence"), h("ul", { class: "evidence-list" }, c.evidence.map((e) => h("li", {}, h("strong", { text: e.label }), ` (${e.detector}): ${e.reason} `, h("code", { text: e.excerpt }))))) : null,
     inspSection(t("Content"), content),
+    c.journal_problems && c.journal_problems.length ? inspSection(t("Journal lines ignored for this case"),
+      c.journal_problems.map((p) => h("p", { class: "small flag break", text: p }))) : null,
     c.decisions.length || c.refusals.length ? inspSection(t("History"),
       c.decisions.map((d) => h("p", { class: "small" }, `${fmtTime(d.time)} ${d.action} · ${d.display || ""} ${d.by} · ${t("signature")} `, stWord(d.status), d.honoured ? "" : ` (${t("not honoured")})`, d.note ? ` ${d.note}` : "", h("br"), h("span", { class: "muted", text: `${t("Reason")}: ${d.reason}` }))),
       c.refusals.map((r) => h("p", { class: "small" }, stWord("fail", t("refused")), ` ${fmtTime(r.time)} ${r.attempted} (${r.reason_code}${r.markers.length ? "; " + r.markers.join(", ") : ""})`))) : null,
-    panel,
+    fullFirst ? inspSection(t("Decision"), fullFirst) : panel,
   );
+}
+function contentPager(c, open) {
+  const w = c.content.windows[0];
+  const page = c.content.page;
+  return h("nav", { class: "pager", "aria-label": t("Pages") },
+    h("button", { class: "btn small", type: "button", text: t("Previous page"), disabled: page === 0, onclick: () => open(page - 1) }),
+    h("span", { class: "small muted", text: t("Page {page} of {pages}, characters {from}–{to} of {n}", { page: page + 1, pages: c.content.pages, from: num(w.from + 1), to: num(w.to), n: num(c.content.chars) }) }),
+    h("button", { class: "btn small", type: "button", text: t("Next page"), disabled: page + 1 >= c.content.pages, onclick: () => open(page + 1) }));
 }
 
 // ---- Changes ------------------------------------------------------------------------------------------

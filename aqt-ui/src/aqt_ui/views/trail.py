@@ -14,6 +14,11 @@ worksheet stays in memory with its digest (``aqt_trail.review.worksheet_digest``
 sends back and aqt-trail checks again (``expected_sha256``), so editing the saved
 ``worksheet.json`` in between changes nothing that is signed.
 
+The record inspector shows how far the writer's observation confirms a human claim, in the
+review's words (``aqt_trail.review.attribution``: agent, unconfirmed, legacy, human; a spooled
+record's sender was not observed, and ``observed.drained_by`` names who drained it), and a
+detached signature only with its ``signature_status`` against the signer registry.
+
 "Last anchor" counts only RFC 3161 anchors the writer wrote whose token covers its checkpoint
 (``aqt_trail.review.anchored_seq``); "last review" only reviews whose signature is valid against
 the signer registry (``aqt_trail.verify.signature_status``), each signed statement once. A client
@@ -56,6 +61,25 @@ def parse_time(value) -> datetime | None:
     return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
 
 
+def attribution(record: dict) -> dict | None:
+    """How well the writer's observation backs a human claim, or None for records that make none.
+
+    ``state`` is aqt-trail's ``attribution``: ``agent``, ``unconfirmed``, ``legacy`` or ``human``. A
+    human claim delivered through the spool was not observed at all: ``unconfirmed``, or ``agent``
+    when ``observed.drained_by`` shows that an agent harness drained it."""
+    from aqt_trail.review import attribution as trail_attribution
+    who = record.get("actor") if isinstance(record.get("actor"), dict) else {}
+    observed = record.get("observed") if isinstance(record.get("observed"), dict) else {}
+    drained = observed.get("drained_by") if isinstance(observed.get("drained_by"), dict) else None
+    state = trail_attribution(record)
+    if state is None and who.get("kind") == "human" and observed.get("via") == "spool":
+        state = "agent" if drained and drained.get("harness") else "unconfirmed"
+    if state is None:
+        return None
+    return {"state": state, "via": observed.get("via"), "chain_status": observed.get("chain_status"),
+            "harness": observed.get("harness") or (drained or {}).get("harness"), "drained": drained is not None}
+
+
 def compact(record: dict, offset: int, length: int) -> dict:
     """The fields the list, filters and "Needs you" rules need; same keys as a record, so
     ``aqt_trail.export.select`` works on it."""
@@ -72,7 +96,10 @@ def compact(record: dict, offset: int, length: int) -> dict:
         "subject": {"kind": sub.get("kind"), "ref": sub.get("ref")} if sub else None,
         "chain": {"seq": (record.get("chain") or {}).get("seq")},
         "observed": {"harness": observed.get("harness"), "via": observed.get("via"),
-                     "chain": (observed.get("process_chain") or [])[:6]},
+                     "chain": (observed.get("process_chain") or [])[:6], "chain_status": observed.get("chain_status"),
+                     "drained_by": (observed.get("drained_by") or {}).get("harness")
+                     if isinstance(observed.get("drained_by"), dict) else None},
+        "attribution": (attribution(record) or {}).get("state"),
         "meaning": record.get("meaning"),
         "reason": str(record.get("reason") or "")[:REASON_CHARS],
         "reason_code": data.get("reason_code") if str(record.get("type", "")).endswith(".refused") else None,
@@ -179,6 +206,29 @@ class TrailIndex:
             else:
                 position = next((i for i, row in enumerate(rows) if row["chain"].get("seq") == seq), None)
         return self.full(rows[position]) if position is not None else None
+
+
+def detached_signature(record: dict) -> dict | None:
+    """The detached statement in ``data.signature`` with its ``signature_status`` against the signer
+    registry (``valid``, ``invalid``, ``revoked``, ``unknown-key``, ``unbound``), or None."""
+    from aqt_trail.signers import load_registry
+    from aqt_trail.verify import signature_status
+    data = record.get("data") if isinstance(record.get("data"), dict) else {}
+    block = data.get("signature")
+    if not isinstance(block, dict):
+        return None
+    statement = block.get("statement") if isinstance(block.get("statement"), dict) else {}
+    signer = statement.get("signer") if isinstance(statement.get("signer"), dict) else {}
+    try:
+        signers = load_registry()
+    except (ValueError, OSError):
+        signers = {}
+    try:
+        status, detail = signature_status(record, signers=signers)
+    except Exception as error:  # noqa: BLE001 - a malformed statement is shown as invalid, never crashes
+        status, detail = "invalid", f"cannot be checked: {type(error).__name__}"
+    return {"status": status, "detail": detail, "meaning": statement.get("meaning"), "signer": signer.get("id"),
+            "key": block.get("key"), "signed_at": statement.get("signed_at")}
 
 
 def _counts_as_anchor(record: dict, anchored_seq) -> bool:
@@ -391,8 +441,10 @@ class TrailView:
             return None
         observed = record.get("observed") or {}
         claimed = record.get("actor") or {}
-        mismatch = claimed.get("kind") == "human" and bool(observed.get("harness"))
-        return {"record": record, "claimed": claimed, "observed": observed, "attribution_mismatch": mismatch}
+        state = attribution(record)
+        return {"record": record, "claimed": claimed, "observed": observed, "attribution": state,
+                "attribution_mismatch": bool(state and state["state"] == "agent"),
+                "signature": detached_signature(record)}
 
     def refusals_since(self, hours: int = 24) -> list[dict]:
         self.index.refresh()

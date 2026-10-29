@@ -6,9 +6,15 @@ Prints a one-time login link. Press Enter for a fresh link; Ctrl+C stops the ser
 ends every session. Exit codes: 0 stopped normally, 2 usage or start-up error.
 
 The browser is not started with the link: a command line can be read by every local user
-(``/proc/<pid>/cmdline``). It is started with a ``file://`` page in a private folder (mode
-0700, the file 0600, in ``$XDG_RUNTIME_DIR`` when set) that forwards to the link; the page is
-removed as soon as a link was used and when the server stops.
+(``/proc/<pid>/cmdline``). It is started with a ``file://`` page that forwards to the link, in a
+private folder (mode 0700, the file 0600) named ``aqt-ui-login-*`` directly in the home
+directory; the page is removed as soon as a link was used and when the server stops.
+
+The home directory, not ``$XDG_RUNTIME_DIR`` or ``/tmp``, because snap-packaged browsers (Ubuntu's
+default Firefox and Chromium) can read only non-hidden files under ``$HOME`` there: ``/run/user``
+is outside their confinement and their ``/tmp`` is private. Without a usable home directory the
+page goes to ``$XDG_RUNTIME_DIR`` or the temporary directory as before. The printed link always
+works as well.
 """
 
 from __future__ import annotations
@@ -34,12 +40,24 @@ def _fresh_links(app: App) -> None:
         print(f"login link (works once, replaces older ones): {app.new_login_link()}", flush=True)
 
 
+def login_dir() -> str | None:
+    """Where the forward page's folder goes: the home directory when it is a writable directory of
+    this user (readable by snap browsers too), else ``$XDG_RUNTIME_DIR``, else the temp directory."""
+    home = os.path.expanduser("~")
+    try:
+        info = os.stat(home)
+        if os.path.isdir(home) and info.st_uid == os.getuid() and os.access(home, os.W_OK | os.X_OK):
+            return home
+    except OSError:
+        pass
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    return runtime if runtime and os.path.isdir(runtime) else None
+
+
 def open_browser(app: App, link: str, *, opener=webbrowser.open) -> Path:
     """Open the browser on a private page that forwards to ``link``; the token stays out of
     every command line. Returns the page; it is removed once a login link has been used."""
-    runtime = os.environ.get("XDG_RUNTIME_DIR")
-    folder = Path(tempfile.mkdtemp(prefix="aqt-ui-login-", dir=runtime if runtime and os.path.isdir(runtime)
-                                   else None))                         # mode 0700, only this user
+    folder = Path(tempfile.mkdtemp(prefix="aqt-ui-login-", dir=login_dir()))   # mode 0700, only this user
     page = folder / "login.html"
     target = html.escape(link, quote=True)
     text = ("<!doctype html><html lang=en><head><meta charset=utf-8><meta name=referrer content=no-referrer>"

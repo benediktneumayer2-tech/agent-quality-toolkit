@@ -44,6 +44,26 @@ Integration with the hardened packages (same version, not yet released):
   is not valid (for example a replayed copy).
 - Tests use a cheap scrypt cost for their keys (the suite runs in about half the time).
 
+Second review round (same version, not yet released):
+
+- Quarantine: release and threat declaration need the whole content on screen first. The full view
+  shows the content in pages of 200,000 characters; the browser session notes which pages of which
+  content (case id and hash) it was sent, and the server refuses a decision (nothing signed) until
+  every page was shown in that session. The excerpt view alone no longer offers a decision. Journal
+  lines that aqt-quarantine ignored (malformed, or a later `quarantine.held` for an existing case)
+  are listed on the case and counted in the case list. API: `GET /api/quarantine/<id>?full=1&page=N`;
+  the case answer adds `content.page`, `content.pages`, `content.complete`, `unseen_pages`,
+  `needs_full_view` and `journal_problems`.
+- Record inspector: shows `observed.chain_status` (and `drained_by`) and marks a human claim the
+  writer could not confirm as "unconfirmed", with the review's wording (aqt-trail `attribution`; a
+  spooled human claim is unconfirmed, or "agent" when an agent harness drained it); the Trail list
+  marks such rows too. A detached signature is shown with its `signature_status` against the signer
+  registry, and the list says "signature attached" instead of "signed".
+- Login: the private forward page is in `~/aqt-ui-login-*` (folder `0700`, file `0600`), because
+  snap-packaged browsers cannot read `$XDG_RUNTIME_DIR` or the host's `/tmp` (checked under snap
+  Firefox's confinement); `$XDG_RUNTIME_DIR` or the temp directory remain the fallback without a
+  usable home directory. The link is still printed.
+
 Second slice (same version, not yet released):
 
 - More decisions in the page, each with the passphrase, the hash or version shown, the read-only and
