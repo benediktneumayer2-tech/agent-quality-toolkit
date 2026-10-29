@@ -57,6 +57,8 @@ REFUSALS = {
     "key_mismatch": "The key is registered to someone else",
     "revoked_key": "The key is revoked",
     "unknown_key": "The key is not registered for this signer",
+    "unenrolled_key": "The key is in the signer registry but has no matching enrolment record in the trail, so it "
+                      "does not count; check it with aqt-signoff signers check",
 }
 
 

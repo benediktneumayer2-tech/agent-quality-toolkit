@@ -220,18 +220,26 @@ def test_attribution_uses_the_review_wording():
 
 # -- AQT-UI-002: the review signed is the worksheet shown ------------------------------------------------
 @pytest.fixture
-def reviewer(env):
+def reviewer(trail):
+    """A reviewer whose key counts: made by aqt-quarantine, its enrolment recorded in the trail by
+    'aqt-signoff rekey'. Returns the time after the enrolment: a review starts there, since the
+    enrolment counts as the reviewer's activity."""
+    from aqt_evidence import utc_now
     from aqt_quarantine.config import load_config
     from aqt_quarantine.decisions import create_identity
+    from aqt_signoff import Signoff, StaticPassphrase, load_settings
     create_identity(load_config(), signer_id=REVIEWER, name="Robin Review", role="quality-manager",
                     passphrase=lambda _prompt: PASSPHRASE)
-    return REVIEWER
+    Signoff(load_settings(), authenticator=StaticPassphrase(PASSPHRASE), environ={}, chain=[],
+            require_tty=False).rekey(REVIEWER)
+    time.sleep(0.01)
+    return utc_now()
 
 
-def test_review_signs_the_worksheet_shown_even_if_the_file_is_edited(trail, held_case, reviewer, ui_factory):
+def test_review_signs_the_worksheet_shown_even_if_the_file_is_edited(trail, reviewer, held_case, ui_factory):
     client = ui_factory()
     client.login()
-    status, sheet, _ = client.post("/api/trail/review/run", {})
+    status, sheet, _ = client.post("/api/trail/review/run", {"since": reviewer})
     assert status == 200 and sheet["findings"] and sheet["worksheet_sha256"].startswith("sha256:")
     shown = [f["id"] for f in sheet["findings"]]
     saved = json.loads(Path(sheet["path"]).read_text())
@@ -263,13 +271,13 @@ def test_review_of_a_worksheet_not_prepared_here_is_refused(trail, held_case, re
     assert status == 409 and "nothing was signed" in result["message"]
 
 
-def test_review_runs_and_signs_when_the_trail_state_is_not_writable(trail, held_case, reviewer, ui_factory):
+def test_review_runs_and_signs_when_the_trail_state_is_not_writable(trail, reviewer, held_case, ui_factory):
     from aqt_evidence import state_dir
     client = ui_factory()
     client.login()
     os.chmod(trail.state, 0o555)              # separate-user mode: the state belongs to the writer's account
     try:
-        status, sheet, _ = client.post("/api/trail/review/run", {})
+        status, sheet, _ = client.post("/api/trail/review/run", {"since": reviewer})
         assert status == 200 and Path(sheet["path"]).parent.parent == state_dir() / "trail-reviews", sheet
         status, result, _ = client.post(f"/api/trail/review/{sheet['id']}/sign", {
             "head": sheet["scope"]["head"], "worksheet_sha256": sheet["worksheet_sha256"],
@@ -280,7 +288,7 @@ def test_review_runs_and_signs_when_the_trail_state_is_not_writable(trail, held_
     assert not (trail.state / "reviews").exists()
 
 
-def test_needs_you_counts_only_valid_reviews_and_writer_anchors(trail, held_case, reviewer, ui_factory):
+def test_needs_you_counts_only_valid_reviews_and_writer_anchors(trail, reviewer, held_case, ui_factory):
     from aqt_evidence import new_record
     from aqt_trail.client import TrailClient, request
     client = ui_factory()
@@ -292,7 +300,7 @@ def test_needs_you_counts_only_valid_reviews_and_writer_anchors(trail, held_case
 
     last_review, last_anchor, needs = state()
     assert last_review is None and last_anchor is None and {"review_due", "unanchored"} <= needs
-    status, sheet, _ = client.post("/api/trail/review/run", {})
+    status, sheet, _ = client.post("/api/trail/review/run", {"since": reviewer})
     status, result, _ = client.post(f"/api/trail/review/{sheet['id']}/sign", {
         "head": sheet["scope"]["head"], "worksheet_sha256": sheet["worksheet_sha256"], "dispositions": {"all": "ok"},
         "reason": "Reviewed", "passphrase": PASSPHRASE, "signer_id": REVIEWER})
@@ -312,9 +320,9 @@ def test_needs_you_counts_only_valid_reviews_and_writer_anchors(trail, held_case
     assert state()[0] == review["time"]                     # a copy counts once, a broken signature never
 
     response = request(trail.socket_path, {"op": "checkpoint", "anchor": True, "tsa_url": "test:"})
-    assert response["ok"], response
+    assert response["ok"], response                         # any client may ask for a TEST ONLY anchor
     _, last_anchor, needs = state()
-    assert last_anchor == response["anchor"]["time"] and "unanchored" not in needs
+    assert last_anchor is None and "unanchored" in needs     # it counts only with [anchor] test_tsa = true
 
 
 # -- AQT-UI-003: an action approval binds the specification shown ------------------------------------------

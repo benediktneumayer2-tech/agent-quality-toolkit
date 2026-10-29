@@ -20,9 +20,11 @@ record's sender was not observed, and ``observed.drained_by`` names who drained 
 detached signature only with its ``signature_status`` against the signer registry.
 
 "Last anchor" counts only RFC 3161 anchors the writer wrote whose token covers its checkpoint
-(``aqt_trail.review.anchored_seq``); "last review" only reviews whose signature is valid against
-the signer registry (``aqt_trail.verify.signature_status``), each signed statement once. A client
-record of either type that claims more does not move them.
+(``aqt_trail.review.anchored_seq``), TEST ONLY anchors only with ``[anchor] test_tsa = true``; "last
+review" only reviews whose signature is valid against the signer registry, its keys checked against
+the trail's enrolment records (``aqt_trail.signers.check_enrolment``,
+``aqt_trail.verify.signature_status``), each signed statement once. A client record of either type
+that claims more does not move them.
 """
 
 from __future__ import annotations
@@ -113,8 +115,9 @@ def compact(record: dict, offset: int, length: int) -> dict:
 class TrailIndex:
     """Incremental, append-only reader of one trail file."""
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, *, test_tsa: bool = False):
         self.path = Path(path)
+        self.test_tsa = test_tsa                 # count TEST ONLY anchors ([anchor] test_tsa)
         self.unreadable: str | None = None
         self.lock = threading.Lock()
         self._reset(None)
@@ -136,6 +139,7 @@ class TrailIndex:
         self.last_time: dict[str, str] = {}      # last record time per tool prefix ("trail.", ...)
         self.last_anchor: str | None = None       # time of the newest anchor that counts (anchored_seq)
         self.reviews: list[dict] = []             # trail.review rows; their signatures are checked on use
+        self.enrolments: list[dict] = []          # signoff.key.enrolled/revoked rows: what registry keys count
         self.refused: list[dict] = []
         self.by_id: dict[str, int] = {}          # record id -> position in rows
         self.version = 0                          # grows with every change of rows
@@ -150,6 +154,8 @@ class TrailIndex:
             self.last_anchor = row["time"]
         elif kind == "trail.review":
             self.reviews.append(row)
+        elif kind in ("signoff.key.enrolled", "signoff.key.revoked"):
+            self.enrolments.append(row)
         if kind.endswith(".refused"):
             self.refused.append(row)
 
@@ -181,7 +187,7 @@ class TrailIndex:
                             record = json.loads(line)
                             row = compact(record, position, len(line))
                             if row["type"] == "trail.anchor":
-                                row["_anchored"] = _counts_as_anchor(record, anchored_seq)
+                                row["_anchored"] = _counts_as_anchor(record, anchored_seq, self.test_tsa)
                             self._add(row)
                         except ValueError:
                             self.unreadable = f"byte {position}: line is not valid JSON"
@@ -231,9 +237,9 @@ def detached_signature(record: dict) -> dict | None:
             "key": block.get("key"), "signed_at": statement.get("signed_at")}
 
 
-def _counts_as_anchor(record: dict, anchored_seq) -> bool:
+def _counts_as_anchor(record: dict, anchored_seq, test_tsa: bool) -> bool:
     try:
-        return anchored_seq(record) is not None
+        return anchored_seq(record, test_tsa=test_tsa) is not None
     except Exception:  # noqa: BLE001 - a malformed anchor never counts and never breaks the index
         return False
 
@@ -246,7 +252,8 @@ class TrailView:
     def __init__(self):
         from aqt_trail.config import load_config
         self.config = load_config()
-        self.index = TrailIndex(self.config.trail_path)
+        self.index = TrailIndex(self.config.trail_path,
+                                test_tsa=self.config.section("anchor").get("test_tsa") is True)
         self.check: dict | None = None          # last verification + ALCOA++ result
         self.running = False
         self._lock = threading.Lock()
@@ -375,16 +382,17 @@ class TrailView:
 
     def last_review(self) -> str | None:
         """Time of the newest ``trail.review`` whose signature is ``valid`` against the signer
-        registry. A statement copied into a later record counts once, at its first record."""
+        registry, its keys checked against the trail's enrolment records. A statement copied into a
+        later record counts once, at its first record."""
         from aqt_evidence import content_hash
-        from aqt_trail.signers import load_registry, registry_path
+        from aqt_trail.signers import check_enrolment, load_registry, registry_path
         from aqt_trail.verify import signature_status
         rows = list(self.index.reviews)
         key = (self.index.version, len(rows), fingerprint(registry_path()))
         if self._review_cache[0] == key:
             return self._review_cache[1]
         try:
-            signers = load_registry()
+            signers = check_enrolment(load_registry(), [self.index.full(row) for row in self.index.enrolments])
         except (ValueError, OSError):
             signers = {}
         seen, last = set(), None

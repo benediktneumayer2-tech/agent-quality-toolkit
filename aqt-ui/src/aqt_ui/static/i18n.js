@@ -275,4 +275,5 @@ export const REFUSALS_DE = {
   key_mismatch: "Der Schlüssel ist für jemand anderen registriert",
   revoked_key: "Der Schlüssel ist widerrufen",
   unknown_key: "Der Schlüssel ist für diesen Unterzeichner nicht registriert",
+  unenrolled_key: "Der Schlüssel steht im Unterzeichnerregister, hat aber keinen passenden Registrierungsnachweis im Audit-Trail und zählt daher nicht; prüfen mit aqt-signoff signers check",
 };

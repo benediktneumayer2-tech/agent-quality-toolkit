@@ -10,6 +10,8 @@ import tarfile
 from datetime import date, timedelta
 from pathlib import Path
 
+import time
+
 import pytest
 from conftest import PASSPHRASE, SIGNER, trail_records
 
@@ -128,12 +130,20 @@ def candidates(trail, signer, env):
 
 
 @pytest.fixture
-def reviewer(env):
+def reviewer(trail):
+    """A reviewer whose key counts: made by aqt-quarantine, its enrolment recorded in the trail by
+    'aqt-signoff rekey'. Returns the time after the enrolment: a review starts there, since the
+    enrolment counts as the reviewer's activity."""
+    from aqt_evidence import utc_now
     from aqt_quarantine.config import load_config
     from aqt_quarantine.decisions import create_identity
+    from aqt_signoff import Signoff, StaticPassphrase, load_settings
     create_identity(load_config(), signer_id=REVIEWER, name="Robin Review", role="quality-manager",
                     passphrase=lambda _prompt: PASSPHRASE)
-    return REVIEWER
+    Signoff(load_settings(), authenticator=StaticPassphrase(PASSPHRASE), environ={}, chain=[],
+            require_tty=False).rekey(REVIEWER)
+    time.sleep(0.01)
+    return utc_now()
 
 
 def body(**extra):
@@ -250,8 +260,8 @@ def test_approve_an_implemented_corrective_action(candidates, ui_factory, trail)
 
 
 # -- audit-trail review and export -----------------------------------------------------------------------
-def run_review(client):
-    status, sheet, _ = client.post("/api/trail/review/run", {})
+def run_review(client, since=None):
+    status, sheet, _ = client.post("/api/trail/review/run", {"since": since} if since else {})
     assert status == 200 and sheet["ok"] and sheet["id"].startswith("rv_"), sheet
     return sheet
 
@@ -261,7 +271,7 @@ def test_sign_a_review_as_an_independent_reviewer(trail, signer, reviewer, ui_fa
     client.login()
     # the quality manager decides something, so they act in the period and may not review it
     assert client.post("/api/quarantine/sources/trust", body(domain="docs.example.org", expires=FUTURE))[0] == 200
-    sheet = run_review(client)
+    sheet = run_review(client, reviewer)
     assert SIGNER in sheet["actors_reviewed"] and REVIEWER not in sheet["actors_reviewed"]
     assert REVIEWER in {s["id"] for s in sheet["signers"]}
     sign = {"head": sheet["scope"]["head"], "worksheet_sha256": sheet["worksheet_sha256"],
@@ -273,7 +283,7 @@ def test_sign_a_review_as_an_independent_reviewer(trail, signer, reviewer, ui_fa
     assert client.post(path, body(**{**sign, "head": "sha256:" + "2" * 64}, signer_id=REVIEWER))[0] == 409
     status, result, raw = client.post(path, body(**sign, signer_id=REVIEWER, passphrase="wrong-pass-123"))
     assert status == 403 and result["reason_code"] == "auth_failed" and b"wrong-pass-123" not in raw
-    sheet = run_review(client)       # the refusals moved the head on; prepare the worksheet again
+    sheet = run_review(client, reviewer)    # the refusals moved the head on; prepare the worksheet again
     status, result, _ = client.post(f"/api/trail/review/{sheet['id']}/sign",
                                     body(**{**sign, "head": sheet["scope"]["head"],
                                             "worksheet_sha256": sheet["worksheet_sha256"]}, signer_id=REVIEWER))
