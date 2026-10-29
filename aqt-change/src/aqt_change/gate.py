@@ -42,7 +42,8 @@ def fresh_reviews(ledger: Ledger, plan: Plan, freshness: Freshness, reviews: lis
     fresh = []
     for review in ledger.records("change.review", plan.id) if reviews is None else reviews:
         data = review["data"]
-        if data.get("tree_fingerprint") == freshness.fingerprint(data.get("fingerprint_excludes") or []):
+        if data.get("tree_fingerprint") == freshness.fingerprint(data.get("fingerprint_excludes") or [],
+                                                                  plan.declared_paths):
             fresh.append(review)
     return fresh
 
@@ -72,7 +73,8 @@ def left_out(ledger: Ledger, rel: str, plan: Plan, snapshot: dict | None, commit
     ``Git.left_out``); the plan file is left out, finish writes and commits it."""
     if not ledger.git or snapshot is None:
         return []
-    return ledger.git.left_out(snapshot, committed | {rel}, plan.declared_paths, ledger.config.fingerprint_exclude)
+    return ledger.git.left_out(snapshot, committed | {rel}, plan.declared_paths,
+                               ledger.project_settings()["fingerprint_exclude"])
 
 
 def evaluate_gate(ledger: Ledger, rel: str, plan: Plan, *, sources: list[Path] | None = None,
@@ -102,6 +104,10 @@ def evaluate_gate(ledger: Ledger, rel: str, plan: Plan, *, sources: list[Path] |
             else:
                 nogo.append({"code": f"receipt_{entry['state']}", "item": item_id})
             continue
+        for receipt_id in entry.get("modified", []):
+            manual.append({"code": "command_modified_worktree", "item": item_id, "detail": f"{receipt_id}: "
+                           "the working tree changed while the command ran, so the receipt does not show what "
+                           "the tree it names does; run the check again on an unchanged tree"})
         if entry["manual"]:
             receipts.append(entry["receipt"])
             if entry.get("attested_by") != "human":
@@ -117,6 +123,10 @@ def evaluate_gate(ledger: Ledger, rel: str, plan: Plan, *, sources: list[Path] |
         manual.append({"code": "scope_unverifiable", "detail": "no Git base commit to compare against"})
     if scope["unapproved"]:
         nogo.append({"code": "unapproved_change", "detail": ", ".join(scope["unapproved"][:20])})
+    if scope["allowed_by_user_config"]:
+        manual.append({"code": "allowed_by_user_config", "detail": "outside the plan's paths, allowed only by "
+                       "always_allowed_paths in the user configuration (not in " + PROJECT_FILE + "): "
+                       + ", ".join(scope["allowed_by_user_config"][:20])})
     if scope.get("settings_changed"):
         manual.append({"code": "project_settings_changed", "detail": f"the change edits {PROJECT_FILE} "
                        "(aqt-change project settings such as require_trail); a human checks it"})

@@ -145,3 +145,52 @@ def test_anti_gaming_warnings(ledger, project):
     base = ledger.plan_state("s01")["base_commit"]
     assert "test_file_deleted" in {w["code"] for w in antigaming.scan(ledger.git, base)}
     assert antigaming.scan(None, base) == []
+
+
+
+def _user_excludes(project, globs):
+    from aqt_change.config import Config
+    from aqt_change.ledger import Ledger
+    return Ledger.open(project, config=Config(fingerprint_exclude=globs))
+
+
+def test_user_fingerprint_exclude_cannot_hide_tested_code(project):
+    """The user configuration is within the agent's reach: its globs leave out only untracked files outside the
+    plan's paths (tool output), never tracked files or anything inside the plan's paths."""
+    led = _user_excludes(project, ["**"])
+    plans.begin(led, P)
+    receipts.run(led, [], plan_path=P, item="V01", echo=False)
+    (project / "coverage.xml").write_text("<coverage/>")                # untracked, outside: left out
+    assert item_state(led, project) == "ok"
+    (project / "src/generated.txt").write_text("x")                     # untracked, inside the plan's paths
+    assert item_state(led, project) == "stale"
+    (project / "src/generated.txt").unlink()
+    assert item_state(led, project) == "ok"
+    (project / ".gitignore").write_text("__pycache__/\n# edited\n")    # tracked, outside the plan's paths
+    assert item_state(led, project) == "stale"
+    (project / ".gitignore").write_text("__pycache__/\n")
+    (project / "src/calc.py").write_text("def add(a, b):\n    return a - b\n")
+    assert item_state(led, project) == "stale"
+
+
+def test_project_fingerprint_exclude_counts_for_tracked_files(project):
+    (project / "docs").mkdir()
+    (project / "docs/notes.md").write_text("notes\n")
+    (project / ".aqt").mkdir()
+    (project / ".aqt/change.toml").write_text('fingerprint_exclude = ["docs/**"]\n')
+    git(project, "add", "-A")
+    git(project, "commit", "-qm", "docs and project settings")
+    from aqt_change.ledger import Ledger
+    led = Ledger.open(project)
+    plans.begin(led, P)
+    receipts.run(led, [], plan_path=P, item="V01", echo=False)
+    (project / "docs/notes.md").write_text("edited notes\n")
+    assert item_state(led, project) == "ok"
+
+
+def test_junit_path_cannot_hide_a_tracked_file(ledger, project):
+    plans.begin(ledger, P)
+    [record] = receipts.run(ledger, [], plan_path=P, item="V01", junit="src/calc.py", echo=False)
+    assert "src/calc.py" not in record["data"]["fingerprint_excludes"]
+    (project / "src/calc.py").write_text("def add(a, b):\n    return a - b\n")
+    assert item_state(ledger, project) == "stale"

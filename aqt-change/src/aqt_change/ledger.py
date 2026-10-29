@@ -29,7 +29,8 @@ from aqt_evidence import (SinkError, canonical_json, evidence_sources, load_publ
 
 from .config import INDEPENDENCE, PROJECT_FILE, Config, load_config, parse_project_settings
 from .errors import ChangeError, usage
-from .gitio import COMMIT_RE, Git, walk_fingerprint
+from .gitio import COMMIT_RE, Git, _digest, walk_blobs
+from .globs import matches_any
 
 
 ID_TOKEN = re.compile(rb"rec_[0-9a-f]{28}")
@@ -339,7 +340,8 @@ class Ledger:
         tree, at HEAD and at the base commit of each plan in progress, so neither an uncommitted edit nor a
         commit during a plan switches a setting off. ``require_trail``: a copy sets it or pins ``trail_keys``
         (``require_trail_from`` names those copies); ``trail_keys``: the keys every pinning copy names (None
-        when no copy pins any); ``gate``: each policy value at its strictest."""
+        when no copy pins any); ``gate``: each policy value at its strictest; ``fingerprint_exclude`` and
+        ``always_allowed_paths`` (which loosen checks): only the globs every copy names."""
         if self._settings is None:
             copies = []
             if (self.root / PROJECT_FILE).is_file():
@@ -357,8 +359,13 @@ class Ledger:
                     "warnings_block": any(g.get("warnings_block") for g in gates),
                     "min_review_independence": max((g.get("min_review_independence", "none") for g in gates),
                                                    key=ranks.index, default="none")}
+            def common(lists: list[list[str]]) -> list[str]:
+                return sorted(set.intersection(*map(set, lists))) if lists else []
+
             self._settings = {"require_trail": bool(required), "require_trail_from": required,
-                              "trail_keys": sorted(set.intersection(*pins)) if pins else None, "gate": gate}
+                              "trail_keys": sorted(set.intersection(*pins)) if pins else None, "gate": gate,
+                              "fingerprint_exclude": common([found["fingerprint_exclude"] for _, found in parsed]),
+                              "always_allowed_paths": common([g.get("always_allowed_paths", []) for g in gates])}
         return self._settings
 
     # --- working tree --------------------------------------------------------------
@@ -371,9 +378,22 @@ class Ledger:
         fingerprints and the hidden-change check from one read of the tree."""
         return self.git.worktree_blobs() if self.git else None
 
-    def fingerprint(self, exclude_paths: list[str], snapshot: dict[str, str] | None = None) -> str:
-        globs = list(self.config.fingerprint_exclude)
+    def fingerprint(self, exclude_paths: list[str], snapshot: dict[str, str] | None = None,
+                    scope: list[str] | None = None, tracked: set[str] | None = None) -> str:
+        """The tree fingerprint without ``exclude_paths`` (the plan file, a run's JUnit file) and the paths the
+        project's ``fingerprint_exclude`` names. The user's ``fingerprint_exclude`` leaves out only untracked
+        files outside ``scope`` (the plan's paths), so the agent's environment cannot hide the tested code.
+        ``tracked``: the tracked paths, if already known (``Git.tracked()``)."""
+        project = list(self.project_settings()["fingerprint_exclude"])
+        user, scope = list(self.config.fingerprint_exclude), list(scope or [])
         excluded = set(exclude_paths)
         if self.git:
-            return self.git.fingerprint(excluded, globs, snapshot)
-        return walk_fingerprint(self.root, excluded, globs)
+            blobs = self.git.worktree_blobs() if snapshot is None else snapshot
+            if user:
+                tracked = self.git.tracked() if tracked is None else tracked
+                excluded |= {path for path in blobs if path not in tracked and not matches_any(path, scope)
+                             and matches_any(path, user)}
+            return self.git.fingerprint(excluded, project, blobs)
+        tree = walk_blobs(self.root)
+        excluded |= {path for path in tree if not matches_any(path, scope) and matches_any(path, user)}
+        return _digest(tree, excluded, project)

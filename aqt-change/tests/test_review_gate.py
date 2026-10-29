@@ -227,7 +227,8 @@ def test_project_gate_policy_cannot_be_relaxed_during_a_plan(project):
 
 @pytest.mark.parametrize("text", ['[gate]\nrequire_signed_aproval = true\n', '[gate]\nwarnings_block = "yes"\n',
                                   '[gate]\nmin_review_independence = "best"\n',
-                                  '[gate]\nalways_allowed_paths = ["**"]\n', 'requre_trail = true\n',
+                                  '[gate]\nalways_allowed_paths = "notes.txt"\n', 'requre_trail = true\n',
+                                  'fingerprint_exclude = "build/**"\n',
                                   'trail_keys = ["ed25519:xyz"]\n', 'trail_keys = "ed25519:0123456789abcdef"\n'])
 def test_invalid_project_gate_policy_refuses(project, text):
     (project / ".aqt").mkdir()
@@ -235,3 +236,34 @@ def test_invalid_project_gate_policy_refuses(project, text):
     with pytest.raises(ChangeError) as info:
         gate(Ledger.open(project), P)
     assert info.value.code == "config_invalid"
+
+
+
+def test_path_allowed_only_by_the_user_config_needs_a_manual_check(project):
+    """always_allowed_paths in the user configuration (the agent's reach) no longer makes an out-of-scope change
+    pass silently; the same glob committed in .aqt/change.toml does."""
+    led = Ledger.open(project, config=Config(gate=GatePolicy(always_allowed_paths=["**"])))
+    done(led, project)
+    (project / "README.md").write_text("outside the declared scope\n")
+    receipts.run(led, [], plan_path=P, all_items=True, echo=False)
+    receipts.attest(led, P, "V02", [], "seen")
+    finish(led, P, key="k1", summary="done", paths=["README.md"])
+    result = gate(led, P)
+    assert result["decision"] == "MANUAL_VERIFY_REQUIRED" and reasons(result) == {"allowed_by_user_config"}
+    assert "README.md" in result["reasons"][0]["detail"]
+    assert reconcile_diff(led, P)["data"]["allowed_by_user_config"] == ["README.md"]
+
+
+def test_path_allowed_by_the_project_file_counts(project):
+    _project_gate(project, '[gate]\nalways_allowed_paths = ["README.md"]\n')
+    led = Ledger.open(project)
+    done(led, project)
+    (project / "README.md").write_text("outside the declared scope\n")
+    receipts.run(led, [], plan_path=P, all_items=True, echo=False)
+    receipts.attest(led, P, "V02", [], "seen")
+    finish(led, P, key="k1", summary="done", paths=["README.md"])
+    assert gate(led, P)["decision"] == "GO"
+    (project / ".aqt/change.toml").write_text('[gate]\nalways_allowed_paths = ["README.md", "**"]\n')
+    (project / "LICENSE").write_text("x\n")                            # widened in the working tree only
+    result = gate(Ledger.open(project), P)
+    assert {"unapproved_change", "project_settings_changed"} <= reasons(result)

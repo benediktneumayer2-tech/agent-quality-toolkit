@@ -75,14 +75,15 @@ def add_review(ledger: Ledger, plan_path: str, *, reviewer: str, independence: s
     findings = load_findings(findings_file)
     state = ledger.plan_state(plan.id) or {}
     base = base or state.get("base_commit") or plan.base_commit or ledger.head()
-    diff_sha = ledger.git.diff_sha256(base, {rel}) if (ledger.git and base) else ledger.fingerprint([rel])
+    tree = ledger.fingerprint([rel], scope=plan.declared_paths)
+    diff_sha = ledger.git.diff_sha256(base, {rel}) if (ledger.git and base) else tree
     data = {"plan_id": plan.id, "plan_ref": plan.id,
             "reviewer": {k: v for k, v in {"kind": reviewer_kind, "id": reviewer, "harness": harness,
                                           "model": model}.items() if v},
             "independence": independence, "verdict": verdict, "findings": findings,
             "diff_sha256": diff_sha,
-            "diff": {"base": base, "head": ledger.head(), "tree_fingerprint": ledger.fingerprint([rel])},
-            "fingerprint_excludes": [rel], "tree_fingerprint": ledger.fingerprint([rel])}
+            "diff": {"base": base, "head": ledger.head(), "tree_fingerprint": tree},
+            "fingerprint_excludes": [rel], "tree_fingerprint": tree}
     if qualification:
         data["qualification"] = qualification
     links = [{"rel": "qualification", "ref": qualification}] if qualification else None

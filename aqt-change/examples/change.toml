@@ -2,11 +2,13 @@
 actor = "human:alice"              # default human actor id (agents are detected and recorded as agents)
 excerpt_lines = 20                 # tail of stdout/stderr kept in receipts; 0 disables excerpts
 timeout_seconds = 1800             # per command run by `aqt-change run`
-fingerprint_exclude = []           # extra globs left out of the tree fingerprint, e.g. ["build/**"]
+fingerprint_exclude = []           # untracked files outside the plan's paths left out of the fingerprint, e.g. ["coverage.xml"]
+                                   # (in the project's .aqt/change.toml the globs leave out any matching file)
 lifecycle_owner = "aqt-change"     # or "external" when Project Tracker Next owns lifecycle writes
 
 [gate]
-# The first three keys can also be committed in the project's .aqt/change.toml [gate]; the stricter value wins.
+# These keys can also be committed in the project's .aqt/change.toml [gate]; for the first three the stricter
+# value wins, and a path that only this file's always_allowed_paths allows gives MANUAL (allowed_by_user_config).
 # QM rationale: the person accountable for the change approves the plan version before it is released;
 # without a signed approval (aqt-signoff, over the baseline/semantic reconciliation record) an agent could
 # plan, implement, verify and close a change on its own. With true, an unsigned or unverified approval

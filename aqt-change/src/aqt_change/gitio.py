@@ -167,6 +167,10 @@ class Git:
                                                                fields[2].decode())
         return found
 
+    def tracked(self) -> set[str]:
+        """Paths in HEAD or in the index."""
+        return set(self.head_entries()) | set(self.index_entries())
+
     def flagged_entries(self) -> dict[str, tuple[str, str]]:
         """Tracked paths whose index entry tells Git not to look at the working tree
         (``update-index --skip-worktree`` or ``--assume-unchanged``): {path: (flag, index blob)}.
@@ -391,6 +395,11 @@ SKIP_DIRS = {".git", ".venv", "venv", "__pycache__", "node_modules", ".pytest_ca
 
 def walk_fingerprint(root: Path, exclude_paths: set[str], exclude_globs: list[str]) -> str:
     """Fingerprint for a directory without Git: SHA-256 of every file's content."""
+    return _digest(walk_blobs(root), exclude_paths, exclude_globs)
+
+
+def walk_blobs(root: Path) -> dict[str, str]:
+    """{path: SHA-256 of the content} of every file below ``root`` (without Git; ``SKIP_DIRS`` left out)."""
     tree = {}
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
@@ -401,4 +410,4 @@ def walk_fingerprint(root: Path, exclude_paths: set[str], exclude_globs: list[st
                 tree[rel] = hashlib.sha256(full.read_bytes()).hexdigest()
             except OSError:
                 continue
-    return _digest(tree, exclude_paths, exclude_globs)
+    return tree

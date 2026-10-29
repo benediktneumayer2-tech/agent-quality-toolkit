@@ -48,6 +48,19 @@
   tree fingerprint (deleting one after a run makes the receipt stale) and give MANUAL
   (`locally_ignored_files`); in the plan's paths they also block `finish`. Receipts made while such files
   existed become stale once after the upgrade.
+- Security, change of meaning: `fingerprint_exclude` and `always_allowed_paths` in the user configuration (within
+  the agent's reach, for example through `AQT_CHANGE_CONFIG`) no longer weaken checks silently. The user's
+  `fingerprint_exclude` leaves out only untracked files outside the plan's paths (before: any matching file, so
+  `["**"]` kept every receipt fresh); a path outside the plan's paths that only the user's `always_allowed_paths`
+  allows gives MANUAL (`allowed_by_user_config`, also in `reconcile-diff`) instead of passing. Both keys may now be
+  committed in `.aqt/change.toml` (`fingerprint_exclude`, `[gate] always_allowed_paths`), where they count as
+  before; only globs every copy names count. The `--junit` file is left out of the fingerprint only as an
+  untracked file outside the plan's paths. Receipts that relied on a user glob for a tracked or in-scope file
+  become stale once.
+- Security: a run that changes the fingerprinted tree while it runs (a test that patches the code and deletes
+  itself) no longer counts by itself: receipts record `tree_fingerprint_before`; the gate gives MANUAL
+  (`command_modified_worktree`, per check) and `finish` refuses (`finish_command_modified_worktree`) until a later
+  run of the same check leaves the tree unchanged. Output ignored by the repository's `.gitignore` does not count.
 - Docs: `docs/usage.md` named `plan status --json` as a place that shows the approval record; `gate`
   (`approval.record`) and the trace report do.
 

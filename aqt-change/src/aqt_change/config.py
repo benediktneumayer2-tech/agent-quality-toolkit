@@ -1,8 +1,10 @@
 """User configuration: ``$XDG_CONFIG_HOME/aqt/change.toml`` (or ``AQT_CHANGE_CONFIG``).
 
 Project settings: ``.aqt/change.toml`` in the repository, committed with the code, so the agent's
-environment cannot switch them off (``Ledger.project_settings()``): ``require_trail``, ``trail_keys`` and a
-``[gate]`` table. They can only make checks stricter.
+environment cannot switch them off (``Ledger.project_settings()``): ``require_trail``, ``trail_keys``,
+``fingerprint_exclude`` and a ``[gate]`` table. The user configuration is within the agent's reach, so its
+loosening settings count less: its ``fingerprint_exclude`` leaves out only untracked files outside the plan's
+paths, and a path admitted only by its ``always_allowed_paths`` gives MANUAL.
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ from .errors import usage
 PROJECT_FILE = ".aqt/change.toml"
 INDEPENDENCE = ("same-session", "fresh-context", "different-model", "human")
 LIFECYCLE_OWNERS = ("aqt-change", "external")
-PROJECT_GATE_KEYS = ("require_signed_approval", "min_review_independence", "warnings_block")
+PROJECT_GATE_KEYS = ("require_signed_approval", "min_review_independence", "warnings_block", "always_allowed_paths")
 KEY_ID_RE = re.compile(r"^ed25519:[0-9a-f]{16}$")
 
 
@@ -92,7 +94,7 @@ def load_config(path: str | os.PathLike | None = None) -> Config:
 
 def parse_project_settings(text: str, where: str) -> dict:
     """The settings in one copy of ``.aqt/change.toml``: ``{"require_trail": bool, "trail_keys": [key id, ...],
-    "gate": {key: value}}`` (``gate`` holds only the keys the copy sets). ``where`` names the copy in error
+    "fingerprint_exclude": [glob, ...], "gate": {key: value}}`` (``gate`` holds only the keys the copy sets). ``where`` names the copy in error
     messages. A copy that cannot be read, or has an unknown key, refuses (it must not count as "no settings")."""
     try:
         raw = tomllib.loads(text)
@@ -102,7 +104,7 @@ def parse_project_settings(text: str, where: str) -> dict:
     def invalid(message: str):
         return usage("config_invalid", f"project settings {where}: {message}")
 
-    unknown = sorted(set(raw) - {"require_trail", "trail_keys", "gate"})
+    unknown = sorted(set(raw) - {"require_trail", "trail_keys", "fingerprint_exclude", "gate"})
     if unknown:
         raise invalid(f"unknown key(s) {', '.join(unknown)}")
     value = raw.get("require_trail", False)
@@ -111,6 +113,9 @@ def parse_project_settings(text: str, where: str) -> dict:
     keys = raw.get("trail_keys", [])
     if not isinstance(keys, list) or not all(isinstance(k, str) and KEY_ID_RE.match(k) for k in keys):
         raise invalid('trail_keys must be a list of service key ids such as "ed25519:0123456789abcdef"')
+    globs = raw.get("fingerprint_exclude", [])
+    if not isinstance(globs, list) or not all(isinstance(g, str) and g for g in globs):
+        raise invalid("fingerprint_exclude must be a list of globs")
     gate = raw.get("gate", {})
     if not isinstance(gate, dict):
         raise invalid("gate must be a table")
@@ -122,4 +127,8 @@ def parse_project_settings(text: str, where: str) -> dict:
             raise invalid(f"gate.{name} must be true or false")
     if "min_review_independence" in gate and gate["min_review_independence"] not in ("none", *INDEPENDENCE):
         raise invalid("gate.min_review_independence must be none or an independence class")
-    return {"require_trail": value, "trail_keys": sorted(set(keys)), "gate": dict(gate)}
+    allowed = gate.get("always_allowed_paths", [])
+    if not isinstance(allowed, list) or not all(isinstance(g, str) and g for g in allowed):
+        raise invalid("gate.always_allowed_paths must be a list of globs")
+    return {"require_trail": value, "trail_keys": sorted(set(keys)), "fingerprint_exclude": list(globs),
+            "gate": dict(gate)}

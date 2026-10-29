@@ -5,6 +5,9 @@ recorded still match the current state, and *passing* when the command exited 0
 and, where counts could be parsed, nothing failed and at least one test ran.
 When a trail is in use, a fresh passing receipt counts only if the trail log
 confirms it (``ledger.TrailCheck``); otherwise its item is ``unverified``.
+A run that changed the fingerprinted tree (``command_modified_worktree``) does not
+count by itself: its item lists it under ``modified`` (gate MANUAL, finish refuses)
+until a later run of the same command leaves the tree unchanged.
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ from aqt_evidence import bytes_hash, new_record, subject
 from . import antigaming
 from .actors import current_actor
 from .errors import refused, usage
+from .globs import matches_any
 from .ledger import TRUST_NOGO, TRUST_TEXT, Ledger, TrailCheck
 from .plan import Plan, basis_hash, command_text
 from .plans import read_plan, require_valid, status
@@ -223,12 +227,17 @@ def run(ledger: Ledger, argv: list[str], *, plan_path: str | None = None, item: 
 
 def _run_one(ledger, argv, plan, rel, item_id, junit, timeout, echo) -> dict:
     excludes = [rel] if rel else []
+    scope = plan.declared_paths if plan else []
     if junit:
-        excludes.append(ledger.rel(junit))
-    before = ledger.fingerprint(excludes)
+        # the JUnit file stays out of the fingerprint only as an untracked file outside the plan's paths: the
+        # caller names it, so it must not hide tested code
+        target = ledger.rel(junit)
+        if not matches_any(target, scope) and not (ledger.git and target in ledger.git.tracked()):
+            excludes.append(target)
+    before = ledger.fingerprint(excludes, scope=scope)
     result = execute(argv, ledger.root, timeout or ledger.config.timeout_seconds, echo)
     snapshot = ledger.snapshot()
-    after = ledger.fingerprint(excludes, snapshot)
+    after = ledger.fingerprint(excludes, snapshot, scope=scope)
     counts = parse_counts(result["stdout"].decode("utf-8", "replace") + "\n" +
                           result["stderr"].decode("utf-8", "replace"))
     warnings = []
@@ -276,7 +285,7 @@ def _run_one(ledger, argv, plan, rel, item_id, junit, timeout, echo) -> dict:
         "stdout": streams["stdout"], "stderr": streams["stderr"], "counts": counts,
         "junit_sha256": junit_sha,
         "git": {"head": head, "dirty": bool(ledger.git and ledger.git.is_dirty(set(excludes)))} if ledger.git else None,
-        "tree_fingerprint": after, "fingerprint_excludes": excludes,
+        "tree_fingerprint": after, "tree_fingerprint_before": before, "fingerprint_excludes": excludes,
         "plan_basis_hash": basis_hash(plan) if plan else None,
         "plan_raw_hash": plan.raw_hash if plan else None,
         "env": _env_summary(argv), "warnings": warnings,
@@ -311,7 +320,7 @@ def attest(ledger: Ledger, plan_path: str, item: str, evidence: list[str], reaso
     who = current_actor(ledger.config.actor)
     data = {"plan_id": plan.id, "plan_ref": plan.id, "item": item, "kind": "manual", "argv": [],
             "exit_code": 0, "passed": True, "outcome": "attested", "counts": {}, "evidence": files,
-            "tree_fingerprint": ledger.fingerprint([rel]), "fingerprint_excludes": [rel],
+            "tree_fingerprint": ledger.fingerprint([rel], scope=plan.declared_paths), "fingerprint_excludes": [rel],
             "plan_basis_hash": basis_hash(plan), "plan_raw_hash": plan.raw_hash,
             "attested_by": who.get("kind"), "started": utc_stamp()}
     record = new_record("change.receipt", who, "attest", subject=subject("plan-item", f"{plan.id}#{item}"),
@@ -351,6 +360,7 @@ class Freshness:
         self.cache: dict[tuple, str] = {}
         self._trail: TrailCheck | None = None
         self._snapshot: dict[str, str] | None = None
+        self._tracked: set[str] | None = None
 
     @property
     def snapshot(self) -> dict[str, str] | None:
@@ -368,32 +378,46 @@ class Freshness:
             self._trail = self.ledger.trail_check()
         return self._trail
 
-    def fingerprint(self, excludes: list[str]) -> str:
-        key = tuple(sorted(excludes))
+    def fingerprint(self, excludes: list[str], scope: list[str] | None = None) -> str:
+        """``Ledger.fingerprint`` of the cached snapshot; ``scope``: the plan's paths."""
+        key = (tuple(sorted(excludes)), tuple(scope or ()))
         if key not in self.cache:
-            self.cache[key] = self.ledger.fingerprint(list(key), self.snapshot)
+            if self._tracked is None and self.ledger.git and self.ledger.config.fingerprint_exclude:
+                self._tracked = self.ledger.git.tracked()
+            self.cache[key] = self.ledger.fingerprint(list(key[0]), self.snapshot, scope=list(key[1]),
+                                                      tracked=self._tracked)
         return self.cache[key]
 
-    def is_fresh(self, receipt: dict, basis: str) -> bool:
+    def is_fresh(self, receipt: dict, basis: str, scope: list[str] | None = None) -> bool:
         data = receipt.get("data") or {}
         return (data.get("plan_basis_hash") == basis
-                and data.get("tree_fingerprint") == self.fingerprint(data.get("fingerprint_excludes") or []))
+                and data.get("tree_fingerprint") == self.fingerprint(data.get("fingerprint_excludes") or [], scope))
+
+
+def modified_worktree(receipt: dict) -> bool:
+    """True when the receipt's run changed the fingerprinted tree (before and after differ)."""
+    data = receipt.get("data") or {}
+    before = data.get("tree_fingerprint_before")
+    return (before is not None and before != data.get("tree_fingerprint")) or any(
+        isinstance(w, dict) and w.get("code") == "command_modified_worktree" for w in data.get("warnings") or [])
 
 
 def evaluate(ledger: Ledger, plan: Plan, freshness: Freshness | None = None) -> dict[str, dict]:
     """Verification items -> {state: ok|unverified|stale|failed|missing, commands: [...], ...}.
 
     ``unverified``: the latest receipt is fresh and passing, but a trail is in use and does not
-    confirm it; ``untrusted`` lists those receipts with their ``TrailCheck`` status."""
+    confirm it; ``untrusted`` lists those receipts with their ``TrailCheck`` status. ``modified``: the
+    ``ok`` receipts whose run changed the working tree (``modified_worktree()``)."""
     freshness = freshness or Freshness(ledger)
     basis = basis_hash(plan)
+    scope = plan.declared_paths
     receipts = [r for r in ledger.records("change.receipt", plan.id)]
     result = {}
     rank = {"ok": 0, "unverified": 1, "stale": 2, "failed": 3, "missing": 4}
     for item in plan.verification:
         mine = [r for r in receipts if r["data"].get("item") == item.id]
         entry = {"id": item.id, "checked": item.checked, "manual": item.manual, "text": item.text,
-                 "commands": [], "state": "ok", "untrusted": []}
+                 "commands": [], "state": "ok", "untrusted": [], "modified": []}
 
         def trusted(latest: dict) -> bool:
             trust = freshness.trail.status(latest)
@@ -406,7 +430,7 @@ def evaluate(ledger: Ledger, plan: Plan, freshness: Freshness | None = None) -> 
             latest = attests[-1] if attests else None
             if not latest:
                 state = "missing"
-            elif not freshness.is_fresh(latest, basis):
+            elif not freshness.is_fresh(latest, basis, scope):
                 state = "stale"
             else:
                 state = "ok" if trusted(latest) else "unverified"
@@ -419,13 +443,17 @@ def evaluate(ledger: Ledger, plan: Plan, freshness: Freshness | None = None) -> 
                 latest = runs[-1] if runs else None
                 if not latest:
                     state = "missing"
-                elif not freshness.is_fresh(latest, basis):
+                elif not freshness.is_fresh(latest, basis, scope):
                     state = "stale"
                 elif not latest["data"].get("passed"):
                     state = "failed"
                 else:
                     state = "ok" if trusted(latest) else "unverified"
+                modified = state == "ok" and modified_worktree(latest)
+                if modified:
+                    entry["modified"].append(latest["id"])
                 entry["commands"].append({"argv": argv, "command": command_text(argv), "state": state,
+                                          "modified_worktree": modified,
                                           "receipt": latest["id"] if latest else None,
                                           "counts": latest["data"].get("counts") if latest else None,
                                           "outcome": latest["data"].get("outcome") if latest else None})

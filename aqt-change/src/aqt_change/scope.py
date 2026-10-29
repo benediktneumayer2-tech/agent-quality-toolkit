@@ -22,12 +22,15 @@ def compare(ledger: Ledger, rel: str, plan: Plan, freshness: Freshness | None = 
     state = ledger.plan_state(plan.id) or {}
     base = state.get("base_commit") or plan.base_commit
     declared = plan.declared_paths
-    allowed = list(ledger.config.gate.always_allowed_paths)
+    allowed = list(ledger.project_settings()["always_allowed_paths"])          # committed: counts
+    by_user = list(ledger.config.gate.always_allowed_paths)                     # the agent's reach: MANUAL
     changed = []
     if ledger.git and base:
         changed = [{"path": p, "status": s} for s, p in ledger.git.changed_since(base) if p != rel]
-    unapproved = [c["path"] for c in changed
-                  if declared and not matches_any(c["path"], declared) and not matches_any(c["path"], allowed)]
+    outside = [c["path"] for c in changed
+               if declared and not matches_any(c["path"], declared) and not matches_any(c["path"], allowed)]
+    user_allowed = [path for path in outside if matches_any(path, by_user)]
+    unapproved = [path for path in outside if path not in user_allowed]
     untouched = [g for g in declared if not any(matches_any(c["path"], [g]) for c in changed)]
     settings = [c["path"] for c in changed if c["path"] == PROJECT_FILE]
     items = evaluate(ledger, plan, freshness)
@@ -36,13 +39,14 @@ def compare(ledger: Ledger, rel: str, plan: Plan, freshness: Freshness | None = 
         result = "no_base"
     elif not declared:
         result = "scope_undeclared"
-    elif unapproved or missing or settings:
+    elif unapproved or user_allowed or missing or settings:
         result = "findings"
     else:
         result = "clean"
     return {"plan_id": plan.id, "plan_ref": plan.id, "base_commit": base,
             "approval": approval_state(ledger, plan.id, sources), "declared_paths": declared,
-            "changed": changed, "unapproved": unapproved, "untouched_declared": untouched,
+            "changed": changed, "unapproved": unapproved, "allowed_by_user_config": user_allowed,
+            "untouched_declared": untouched,
             "missing_evidence": missing, "settings_changed": settings, "result": result}
 
 

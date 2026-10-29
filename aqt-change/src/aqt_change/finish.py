@@ -93,6 +93,13 @@ def _preflight(ledger, rel, plan, key, request, request_sha, sources) -> dict:
                       + ", ".join(f"{b['item']} ({b['state']}" + (f": {notes[b['item']]}" if notes.get(b["item"]) else "")
                                   + ")" for b in blocking),
                       phase="preflight_failed", items=blocking)
+    modified = {i: e["modified"] for i, e in preview["items"].items() if e.get("modified") and i not in waived}
+    if modified:
+        raise refused("finish_command_modified_worktree", "the working tree changed while these checks ran, so "
+                      "their receipts do not show the tree they name: " + ", ".join(
+                          f"{i} ({', '.join(r)})" for i, r in sorted(modified.items()))
+                      + ". Run the checks again; a run that leaves the tree unchanged counts",
+                      phase="preflight_failed", items=sorted(modified))
     warnings = [{"code": "open_tasks", "detail": ", ".join(t.id for t in plan.tasks if not t.checked)}] \
         if any(not t.checked for t in plan.tasks) else []
     warnings += [r for r in preview["reasons"] if r["code"] in ("anti_gaming_warning", "unapproved_change",

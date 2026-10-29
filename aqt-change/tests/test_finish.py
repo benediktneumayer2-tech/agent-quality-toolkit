@@ -6,7 +6,7 @@ import pytest
 from aqt_evidence import read_jsonl, validate_record
 
 from aqt_change import plans, receipts
-from aqt_change.config import Config, GatePolicy
+from aqt_change.config import Config
 from aqt_change.errors import ChangeError
 from aqt_change.finish import finish
 from aqt_change.gitio import Git, trailers
@@ -28,7 +28,11 @@ def prepare(ledger, project, *, attest=True):
 
 
 def test_finish_commits_exact_paths_with_trailers(project, evidence_file):
-    ledger = Ledger.open(project, config=Config(gate=GatePolicy(always_allowed_paths=["notes.txt"])))
+    (project / ".aqt").mkdir()
+    (project / ".aqt/change.toml").write_text('[gate]\nalways_allowed_paths = ["notes.txt"]\n')
+    git(project, "add", ".aqt/change.toml")
+    git(project, "commit", "-qm", "project settings")
+    ledger = Ledger.open(project)
     (project / "notes.txt").write_text("keep me out")  # untracked, outside the plan's paths: may stay out
     prepare(ledger, project)
     result = finish(ledger, P, key="k1", summary="calculator done", paths=["src/calc.py"])
@@ -203,3 +207,35 @@ def test_gate_after_finish_without_commit_needs_the_tested_tree_in_head(ledger, 
     assert gate(ledger, P)["decision"] == "GO"
     (project / "tests/check.py").write_text(CHECK_SCRIPT + "\n")   # a later edit: stale, not "not committed"
     assert {r["code"] for r in gate(ledger, P)["reasons"]} == {"receipt_stale"}
+
+
+def test_run_that_changes_the_tree_needs_a_clean_rerun(ledger, project):
+    """A check that changes the working tree while it runs (here it deletes a file; a cheating test could patch
+    the code and delete itself) does not count by itself; a later run that leaves the tree unchanged does."""
+    (project / "src/tmp.txt").write_text("gone after the run\n")
+    (project / "tests/check.py").write_text("import pathlib\npathlib.Path('src/tmp.txt').unlink(missing_ok=True)\n"
+                                            + CHECK_SCRIPT)
+    prepare(ledger, project)
+    record = list(ledger.records("change.receipt"))[-2]               # V01's run (the last one is V02's attest)
+    assert record["data"]["tree_fingerprint_before"] != record["data"]["tree_fingerprint"]
+    result = gate(ledger, P)
+    assert any(r["code"] == "command_modified_worktree" and r["item"] == "V01" for r in result["reasons"])
+    with pytest.raises(ChangeError) as info:
+        finish(ledger, P, key="k1", summary="done", paths=["src/calc.py", "tests/check.py"])
+    assert info.value.code == "finish_command_modified_worktree" and "V01" in info.value.message
+    receipts.run(ledger, [], plan_path=P, item="V01", echo=False)       # the file is gone: a clean run
+    receipts.attest(ledger, P, "V02", [], "seen")
+    result = finish(ledger, P, key="k2", summary="done", paths=["src/calc.py", "tests/check.py"])
+    assert result["gate"] == "GO"
+
+
+def test_ignored_build_output_does_not_count_as_a_tree_change(ledger, project):
+    (project / ".gitignore").write_text("__pycache__/\nbuild/\n")
+    git(project, "commit", "-qam", "ignore build output")
+    (project / "tests/check.py").write_text("import pathlib\npathlib.Path('build').mkdir(exist_ok=True)\n"
+                                            "pathlib.Path('build/out.txt').write_text('x')\n" + CHECK_SCRIPT)
+    prepare(ledger, project)
+    record = list(ledger.records("change.receipt"))[-2]
+    assert (project / "build/out.txt").exists()
+    assert record["data"]["tree_fingerprint_before"] == record["data"]["tree_fingerprint"]
+    assert "command_modified_worktree" not in {r["code"] for r in gate(ledger, P)["reasons"]}
