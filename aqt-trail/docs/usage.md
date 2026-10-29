@@ -32,10 +32,21 @@ One JSON request per connection; the client closes its write side and reads one 
 |---|---|
 | `{"op": "append", "record": {…}}` | `{"ok": true, "record": stored, "created": bool}` |
 | `{"op": "drain", "records": [...], "source": "…"}` | `{"ok": true, "appended", "already_stored", "refused", "gap"}` |
-| `{"op": "checkpoint", "anchor": bool, "export": bool, "tsa_url": "…"}` | `{"ok": true, "checkpoint", "anchor"}` |
+| `{"op": "checkpoint", "anchor": bool, "export": bool, "tsa_url": "…"}` | `{"ok": true, "checkpoint", "anchor"}`; `tsa_url` may only be empty, the configured `[anchor] tsa_url` or `test:` (the TEST ONLY authority in the writer's state directory); anything else is refused (`unauthorized`) |
 | `{"op": "head"}`, `{"op": "ping"}` | head / version |
 
 Errors: `{"ok": false, "code": "invalid_record|unauthorized|duplicate_id|unavailable|internal", "message"}`.
+`unavailable` also means the writer could not undo a failed write (disk full, I/O error) and accepts no
+records until it is restarted; a failed write is otherwise cut back, so nothing half-written or
+unacknowledged stays in the log.
+
+The writer refuses (`invalid_record`, recorded as `trail.refused`) client records that would pass for its own:
+the actor `service:aqt-trail`, the types `trail.anchor` and `trail.gap`, and the actions `service.start`,
+`service.stop`, `clock.jump` and `log.repaired`. Client `trail.review` records need a human actor and the
+payload of `review sign` (`head`, `findings` with `query`, `severity`, `record_ids`, `disposition`, and a
+detached `signature` with `statement.signer`, `statement.subject` and `key`); client `trail.refused` records need
+`attempted_action`, `reason_code` and `agent_markers`. A drain stores each record id once: a repeat with the
+same content counts as already stored, one with other content is refused (`duplicate_id`).
 `aqt_evidence.SocketSink` and `aqt_trail.client.TrailClient` both speak it; the client spools to
 `$XDG_STATE_HOME/aqt/spool/spool.jsonl` when the socket is unavailable.
 
@@ -52,8 +63,21 @@ Errors: `{"ok": false, "code": "invalid_record|unauthorized|duplicate_id|unavail
 
 `observed` (writer-owned): `pid`, `uid`, `gid`, `process_chain` (nearest first), `processes`
 (`{pid, comm, start_time}`), `harness`, `client_time`, `via` (`socket` or `spool`; spooled records carry no
-pid/uid/gid because the sender was never observed). The writer's own records have no `via` but
-`origin: writer`. `chain_complete: false` marks a chain with a process that had already exited.
+pid/uid/gid because the sender was never observed), and `chain_status`, how far the observed chain goes:
+
+| `chain_status` | When |
+|---|---|
+| `complete` | the chain was read up to init and nothing below applies |
+| `partial` | an ancestor exited during the walk; more than 16 ancestors; a parent started after its child (pid reused); or a process belongs to a session whose leader is not among its ancestors, i.e. it was reparented to init or a subreaper such as the systemd user manager after its parent exited, so whoever started it is no longer visible |
+| `unavailable` | no peer pid; the sender's own `/proc` entry could not be read; or the sender had exited before the walk ended (checked with `SO_PEERPIDFD`, Linux >= 6.5) |
+
+`chain_detail` says why a chain is not `complete`; `chain_complete: false` (kept for older readers) marks a
+walk that did not reach init. A missing agent marker means little unless the chain is `complete`, and even then
+it is a heuristic: a process that detaches into a new session (`setsid`) or is started by a service manager or
+an existing terminal server on an agent's request looks `complete`. The writer's own records have no `via` but
+`origin: writer`. Records sent through the `drain` op carry `drained_by`, the observation of the client that
+sent them; the `trail.gap` before them carries it as its own `observed`. The gap's `reason`,
+`first_time` and `last_time` come from the spooled records, so they are the client's account.
 
 ## Importers
 
@@ -65,8 +89,12 @@ pid/uid/gid because the sender was never observed). The writer's own records hav
 | pi | pi v3 session JSONL | header `type=session`, `version=3` |
 
 Files must be regular, owned by you, not symlinks, single-linked. A partly written last line is left for the next
-import. Excerpts are at most `excerpt_chars` characters with obvious secrets masked (`sk-…`, `ghp_…`, `AKIA…`,
-JWTs, `password=…`). Record ids are derived from the source time and the source hash, so re-sending is idempotent.
+import. Excerpts are at most `excerpt_chars` characters with obvious secrets masked: assignments, `--flag value`
+pairs and JSON fields whose name contains password, passphrase, secret, token, api-key, access-key, private-key or
+credential (`DB_PASSWORD=…`, `GITHUB_TOKEN=…`, `"password": "…"`, `--password …`), `Authorization:` headers and
+bearer tokens, passwords in URLs and `curl -u`, PEM private keys, and token formats such as `sk-…`, `gh?_…`,
+`github_pat_…`, `glpat-…`, `hf_…`, `AKIA…`, `xox?-…`, `AIza…`, `npm_…`, `pypi-…`, Stripe keys and JWTs. Masking is a
+safety net, not a guarantee, and the log cannot be redacted later: set `excerpt_chars = 0` to keep no excerpts. Record ids are derived from the source time and the source hash, so re-sending is idempotent.
 
 ## Configuration
 

@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- Security (writer): `observed.chain_status` (`complete` | `partial` | `unavailable`, with `chain_detail`) says how
+  far the observed process chain goes; `partial` for an ancestor that exited, a reused parent pid or a process
+  reparented to init or the systemd user manager (its session leader is not an ancestor), `unavailable` when the
+  sender exited (`SO_PEERPIDFD`) or could not be read. `chain_complete` and `process_chain` stay as they were.
+- Security (writer): client records in the writer's name (`service:aqt-trail`), of the types `trail.anchor` and
+  `trail.gap`, or with the actions `service.start`, `service.stop`, `clock.jump` and `log.repaired` are refused;
+  client `trail.review` and `trail.refused` records must have their payload shape (a malformed review could break
+  `verify` for good).
+- Security (writer): records sent through the `drain` op keep the observation of the sending client
+  (`observed.drained_by`); a drain stores each record id once (same content: already stored; other content:
+  `duplicate_id`), also within one batch.
+- Security (writer): the `checkpoint` op uses only the configured TSA (or the TEST ONLY `test:` authority in the
+  writer's state); other client-supplied URLs and `test:<dir>` are refused (`unauthorized`).
+- Security (writer): `trail.lock` is created and kept 0600. Short writes are completed; a failed write or fsync is
+  cut back to the last acknowledged record, and if that fails too the writer answers `unavailable` until restarted.
+- Security (importers): excerpt masking covers prefixed names (`DB_PASSWORD=`, `GITHUB_TOKEN=`,
+  `AWS_SECRET_ACCESS_KEY=`), quoted and JSON values, `--password value`, `Authorization:` headers and bearer tokens,
+  URL and `curl -u` passwords, PEM private keys and more token formats; long inputs are masked in a bounded window.
+- Security (setup): `setup-system-user.sh` refuses an installation that is not root's alone (console script,
+  interpreter, virtual environment, standard library, site-packages, `aqt_trail`/`aqt_evidence` and the folders
+  above them); `--check` runs only these checks.
 - Fix: Claude Code hook fields `source` (SessionStart) and `reason` (SessionEnd) are stored as
   `session_source` and `end_reason`; they overwrote `data.source` and broke payload conformance.
 - Tests remove their temporary HOME at the end of the run.
