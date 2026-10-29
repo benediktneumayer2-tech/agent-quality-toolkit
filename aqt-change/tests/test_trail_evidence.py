@@ -1,7 +1,8 @@
 """Receipts and reviews must be in the trail when a trail is in use; hidden working-tree changes block.
 
 A small stand-in for the aqt-trail writer (ping and append over a Unix socket into
-``trail.jsonl`` at the default trail location) keeps this suite free of an aqt-trail dependency.
+``trail.jsonl`` at the default trail location, records signed with a fixed service key whose public key
+is in ``keys/``) keeps this suite free of an aqt-trail dependency.
 """
 
 import copy
@@ -14,13 +15,14 @@ import threading
 from pathlib import Path
 
 import pytest
-from aqt_evidence import canonical_json, new_id
+from aqt_evidence import GENESIS, canonical_json, new_id, sign_record, signer_from_seed
+from aqt_evidence.crypto import public_pem
 
 from aqt_change import gitio, hooks, plans, receipts
 from aqt_change.errors import ChangeError
 from aqt_change.finish import finish
 from aqt_change.gate import gate
-from aqt_change.ledger import Ledger
+from aqt_change.ledger import Ledger, TrailCheck
 from aqt_change.review import add_review
 from aqt_change.scope import reconcile_diff
 from conftest import CHECK_SCRIPT, edit, git
@@ -33,6 +35,10 @@ class FakeTrail:
         state.mkdir(parents=True, exist_ok=True)
         (state / "trail.json").write_text("{}")
         self.log, self.seq, self.lock = state / "trail.jsonl", -1, threading.Lock()
+        self.signer = signer_from_seed(b"\x01" * 32)
+        self.key_id = self.signer.key_id
+        (state / "keys").mkdir(exist_ok=True)
+        (state / "keys" / "service.key.pub").write_bytes(public_pem(self.signer.public_key))
         trail = self
 
         class Handler(socketserver.StreamRequestHandler):
@@ -50,8 +56,8 @@ class FakeTrail:
     def add(self, record: dict, via: str) -> dict:
         with self.lock:
             self.seq += 1
-            stored = dict(record, observed={"via": via, "process_chain": []},
-                          chain={"seq": self.seq, "prev": "sha256:" + "0" * 64})
+            stored = sign_record(dict(record, observed={"via": via, "process_chain": []},
+                                      chain={"seq": self.seq, "prev": "sha256:" + "0" * 64}), self.signer)
             with open(self.log, "ab") as handle:
                 handle.write(canonical_json(stored) + b"\n")
             return stored
@@ -365,3 +371,121 @@ def test_trail_history_keeps_the_check_on_without_a_trail(ledger, project, trail
         finish(led, P, key="k1", summary="done", paths=["src/calc.py"], ack_warnings="tasks later")
     assert info.value.code == "finish_evidence_missing"
     assert hooks.claude_code({"hook_event_name": "Stop"}, led)[0] == 2
+
+
+# --- pinned trail keys -------------------------------------------------------------------------------
+
+def _pin(project, *key_ids, commit=True):
+    (project / ".aqt").mkdir(exist_ok=True)
+    (project / ".aqt/change.toml").write_text("trail_keys = [" + ", ".join(f'"{k}"' for k in key_ids) + "]\n")
+    if commit:
+        git(project, "add", ".aqt/change.toml")
+        git(project, "commit", "-qm", "pin the trail key")
+
+
+def _own_log(tmp_path, records, public_key) -> Path:
+    """A trail.jsonl the agent writes itself: the records as if received over the socket, signed by its own
+    key, next to a keys/ folder with ``public_key``."""
+    agent = signer_from_seed(b"\x02" * 32)
+    own = tmp_path / "own"
+    (own / "keys").mkdir(parents=True, exist_ok=True)
+    (own / "keys" / "service.key.pub").write_bytes(public_pem(public_key or agent.public_key))
+    lines = [canonical_json(sign_record(dict(r, observed={"via": "socket"}, chain={"seq": n, "prev": GENESIS}),
+                                        agent)) for n, r in enumerate(records)]
+    (own / "trail.jsonl").write_bytes(b"\n".join(lines) + b"\n")
+    return own / "trail.jsonl"
+
+
+def test_pinned_trail_key_rejects_a_log_the_agent_wrote(ledger, project, trail, tmp_path, monkeypatch):
+    _require_trail(project)
+    failed = broken(ledger, project)
+    _pin(project, trail.key_id, commit=False)           # the real trail's service key (any copy pins it)
+    fake = forge(ledger, failed, passed=True, exit_code=0, outcome="passed", tree_fingerprint=ledger.fingerprint([P]),
+                 counts={"source": "pytest", "passed": 1, "total": 1})
+    _agent_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("AQT_EVIDENCE", str(_own_log(tmp_path, [fake], None)))
+    assert TrailCheck([fake], required=True).status(fake) == "ok"     # unpinned: the agent's own log confirms it
+    led = Ledger.open(project)
+    entry = receipts.evaluate(led, plans.read_plan(led, P)[1])["V01"]
+    assert entry["state"] == "unverified" and entry["untrusted"][0]["trust"] == "required"
+    result = gate(led, P)
+    assert result["decision"] == "NO-GO" and "trail_required" in reasons(result)
+    assert result["trail"]["keys"] == [trail.key_id] and result["trail"]["logs"] == []
+    # with the real public key copied next to its log, the agent's signature still is not the writer's
+    monkeypatch.setenv("AQT_EVIDENCE", str(_own_log(tmp_path, [fake], trail.signer.public_key)))
+    led = Ledger.open(project)
+    entry = receipts.evaluate(led, plans.read_plan(led, P)[1])["V01"]
+    assert entry["state"] == "unverified" and entry["untrusted"][0]["trust"] == "unsigned"
+    result = gate(led, P)
+    assert result["decision"] == "NO-GO" and any(r["code"] == "receipt_unverified" and "pinned" in r["detail"]
+                                                 for r in result["reasons"])
+    with pytest.raises(ChangeError) as info:
+        finish(led, P, key="k1", summary="done", waivers={"V02": "no screen"}, ack_warnings="later")
+    assert info.value.code == "finish_evidence_missing"
+
+
+def test_pinned_trail_key_cannot_be_widened_in_the_working_tree(ledger, project, trail, tmp_path, monkeypatch):
+    _pin(project, trail.key_id)
+    failed = broken(ledger, project)
+    agent_key = signer_from_seed(b"\x02" * 32).key_id
+    _pin(project, trail.key_id, agent_key, commit=False)                        # the agent adds its own key
+    fake = forge(ledger, failed, passed=True, exit_code=0, outcome="passed", tree_fingerprint=ledger.fingerprint([P]),
+                 counts={"source": "pytest", "passed": 1, "total": 1})
+    monkeypatch.setenv("AQT_EVIDENCE", str(_own_log(tmp_path, [fake], None)))
+    led = Ledger.open(project)
+    assert led.project_settings()["trail_keys"] == [trail.key_id]               # only what every copy pins
+    assert receipts.evaluate(led, plans.read_plan(led, P)[1])["V01"]["state"] == "unverified"
+
+
+def test_pinned_trail_key_with_the_real_trail_reaches_go(ledger, project, trail):
+    _pin(project, trail.key_id)
+    plans.begin(ledger, P)
+    receipts.run(ledger, [], plan_path=P, item="V01", echo=False)
+    receipts.attest(ledger, P, "V02", [], "seen")
+    edit(project / P, "- [ ] [T01]", "- [x] [T01]")
+    edit(project / P, "- [ ] [T02]", "- [x] [T02]")
+    finish(ledger, P, key="k1", summary="done")
+    result = gate(ledger, P)
+    assert result["decision"] == "GO", result["reasons"]
+    assert result["trail"]["required"] and result["trail"]["keys"] == [trail.key_id] and result["trail"]["logs"]
+
+
+# --- files that only local ignore rules hide ------------------------------------------------------------
+
+@pytest.mark.parametrize("rule", ["info-exclude", "excludes-file"])
+def test_locally_ignored_files_do_not_escape_the_fingerprint(ledger, project, isolated, rule):
+    """A conftest.py hidden by .git/info/exclude or core.excludesFile is loaded by the test run but is not in a
+    clean checkout: the gate asks for a manual check, and deleting it after the run makes the receipt stale."""
+    if rule == "info-exclude":
+        with open(project / ".git/info/exclude", "a") as handle:
+            handle.write("conftest.py\n")
+    else:                                                   # Git's default core.excludesFile
+        (isolated / "config" / "git").mkdir(parents=True)
+        (isolated / "config" / "git" / "ignore").write_text("conftest.py\n")
+    plans.begin(ledger, P)
+    (project / "conftest.py").write_text("# steers the test run\n")
+    assert "conftest.py" not in git(project, "status", "--porcelain")               # Git hides it
+    receipts.run(ledger, [], plan_path=P, item="V01", echo=False)
+    receipts.attest(ledger, P, "V02", [], "seen")
+    result = gate(ledger, P)
+    detail = next(r["detail"] for r in result["reasons"] if r["code"] == "locally_ignored_files")
+    assert "conftest.py" in detail
+    (project / "conftest.py").unlink()
+    entry = receipts.evaluate(ledger, plans.read_plan(ledger, P)[1])["V01"]
+    assert entry["state"] == "stale"
+    assert "locally_ignored_files" not in reasons(gate(ledger, P))
+
+
+def test_locally_ignored_file_in_the_plan_scope_blocks_finish(ledger, project):
+    with open(project / ".git/info/exclude", "a") as handle:
+        handle.write("src/helper.py\n")
+    plans.begin(ledger, P)
+    (project / "src/helper.py").write_text("HELP = 1\n")
+    receipts.run(ledger, [], plan_path=P, item="V01", echo=False)
+    receipts.attest(ledger, P, "V02", [], "seen")
+    edit(project / P, "- [ ] [T01]", "- [x] [T01]")
+    edit(project / P, "- [ ] [T02]", "- [x] [T02]")
+    with pytest.raises(ChangeError) as info:
+        finish(ledger, P, key="k1", summary="done")
+    assert info.value.code == "finish_tested_change_not_committed"
+    assert "src/helper.py (ignored locally)" in info.value.message and "info/exclude" in info.value.message

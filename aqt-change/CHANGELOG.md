@@ -30,6 +30,24 @@
   for trees Git sees correctly, so receipts stay fresh across the upgrade; a changed symbolic link now counts
   by its link text, as Git stores it. Cost: one `git hash-object` pass over all tracked files per run, gate or
   hook (about 0.5 s for 10,000 files).
+- Security: `finish` refuses (`finish_tested_change_not_committed`) when its commit would not hold what the
+  receipts tested: a tracked file inside the plan's paths or covered by the fingerprint that differs from HEAD,
+  or an untracked file inside the plan's paths, and is not named with `--path`. After a finish, the gate gives
+  MANUAL (`tested_change_not_committed`) while HEAD lacks that content (for example after `--no-commit` and a
+  partial commit). Untracked files outside the plan's paths may still stay out of the commit.
+- Security: new project setting `trail_keys` in `.aqt/change.toml` pins the trail writer's service key ids. A
+  trail log then confirms a record only when its copy carries a valid signature by a pinned key (public key
+  from `keys/*.pub` next to the log, checked against the key id); otherwise `unsigned` (NO-GO). A log the agent
+  wrote itself no longer confirms anything. Pinning implies `require_trail`; only keys every copy of the file
+  names count. The gate JSON's `trail` reports `keys`. Uses aqt_evidence only; aqt-trail need not be installed.
+- Security: new `[gate]` table in `.aqt/change.toml` (`require_signed_approval`, `min_review_independence`,
+  `warnings_block`): the strictest of the user configuration and every project copy wins, so
+  `AQT_CHANGE_CONFIG=/dev/null` no longer drops the policy. Changes to it inside a plan give MANUAL
+  (`project_settings_changed`). Unknown keys or wrong values in the project file now refuse (`config_invalid`).
+- Security: untracked files that only `.git/info/exclude` or `core.excludesFile` ignore are now part of the
+  tree fingerprint (deleting one after a run makes the receipt stale) and give MANUAL
+  (`locally_ignored_files`); in the plan's paths they also block `finish`. Receipts made while such files
+  existed become stale once after the upgrade.
 - Docs: `docs/usage.md` named `plan status --json` as a place that shows the approval record; `gate`
   (`approval.record`) and the trace report do.
 

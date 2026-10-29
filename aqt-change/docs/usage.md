@@ -42,6 +42,8 @@ The front matter accepts a strict YAML subset: mappings, scalars, quoted strings
 
 A receipt is fresh while the plan basis hash and the tree fingerprint match the current state. The fingerprint covers all tracked files plus untracked files that are not ignored, and leaves out the plan file. This is strict on purpose: a file a later command leaves behind in the working tree (`coverage.xml`, `report.html`, scratch notes) makes earlier receipts stale. Keep outputs in paths covered by `.gitignore` (for example `build/`, `.pytest_cache/`), or add globs to `fingerprint_exclude` in `change.toml`. The `--junit` file of a run is excluded automatically. A run that changes the working tree itself records the warning `command_modified_worktree`.
 
+Only the repository's own `.gitignore` files take a file out of the fingerprint. An untracked file that only local rules ignore (`.git/info/exclude`, or `core.excludesFile`, by default `~/.config/git/ignore`) is still fingerprinted, and the gate gives MANUAL (`locally_ignored_files`, with the paths): `git status` does not show it and a clean checkout lacks it, but a test run may load it (a `conftest.py`, a `pytest.ini`). Deleting it after a run makes the receipt stale. Move shared ignore patterns into `.gitignore`.
+
 The fingerprint hashes the content of every tracked file; it does not trust Git's stat cache, an fsmonitor hook or index flags (Git calls run with `core.fsmonitor`, `core.untrackedCache` and relaxed stat checks switched off). A tracked file whose content differs from the index while `git status`, with the repository's own settings, does not show it is a *hidden change*: the file is marked `git update-index --skip-worktree` or `--assume-unchanged` (flag of that name; a missing file counts too), or a `core.fsmonitor` hook, `core.checkStat = minimal`, `core.trustctime = false` or edited index data make Git believe it is unchanged (flag `stat-cache`). Then a run records the warning `hidden_worktree_change`, the gate is NO-GO, `finish` refuses (`finish_hidden_changes`) and the hooks block: the commit would not contain what the command tested. Clear the flags (`git update-index --no-skip-worktree PATH`, `--no-assume-unchanged PATH`), or remove the fsmonitor or stat settings and `touch` the files, and run the checks again. Files outside a sparse checkout are not an error but give MANUAL (`sparse_checkout`). Hashing every file costs one `git hash-object` pass per run, gate or hook (about 0.5 s for 10,000 tracked files).
 
 ## Evidence and the trail
@@ -54,20 +56,31 @@ The fingerprint hashes the content of every tracked file; it does not trust Git'
 - A fresh passing receipt that is not confirmed makes its item `unverified` (gate `receipt_unverified`): NO-GO when the log lacks the record or holds a different one with that id; MANUAL when the record reached the trail through the spool (no observed sender) or no log is readable. `finish` refuses unverified items and the hooks block on them. A failing or stale receipt counts from the local copy as before.
 - A PASS, CONCERNS or WAIVED review that is not confirmed does not count (gate `review_unverified`, NO-GO or MANUAL as above) and cannot replace an earlier FAIL. A FAIL review counts from the local copy.
 - The commit-msg hook rejects an `AQT-Receipts` entry that the log lacks or contradicts.
-- The gate JSON reports `trail: {checked, logs, required}`.
+- With `trail_keys` pinned (see *Project settings*), a log copy confirms a record only when it carries a valid signature by a pinned service key; otherwise the record is `unsigned` (NO-GO). A log without a pinned key in the `keys/` folder next to it does not count.
+- The gate JSON reports `trail: {checked, logs, required}`, plus `keys` (the pinned key ids) when `trail_keys` is set.
 
 When the writer was down, records wait in the spool and are not confirmed yet; run the commands again with the writer running (`gate --rerun` does this for the gate). Without any trail log, without a writer, without `require_trail` and without records that came back from a writer, the local copy counts as it is; see the limits in the README.
 
 ## Project settings
 
-`.aqt/change.toml` in the repository holds settings that belong to the project, not to one user's environment. Commit it with the code. Today it has one key:
+`.aqt/change.toml` in the repository holds settings that belong to the project, not to one user's environment. Commit it with the code. Every setting can only make checks stricter:
 
 ```toml
 # aqt-change project settings (committed). They can only make checks stricter.
-require_trail = true   # receipts and reviews count only when an aqt-trail log confirms them; no log found: NO-GO
+require_trail = true                        # receipts and reviews count only when an aqt-trail log confirms them
+trail_keys = ["ed25519:0123456789abcdef"]   # the trail writer's service key id(s); implies require_trail
+
+[gate]                                      # stricter than the user's [gate]: the strictest value wins
+require_signed_approval = true
+min_review_independence = "fresh-context"   # none | same-session | fresh-context | different-model | human
+warnings_block = true
 ```
 
-A setting counts when the copy in the working tree, the copy at HEAD or the copy at the base commit of a plan in progress sets it, so neither an uncommitted edit nor a commit during a plan switches it off. Turning it off is a commit that removes it; review it like code. A change to the file inside a plan's diff gives MANUAL (`project_settings_changed`) and is listed by `reconcile-diff` (`settings_changed`). A copy that cannot be read refuses with `config_invalid`. Set `require_trail` once the project's records go to an aqt-trail writer for everyone who works on it, including CI.
+- **`require_trail`**: a trail is always in use. When no trail log is found, the gate is NO-GO (`trail_required`), `finish` refuses (`finish_trail_required`), the hooks block and the commit-msg hook rejects `AQT-Receipts`. Set it once the project's records go to an aqt-trail writer for everyone who works on it, including CI.
+- **`trail_keys`**: pins the service key of the project's trail writer, by key id (`aqt-trail init` prints it as "service key"; `trail.json` in the trail state directory holds it as `key_id`). It stops `AQT_EVIDENCE` from pointing at a log the agent wrote itself: a log copy confirms a record only with a valid writer signature (`aqt_evidence.verify_record_signatures`) by a pinned key, else the record is `unsigned` and the gate is NO-GO (`receipt_unverified` / `review_unverified`). The public key is read from `keys/*.pub` next to the log (the trail state directory; in separate-user mode `/var/lib/aqt-trail/keys/`, readable by the clients group) and used only when its key id matches; a log without such a key does not count (none left: `trail_required`). When you copy a log elsewhere, copy its `keys/` folder with it. aqt-trail need not be installed. Pinning implies `require_trail`. Limit: in user mode the agent can read the service key and sign with it, so the pin stops a log signed with another key, not one re-signed with the real key (`aqt-trail verify` and anchors detect that); separate-user mode keeps the key out of the agent's reach. After a key change (a new trail), commit the new id.
+- **`[gate]`**: `require_signed_approval`, `min_review_independence` and `warnings_block`, as in the user configuration's `[gate]` (see `examples/change.toml`). For each, the strictest of the user configuration, the project file and (for the independence) the plan's `aqt.review.min_independence` counts, so `AQT_CHANGE_CONFIG=/dev/null` or an edited user configuration cannot relax them. `always_allowed_paths` widens the scope and stays in the user configuration. The gate JSON's `policy` shows the values that applied.
+
+A setting counts when the copy in the working tree, the copy at HEAD or the copy at the base commit of a plan in progress sets it, so neither an uncommitted edit nor a commit during a plan switches it off: `require_trail` and each `[gate]` value at its strictest, and for `trail_keys` only the keys that every copy that pins keys names (an added key does not count until every copy has it). Turning a setting off is a commit that removes it; review it like code. A change to the file inside a plan's diff gives MANUAL (`project_settings_changed`) and is listed by `reconcile-diff` (`settings_changed`). A copy that cannot be read, or has an unknown key or a wrong value, refuses with `config_invalid`.
 
 ## Commands
 
@@ -93,17 +106,19 @@ All commands accept `--root`, `--state` and `--json`. Exit codes: 0 ok, 1 check 
 
 ## Finish in detail
 
-1. **Preflight** (nothing is written if it fails): plan in progress (unless `lifecycle_owner = "external"`), plan clean or status-neutral, and a fresh passing receipt for every verification item (or a waiver with a reason). Open tasks, anti-gaming warnings, unapproved paths, an open FAIL review or a stale approval need `--ack-warnings REASON`. Unrelated *staged* files abort the finish.
+1. **Preflight** (nothing is written if it fails): plan in progress (unless `lifecycle_owner = "external"`), plan clean or status-neutral, and a fresh passing receipt for every verification item (or a waiver with a reason). Open tasks, anti-gaming warnings, unapproved paths, an open FAIL review or a stale approval need `--ack-warnings REASON`. Unrelated *staged* files abort the finish. The commit must hold what the receipts tested: `finish` refuses (`finish_tested_change_not_committed`, with the paths) when a tracked file that is inside the plan's `aqt.paths` or covered by the fingerprint differs from HEAD and is not named with `--path`, or when an untracked file inside the plan's `aqt.paths` is not named. Untracked files outside the plan's paths may stay out (the scope check reports them).
 2. **prepared → plan_written_commit_pending:** the final plan is written atomically. Verification items with fresh passing receipts are ticked, `status: completed` and `completed_at` are set, and a completion entry is appended, generated from the receipts.
 3. **→ commit_created_record_pending:** `git add` and `git commit` of exactly the plan plus the `--path` files, with trailers `AQT-Plan`, `AQT-Task`, `AQT-Receipts` and `AQT-Finish: <plan>/<key>`. Hooks run; a failure stops here and is never bypassed.
 4. **→ completed:** the trailers are verified, then `change.finish` is written.
+
+With `--no-commit` or `lifecycle_owner = "external"`, `finish` makes no commit; after it, the gate gives MANUAL (`tested_change_not_committed`) until HEAD holds the tested content of those files.
 
 Run the same command again with the same `--key` to resume after a hook failure or a crash. A commit that was already made is adopted, not made twice. The same key with different inputs fails with `idempotency_conflict`.
 
 ## Gate codes
 
-- **NO-GO:** `plan_unreconciled`, `receipt_missing`, `receipt_stale`, `receipt_failed`, `receipt_unverified` / `review_unverified` (the trail log lacks or contradicts the record, or `require_trail` is set and no log is found), `trail_required`, `hidden_worktree_change`, `unapproved_change`, `review_fail` (the latest counted review is FAIL), `not_finished`; `anti_gaming_warning` when `warnings_block = true`.
-- **MANUAL_VERIFY_REQUIRED:** `waiver_present`, `manual_item_agent_attested`, `receipt_unverified` / `review_unverified` (record came through the spool, or no trail log is readable), `sparse_checkout`, `anti_gaming_warning`, `approval_stale`, `approval_invalid`, `approval_unsigned` / `approval_unverified` (with `require_signed_approval`), `review_concerns`, `review_waived`, `review_independence_below_policy`, `scope_undeclared`, `scope_unverifiable`, `project_settings_changed`.
+- **NO-GO:** `plan_unreconciled`, `receipt_missing`, `receipt_stale`, `receipt_failed`, `receipt_unverified` / `review_unverified` (the trail log lacks or contradicts the record, its copy is not signed by a pinned key, or the trail is required and no log is found), `trail_required`, `hidden_worktree_change`, `unapproved_change`, `review_fail` (the latest counted review is FAIL), `not_finished`; `anti_gaming_warning` when `warnings_block = true`.
+- **MANUAL_VERIFY_REQUIRED:** `waiver_present`, `manual_item_agent_attested`, `receipt_unverified` / `review_unverified` (record came through the spool, or no trail log is readable), `sparse_checkout`, `anti_gaming_warning`, `approval_stale`, `approval_invalid`, `approval_unsigned` / `approval_unverified` (with `require_signed_approval`), `review_concerns`, `review_waived`, `review_independence_below_policy`, `scope_undeclared`, `scope_unverifiable`, `project_settings_changed`, `locally_ignored_files` (untracked files only local ignore rules hide), `tested_change_not_committed` (after `finish`, with fresh receipts: HEAD does not hold the tested content of a file `finish` would have refused to leave out).
 
 ## Approval with aqt-signoff
 

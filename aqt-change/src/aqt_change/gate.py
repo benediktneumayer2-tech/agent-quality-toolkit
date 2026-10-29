@@ -48,12 +48,31 @@ def fresh_reviews(ledger: Ledger, plan: Plan, freshness: Freshness, reviews: lis
 
 
 def policy_for(ledger: Ledger, plan: Plan) -> dict:
+    """The user's ``[gate]`` policy, made stricter by the project's ``[gate]`` (``.aqt/change.toml``) and the
+    plan's ``aqt.review.min_independence``: the strictest value of each wins."""
     policy = ledger.config.gate.as_dict()
+    project = ledger.project_settings()["gate"]
+    for name in ("require_signed_approval", "warnings_block"):
+        policy[name] = bool(policy[name] or project[name])
     plan_review = plan.aqt.get("review") if isinstance(plan.aqt.get("review"), dict) else {}
-    wanted = str(plan_review.get("min_independence", "none"))
-    if wanted in RANK and RANK[wanted] > RANK[policy["min_review_independence"]]:
-        policy["min_review_independence"] = wanted
+    for wanted in (project["min_review_independence"], str(plan_review.get("min_independence", "none"))):
+        if wanted in RANK and RANK[wanted] > RANK[policy["min_review_independence"]]:
+            policy["min_review_independence"] = wanted
     return policy
+
+
+def left_out_text(left: list[dict], limit: int = 20) -> str:
+    """``Git.left_out()`` as one line."""
+    text = ", ".join(f"{entry['path']} ({entry['state']})" for entry in left[:limit])
+    return text + (f" and {len(left) - limit} more" if len(left) > limit else "")
+
+
+def left_out(ledger: Ledger, rel: str, plan: Plan, snapshot: dict | None, committed: set[str]) -> list[dict]:
+    """Files whose tested content (``snapshot``) a commit of HEAD plus ``committed`` would not hold (see
+    ``Git.left_out``); the plan file is left out, finish writes and commits it."""
+    if not ledger.git or snapshot is None:
+        return []
+    return ledger.git.left_out(snapshot, committed | {rel}, plan.declared_paths, ledger.config.fingerprint_exclude)
 
 
 def evaluate_gate(ledger: Ledger, rel: str, plan: Plan, *, sources: list[Path] | None = None,
@@ -110,6 +129,17 @@ def evaluate_gate(ledger: Ledger, rel: str, plan: Plan, *, sources: list[Path] |
     if sparse:
         manual.append({"code": "sparse_checkout", "detail": f"{len(sparse)} tracked file(s) outside the sparse "
                        "checkout were not in the working tree when the receipts ran"})
+    local = ledger.git.local_ignored() if ledger.git else []
+    if local:
+        manual.append({"code": "locally_ignored_files", "detail": "untracked files that only .git/info/exclude or "
+                       "core.excludesFile ignore (a clean checkout lacks them, and a test run may load them): "
+                       + ", ".join(local[:20]) + (f" and {len(local) - 20} more" if len(local) > 20 else "")})
+    if finish and not for_finish and not any(entry["state"] == "stale" for entry in items.values()):
+        # the working tree is the tested tree (stale receipts are NO-GO anyway): HEAD must hold it
+        left = left_out(ledger, rel, plan, freshness.snapshot, set())
+        if left:
+            manual.append({"code": "tested_change_not_committed", "detail": "HEAD does not hold the tested "
+                           "working-tree content of " + left_out_text(left)})
     warnings = antigaming.scan(ledger.git, scope["base_commit"], {rel}) if ledger.git else []
     for warning in warnings:
         entry = {"code": "anti_gaming_warning", "detail": f"{warning['code']}: {warning.get('path', '')}"}

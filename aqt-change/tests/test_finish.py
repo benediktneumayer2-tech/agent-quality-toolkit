@@ -6,12 +6,13 @@ import pytest
 from aqt_evidence import read_jsonl, validate_record
 
 from aqt_change import plans, receipts
-from aqt_change.config import Config
+from aqt_change.config import Config, GatePolicy
 from aqt_change.errors import ChangeError
 from aqt_change.finish import finish
 from aqt_change.gitio import Git, trailers
 from aqt_change.ledger import Ledger
-from conftest import PLAN, edit, git, read
+from aqt_change.gate import gate
+from conftest import CHECK_SCRIPT, PLAN, edit, git, read
 
 P = "plans/s01.md"
 
@@ -26,8 +27,9 @@ def prepare(ledger, project, *, attest=True):
         receipts.attest(ledger, P, "V02", [], "screenshot looked right")
 
 
-def test_finish_commits_exact_paths_with_trailers(ledger, project, evidence_file):
-    (project / "src/notes.txt").write_text("keep me out")  # before the run: part of the tested tree
+def test_finish_commits_exact_paths_with_trailers(project, evidence_file):
+    ledger = Ledger.open(project, config=Config(gate=GatePolicy(always_allowed_paths=["notes.txt"])))
+    (project / "notes.txt").write_text("keep me out")  # untracked, outside the plan's paths: may stay out
     prepare(ledger, project)
     result = finish(ledger, P, key="k1", summary="calculator done", paths=["src/calc.py"])
     assert result["result"] == "completed" and result["gate"] == "GO"  # V02 attested by a human
@@ -37,7 +39,7 @@ def test_finish_commits_exact_paths_with_trailers(ledger, project, evidence_file
     assert pairs["AQT-Finish"] == "s01/k1" and pairs["AQT-Plan"].startswith("s01 sha256:")
     assert pairs["AQT-Receipts"].startswith("rec_")
     assert git(project, "show", "--name-only", "--format=", sha).split() == ["plans/s01.md", "src/calc.py"]
-    assert "src/notes.txt" in git(project, "status", "--porcelain")
+    assert "notes.txt" in git(project, "status", "--porcelain")
     text = read(project / P)
     assert "status: completed" in text and "- [x] [V01]" in text and "Completed (aqt-change)" in text
     assert plans.status(ledger, P)["state"] == "clean"
@@ -170,3 +172,34 @@ def test_external_lifecycle_owner_never_writes_the_plan(project):
     result = finish(led, P, key="k1", summary="done")
     assert result["commit"] is None
     assert read(project / P) != before and "Completed (aqt-change)" not in read(project / P)
+
+
+def test_finish_refuses_a_tested_change_left_out_of_the_commit(ledger, project):
+    """The receipts tested the working tree; a commit of only some paths must not leave tested changes behind
+    (a weakened check, a new helper module), or a clean checkout is not what passed."""
+    (project / "tests/check.py").write_text(CHECK_SCRIPT.replace("ok = calc.add(2, 3) == 5", "ok = True"))
+    (project / "src/helper.py").write_text("HELP = 1\n")
+    prepare(ledger, project)
+    with pytest.raises(ChangeError) as info:
+        finish(ledger, P, key="k1", summary="done", paths=["src/calc.py"])
+    assert info.value.code == "finish_tested_change_not_committed"
+    assert "tests/check.py (modified)" in info.value.message and "src/helper.py (untracked)" in info.value.message
+    assert not (ledger.state / "attempts" / "s01" / "k1.json").exists()
+    assert len(git(project, "log", "--format=%H").split()) == 1
+    result = finish(ledger, P, key="k2", summary="done", paths=["src/calc.py", "tests/check.py", "src/helper.py"])
+    assert result["result"] == "completed"
+    assert git(project, "status", "--porcelain") == ""
+    assert "tested_change_not_committed" not in {r["code"] for r in gate(ledger, P)["reasons"]}
+
+
+def test_gate_after_finish_without_commit_needs_the_tested_tree_in_head(ledger, project):
+    prepare(ledger, project)
+    result = finish(ledger, P, key="k1", summary="done", no_commit=True)
+    assert result["commit"] is None
+    reasons = {r["code"]: r.get("detail", "") for r in gate(ledger, P)["reasons"]}
+    assert set(reasons) == {"tested_change_not_committed"} and "src/calc.py (modified)" in reasons[
+        "tested_change_not_committed"]
+    git(project, "commit", "-qam", "the tested change")
+    assert gate(ledger, P)["decision"] == "GO"
+    (project / "tests/check.py").write_text(CHECK_SCRIPT + "\n")   # a later edit: stale, not "not committed"
+    assert {r["code"] for r in gate(ledger, P)["reasons"]} == {"receipt_stale"}

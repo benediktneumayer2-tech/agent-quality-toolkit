@@ -21,7 +21,7 @@ from aqt_evidence import content_hash, new_record, subject
 from . import plan as planmod
 from .actors import current_actor
 from .errors import ChangeError, refused, usage
-from .gate import evaluate_gate
+from .gate import evaluate_gate, left_out, left_out_text
 from .gitio import trailers
 from .ledger import TRAIL_REQUIRED, Ledger, read_json, write_json
 from .plan import basis_hash, parse_plan
@@ -103,6 +103,14 @@ def _preflight(ledger, rel, plan, key, request, request_sha, sources) -> dict:
                       phase="preflight_failed", warnings=warnings)
     commit_enabled = bool(not ext and ledger.git and not request["no_commit"])
     clean_paths = ledger.git.preflight_commit(request["paths"] + [rel]) if commit_enabled else request["paths"]
+    left = left_out(ledger, rel, plan, ledger.snapshot(), set(clean_paths)) if commit_enabled else []
+    if left:
+        raise refused("finish_tested_change_not_committed", "the commit would not hold what the receipts tested: "
+                      + left_out_text(left) + ". Name the files with --path, or undo the changes (delete an "
+                      "untracked file or ignore it in .gitignore) and run the checks again"
+                      + ("; a file ignored locally needs its rule removed from .git/info/exclude or core.excludesFile"
+                         " before Git adds it" if any(e["state"] == "ignored locally" for e in left) else ""),
+                      phase="preflight_failed", paths=[entry["path"] for entry in left[:50]])
     receipts = preview["receipts"]
     ok_items = {i for i, e in preview["items"].items() if e["state"] == "ok"}
     completed_at = now_iso()

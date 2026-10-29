@@ -6,7 +6,9 @@ files only, unrelated staged paths abort, hooks and identity are never bypassed.
 Calls run with ``SAFE_CONFIG``: Git looks at the files themselves instead of trusting an fsmonitor
 hook, the untracked cache or a relaxed stat check (only the hidden-change check also asks Git with the
 repository's own settings, to find what they hide). The fingerprint and the hidden-change check do not
-trust the index's stat data at all: they hash every tracked file's content.
+trust the index's stat data at all: they hash every tracked file's content. Untracked files count unless the
+repository's own ``.gitignore`` files ignore them: ``.git/info/exclude`` and ``core.excludesFile`` are local
+rules a clean checkout does not have, so they do not hide a file from the fingerprint.
 """
 
 from __future__ import annotations
@@ -173,13 +175,14 @@ class Git:
                 for path, (tag, _mode, oid) in self.index_entries().items() if tag == "S" or tag.islower()}
 
     def worktree_blobs(self) -> dict[str, str]:
-        """{path: blob id} of every tracked (HEAD or index) and untracked, not ignored file as it is in the
-        working tree, from its content: neither the stat cache nor an fsmonitor hook nor an index flag
-        decides what is looked at. Symbolic links count by their link text, submodules by HEAD's recorded
-        commit; missing files are left out."""
+        """{path: blob id} of every tracked (HEAD or index) file and every untracked file the repository's
+        ``.gitignore`` files do not ignore (also those only local rules ignore, ``local_ignored()``), as it is
+        in the working tree, from its content: neither the stat cache nor an fsmonitor hook nor an index flag
+        nor a local ignore rule decides what is looked at. Symbolic links count by their link text,
+        submodules by HEAD's recorded commit; missing files are left out."""
         head, index = self.head_entries(), self.index_entries()
         blobs, files = {}, []
-        for path in sorted(set(head) | set(index) | set(self.untracked())):
+        for path in sorted(set(head) | set(index) | set(self.untracked(repository_rules=True))):
             full = self.root / path
             if head.get(path, ("",))[0] == "160000":
                 if path in index or full.is_dir():
@@ -220,11 +223,42 @@ class Git:
             hidden.append({"path": path, "flag": flag, "state": state})
         return hidden
 
+    def left_out(self, blobs: dict[str, str], committed: set[str], declared: list[str],
+                 exclude_globs: list[str]) -> list[dict]:
+        """Files whose working-tree content (``blobs``, a ``worktree_blobs()`` result) a commit of HEAD plus
+        the ``committed`` paths would not hold: a tracked file that differs from HEAD (state ``modified``,
+        ``deleted``, or ``added`` to the index only) inside the ``declared`` globs or covered by the
+        fingerprint (not matched by ``exclude_globs``), and an untracked file inside the declared globs
+        (``untracked``, or ``ignored locally`` when only local ignore rules hide it). Untracked files outside
+        the declared scope may stay out (the scope check reports them). Index-flagged files and submodules
+        are left to ``hidden_changes()``."""
+        head, index = self.head_entries(), self.index_entries()
+        local, left = None, []
+        for path in sorted(set(head) | set(index) | set(blobs)):
+            if path in committed:
+                continue
+            in_scope = bool(declared) and matches_any(path, declared)
+            if path in head or path in index:
+                tag, mode, _oid = index.get(path, ("H", head.get(path, ("",))[0], ""))
+                if tag == "S" or tag.islower() or "160000" in (mode, head.get(path, ("",))[0]):
+                    continue
+                if not in_scope and matches_any(path, exclude_globs):
+                    continue
+                want, have = blobs.get(path), head.get(path, ("", None))[1]
+                if want != have:
+                    left.append({"path": path, "state": "deleted" if want is None else
+                                 ("modified" if have else "added")})
+            elif in_scope:
+                local = set(self.local_ignored()) if local is None else local
+                left.append({"path": path, "state": "ignored locally" if path in local else "untracked"})
+        return left
+
     def fingerprint(self, exclude_paths: set[str], exclude_globs: list[str],
                     blobs: dict[str, str] | None = None) -> str:
         """Content fingerprint of the working tree: the blob id of every tracked and untracked file
-        (``worktree_blobs()``). When Git sees every change, this equals the earlier value (HEAD's blobs,
-        with the files ``git status`` reports replaced by their content), so older receipts stay fresh."""
+        (``worktree_blobs()``). When Git sees every change and no local ignore rule hides a file, this equals
+        the earlier value (HEAD's blobs, with the files ``git status`` reports replaced by their content), so
+        older receipts stay fresh."""
         return _digest(self.worktree_blobs() if blobs is None else blobs, exclude_paths, exclude_globs)
 
     # --- diffs -----------------------------------------------------------------
@@ -241,9 +275,18 @@ class Git:
             result.append(("A", path))
         return sorted(set(result), key=lambda item: item[1])
 
-    def untracked(self) -> list[str]:
-        raw = self.run("ls-files", "--others", "--exclude-standard", "-z").stdout
+    def untracked(self, repository_rules: bool = False) -> list[str]:
+        """Untracked files that are not ignored. ``repository_rules``: only the repository's ``.gitignore``
+        files ignore, not ``.git/info/exclude`` or ``core.excludesFile``."""
+        rules = "--exclude-per-directory=.gitignore" if repository_rules else "--exclude-standard"
+        raw = self.run("ls-files", "--others", rules, "-z").stdout
         return [p.decode("utf-8", "surrogateescape") for p in raw.split(b"\0") if p]
+
+    def local_ignored(self) -> list[str]:
+        """Untracked files that only local rules ignore (``.git/info/exclude``, ``core.excludesFile``, by
+        default ``$XDG_CONFIG_HOME/git/ignore``): invisible to ``git status``, but present for a test run, and
+        absent from a clean checkout."""
+        return sorted(set(self.untracked(repository_rules=True)) - set(self.untracked()))
 
     def diff_text(self, base: str, exclude: set[str] = frozenset()) -> str:
         args = ["diff", "-U0", "--no-ext-diff", "--no-color", base, "--", "."]

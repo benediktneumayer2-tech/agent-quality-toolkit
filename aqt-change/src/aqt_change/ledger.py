@@ -9,8 +9,9 @@ phases) and ``records.jsonl`` (a mirror of every record this tool wrote).
 The mirror is writable by the agent's user. When records go to an aqt-trail writer,
 ``TrailCheck`` decides which receipts and reviews of the mirror the trail log confirms. Where the
 trail is comes from the caller's environment, which the agent sets; so the check also stays on when
-the project requires a trail (``require_trail`` in ``.aqt/change.toml``) or when earlier records of
-the mirror came back from a writer.
+the project requires a trail (``require_trail`` or ``trail_keys`` in ``.aqt/change.toml``) or when earlier
+records of the mirror came back from a writer. With ``trail_keys`` a log copy counts only when it carries a
+valid signature by a pinned service key, so a log the agent wrote itself does not confirm anything.
 """
 
 from __future__ import annotations
@@ -23,24 +24,27 @@ import re
 from pathlib import Path
 from typing import Iterable, Iterator
 
-from aqt_evidence import (SinkError, canonical_json, evidence_sources, open_sink, record_content_hash, resolve_sink,
-                          spool_file, state_dir)
+from aqt_evidence import (SinkError, canonical_json, evidence_sources, load_public_key, open_sink, record_content_hash,
+                          resolve_sink, spool_file, state_dir, verify_record_signatures)
 
-from .config import PROJECT_FILE, Config, load_config, parse_project_settings
+from .config import INDEPENDENCE, PROJECT_FILE, Config, load_config, parse_project_settings
 from .errors import ChangeError, usage
 from .gitio import COMMIT_RE, Git, walk_fingerprint
 
 
 ID_TOKEN = re.compile(rb"rec_[0-9a-f]{28}")
 CHECKED_TYPES = ("change.receipt", "change.review")
-TRUST_NOGO = ("absent", "mismatch", "required")   # the trail contradicts the mirror, or is required: NO-GO
-TRAIL_REQUIRED = (f"the project requires an aqt-trail log (require_trail in {PROJECT_FILE}) and none is found in "
-                  "this environment: run the command where the trail is (the owner's shell or CI), start the "
+TRUST_NOGO = ("absent", "mismatch", "unsigned", "required")   # the trail contradicts the mirror, or is required
+TRAIL_REQUIRED = (f"the project requires an aqt-trail log (require_trail or trail_keys in {PROJECT_FILE}) and none "
+                  "is found in this environment (with trail_keys, only a log whose keys/ folder holds a pinned "
+                  "service key counts): run the command where the trail is (the owner's shell or CI), start the "
                   "writer (aqt-trail serve), or set AQT_EVIDENCE to its trail.jsonl")
 TRUST_TEXT = {
     "absent": "not in the aqt-trail log (written only to the local mirror or a sink file, or spooled while the "
               "writer was down: run the commands again with the writer running)",
     "mismatch": "differs from the record with the same id in the aqt-trail log",
+    "unsigned": f"is in the trail log, but without a valid signature by a service key pinned in trail_keys "
+                f"({PROJECT_FILE}): that log was not written by the project's trail writer",
     "unattributed": "reached the aqt-trail log through the spool, without an observed sender; run the commands "
                     "again with the writer running",
     "unreadable": "cannot be checked: records go to an aqt-trail writer, or earlier records of this project "
@@ -84,26 +88,54 @@ class TrailCheck:
     A trail is in use when ``trail_logs()`` says so, when ``required`` is true, or when a record of
     ``records`` came back from a writer (it carries a ``chain``): the environment alone cannot switch
     the check off.
+
+    ``keys`` (pinned service key ids, ``trail_keys``; None: nothing pinned) makes the trail required, and a
+    log counts only when ``keys/*.pub`` next to it holds a pinned key (its key id is a hash of the key, so
+    the file's place does not matter); a copy then confirms a record only with a valid signature by that
+    key, else the status is ``unsigned`` (NO-GO).
     """
 
-    def __init__(self, records: Iterable[dict], environ: dict | None = None, required: bool = False):
+    def __init__(self, records: Iterable[dict], environ: dict | None = None, required: bool = False,
+                 keys: Iterable[str] | None = None):
         records = list(records)
         found_in_use, self.logs = trail_logs(environ)
-        self.required = bool(required)
+        self.pinned = None if keys is None else sorted(set(keys))
+        self.required = bool(required) or self.pinned is not None
         self.history = any(isinstance(r.get("chain"), dict) for r in records if isinstance(r, dict))
         self.in_use = found_in_use or self.required or self.history
         self.readable: list[Path] = []
-        self.found: dict[str, list[tuple[str, str | None]]] = {}
+        self.found: dict[str, list[tuple[str, str | None, bool]]] = {}
         if self.in_use:
             wanted = {r["id"] for r in records if r.get("type") in CHECKED_TYPES and isinstance(r.get("id"), str)}
             for path in self.logs:
+                public = self._pinned_keys(path)
+                if public is not None and not public:
+                    continue                              # no pinned key next to this log: it cannot confirm
                 try:
-                    self._scan(path, wanted)
+                    self._scan(path, wanted, public)
                 except OSError:
                     continue
                 self.readable.append(path)
 
-    def _scan(self, path: Path, wanted: set[str]) -> None:
+    def _pinned_keys(self, log: Path) -> dict | None:
+        """{key id: public key} of the pinned keys in ``keys/*.pub`` next to ``log`` (None: nothing pinned)."""
+        if self.pinned is None:
+            return None
+        found = {}
+        try:
+            candidates = sorted((log.parent / "keys").glob("*.pub"))
+        except OSError:
+            return {}
+        for path in candidates:
+            try:
+                kid, public = load_public_key(path)
+            except (OSError, ValueError):
+                continue
+            if kid in self.pinned:
+                found[kid] = public
+        return found
+
+    def _scan(self, path: Path, wanted: set[str], public: dict | None = None) -> None:
         with open(path, "rb") as handle:
             for line in handle:
                 if not wanted.intersection(token.decode() for token in ID_TOKEN.findall(line)):
@@ -113,7 +145,8 @@ class TrailCheck:
                     if not isinstance(record, dict) or record.get("id") not in wanted:
                         continue
                     observed = record.get("observed") if isinstance(record.get("observed"), dict) else {}
-                    copy = (record_content_hash(record), observed.get("via"))
+                    signed = public is None or any(ok for _, ok in verify_record_signatures(record, public))
+                    copy = (record_content_hash(record), observed.get("via"), signed)
                 except (ValueError, TypeError, RecursionError):
                     continue
                 self.found.setdefault(record["id"], []).append(copy)
@@ -130,9 +163,12 @@ class TrailCheck:
             mine = record_content_hash(record)
         except (ValueError, TypeError):
             return "mismatch"
-        routes = [via for sha, via in copies if sha == mine]
-        if not routes:
+        same = [(via, signed) for sha, via, signed in copies if sha == mine]
+        if not same:
             return "mismatch"
+        routes = [via for via, signed in same if signed]
+        if not routes:
+            return "unsigned"
         return "ok" if "socket" in routes else "unattributed"
 
     @property
@@ -141,7 +177,10 @@ class TrailCheck:
         return self.required and not self.readable
 
     def summary(self) -> dict:
-        return {"checked": self.in_use, "logs": [str(path) for path in self.readable], "required": self.required}
+        found = {"checked": self.in_use, "logs": [str(path) for path in self.readable], "required": self.required}
+        if self.pinned is not None:
+            found["keys"] = list(self.pinned)
+        return found
 
 
 def atomic_write(path: Path, data: bytes, mode: int = 0o600) -> None:
@@ -290,14 +329,17 @@ class Ledger:
         return next((r for r in self.records() if r.get("id") == record_id), None)
 
     def trail_check(self) -> TrailCheck:
-        return TrailCheck(self.records(), required=self.project_settings()["require_trail"])
+        settings = self.project_settings()
+        return TrailCheck(self.records(), required=settings["require_trail"], keys=settings["trail_keys"])
 
     # --- project settings ------------------------------------------------------------
 
     def project_settings(self) -> dict:
         """The committed project settings (``.aqt/change.toml``): the strictest of the copy in the working
         tree, at HEAD and at the base commit of each plan in progress, so neither an uncommitted edit nor a
-        commit during a plan switches a setting off. ``require_trail_from`` names the copies that set it."""
+        commit during a plan switches a setting off. ``require_trail``: a copy sets it or pins ``trail_keys``
+        (``require_trail_from`` names those copies); ``trail_keys``: the keys every pinning copy names (None
+        when no copy pins any); ``gate``: each policy value at its strictest."""
         if self._settings is None:
             copies = []
             if (self.root / PROJECT_FILE).is_file():
@@ -306,9 +348,17 @@ class Ledger:
                 bases = {s.get("base_commit") for s in self.plan_states() if s.get("status") == "in_progress"}
                 revs = ["HEAD", *sorted(b for b in bases if isinstance(b, str) and COMMIT_RE.match(b))]
                 copies += [(f"{rev}:{PROJECT_FILE}", text) for rev, text in self.git.file_at(revs, PROJECT_FILE)]
-            required = [where for where, text in copies
-                        if parse_project_settings(text.decode("utf-8", "replace"), where)["require_trail"]]
-            self._settings = {"require_trail": bool(required), "require_trail_from": required}
+            parsed = [(where, parse_project_settings(text.decode("utf-8", "replace"), where)) for where, text in copies]
+            required = [where for where, found in parsed if found["require_trail"] or found["trail_keys"]]
+            pins = [set(found["trail_keys"]) for _, found in parsed if found["trail_keys"]]
+            ranks = ("none", *INDEPENDENCE)
+            gates = [found["gate"] for _, found in parsed]
+            gate = {"require_signed_approval": any(g.get("require_signed_approval") for g in gates),
+                    "warnings_block": any(g.get("warnings_block") for g in gates),
+                    "min_review_independence": max((g.get("min_review_independence", "none") for g in gates),
+                                                   key=ranks.index, default="none")}
+            self._settings = {"require_trail": bool(required), "require_trail_from": required,
+                              "trail_keys": sorted(set.intersection(*pins)) if pins else None, "gate": gate}
         return self._settings
 
     # --- working tree --------------------------------------------------------------

@@ -177,3 +177,61 @@ def test_gate_rerun_reexecutes_commands(ledger, project):
     result = gate(ledger, P, rerun=True)
     assert len(list(ledger.records("change.receipt"))) == before + 1
     assert result["decision"] == "GO"
+
+
+# --- gate policy from the project file ------------------------------------------------------------
+
+def _project_gate(project, text):
+    (project / ".aqt").mkdir(exist_ok=True)
+    (project / ".aqt/change.toml").write_text(text)
+    git(project, "add", ".aqt/change.toml")
+    git(project, "commit", "-qm", "project gate policy")
+
+
+def test_project_gate_policy_holds_without_the_user_config(project, monkeypatch, tmp_path):
+    """The user's [gate] lives in the agent's reach (AQT_CHANGE_CONFIG=/dev/null drops it); the project's holds."""
+    monkeypatch.setitem(sys.modules, "aqt_signoff", None)
+    _project_gate(project, '[gate]\nrequire_signed_approval = true\nmin_review_independence = "fresh-context"\n'
+                           'warnings_block = true\n')
+    monkeypatch.setenv("AQT_CHANGE_CONFIG", "/dev/null")
+    led = Ledger.open(project)
+    (project / "tests/test_skip.py").write_text("import pytest\n\n@pytest.mark.skip\ndef test_x():\n    assert 1\n")
+    done(led, project)
+    finish(led, P, key="k1", summary="done", paths=["tests/test_skip.py"], ack_warnings="skip is intended")
+    result = gate(led, P, sources=[tmp_path / "none.jsonl"])
+    assert reasons(result) == {"approval_unsigned", "review_independence_below_policy", "anti_gaming_warning"}
+    assert result["decision"] == "NO-GO"                      # only the warning blocks: warnings_block = true
+    assert result["policy"]["require_signed_approval"] and result["policy"]["warnings_block"]
+
+
+def test_strictest_of_user_and_project_policy_wins(project):
+    _project_gate(project, '[gate]\nmin_review_independence = "fresh-context"\n')
+    led = Ledger.open(project, config=Config(gate=GatePolicy(min_review_independence="different-model")))
+    done(led, project)
+    assert gate(led, P)["policy"]["min_review_independence"] == "different-model"
+    led = Ledger.open(project, config=Config(gate=GatePolicy(min_review_independence="same-session",
+                                                             warnings_block=True)))
+    policy = gate(led, P)["policy"]
+    assert policy["min_review_independence"] == "fresh-context" and policy["warnings_block"]
+
+
+def test_project_gate_policy_cannot_be_relaxed_during_a_plan(project):
+    _project_gate(project, "[gate]\nrequire_signed_approval = true\n")
+    led = Ledger.open(project)
+    plans.begin(led, P)
+    (project / ".aqt/change.toml").write_text("[gate]\nrequire_signed_approval = false\n")
+    git(project, "commit", "-qam", "relax")                                          # the base's copy still counts
+    result = gate(Ledger.open(project), P)
+    assert result["policy"]["require_signed_approval"] and "project_settings_changed" in reasons(result)
+
+
+@pytest.mark.parametrize("text", ['[gate]\nrequire_signed_aproval = true\n', '[gate]\nwarnings_block = "yes"\n',
+                                  '[gate]\nmin_review_independence = "best"\n',
+                                  '[gate]\nalways_allowed_paths = ["**"]\n', 'requre_trail = true\n',
+                                  'trail_keys = ["ed25519:xyz"]\n', 'trail_keys = "ed25519:0123456789abcdef"\n'])
+def test_invalid_project_gate_policy_refuses(project, text):
+    (project / ".aqt").mkdir()
+    (project / ".aqt/change.toml").write_text(text)
+    with pytest.raises(ChangeError) as info:
+        gate(Ledger.open(project), P)
+    assert info.value.code == "config_invalid"

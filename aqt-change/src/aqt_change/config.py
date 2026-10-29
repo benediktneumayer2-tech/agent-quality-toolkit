@@ -1,12 +1,14 @@
 """User configuration: ``$XDG_CONFIG_HOME/aqt/change.toml`` (or ``AQT_CHANGE_CONFIG``).
 
 Project settings: ``.aqt/change.toml`` in the repository, committed with the code, so the agent's
-environment cannot switch them off (``Ledger.project_settings()``). Only ``require_trail`` so far.
+environment cannot switch them off (``Ledger.project_settings()``): ``require_trail``, ``trail_keys`` and a
+``[gate]`` table. They can only make checks stricter.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -18,6 +20,8 @@ from .errors import usage
 PROJECT_FILE = ".aqt/change.toml"
 INDEPENDENCE = ("same-session", "fresh-context", "different-model", "human")
 LIFECYCLE_OWNERS = ("aqt-change", "external")
+PROJECT_GATE_KEYS = ("require_signed_approval", "min_review_independence", "warnings_block")
+KEY_ID_RE = re.compile(r"^ed25519:[0-9a-f]{16}$")
 
 
 @dataclass
@@ -87,13 +91,35 @@ def load_config(path: str | os.PathLike | None = None) -> Config:
 
 
 def parse_project_settings(text: str, where: str) -> dict:
-    """The settings in one copy of ``.aqt/change.toml``: ``{"require_trail": bool}``. ``where`` names the
-    copy in error messages. A copy that cannot be read refuses (it must not count as "no settings")."""
+    """The settings in one copy of ``.aqt/change.toml``: ``{"require_trail": bool, "trail_keys": [key id, ...],
+    "gate": {key: value}}`` (``gate`` holds only the keys the copy sets). ``where`` names the copy in error
+    messages. A copy that cannot be read, or has an unknown key, refuses (it must not count as "no settings")."""
     try:
         raw = tomllib.loads(text)
     except tomllib.TOMLDecodeError as error:
         raise usage("config_invalid", f"cannot read project settings {where}: {error}") from error
+
+    def invalid(message: str):
+        return usage("config_invalid", f"project settings {where}: {message}")
+
+    unknown = sorted(set(raw) - {"require_trail", "trail_keys", "gate"})
+    if unknown:
+        raise invalid(f"unknown key(s) {', '.join(unknown)}")
     value = raw.get("require_trail", False)
     if not isinstance(value, bool):
-        raise usage("config_invalid", f"project settings {where}: require_trail must be true or false")
-    return {"require_trail": value}
+        raise invalid("require_trail must be true or false")
+    keys = raw.get("trail_keys", [])
+    if not isinstance(keys, list) or not all(isinstance(k, str) and KEY_ID_RE.match(k) for k in keys):
+        raise invalid('trail_keys must be a list of service key ids such as "ed25519:0123456789abcdef"')
+    gate = raw.get("gate", {})
+    if not isinstance(gate, dict):
+        raise invalid("gate must be a table")
+    unknown = sorted(set(gate) - set(PROJECT_GATE_KEYS))
+    if unknown:
+        raise invalid(f"unknown gate key(s) {', '.join(unknown)} (allowed: {', '.join(PROJECT_GATE_KEYS)})")
+    for name in ("require_signed_approval", "warnings_block"):
+        if name in gate and not isinstance(gate[name], bool):
+            raise invalid(f"gate.{name} must be true or false")
+    if "min_review_independence" in gate and gate["min_review_independence"] not in ("none", *INDEPENDENCE):
+        raise invalid("gate.min_review_independence must be none or an independence class")
+    return {"require_trail": value, "trail_keys": sorted(set(keys)), "gate": dict(gate)}
