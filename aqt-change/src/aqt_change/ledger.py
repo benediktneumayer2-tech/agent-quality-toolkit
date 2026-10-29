@@ -5,6 +5,9 @@ Location: ``AQT_CHANGE_STATE``; else ``<git-dir>/aqt-change/``; else
 ``plans/<id>.json``, ``objects/<sha>`` (accepted plan snapshots),
 ``logs/<sha>`` (receipt output), ``attempts/<plan>/<key>.json`` (finish
 phases) and ``records.jsonl`` (a mirror of every record this tool wrote).
+
+The mirror is writable by the agent's user. When records go to an aqt-trail writer,
+``TrailCheck`` decides which receipts and reviews of the mirror the trail log confirms.
 """
 
 from __future__ import annotations
@@ -13,14 +16,108 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
-from typing import Iterator
+from typing import Iterable, Iterator
 
-from aqt_evidence import SinkError, canonical_json, open_sink, state_dir
+from aqt_evidence import (SinkError, canonical_json, evidence_sources, open_sink, record_content_hash, resolve_sink,
+                          spool_file, state_dir)
 
 from .config import Config, load_config
 from .errors import ChangeError, usage
 from .gitio import Git, walk_fingerprint
+
+
+ID_TOKEN = re.compile(rb"rec_[0-9a-f]{28}")
+CHECKED_TYPES = ("change.receipt", "change.review")
+TRUST_NOGO = ("absent", "mismatch")       # the trail contradicts the mirror: NO-GO
+TRUST_TEXT = {
+    "absent": "not in the aqt-trail log (written to the local mirror only, or spooled while the writer was "
+              "down: run the commands again with the writer running)",
+    "mismatch": "differs from the record with the same id in the aqt-trail log",
+    "unattributed": "reached the aqt-trail log through the spool, without an observed sender; run the commands "
+                    "again with the writer running",
+    "unreadable": "cannot be checked: records go to an aqt-trail writer but no trail log is readable "
+                  "(set AQT_EVIDENCE to its trail.jsonl)",
+}
+
+
+def trail_logs(environ: dict | None = None) -> tuple[bool, list[Path]]:
+    """(a trail is in use, its log files). A trail is in use when records go to an aqt-trail writer
+    (``resolve_sink()`` kind ``unix``) or its log exists, unless ``AQT_SINK`` names a file. The log is
+    each ``AQT_EVIDENCE`` entry named ``trail.jsonl``, else ``trail.jsonl`` in the trail state directory;
+    the sink file and the spool never count (anyone with the agent's rights can write them)."""
+    environ = os.environ if environ is None else environ
+    if environ.get("AQT_SINK", "").startswith("file:"):
+        return False, []
+    side = {state_dir() / "evidence.jsonl", spool_file()}
+    logs = [path for path in evidence_sources(environ) if path.name == "trail.jsonl" and path not in side] \
+        if environ.get("AQT_EVIDENCE") else []
+    if not logs:
+        plain = {key: value for key, value in environ.items() if key not in ("AQT_EVIDENCE", "AQT_SINK")}
+        logs = [path for path in evidence_sources(plain) if path not in side]
+    try:
+        writer = resolve_sink(environ)["kind"] == "unix"
+    except SinkError:
+        writer = False
+    return writer or bool(logs), logs
+
+
+class TrailCheck:
+    """Which receipts and reviews of the local mirror the aqt-trail log confirms.
+
+    ``status(record)``: ``ok`` (no trail in use, or the log holds the same record, by id and content
+    hash, received from a socket client), ``absent``, ``mismatch``, ``unattributed`` (only a copy that
+    came through the spool) or ``unreadable`` (a trail is in use, but no log can be read).
+    """
+
+    def __init__(self, records: Iterable[dict], environ: dict | None = None):
+        self.in_use, self.logs = trail_logs(environ)
+        self.readable: list[Path] = []
+        self.found: dict[str, list[tuple[str, str | None]]] = {}
+        if self.in_use:
+            wanted = {r["id"] for r in records if r.get("type") in CHECKED_TYPES and isinstance(r.get("id"), str)}
+            for path in self.logs:
+                try:
+                    self._scan(path, wanted)
+                except OSError:
+                    continue
+                self.readable.append(path)
+
+    def _scan(self, path: Path, wanted: set[str]) -> None:
+        with open(path, "rb") as handle:
+            for line in handle:
+                if not wanted.intersection(token.decode() for token in ID_TOKEN.findall(line)):
+                    continue
+                try:
+                    record = json.loads(line)
+                    if not isinstance(record, dict) or record.get("id") not in wanted:
+                        continue
+                    observed = record.get("observed") if isinstance(record.get("observed"), dict) else {}
+                    copy = (record_content_hash(record), observed.get("via"))
+                except (ValueError, TypeError, RecursionError):
+                    continue
+                self.found.setdefault(record["id"], []).append(copy)
+
+    def status(self, record: dict) -> str:
+        if not self.in_use:
+            return "ok"
+        if not self.readable:
+            return "unreadable"
+        copies = self.found.get(record.get("id"))
+        if not copies:
+            return "absent"
+        try:
+            mine = record_content_hash(record)
+        except (ValueError, TypeError):
+            return "mismatch"
+        routes = [via for sha, via in copies if sha == mine]
+        if not routes:
+            return "mismatch"
+        return "ok" if "socket" in routes else "unattributed"
+
+    def summary(self) -> dict:
+        return {"checked": self.in_use, "logs": [str(path) for path in self.readable]}
 
 
 def atomic_write(path: Path, data: bytes, mode: int = 0o600) -> None:
@@ -166,6 +263,9 @@ class Ledger:
 
     def record(self, record_id: str) -> dict | None:
         return next((r for r in self.records() if r.get("id") == record_id), None)
+
+    def trail_check(self) -> TrailCheck:
+        return TrailCheck(self.records())
 
     # --- working tree --------------------------------------------------------------
 

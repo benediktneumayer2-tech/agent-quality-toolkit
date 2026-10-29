@@ -10,10 +10,10 @@ from pathlib import Path
 
 from . import antigaming
 from .config import INDEPENDENCE
-from .ledger import Ledger
+from .ledger import TRUST_NOGO, TRUST_TEXT, Ledger
 from .plan import Plan
 from .plans import STATES_OK, read_plan, require_valid, status
-from .receipts import Freshness, evaluate, run, utc_stamp
+from .receipts import Freshness, evaluate, hidden_text, run, trust_blocks, trust_note, utc_stamp
 from .scope import compare
 
 RANK = {name: index for index, name in enumerate(("none", *INDEPENDENCE))}
@@ -24,9 +24,22 @@ def latest_finish(ledger: Ledger, plan_id: str) -> dict | None:
     return finishes[-1] if finishes else None
 
 
-def fresh_reviews(ledger: Ledger, plan: Plan, freshness: Freshness) -> list[dict]:
-    fresh = []
+def counted_reviews(ledger: Ledger, plan: Plan, freshness: Freshness) -> tuple[list[dict], list[dict]]:
+    """(reviews that count, the others with their trail status). With a trail in use, a review counts
+    when the trail log confirms it; a FAIL verdict counts from anywhere (a doubt needs no proof)."""
+    counted, unverified = [], []
     for review in ledger.records("change.review", plan.id):
+        trust = freshness.trail.status(review)
+        if trust == "ok" or review["data"].get("verdict") == "FAIL":
+            counted.append(review)
+        else:
+            unverified.append({"review": review, "trust": trust})
+    return counted, unverified
+
+
+def fresh_reviews(ledger: Ledger, plan: Plan, freshness: Freshness, reviews: list[dict] | None = None) -> list[dict]:
+    fresh = []
+    for review in ledger.records("change.review", plan.id) if reviews is None else reviews:
         data = review["data"]
         if data.get("tree_fingerprint") == freshness.fingerprint(data.get("fingerprint_excludes") or []):
             fresh.append(review)
@@ -61,6 +74,9 @@ def evaluate_gate(ledger: Ledger, rel: str, plan: Plan, *, sources: list[Path] |
         if entry["state"] != "ok":
             if item_id in waived:
                 manual.append({"code": "waiver_present", "item": item_id})
+            elif entry["state"] == "unverified":
+                reason = {"code": "receipt_unverified", "item": item_id, "detail": trust_note(entry)}
+                (nogo if trust_blocks(entry) else manual).append(reason)
             else:
                 nogo.append({"code": f"receipt_{entry['state']}", "item": item_id})
             continue
@@ -79,6 +95,15 @@ def evaluate_gate(ledger: Ledger, rel: str, plan: Plan, *, sources: list[Path] |
         manual.append({"code": "scope_unverifiable", "detail": "no Git base commit to compare against"})
     if scope["unapproved"]:
         nogo.append({"code": "unapproved_change", "detail": ", ".join(scope["unapproved"][:20])})
+    hidden = ledger.git.hidden_changes() if ledger.git else []
+    sparse = [h for h in hidden if h["state"] == "sparse"]
+    hidden = [h for h in hidden if h["state"] != "sparse"]
+    if hidden:
+        nogo.append({"code": "hidden_worktree_change", "detail": "Git is told to ignore working-tree changes "
+                     "(git update-index --no-skip-worktree / --no-assume-unchanged): " + hidden_text(hidden)})
+    if sparse:
+        manual.append({"code": "sparse_checkout", "detail": f"{len(sparse)} tracked file(s) outside the sparse "
+                       "checkout were not in the working tree when the receipts ran"})
     warnings = antigaming.scan(ledger.git, scope["base_commit"], {rel}) if ledger.git else []
     for warning in warnings:
         entry = {"code": "anti_gaming_warning", "detail": f"{warning['code']}: {warning.get('path', '')}"}
@@ -92,8 +117,11 @@ def evaluate_gate(ledger: Ledger, rel: str, plan: Plan, *, sources: list[Path] |
         manual.append({"code": "approval_unverified", "detail": "signature found; aqt-signoff not available to verify"})
     elif policy["require_signed_approval"] and approval["state"] == "unsigned":
         manual.append({"code": "approval_unsigned"})
-    reviews = fresh_reviews(ledger, plan, freshness)
-    every = list(ledger.records("change.review", plan.id))
+    every, unverified = counted_reviews(ledger, plan, freshness)
+    for entry in unverified:
+        reason = {"code": "review_unverified", "detail": f"{entry['review']['id']} {TRUST_TEXT[entry['trust']]}"}
+        (nogo if entry["trust"] in TRUST_NOGO else manual).append(reason)
+    reviews = fresh_reviews(ledger, plan, freshness, every)
     if every and every[-1]["data"]["verdict"] == "FAIL":
         # a FAIL stays open until a later review replaces it, even when the code changed since
         nogo.append({"code": "review_fail", "detail": every[-1]["id"]})
@@ -117,7 +145,7 @@ def evaluate_gate(ledger: Ledger, rel: str, plan: Plan, *, sources: list[Path] |
             "approval": approval, "receipts": [r for r in receipts if r], "items": items,
             "reviews": [r["id"] for r in reviews], "waivers": waivers, "warnings": warnings, "scope": scope,
             "finish": finish["id"] if finish else None, "evaluated_at": utc_stamp(),
-            "policy": policy, "policy_sha256": _policy_hash(policy)}
+            "trail": freshness.trail.summary(), "policy": policy, "policy_sha256": _policy_hash(policy)}
 
 
 def _policy_hash(policy: dict) -> str:
@@ -139,5 +167,5 @@ def gate(ledger: Ledger, plan_path: str, *, sources: list[Path] | None = None, r
 def public(result: dict) -> dict:
     """The gate JSON without bulky helper sections."""
     keep = ("aqt_gate", "plan_id", "decision", "reasons", "approval", "receipts", "reviews", "waivers",
-            "finish", "evaluated_at", "policy_sha256", "rerun")
+            "finish", "evaluated_at", "trail", "policy_sha256", "rerun")
     return {key: result[key] for key in keep if key in result}

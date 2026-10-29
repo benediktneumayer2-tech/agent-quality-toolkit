@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Security: with aqt-trail in use, `gate`, `finish`, the Claude Code hooks and the commit-msg hook count a
+  receipt or review only if the trail log holds the same record (id and content hash) received over the
+  writer's socket. A record only in the local `records.jsonl`, or edited there, gives NO-GO
+  (`receipt_unverified`, `review_unverified`); one that came through the spool, or an unreadable log, gives
+  MANUAL. An unconfirmed review cannot replace a FAIL. The gate JSON reports `trail`. Without a trail,
+  behaviour is unchanged (documented limit).
+- Security: files marked `skip-worktree` or `assume-unchanged` are fingerprinted by their working-tree
+  content; a hidden change gives NO-GO (`hidden_worktree_change`), a run warning, a `finish` refusal
+  (`finish_hidden_changes`) and a blocking hook. Files outside a sparse checkout give MANUAL (`sparse_checkout`).
 - Docs: `docs/usage.md` named `plan status --json` as a place that shows the approval record; `gate`
   (`approval.record`) and the trace report do.
 

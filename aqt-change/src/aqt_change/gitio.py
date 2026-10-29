@@ -109,18 +109,62 @@ class Git:
         out = self.run("hash-object", "--stdin-paths", input=data).stdout.decode().split()
         return dict(zip(paths, out))
 
+    def flagged_entries(self) -> dict[str, tuple[str, str]]:
+        """Tracked paths whose index entry tells Git not to look at the working tree
+        (``update-index --skip-worktree`` or ``--assume-unchanged``): {path: (flag, index blob)}.
+        ``git status`` and ``git diff`` do not show changes to these files."""
+        raw = self.run("ls-files", "-v", "-s", "-z").stdout
+        found = {}
+        for entry in raw.split(b"\0"):
+            if len(entry) < 3 or b"\t" not in entry:
+                continue
+            tag = entry[:1]
+            if tag != b"S" and not tag.islower():
+                continue
+            meta, path = entry.split(b"\t", 1)
+            fields = meta.split()
+            flag = "skip-worktree" if tag == b"S" else "assume-unchanged"
+            found[path.decode("utf-8", "surrogateescape")] = (flag, fields[2].decode() if len(fields) > 2 else "")
+        return found
+
+    def hidden_changes(self) -> list[dict]:
+        """Flagged tracked files whose working-tree content differs from the index (``modified``) or
+        is missing (``missing``; ``sparse`` for a skip-worktree file of a sparse checkout): changes
+        Git hides from ``status``, ``diff`` and ``add``."""
+        flagged = self.flagged_entries()
+        present = [p for p in flagged if (self.root / p).is_file()]
+        hashes = self.hash_paths(present)
+        hidden, sparse = [], None
+        for path, (flag, blob) in sorted(flagged.items()):
+            full = self.root / path
+            if full.is_dir():
+                continue  # submodule: keep the recorded commit
+            if path in hashes:
+                if hashes[path] != blob:
+                    hidden.append({"path": path, "flag": flag, "state": "modified"})
+                continue
+            if flag == "skip-worktree" and sparse is None:
+                sparse = self.run("config", "--bool", "core.sparseCheckout", check=False).stdout.strip() == b"true"
+            state = "sparse" if flag == "skip-worktree" and sparse else "missing"
+            hidden.append({"path": path, "flag": flag, "state": state})
+        return hidden
+
     def fingerprint(self, exclude_paths: set[str], exclude_globs: list[str]) -> str:
+        """Content fingerprint of the working tree: HEAD's blobs, replaced by the working-tree
+        content of every changed file and of every file flagged skip-worktree/assume-unchanged
+        (``git status`` would not report those)."""
         tree = self.head_tree()
-        changed = []
-        for _code, path in self.status_entries():
+        changed = {}
+        paths = [path for _code, path in self.status_entries()] + list(self.flagged_entries())
+        for path in paths:
             full = self.root / path
             if full.is_dir():
                 continue  # submodule or nested repository: keep the recorded commit
             if full.is_file():
-                changed.append(path)
+                changed[path] = True
             else:
                 tree.pop(path, None)
-        tree.update(self.hash_paths(changed))
+        tree.update(self.hash_paths(list(changed)))
         return _digest(tree, exclude_paths, exclude_globs)
 
     # --- diffs -----------------------------------------------------------------

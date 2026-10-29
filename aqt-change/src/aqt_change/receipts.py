@@ -3,6 +3,8 @@
 A receipt is *fresh* while the plan basis hash and the tree fingerprint it
 recorded still match the current state, and *passing* when the command exited 0
 and, where counts could be parsed, nothing failed and at least one test ran.
+When a trail is in use, a fresh passing receipt counts only if the trail log
+confirms it (``ledger.TrailCheck``); otherwise its item is ``unverified``.
 """
 
 from __future__ import annotations
@@ -27,7 +29,7 @@ from aqt_evidence import bytes_hash, new_record, subject
 from . import antigaming
 from .actors import current_actor
 from .errors import refused, usage
-from .ledger import Ledger
+from .ledger import TRUST_NOGO, TRUST_TEXT, Ledger, TrailCheck
 from .plan import Plan, basis_hash, command_text
 from .plans import read_plan, require_valid, status
 
@@ -246,6 +248,9 @@ def _run_one(ledger, argv, plan, rel, item_id, junit, timeout, echo) -> dict:
     if before != after:
         warnings.append({"code": "command_modified_worktree",
                          "detail": "the working tree changed while the command ran"})
+    hidden = [h for h in ledger.git.hidden_changes() if h["state"] != "sparse"] if ledger.git else []
+    if hidden:
+        warnings.append({"code": "hidden_worktree_change", "detail": hidden_text(hidden)})
     if plan is not None and ledger.git:
         base = (ledger.plan_state(plan.id) or {}).get("base_commit") or plan.base_commit
         warnings += antigaming.scan(ledger.git, base, set(excludes))
@@ -313,14 +318,37 @@ def attest(ledger: Ledger, plan_path: str, item: str, evidence: list[str], reaso
     return ledger.emit(record)
 
 
+def hidden_text(hidden: list[dict], limit: int = 20) -> str:
+    """``Git.hidden_changes()`` as one line."""
+    text = ", ".join(f"{h['path']} ({h['flag']}, {h['state']})" for h in hidden[:limit])
+    return text + (f" and {len(hidden) - limit} more" if len(hidden) > limit else "")
+
+
+def trust_note(entry: dict) -> str:
+    """Why the receipts of an ``unverified`` item do not count."""
+    return "; ".join(f"{u['receipt']} {TRUST_TEXT[u['trust']]}" for u in entry.get("untrusted", []))
+
+
+def trust_blocks(entry: dict) -> bool:
+    """True when the trail contradicts a receipt of the item (NO-GO rather than MANUAL)."""
+    return any(u["trust"] in TRUST_NOGO for u in entry.get("untrusted", []))
+
+
 # --- evaluation ------------------------------------------------------------------
 
 class Freshness:
-    """Caches the current fingerprints per exclude set during one evaluation."""
+    """Caches the current fingerprints per exclude set, and the trail check, during one evaluation."""
 
     def __init__(self, ledger: Ledger):
         self.ledger = ledger
         self.cache: dict[tuple, str] = {}
+        self._trail: TrailCheck | None = None
+
+    @property
+    def trail(self) -> TrailCheck:
+        if self._trail is None:
+            self._trail = self.ledger.trail_check()
+        return self._trail
 
     def fingerprint(self, excludes: list[str]) -> str:
         key = tuple(sorted(excludes))
@@ -335,20 +363,35 @@ class Freshness:
 
 
 def evaluate(ledger: Ledger, plan: Plan, freshness: Freshness | None = None) -> dict[str, dict]:
-    """Verification items -> {state: ok|missing|stale|failed, commands: [...], ...}."""
+    """Verification items -> {state: ok|unverified|stale|failed|missing, commands: [...], ...}.
+
+    ``unverified``: the latest receipt is fresh and passing, but a trail is in use and does not
+    confirm it; ``untrusted`` lists those receipts with their ``TrailCheck`` status."""
     freshness = freshness or Freshness(ledger)
     basis = basis_hash(plan)
     receipts = [r for r in ledger.records("change.receipt", plan.id)]
     result = {}
-    rank = {"ok": 0, "stale": 1, "failed": 2, "missing": 3}
+    rank = {"ok": 0, "unverified": 1, "stale": 2, "failed": 3, "missing": 4}
     for item in plan.verification:
         mine = [r for r in receipts if r["data"].get("item") == item.id]
         entry = {"id": item.id, "checked": item.checked, "manual": item.manual, "text": item.text,
-                 "commands": [], "state": "ok"}
+                 "commands": [], "state": "ok", "untrusted": []}
+
+        def trusted(latest: dict) -> bool:
+            trust = freshness.trail.status(latest)
+            if trust != "ok":
+                entry["untrusted"].append({"receipt": latest["id"], "trust": trust})
+            return trust == "ok"
+
         if item.manual:
             attests = [r for r in mine if r["data"].get("kind") == "manual"]
             latest = attests[-1] if attests else None
-            state = "missing" if not latest else ("ok" if freshness.is_fresh(latest, basis) else "stale")
+            if not latest:
+                state = "missing"
+            elif not freshness.is_fresh(latest, basis):
+                state = "stale"
+            else:
+                state = "ok" if trusted(latest) else "unverified"
             entry.update(state=state, receipt=latest["id"] if latest else None,
                          attested_by=latest["data"].get("attested_by") if latest else None)
         else:
@@ -363,7 +406,7 @@ def evaluate(ledger: Ledger, plan: Plan, freshness: Freshness | None = None) -> 
                 elif not latest["data"].get("passed"):
                     state = "failed"
                 else:
-                    state = "ok"
+                    state = "ok" if trusted(latest) else "unverified"
                 entry["commands"].append({"argv": argv, "command": command_text(argv), "state": state,
                                           "receipt": latest["id"] if latest else None,
                                           "counts": latest["data"].get("counts") if latest else None,

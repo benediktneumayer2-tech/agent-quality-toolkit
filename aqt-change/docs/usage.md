@@ -42,6 +42,21 @@ The front matter accepts a strict YAML subset: mappings, scalars, quoted strings
 
 A receipt is fresh while the plan basis hash and the tree fingerprint match the current state. The fingerprint covers all tracked files plus untracked files that are not ignored, and leaves out the plan file. This is strict on purpose: a file a later command leaves behind in the working tree (`coverage.xml`, `report.html`, scratch notes) makes earlier receipts stale. Keep outputs in paths covered by `.gitignore` (for example `build/`, `.pytest_cache/`), or add globs to `fingerprint_exclude` in `change.toml`. The `--junit` file of a run is excluded automatically. A run that changes the working tree itself records the warning `command_modified_worktree`.
 
+Files marked `git update-index --skip-worktree` or `--assume-unchanged` are fingerprinted by their working-tree content, because `git status` does not report them. If such a file differs from the index or is missing, a run records the warning `hidden_worktree_change`, the gate is NO-GO, `finish` refuses (`finish_hidden_changes`) and the hooks block: the commit would not contain what the command tested. Clear the flags (`git update-index --no-skip-worktree PATH`, `--no-assume-unchanged PATH`) and run the checks again. Files outside a sparse checkout are not an error but give MANUAL (`sparse_checkout`).
+
+## Evidence and the trail
+
+`gate`, `finish` and the hooks read receipts and reviews from the ledger's local copy of the records (`<git-dir>/aqt-change/records.jsonl`), which the agent's user can edit. When a trail is in use, they count a receipt or review only if the trail log confirms it:
+
+- A trail is in use when records go to an aqt-trail writer (`aqt_evidence.resolve_sink()` kind `unix`) or a trail log exists, unless `AQT_SINK` names a file. The log is each `AQT_EVIDENCE` entry named `trail.jsonl`, else `trail.jsonl` in the trail state directory; the sink file and the spool never count. In separate-user mode, set `AQT_EVIDENCE` to the trail log (for example `/var/lib/aqt-trail/trail.jsonl`).
+- A record is confirmed when the log holds a record with the same id and content hash (`record_content_hash`, which leaves out the writer's `time`, `chain`, `observed` and `sig`) that the writer received over its socket (`observed.via = socket`).
+- A fresh passing receipt that is not confirmed makes its item `unverified` (gate `receipt_unverified`): NO-GO when the log lacks the record or holds a different one with that id; MANUAL when the record reached the trail through the spool (no observed sender) or no log is readable. `finish` refuses unverified items and the hooks block on them. A failing or stale receipt counts from the local copy as before.
+- A PASS, CONCERNS or WAIVED review that is not confirmed does not count (gate `review_unverified`, NO-GO or MANUAL as above) and cannot replace an earlier FAIL. A FAIL review counts from the local copy.
+- The commit-msg hook rejects an `AQT-Receipts` entry that the log lacks or contradicts.
+- The gate JSON reports `trail: {checked, logs}`.
+
+When the writer was down, records wait in the spool and are not confirmed yet; run the commands again with the writer running (`gate --rerun` does this for the gate). Without a trail, the local copy counts as it is; see the limits in the README.
+
 ## Commands
 
 All commands accept `--root`, `--state` and `--json`. Exit codes: 0 ok, 1 check failed or refused, 2 usage or runtime error.
@@ -75,8 +90,8 @@ Run the same command again with the same `--key` to resume after a hook failure 
 
 ## Gate codes
 
-- **NO-GO:** `plan_unreconciled`, `receipt_missing`, `receipt_stale`, `receipt_failed`, `unapproved_change`, `review_fail` (the latest review is FAIL), `not_finished`; `anti_gaming_warning` when `warnings_block = true`.
-- **MANUAL_VERIFY_REQUIRED:** `waiver_present`, `manual_item_agent_attested`, `anti_gaming_warning`, `approval_stale`, `approval_invalid`, `approval_unsigned` / `approval_unverified` (with `require_signed_approval`), `review_concerns`, `review_waived`, `review_independence_below_policy`, `scope_undeclared`, `scope_unverifiable`.
+- **NO-GO:** `plan_unreconciled`, `receipt_missing`, `receipt_stale`, `receipt_failed`, `receipt_unverified` / `review_unverified` (the trail log lacks or contradicts the record), `hidden_worktree_change`, `unapproved_change`, `review_fail` (the latest counted review is FAIL), `not_finished`; `anti_gaming_warning` when `warnings_block = true`.
+- **MANUAL_VERIFY_REQUIRED:** `waiver_present`, `manual_item_agent_attested`, `receipt_unverified` / `review_unverified` (record came through the spool, or no trail log is readable), `sparse_checkout`, `anti_gaming_warning`, `approval_stale`, `approval_invalid`, `approval_unsigned` / `approval_unverified` (with `require_signed_approval`), `review_concerns`, `review_waived`, `review_independence_below_policy`, `scope_undeclared`, `scope_unverifiable`.
 
 ## Approval with aqt-signoff
 
@@ -84,7 +99,7 @@ The approval target is the latest `baseline`/`begin`/semantic `reconcile` record
 
 ## Claude Code hooks
 
-`aqt-change hooks print` prints a snippet for `TaskCompleted`, `Stop` and `SubagentStop`; merge it into `.claude/settings.json`. On `Stop`, the hook blocks while a plan is unreconciled or a *ticked* verification item has no fresh passing receipt. When `stop_hook_active` is true it reports the problem without blocking a second time, and `finish` still refuses. On `TaskCompleted`, it blocks when the task text names a verification ID (`[V01]`) that has no fresh passing receipt. The hook never runs tests.
+`aqt-change hooks print` prints a snippet for `TaskCompleted`, `Stop` and `SubagentStop`; merge it into `.claude/settings.json`. On `Stop`, the hook blocks while a plan is unreconciled, a *ticked* verification item has no fresh passing (and, with a trail, confirmed) receipt, or Git hides working-tree changes (`hidden_worktree_change`). When `stop_hook_active` is true it reports the problem without blocking a second time, and `finish` still refuses. On `TaskCompleted`, it blocks when the task text names a verification ID (`[V01]`) that has no fresh passing receipt. The hook never runs tests.
 
 ## Working with Project Tracker Next (PTN)
 

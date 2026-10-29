@@ -26,6 +26,7 @@ from .gitio import trailers
 from .ledger import Ledger, read_json, write_json
 from .plan import basis_hash, parse_plan
 from .plans import STATES_OK, external, now_iso, read_plan, require_valid, status, write_plan
+from .receipts import trust_note
 
 KEY_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
@@ -76,12 +77,18 @@ def _preflight(ledger, rel, plan, key, request, request_sha, sources) -> dict:
         if not waiver["reason"]:
             raise usage("waiver_reason_required", f"waiver for {waiver['item']} needs a reason")
     preview = evaluate_gate(ledger, rel, plan, sources=sources, waivers=request["waivers"], for_finish=True)
+    hidden = [r for r in preview["reasons"] if r["code"] == "hidden_worktree_change"]
+    if hidden:
+        raise refused("finish_hidden_changes", hidden[0]["detail"] + "; the commit would not contain what the "
+                      "receipts tested. Clear the flags and run the checks again", phase="preflight_failed")
     waived = {w["item"] for w in request["waivers"]}
     blocking = [{"item": i, "state": e["state"]} for i, e in preview["items"].items()
                 if e["state"] != "ok" and i not in waived]
     if blocking:
+        notes = {i: trust_note(e) for i, e in preview["items"].items() if e["state"] == "unverified"}
         raise refused("finish_evidence_missing", "verification items lack fresh passing receipts: "
-                      + ", ".join(f"{b['item']} ({b['state']})" for b in blocking),
+                      + ", ".join(f"{b['item']} ({b['state']}" + (f": {notes[b['item']]}" if notes.get(b["item"]) else "")
+                                  + ")" for b in blocking),
                       phase="preflight_failed", items=blocking)
     warnings = [{"code": "open_tasks", "detail": ", ".join(t.id for t in plan.tasks if not t.checked)}] \
         if any(not t.checked for t in plan.tasks) else []

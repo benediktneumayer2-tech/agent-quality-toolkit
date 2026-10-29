@@ -16,9 +16,9 @@ from pathlib import Path
 
 from .errors import ChangeError
 from .gitio import trailers
-from .ledger import Ledger
+from .ledger import TRUST_NOGO, TRUST_TEXT, Ledger
 from .plans import STATES_OK, active_plans, status
-from .receipts import Freshness, evaluate
+from .receipts import Freshness, evaluate, hidden_text, trust_note
 
 ID_REF = re.compile(r"\[([A-Za-z][A-Za-z0-9._-]{0,127})\]")
 SNIPPET = {
@@ -41,6 +41,12 @@ def _strings(value) -> list[str]:
     return []
 
 
+def _not_ok(plan_id: str, item_id: str, entry: dict, ticked: bool = False) -> str:
+    lead = f"{plan_id} {item_id} is ticked but has" if ticked else f"{plan_id} {item_id}:"
+    text = f"{lead} no fresh passing receipt ({entry['state']})"
+    return text + (f": {trust_note(entry)}" if entry["state"] == "unverified" else "")
+
+
 def claude_code(payload: dict, ledger: Ledger | None = None) -> tuple[int, str]:
     """Return (exit code, message). 2 blocks."""
     event = payload.get("hook_event_name", "")
@@ -58,16 +64,19 @@ def claude_code(payload: dict, ledger: Ledger | None = None) -> tuple[int, str]:
         referenced = set()
         for text in _strings({k: v for k, v in payload.items() if k not in ("transcript_path", "cwd")}):
             referenced |= set(ID_REF.findall(text))
+        checked = False
         for rel, plan in plans:
             wanted = [item for item in plan.verification if item.id in referenced]
             if not wanted:
                 continue
+            checked = True
             items = evaluate(ledger, plan, freshness)
             for item in wanted:
                 entry = items[item.id]
                 if entry["state"] != "ok":
-                    problems.append(f"{plan.id} {item.id}: no fresh passing receipt ({entry['state']})")
+                    problems.append(_not_ok(plan.id, item.id, entry))
     elif event in ("Stop", "SubagentStop"):
+        checked = True
         for rel, plan in plans:
             state = status(ledger, rel)["state"]
             if state not in STATES_OK:
@@ -75,10 +84,14 @@ def claude_code(payload: dict, ledger: Ledger | None = None) -> tuple[int, str]:
             items = evaluate(ledger, plan, freshness)
             for item in plan.verification:
                 if item.checked and items[item.id]["state"] != "ok":
-                    problems.append(f"{plan.id} {item.id} is ticked but has no fresh passing receipt "
-                                    f"({items[item.id]['state']})")
+                    problems.append(_not_ok(plan.id, item.id, items[item.id], ticked=True))
     else:
         return 0, ""
+    hidden = [h for h in ledger.git.hidden_changes() if h["state"] != "sparse"] if (checked and ledger.git) else []
+    if hidden:
+        problems.append("Git is told to ignore working-tree changes, so receipts do not test what would be "
+                        "committed (git update-index --no-skip-worktree / --no-assume-unchanged): "
+                        + hidden_text(hidden))
     if not problems:
         return 0, ""
     hint = "Run 'aqt-change run --plan <plan> --item <ID>' (or --all) to record receipts."
@@ -108,6 +121,7 @@ def commit_msg(ledger: Ledger, message_file: str, require: bool = False) -> tupl
     if len(known.get("AQT-Plan", [])) != 1:
         problems.append("exactly one AQT-Plan trailer is required")
     receipts = {r["id"]: r for r in ledger.records("change.receipt")}
+    trail = ledger.trail_check() if known.get("AQT-Receipts") else None
     for value in known.get("AQT-Receipts", []):
         for receipt_id in [p.strip() for p in value.split(",") if p.strip()]:
             receipt = receipts.get(receipt_id)
@@ -115,6 +129,8 @@ def commit_msg(ledger: Ledger, message_file: str, require: bool = False) -> tupl
                 problems.append(f"unknown receipt {receipt_id}")
             elif not receipt["data"].get("passed"):
                 problems.append(f"receipt {receipt_id} did not pass")
+            elif trail and (trust := trail.status(receipt)) in TRUST_NOGO:
+                problems.append(f"receipt {receipt_id} {TRUST_TEXT[trust]}")
     for value in known.get("AQT-Finish", []):
         if "/" not in value or (plan_ids and value.split("/")[0] not in plan_ids):
             problems.append(f"AQT-Finish {value!r} must be <plan-id>/<key> of the AQT-Plan")
