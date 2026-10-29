@@ -131,3 +131,54 @@ def test_hook_records_keep_data_source_and_conform(payload):
         assert data["end_reason"] == "logout"
     result = conformance(records, 1, check_payloads=True)
     assert result.level == 1 and result.payloads_checked, result.problems
+
+
+# Synthetic values only. Each pair: text, the secret that must not survive.
+SECRETS = [
+    ("export DB_PASSWORD=Xy7pq2Lm9", "Xy7pq2Lm9"),
+    ("PGPASSWORD=s3cr3tvalue psql -h db", "s3cr3tvalue"),
+    ("GITHUB_TOKEN=abcd1234efgh5678 gh pr list", "abcd1234efgh5678"),
+    ("AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY", "wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY"),
+    ("client_secret: s3cr3t-client-value", "s3cr3t-client-value"),
+    ("PASSWORD='two words'", "two words"),
+    ('{"password": "x1 y2", "user": "bob"}', "x1 y2"),
+    (json.dumps({"command": 'export GH_TOKEN="abc def" && make'}), "abc def"),
+    ("mysql --password hunter2pass", "hunter2pass"),
+    ("tool --api-key=k3y-value-123", "k3y-value-123"),
+    ("curl -H 'Authorization: Bearer abcdefghijklmnop' https://x", "abcdefghijklmnop"),
+    ("Authorization: Basic dXNlcjpwYXNzd29yZA==", "dXNlcjpwYXNzd29yZA=="),
+    ("x-api-key: abcdef123456", "abcdef123456"),
+    ("psql postgres://bob:pa55word@db.example/app", "pa55word"),
+    ("curl -u bob:pa55word https://x", "pa55word"),
+    ("-----BEGIN OPENSSH PRIVATE KEY----- b3BlbnNzaC1rZXktdjEAAAAABG5vbmU -----END OPENSSH PRIVATE KEY-----",
+     "b3BlbnNzaC1rZXktdjEAAAAABG5vbmU"),
+    ("-----BEGIN RSA PRIVATE KEY----- MIIEowIBAAKCAQEAexamplecutoff", "MIIEowIBAAKCAQEAexamplecutoff"),
+    ("hf_" + "a1B2c3D4e5" * 3, "a1B2c3D4e5" * 3),
+    ("glpat-" + "x9" * 10, "x9" * 10),
+    ("sk-ant-api03-" + "Z" * 20, "Z" * 20),
+    ("xoxe-1-" + "q" * 12, "q" * 12),
+    ("ghs_" + "R" * 30, "R" * 30),
+]
+
+
+@pytest.mark.parametrize("text,secret", SECRETS)
+def test_mask_common_secret_forms(text, secret):
+    masked = importers.mask(text)
+    assert secret not in masked and "[masked" in masked
+    assert secret not in (importers.excerpt(text, 160) or "")
+
+
+@pytest.mark.parametrize("text", ["git commit -m 'fix the password check'", "max_tokens=4096 tokens_before=12",
+                                  "run task-runner in the basic case", "the bearer of bad news"])
+def test_mask_leaves_ordinary_text(text):
+    assert importers.mask(text) == text
+
+
+def test_excerpt_masks_near_its_end_and_stays_fast_on_large_inputs():
+    import time
+    text = "x " * 70 + "DB_PASSWORD=" + "p" * 40
+    assert "ppp" not in importers.excerpt(text, 160)
+    started = time.monotonic()
+    importers.excerpt("a" * 3_000_000 + " password=x", 160)
+    importers.excerpt({"content": "ab_" * 500_000}, 160)
+    assert time.monotonic() - started < 2

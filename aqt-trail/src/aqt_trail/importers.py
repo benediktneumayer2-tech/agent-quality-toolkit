@@ -30,17 +30,56 @@ class ImportError_(ValueError):
     """The source file cannot be imported safely or is not what it claims to be."""
 
 
+_VALUE = r"(?:[^\s\\\"',;}]|\\(?!\"))+"  # up to a space, quote (also an escaped one), comma, semicolon or brace
+_KEYWORDS = (r"passw(?:or)?d|passphrase|secret|token(?!s)|api[_-]?key|access[_-]?key|private[_-]?key"
+             r"|credential")
 _SECRETS = [
-    re.compile(r"(sk-[A-Za-z0-9_-]{8,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}"
-               r"|xox[baprs]-[A-Za-z0-9-]{10,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,})"),
+    # PEM private keys: from BEGIN to END, or to the end of the excerpt when END is cut off
+    (re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY[A-Z ]*-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY[A-Z ]*-----|\Z)"),
+     "[masked private key]"),
+    # well-known token formats
+    (re.compile(r"(?<![A-Za-z0-9])(?:sk-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}"
+                r"|glpat-[A-Za-z0-9_-]{20,}|hf_[A-Za-z0-9]{20,}|(?:AKIA|ASIA)[0-9A-Z]{16}|xox[abeprs]-[A-Za-z0-9-]{10,}"
+                r"|AIza[0-9A-Za-z_-]{35}|ya29\.[0-9A-Za-z_-]{20,}|npm_[A-Za-z0-9]{36}|pypi-[A-Za-z0-9_-]{50,}"
+                r"|[rs]k_(?:live|test)_[A-Za-z0-9]{16,}"
+                r"|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,})"), "[masked]"),
+    # Authorization headers and bearer tokens
+    (re.compile(r"(?i)(authorization[\"']?[ \t]*+[:=][ \t]*+[\"']?(?:(?:bearer|basic|token|digest|negotiate)[ \t]++)?)"
+                + _VALUE), r"\1[masked]"),
+    (re.compile(r"(?i)(?<![A-Za-z0-9_-])(bearer[ \t]++)[A-Za-z0-9._~+/=-]{8,}"), r"\1[masked]"),
+    # passwords in URLs (scheme://user:password@host) and in curl -u user:password
+    (re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://[^\s:/@\"']+:)[^\s@/\"']+(@)"), r"\1[masked]\2"),
+    (re.compile(r"(?<![A-Za-z0-9_-])((?:-u|--user)[ \t]++[^\s:\"']+:)[^\s\"']+"), r"\1[masked]"),
 ]
-_ASSIGNMENT = re.compile(r"(?i)\b(password|passwd|secret|token|api[_-]?key)(\"?\s*[:=]\s*\"?)[^\s\",}]+")
+# NAME=value, NAME: value, "name": "value" and --name value, where NAME contains a keyword
+# (DB_PASSWORD, GITHUB_TOKEN, AWS_SECRET_ACCESS_KEY, x-api-key, --password, ...); quoted values also
+# with the escaped quotes of a JSON-encoded tool input (\"...\").
+_NAME = rf"(?<![A-Za-z0-9_.-])([A-Za-z0-9_.-]*?(?:{_KEYWORDS})[A-Za-z0-9_.-]*+)"
+_QUOTED = re.compile(rf"(?i){_NAME}([\"']?[ \t]*+[:=][ \t]*+)(\\\"[^\"]*\"|\"[^\"]*\"|'[^']*')")
+_ASSIGNMENT = re.compile(rf"(?i){_NAME}([\"']?[ \t]*+[:=][ \t]*+[\"']?)({_VALUE})")
+_FLAG = re.compile(rf"(?i)(?<![A-Za-z0-9_-])(--?[A-Za-z0-9_-]*?(?:{_KEYWORDS})[A-Za-z0-9_-]*+)([ \t]++)([^\s\"'-][^\s\"']*)")
+_MASK_WINDOW = 4096  # characters masked beyond the excerpt limit, so a secret at its end is still masked
+
+
+def _masked_value(match: re.Match) -> str:
+    name, separator, value = match.groups()
+    bare = value.strip("\\\"'")
+    if not bare or bare.startswith("[masked"):
+        return match.group(0)
+    quote = '\\"' if value.startswith('\\"') else value[:1] if value[:1] in ("'", '"') else ""
+    if quote and len(value) > len(quote):
+        return f"{name}{separator}{quote}[masked]{quote}"
+    return f"{name}{separator}[masked]"
 
 
 def mask(text: str) -> str:
-    for pattern in _SECRETS:
-        text = pattern.sub("[masked]", text)
-    return _ASSIGNMENT.sub(r"\1\2[masked]", text)
+    """Mask obvious secrets in an excerpt. A safety net, not a guarantee: set ``excerpt_chars = 0``
+    to keep no excerpts at all."""
+    for pattern, replacement in _SECRETS:
+        text = pattern.sub(replacement, text)
+    text = _QUOTED.sub(_masked_value, text)
+    text = _ASSIGNMENT.sub(_masked_value, text)
+    return _FLAG.sub(_masked_value, text)
 
 
 def _json_text(value) -> str:
@@ -50,8 +89,9 @@ def _json_text(value) -> str:
 def excerpt(value, limit: int) -> str | None:
     if limit <= 0 or value is None:
         return None
-    text = " ".join(mask(_json_text(value)).split())
-    return text[:limit] if text else None
+    text = " ".join(_json_text(value).split())
+    text = mask(text[:limit + _MASK_WINDOW])[:limit]
+    return text or None
 
 
 def value_hash(value) -> str:
