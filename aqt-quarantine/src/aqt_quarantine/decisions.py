@@ -34,7 +34,8 @@ from aqt_evidence import (HumanCheckError, actor, canonical_json, content_hash, 
 
 from . import records
 from .config import Config
-from .store import Case, Store, StoreError, normalise_case_id
+from .engine import text_hash
+from .store import Case, Store, StoreError, normalise_case_id, parse_time
 
 STATEMENT_VERSION = "0.1"
 _DOMAIN = re.compile(r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
@@ -120,34 +121,90 @@ def sign_statement(signer, *, person: dict, meaning: str, reason: str, decision:
             "value": signer.sign(canonical_json(statement))}
 
 
+# What each decision type may do, and the fields Store.fold applies. A record's unsigned copies of these
+# fields (top-level ``data``, envelope ``action`` and ``subject``) must equal the signed ``data.decision``.
+ACTIONS = {"quarantine.released": ("release",), "quarantine.threat.declared": ("declare",),
+           "quarantine.source.trusted": ("trust", "revoke")}
+APPLIED = {"quarantine.released": ("case_id", "content_sha256", "overrule_threat", "kind"),
+           "quarantine.threat.declared": ("case_id", "content_sha256"),
+           "quarantine.source.trusted": ("domain", "subdomains", "expires")}
+
+
+def _bound(record: dict, data: dict, statement: dict) -> bool:
+    """True when everything Store.fold applies is exactly what the signed decision says."""
+    decision, kind = data.get("decision"), record.get("type")
+    if not isinstance(decision, dict) or kind not in ACTIONS:
+        return False
+    if decision.get("action") not in ACTIONS[kind] or record.get("action") != decision.get("action"):
+        return False
+    if kind == "quarantine.source.trusted":
+        ref, envelope_sha256 = f"domain:{decision.get('domain')}", content_hash(decision)
+    else:
+        ref, envelope_sha256 = f"case:{decision.get('case_id')}", decision.get("content_sha256")
+    signed, envelope = statement.get("subject") or {}, record.get("subject") or {}
+    if signed.get("kind") != "quarantine-decision" or signed.get("ref") != ref:
+        return False
+    if envelope.get("ref") != ref or envelope.get("sha256") != envelope_sha256:
+        return False
+    return all(data[key] == decision.get(key) for key in {*decision, *APPLIED[kind]} - {"action"} if key in data)
+
+
 def verify_decision(record: dict, registry: dict[str, dict], responsible: list[str] | None = None) -> str:
-    """valid | unsigned | mismatch | unknown-signer | revoked | not-responsible | invalid."""
+    """valid | unsigned | mismatch | unknown-signer | revoked | not-responsible | invalid.
+
+    ``mismatch``: the statement does not belong to this record, or a field the record applies (case id,
+    content hash, overrule, domain, subdomains, expiry, action, subject) differs from the signed decision.
+    ``unknown-signer``: the key is not in the registry, or signed before it was enrolled (as aqt-signoff).
+    ``revoked``: signed at or after the key's revocation."""
     data = record.get("data") or {}
     signature = data.get("signature")
     if not signature:
         return "unsigned"
-    statement = signature.get("statement") or {}
+    if not isinstance(signature, dict) or not isinstance(signature.get("statement"), dict):
+        return "invalid"
+    statement = signature["statement"]
     who = (record.get("actor") or {}).get("id")
     if (statement.get("record_type") != record.get("type") or statement.get("meaning") != record.get("meaning")
             or statement.get("reason") != record.get("reason") or (statement.get("signer") or {}).get("id") != who
             or statement.get("key") != signature.get("key") or "decision" not in data
-            or (statement.get("subject") or {}).get("sha256") != content_hash(data["decision"])):
+            or (statement.get("subject") or {}).get("sha256") != content_hash(data["decision"])
+            or not _bound(record, data, statement)):
         return "mismatch"
     if responsible and who not in responsible:
         return "not-responsible"
+    signed_at = parse_time(statement.get("signed_at"))
+    if signed_at is None:
+        return "invalid"
     key = _registered_key(registry, who, signature.get("key"))
     if key is None:
         return "unknown-signer"
-    if key.get("revoked_at") and str(key["revoked_at"]) <= str(statement.get("signed_at")):
+    enrolled_at = parse_time(key.get("enrolled_at"))
+    if enrolled_at is None or signed_at < enrolled_at:
+        return "unknown-signer"
+    revoked_at = parse_time(key.get("revoked_at")) if key.get("revoked_at") else None
+    if key.get("revoked_at") and (revoked_at is None or revoked_at <= signed_at):
         return "revoked"
     try:
         public = serialization.load_pem_public_key(key["public_pem"].encode("ascii"))
         if not isinstance(public, Ed25519PublicKey):
             return "invalid"
         public.verify(base64.b64decode(signature.get("value", ""), validate=True), canonical_json(statement))
-    except (InvalidSignature, ValueError, TypeError, KeyError):
+    except (InvalidSignature, ValueError, TypeError, KeyError, AttributeError):
         return "invalid"
     return "valid"
+
+
+@dataclass
+class CaseContent:
+    """What a reviewer may be shown for a case, and what a release of it binds to.
+
+    ``content_sha256`` is the case's recorded hash, which a release or threat declaration signs.
+    ``text`` is the stored original only when it hashes to exactly that value; otherwise it is None and
+    ``error`` says why (missing, unsafe file, or changed after the scan)."""
+    case_id: str
+    content_sha256: str | None
+    text: str | None
+    error: str | None = None
 
 
 # -- the decision flow -----------------------------------------------------------------------------------
@@ -215,13 +272,34 @@ class Decider:
 
     def _case(self, case_id: str) -> Case:
         cases, _ = self.fold()
-        case = cases.get(normalise_case_id(case_id))
+        try:
+            case = cases.get(normalise_case_id(case_id))
+        except StoreError as error:
+            raise DecisionError(str(error), 2) from error
         if case is None:
             raise DecisionError(f"no case {case_id}")
         return case
 
+    def case_content(self, case_id: str) -> CaseContent:
+        """The content to show for ``case_id``: the stored original if, and only if, it hashes to the
+        recorded ``content_sha256`` that a release of the case signs. Show ``text`` (or nothing) and pass
+        ``content_sha256`` back as ``expected_sha256`` when deciding."""
+        return self._content(self._case(case_id))
+
+    def _content(self, case: Case) -> CaseContent:
+        expected = case.data.get("content_sha256")
+        try:
+            text = self.store.load_original(case.case_id)
+        except (StoreError, OSError) as error:
+            return CaseContent(case.case_id, expected, None, str(error))
+        if not expected or text_hash(text) != expected:
+            return CaseContent(case.case_id, expected, None,
+                               f"the stored original of case {case.case_id} does not match its recorded content hash "
+                               f"{expected} (it changed after the scan)")
+        return CaseContent(case.case_id, expected, text)
+
     def _decide_case(self, kind: str, action: str, meaning: str, case_id: str, reason: str, signer_id: str | None,
-                     extra_data: dict) -> Outcome:
+                     extra_data: dict, expected_sha256: str | None = None) -> Outcome:
         reason = _reason(reason)
         who = self.person(signer_id)
         try:
@@ -233,11 +311,17 @@ class Decider:
         if blocked:
             return blocked
         case = self._case(case_id)
+        if expected_sha256 is not None and case.data.get("content_sha256") != expected_sha256:
+            raise DecisionError(f"the content of case {case_id} is not the one shown; nothing was signed. "
+                                "Reload the case.")
         if kind == "quarantine.released":
             if case.state == "released":
                 raise DecisionError(f"case {case_id} is already released")
             if case.state == "threat" and not extra_data.get("overrule_threat"):
                 raise DecisionError(f"case {case_id} was declared a threat; add --overrule-threat to release it anyway")
+            content = self._content(case)        # you release what can be shown: the original as recorded
+            if content.text is None:
+                raise DecisionError(f"{content.error}; nothing was signed")
             extra_data = {"kind": "deliver" if case.band == "hold" else "confirm_harmless", **extra_data}
         elif case.state == "threat":
             raise DecisionError(f"case {case_id} is already declared a threat")
@@ -262,12 +346,18 @@ class Decider:
         return Outcome(True, record, f"{attempted}: case {case_id} recorded as {record['id']}")
 
     def release(self, case_id: str, reason: str, *, signer_id: str | None = None,
-                overrule_threat: bool = False) -> Outcome:
+                overrule_threat: bool = False, expected_sha256: str | None = None) -> Outcome:
+        """Sign a release bound to the case id and its recorded content hash. Refused (DecisionError, nothing
+        signed) when ``expected_sha256`` (the hash shown, from ``case_content``) differs from the case, or
+        when the stored original no longer hashes to the recorded content hash."""
         extra = {"overrule_threat": True} if overrule_threat else {}
-        return self._decide_case("quarantine.released", "release", "released", case_id, reason, signer_id, extra)
+        return self._decide_case("quarantine.released", "release", "released", case_id, reason, signer_id, extra,
+                                 expected_sha256)
 
-    def declare_threat(self, case_id: str, reason: str, *, signer_id: str | None = None) -> Outcome:
-        return self._decide_case("quarantine.threat.declared", "declare", "rejected", case_id, reason, signer_id, {})
+    def declare_threat(self, case_id: str, reason: str, *, signer_id: str | None = None,
+                       expected_sha256: str | None = None) -> Outcome:
+        return self._decide_case("quarantine.threat.declared", "declare", "rejected", case_id, reason, signer_id, {},
+                                 expected_sha256)
 
     def trust_source(self, domain: str, reason: str, *, expires: str | None, signer_id: str | None = None,
                      subdomains: bool = False, revoke: bool = False, today: date | None = None) -> Outcome:

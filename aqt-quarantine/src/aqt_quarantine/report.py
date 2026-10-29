@@ -94,7 +94,7 @@ def summary_lines(case: Case) -> list[str]:
     return lines
 
 
-def terminal(case: Case, text: str | None, *, color: bool, full: bool = False) -> str:
+def terminal(case: Case, text: str | None, *, color: bool, full: bool = False, content_error: str | None = None) -> str:
     lines = summary_lines(case)
     evidence = case.data.get("evidence", [])
     lines.append("evidence:" if evidence else "evidence: none recorded")
@@ -102,7 +102,7 @@ def terminal(case: Case, text: str | None, *, color: bool, full: bool = False) -
         lines.append(f"  [{item['start']}:{item['end']}] {item['label']} ({item['detector']}): {item['reason']}: "
                      f"{visible(item.get('excerpt', ''))!r}")
     if text is None:
-        lines.append("content: not available")
+        lines.append(f"content: not available{' - ' + visible(content_error) if content_error else ''}")
         return "\n".join(lines) + "\n"
     spans = _merged(evidence, len(text))
     on, off = ("\x1b[7m", "\x1b[0m") if color else ("[[", "]]")
@@ -122,7 +122,7 @@ def terminal(case: Case, text: str | None, *, color: bool, full: bool = False) -
     return "\n".join(lines) + "\n"
 
 
-def html_page(case: Case, text: str | None) -> str:
+def html_page(case: Case, text: str | None, *, content_error: str | None = None) -> str:
     evidence = case.data.get("evidence", [])
     body = ""
     if text is not None:
@@ -157,6 +157,6 @@ table {{ border-collapse:collapse; width:100%; font-size:13px; }} td {{ border-t
 <p class="warn">The content below is untrusted third-party data. Highlighted passages are detector evidence.</p>
 <pre>{summary}</pre>
 <h2>Evidence</h2><table>{rows or '<tr><td>none recorded</td></tr>'}</table>
-<h2>Content</h2><pre>{body or 'not available'}</pre>
+<h2>Content</h2><pre>{body or html.escape('not available' + (' - ' + visible(content_error) if content_error else ''))}</pre>
 </body></html>
 """

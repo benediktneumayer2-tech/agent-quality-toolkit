@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Security fix: a signed decision acts only through its signed `data.decision`. A record whose unsigned fields
+  (case id, content hash, overrule, domain, subdomains, expiry, action, subject) differ from it is `mismatch`
+  and has no effect, so a signature can no longer be copied onto another case or domain, and a signed revocation
+  can no longer be turned into a trust.
+- Security fix: a signed statement counts once (later copies are reported as replays), and decisions take effect
+  in signed order (`signed_at`), so replaying an old trust or release does not undo a later revocation or threat.
+- Security fix: a signature made before its key was enrolled is `unknown-signer`, as in aqt-signoff; enrolment and
+  revocation times are compared as timestamps.
+- Security fix: `release` refuses to sign when the stored original no longer hashes to the case's content hash,
+  and `cases show` does not display such a file. New API for front ends: `Decider.case_content(case_id)` returns
+  `CaseContent(case_id, content_sha256, text, error)`, with `text` only when it hashes to `content_sha256`;
+  `release()` and `declare_threat()` take `expected_sha256` and refuse when the case is not the one shown.
+- Source decisions that are not honoured are kept in `Store.ignored_sources` and reported by `sources list`;
+  a trust without a valid expiry date is not honoured.
 - Fix: `init --id` no longer crashes when the key file exists (for example after `aqt-signoff init`). It reuses
   that key: an enrolled key is reported, an unenrolled one is enrolled after its passphrase unlocks it.
 - Fix: the shipped thresholds files validate against aqt-spec's `thresholds.schema.json` (optional fields are left

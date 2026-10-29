@@ -228,12 +228,10 @@ def cmd_cases_show(args) -> int:
     if case is None:
         print(f"aqt-quarantine: no case {case_id}", file=sys.stderr)
         return 1
-    try:
-        text = store.load_original(case_id)
-    except StoreError:
-        text = None
+    content = decider.case_content(case_id)      # only the original a release of this case would bind to
+    text = content.text
     if args.html:
-        Path(args.html).write_text(html_page(case, text), encoding="utf-8")
+        Path(args.html).write_text(html_page(case, text, content_error=content.error), encoding="utf-8")
         os.chmod(args.html, 0o600)
         print(f"wrote {args.html}")
         return 0
@@ -243,7 +241,7 @@ def cmd_cases_show(args) -> int:
                                   for d in case.decisions], "refused": case.refused, "delivered": case.delivered})
         return 0
     color = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
-    sys.stdout.write(terminal(case, text, color=color, full=args.full))
+    sys.stdout.write(terminal(case, text, color=color, full=args.full, content_error=content.error))
     return 0
 
 
@@ -277,6 +275,11 @@ def cmd_cases_export(args) -> int:
 def cmd_sources_list(args) -> int:
     _, _, _, decider = _setup(args)
     _, sources = decider.fold()
+    for ignored in decider.store.ignored_sources:
+        record = ignored.record
+        print(f"aqt-quarantine: source decision {record.get('id')} ignored ({ignored.status}"
+              f"{'; ' + ignored.note if ignored.note else ''}): {record.get('action')} "
+              f"{(record.get('data') or {}).get('domain')} by {(record.get('actor') or {}).get('id')}", file=sys.stderr)
     rows = [{"domain": s.domain, "subdomains": s.subdomains, "expires": s.expires, "active": s.active(),
              "by": s.record.get("actor", {}).get("id"), "record": s.record["id"]} for s in sources]
     lines = [f"{r['domain']}{' (+subdomains)' if r['subdomains'] else ''}  until {r['expires']}  "

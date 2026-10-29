@@ -18,11 +18,11 @@ import secrets
 import stat
 import sys
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Callable, Iterator
 
-from aqt_evidence import JsonlSink, SinkError, canonical_json, open_sink
+from aqt_evidence import JsonlSink, SinkError, canonical_json, content_hash, open_sink
 
 CASE_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 CASE_RE = re.compile(r"^Q[0-9A-HJKMNP-TV-Z]{6}$")
@@ -42,7 +42,7 @@ def normalise_case_id(value: str) -> str:
 @dataclass
 class Decision:
     record: dict
-    status: str          # valid | unsigned | invalid | unknown-signer | revoked | mismatch
+    status: str          # valid | unsigned | invalid | unknown-signer | revoked | mismatch | not-responsible
     honoured: bool
     note: str = ""
 
@@ -106,6 +106,7 @@ class Store:
         self.outbox = self.root / "outbox.jsonl"
         self.cases_dir = self.root / "cases"
         self.sink_spec = sink
+        self.ignored_sources: list[Decision] = []      # set by fold()
 
     # -- writing ---------------------------------------------------------------------------------
     def ensure(self) -> None:
@@ -229,46 +230,112 @@ class Store:
                     yield record
 
     def fold(self, verify: Verifier, *, require_signed: bool) -> tuple[dict[str, Case], list[TrustedSource]]:
+        """Cases and trusted sources from the journal.
+
+        A decision acts only through its signed ``data.decision`` (case id, content hash, overrule, domain,
+        subdomains, expiry, action): ``verify`` reports a record whose unsigned fields differ as
+        ``mismatch``. Decisions take effect in the order they were signed (``statement.signed_at``; unsigned
+        ones by record time), not in journal order, and a signed statement counts once: a copy of it, byte
+        for byte or under a new record id, is a replay and has no effect. Source decisions that are not
+        honoured are kept in ``self.ignored_sources``; case decisions are listed in ``Case.decisions``."""
         cases: dict[str, Case] = {}
         sources: dict[str, TrustedSource] = {}
+        pending: list[tuple[datetime, int, dict]] = []
+        self.ignored_sources = []
 
         def honour(status: str) -> bool:
             return status == "valid" or (status == "unsigned" and not require_signed)
 
-        for record in self.records():
+        for index, record in enumerate(self.records()):
             kind, data = record.get("type"), record.get("data") or {}
             case = cases.get(data.get("case_id", ""))
             if kind == "quarantine.held":
                 cases[data["case_id"]] = Case(data["case_id"], record, "hold", "held")
             elif kind == "quarantine.passed" and data.get("case_id"):
                 cases[data["case_id"]] = Case(data["case_id"], record, "warn", "warned")
-            elif kind == "quarantine.released" and case:
-                status = verify(record)
-                decision = Decision(record, status, honour(status))
-                if decision.honoured and case.state == "threat" and not data.get("overrule_threat"):
-                    decision.honoured, decision.note = False, "case was declared a threat; release needs --overrule-threat"
-                if decision.honoured and data.get("content_sha256") != case.data.get("content_sha256"):
-                    decision.honoured, decision.note = False, "released content hash does not match the case"
-                if decision.honoured:
-                    case.state, case.released_by = "released", record
-                case.decisions.append(decision)
-            elif kind == "quarantine.threat.declared" and case:
-                status = verify(record)
-                decision = Decision(record, status, honour(status))
-                if decision.honoured:
-                    case.state, case.threat_by = "threat", record
-                case.decisions.append(decision)
+            elif kind in DECISION_TYPES:
+                pending.append((_signed_time(record), index, record))
             elif kind == "quarantine.delivered" and case:
                 case.delivered.append(record)
             elif kind == "quarantine.refused" and case:
                 case.refused.append(record)
-            elif kind == "quarantine.source.trusted":
-                if not honour(verify(record)):
-                    continue
-                domain = str(data.get("domain", "")).lower()
-                if record.get("action") == "revoke":
-                    sources.pop(domain, None)
+
+        first_seen: dict[str, str] = {}               # signed statement hash -> first record carrying it
+        for _, _, record in sorted(pending, key=lambda item: (item[0], item[1])):
+            kind, data = record.get("type"), record.get("data") or {}
+            terms = data["decision"] if isinstance(data.get("decision"), dict) else data
+            try:
+                status = verify(record)
+            except (TypeError, ValueError, AttributeError, KeyError, RecursionError):   # malformed: never applied
+                status = "invalid"
+            decision = Decision(record, status, honour(status))
+            signature = data.get("signature")
+            if status == "valid" and isinstance(signature, dict) and isinstance(signature.get("statement"), dict):
+                key = content_hash(signature["statement"])
+                if key in first_seen:
+                    decision.honoured, decision.note = False, f"replay of the signed decision in {first_seen[key]}"
                 else:
-                    sources[domain] = TrustedSource(domain, bool(data.get("subdomains")), str(data.get("expires")),
-                                                    record)
+                    first_seen[key] = record.get("id")
+            if kind == "quarantine.source.trusted":
+                self._fold_source(decision, terms, sources)
+                continue
+            case = cases.get(str(data.get("case_id", terms.get("case_id", ""))))
+            if case is None:
+                continue
+            if decision.honoured and terms.get("case_id") != case.case_id:
+                decision.honoured, decision.note = False, f"the signed decision is for case {terms.get('case_id')}"
+            if kind == "quarantine.released":
+                if decision.honoured and case.state == "threat" and not terms.get("overrule_threat"):
+                    decision.honoured, decision.note = False, "case was declared a threat; release needs --overrule-threat"
+                if decision.honoured and terms.get("content_sha256") != case.data.get("content_sha256"):
+                    decision.honoured, decision.note = False, "released content hash does not match the case"
+                if decision.honoured:
+                    case.state, case.released_by = "released", record
+            elif decision.honoured:
+                case.state, case.threat_by = "threat", record
+            case.decisions.append(decision)
         return cases, list(sources.values())
+
+    def _fold_source(self, decision: Decision, terms: dict, sources: dict[str, TrustedSource]) -> None:
+        record = decision.record
+        domain = str(terms.get("domain", "")).lower()
+        action = terms.get("action", record.get("action"))
+        if decision.honoured and action == "trust" and not _is_date(terms.get("expires")):
+            decision.honoured, decision.note = False, "trust without a valid expiry date"
+        if not decision.honoured:
+            self.ignored_sources.append(decision)
+        elif action == "revoke":
+            sources.pop(domain, None)
+        elif action == "trust":
+            sources[domain] = TrustedSource(domain, bool(terms.get("subdomains")), str(terms["expires"]), record)
+
+
+DECISION_TYPES = ("quarantine.released", "quarantine.threat.declared", "quarantine.source.trusted")
+_EARLIEST = datetime.min.replace(tzinfo=UTC)
+
+
+def parse_time(value) -> datetime | None:
+    """An RFC 3339 timestamp (``Z`` or an offset) as an aware datetime, or None."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+
+
+def _signed_time(record: dict) -> datetime:
+    """When a decision was made: its signed ``signed_at``, else (unsigned) the record time."""
+    signature = (record.get("data") or {}).get("signature")
+    statement = signature.get("statement") if isinstance(signature, dict) else None
+    when = parse_time(statement.get("signed_at")) if isinstance(statement, dict) else None
+    return when or parse_time(record.get("time")) or _EARLIEST
+
+
+def _is_date(value) -> bool:
+    try:
+        date.fromisoformat(value)
+    except (TypeError, ValueError):
+        return False
+    return True
