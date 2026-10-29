@@ -12,6 +12,24 @@
 - Security: files marked `skip-worktree` or `assume-unchanged` are fingerprinted by their working-tree
   content; a hidden change gives NO-GO (`hidden_worktree_change`), a run warning, a `finish` refusal
   (`finish_hidden_changes`) and a blocking hook. Files outside a sparse checkout give MANUAL (`sparse_checkout`).
+- Security: the trail check no longer depends on the caller's environment alone (an agent can point its
+  XDG directories elsewhere or unset `AQT_SINK` / `AQT_EVIDENCE`). New committed project setting
+  `require_trail = true` in `.aqt/change.toml`: when no trail log is found, the gate is NO-GO
+  (`trail_required`; receipts and reviews `receipt_unverified` / `review_unverified`), `finish` refuses
+  (`finish_trail_required`), the Claude Code hooks block and the commit-msg hook rejects `AQT-Receipts`. The
+  setting counts when the working-tree copy, HEAD's copy or the copy at the base commit of a plan in progress
+  sets it. Without the setting, a local copy that holds a record which came back from a writer (it has a
+  `chain`) keeps the check on: no trail found gives MANUAL and `finish` refuses. A change to
+  `.aqt/change.toml` gives MANUAL (`project_settings_changed`) and is listed by `reconcile-diff`
+  (`settings_changed`). The gate JSON reports `trail.required`.
+- Security: the tree fingerprint and the hidden-change check hash the content of every tracked file instead
+  of trusting `git status`. A tracked file whose content differs from the index while `git status` (with the
+  repository's settings) does not show it, through a `core.fsmonitor` hook, a relaxed `core.checkStat` /
+  `core.trustctime` or edited index data, gives `hidden_worktree_change` with flag `stat-cache`. Git calls run
+  with `core.fsmonitor`, `core.untrackedCache` and relaxed stat checks switched off. Fingerprints stay the same
+  for trees Git sees correctly, so receipts stay fresh across the upgrade; a changed symbolic link now counts
+  by its link text, as Git stores it. Cost: one `git hash-object` pass over all tracked files per run, gate or
+  hook (about 0.5 s for 10,000 files).
 - Docs: `docs/usage.md` named `plan status --json` as a place that shows the approval record; `gate`
   (`approval.record`) and the trace report do.
 

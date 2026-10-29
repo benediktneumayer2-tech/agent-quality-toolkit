@@ -7,7 +7,10 @@ Location: ``AQT_CHANGE_STATE``; else ``<git-dir>/aqt-change/``; else
 phases) and ``records.jsonl`` (a mirror of every record this tool wrote).
 
 The mirror is writable by the agent's user. When records go to an aqt-trail writer,
-``TrailCheck`` decides which receipts and reviews of the mirror the trail log confirms.
+``TrailCheck`` decides which receipts and reviews of the mirror the trail log confirms. Where the
+trail is comes from the caller's environment, which the agent sets; so the check also stays on when
+the project requires a trail (``require_trail`` in ``.aqt/change.toml``) or when earlier records of
+the mirror came back from a writer.
 """
 
 from __future__ import annotations
@@ -23,22 +26,27 @@ from typing import Iterable, Iterator
 from aqt_evidence import (SinkError, canonical_json, evidence_sources, open_sink, record_content_hash, resolve_sink,
                           spool_file, state_dir)
 
-from .config import Config, load_config
+from .config import PROJECT_FILE, Config, load_config, parse_project_settings
 from .errors import ChangeError, usage
-from .gitio import Git, walk_fingerprint
+from .gitio import COMMIT_RE, Git, walk_fingerprint
 
 
 ID_TOKEN = re.compile(rb"rec_[0-9a-f]{28}")
 CHECKED_TYPES = ("change.receipt", "change.review")
-TRUST_NOGO = ("absent", "mismatch")       # the trail contradicts the mirror: NO-GO
+TRUST_NOGO = ("absent", "mismatch", "required")   # the trail contradicts the mirror, or is required: NO-GO
+TRAIL_REQUIRED = (f"the project requires an aqt-trail log (require_trail in {PROJECT_FILE}) and none is found in "
+                  "this environment: run the command where the trail is (the owner's shell or CI), start the "
+                  "writer (aqt-trail serve), or set AQT_EVIDENCE to its trail.jsonl")
 TRUST_TEXT = {
     "absent": "not in the aqt-trail log (written only to the local mirror or a sink file, or spooled while the "
               "writer was down: run the commands again with the writer running)",
     "mismatch": "differs from the record with the same id in the aqt-trail log",
     "unattributed": "reached the aqt-trail log through the spool, without an observed sender; run the commands "
                     "again with the writer running",
-    "unreadable": "cannot be checked: records go to an aqt-trail writer but no trail log is readable "
-                  "(set AQT_EVIDENCE to its trail.jsonl)",
+    "unreadable": "cannot be checked: records go to an aqt-trail writer, or earlier records of this project "
+                  "came back from one, but no trail log is readable here (run the command where the trail is, "
+                  "or set AQT_EVIDENCE to its trail.jsonl)",
+    "required": "cannot be checked: " + TRAIL_REQUIRED,
 }
 
 
@@ -70,11 +78,20 @@ class TrailCheck:
 
     ``status(record)``: ``ok`` (no trail in use, or the log holds the same record, by id and content
     hash, received from a socket client), ``absent``, ``mismatch``, ``unattributed`` (only a copy that
-    came through the spool) or ``unreadable`` (a trail is in use, but no log can be read).
+    came through the spool), ``unreadable`` (a trail is in use, but no log can be read) or ``required``
+    (the same while the project requires a trail: NO-GO).
+
+    A trail is in use when ``trail_logs()`` says so, when ``required`` is true, or when a record of
+    ``records`` came back from a writer (it carries a ``chain``): the environment alone cannot switch
+    the check off.
     """
 
-    def __init__(self, records: Iterable[dict], environ: dict | None = None):
-        self.in_use, self.logs = trail_logs(environ)
+    def __init__(self, records: Iterable[dict], environ: dict | None = None, required: bool = False):
+        records = list(records)
+        found_in_use, self.logs = trail_logs(environ)
+        self.required = bool(required)
+        self.history = any(isinstance(r.get("chain"), dict) for r in records if isinstance(r, dict))
+        self.in_use = found_in_use or self.required or self.history
         self.readable: list[Path] = []
         self.found: dict[str, list[tuple[str, str | None]]] = {}
         if self.in_use:
@@ -105,7 +122,7 @@ class TrailCheck:
         if not self.in_use:
             return "ok"
         if not self.readable:
-            return "unreadable"
+            return "required" if self.required else "unreadable"
         copies = self.found.get(record.get("id"))
         if not copies:
             return "absent"
@@ -118,8 +135,13 @@ class TrailCheck:
             return "mismatch"
         return "ok" if "socket" in routes else "unattributed"
 
+    @property
+    def missing(self) -> bool:
+        """The project requires a trail, but no trail log is readable here."""
+        return self.required and not self.readable
+
     def summary(self) -> dict:
-        return {"checked": self.in_use, "logs": [str(path) for path in self.readable]}
+        return {"checked": self.in_use, "logs": [str(path) for path in self.readable], "required": self.required}
 
 
 def atomic_write(path: Path, data: bytes, mode: int = 0o600) -> None:
@@ -161,6 +183,7 @@ def read_json(path: Path) -> dict | None:
 class Ledger:
     def __init__(self, root: Path, state: Path, git: Git | None, config: Config):
         self.root, self.state, self.git, self.config = root, state, git, config
+        self._settings: dict | None = None
 
     @classmethod
     def open(cls, root: str | os.PathLike | None = None, state: str | os.PathLike | None = None,
@@ -267,16 +290,40 @@ class Ledger:
         return next((r for r in self.records() if r.get("id") == record_id), None)
 
     def trail_check(self) -> TrailCheck:
-        return TrailCheck(self.records())
+        return TrailCheck(self.records(), required=self.project_settings()["require_trail"])
+
+    # --- project settings ------------------------------------------------------------
+
+    def project_settings(self) -> dict:
+        """The committed project settings (``.aqt/change.toml``): the strictest of the copy in the working
+        tree, at HEAD and at the base commit of each plan in progress, so neither an uncommitted edit nor a
+        commit during a plan switches a setting off. ``require_trail_from`` names the copies that set it."""
+        if self._settings is None:
+            copies = []
+            if (self.root / PROJECT_FILE).is_file():
+                copies.append((PROJECT_FILE, (self.root / PROJECT_FILE).read_bytes()))
+            if self.git:
+                bases = {s.get("base_commit") for s in self.plan_states() if s.get("status") == "in_progress"}
+                revs = ["HEAD", *sorted(b for b in bases if isinstance(b, str) and COMMIT_RE.match(b))]
+                copies += [(f"{rev}:{PROJECT_FILE}", text) for rev, text in self.git.file_at(revs, PROJECT_FILE)]
+            required = [where for where, text in copies
+                        if parse_project_settings(text.decode("utf-8", "replace"), where)["require_trail"]]
+            self._settings = {"require_trail": bool(required), "require_trail_from": required}
+        return self._settings
 
     # --- working tree --------------------------------------------------------------
 
     def head(self) -> str | None:
         return self.git.head() if self.git else None
 
-    def fingerprint(self, exclude_paths: list[str]) -> str:
+    def snapshot(self) -> dict[str, str] | None:
+        """The working tree's blob ids (``Git.worktree_blobs()``; None without Git), to compute several
+        fingerprints and the hidden-change check from one read of the tree."""
+        return self.git.worktree_blobs() if self.git else None
+
+    def fingerprint(self, exclude_paths: list[str], snapshot: dict[str, str] | None = None) -> str:
         globs = list(self.config.fingerprint_exclude)
         excluded = set(exclude_paths)
         if self.git:
-            return self.git.fingerprint(excluded, globs)
+            return self.git.fingerprint(excluded, globs, snapshot)
         return walk_fingerprint(self.root, excluded, globs)

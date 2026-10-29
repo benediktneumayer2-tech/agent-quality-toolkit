@@ -23,7 +23,7 @@ from .actors import current_actor
 from .errors import ChangeError, refused, usage
 from .gate import evaluate_gate
 from .gitio import trailers
-from .ledger import Ledger, read_json, write_json
+from .ledger import TRAIL_REQUIRED, Ledger, read_json, write_json
 from .plan import basis_hash, parse_plan
 from .plans import STATES_OK, external, now_iso, read_plan, require_valid, status, write_plan
 from .receipts import trust_note
@@ -77,10 +77,13 @@ def _preflight(ledger, rel, plan, key, request, request_sha, sources) -> dict:
         if not waiver["reason"]:
             raise usage("waiver_reason_required", f"waiver for {waiver['item']} needs a reason")
     preview = evaluate_gate(ledger, rel, plan, sources=sources, waivers=request["waivers"], for_finish=True)
+    if any(r["code"] == "trail_required" for r in preview["reasons"]):
+        raise refused("finish_trail_required", "cannot check the receipts: " + TRAIL_REQUIRED,
+                      phase="preflight_failed")
     hidden = [r for r in preview["reasons"] if r["code"] == "hidden_worktree_change"]
     if hidden:
         raise refused("finish_hidden_changes", hidden[0]["detail"] + "; the commit would not contain what the "
-                      "receipts tested. Clear the flags and run the checks again", phase="preflight_failed")
+                      "receipts tested. Fix this and run the checks again", phase="preflight_failed")
     waived = {w["item"] for w in request["waivers"]}
     blocking = [{"item": i, "state": e["state"]} for i, e in preview["items"].items()
                 if e["state"] != "ok" and i not in waived]

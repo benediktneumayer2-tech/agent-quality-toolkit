@@ -242,6 +242,7 @@ def _dispatch(args) -> int:
         lines = [f"result: {data['result']} (base {data['base_commit']}, approval {data['approval']['state']})"]
         lines += [f"  unapproved: {p}" for p in data["unapproved"]]
         lines += [f"  missing evidence: {i}" for i in data["missing_evidence"]]
+        lines += [f"  project settings changed: {p}" for p in data.get("settings_changed", [])]
         _out(args, record, "\n".join(lines))
         return 0 if data["result"] == "clean" else 1
     if args.command == "finish":

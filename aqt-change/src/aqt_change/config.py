@@ -1,4 +1,8 @@
-"""User configuration: ``$XDG_CONFIG_HOME/aqt/change.toml`` (or ``AQT_CHANGE_CONFIG``)."""
+"""User configuration: ``$XDG_CONFIG_HOME/aqt/change.toml`` (or ``AQT_CHANGE_CONFIG``).
+
+Project settings: ``.aqt/change.toml`` in the repository, committed with the code, so the agent's
+environment cannot switch them off (``Ledger.project_settings()``). Only ``require_trail`` so far.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +15,7 @@ from aqt_evidence import content_hash
 
 from .errors import usage
 
+PROJECT_FILE = ".aqt/change.toml"
 INDEPENDENCE = ("same-session", "fresh-context", "different-model", "human")
 LIFECYCLE_OWNERS = ("aqt-change", "external")
 
@@ -79,3 +84,16 @@ def load_config(path: str | os.PathLike | None = None) -> Config:
     if config.lifecycle_owner not in LIFECYCLE_OWNERS:
         raise usage("config_invalid", "lifecycle_owner must be 'aqt-change' or 'external'")
     return config
+
+
+def parse_project_settings(text: str, where: str) -> dict:
+    """The settings in one copy of ``.aqt/change.toml``: ``{"require_trail": bool}``. ``where`` names the
+    copy in error messages. A copy that cannot be read refuses (it must not count as "no settings")."""
+    try:
+        raw = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as error:
+        raise usage("config_invalid", f"cannot read project settings {where}: {error}") from error
+    value = raw.get("require_trail", False)
+    if not isinstance(value, bool):
+        raise usage("config_invalid", f"project settings {where}: require_trail must be true or false")
+    return {"require_trail": value}

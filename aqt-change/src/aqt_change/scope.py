@@ -8,6 +8,7 @@ from aqt_evidence import new_record, subject
 
 from .actors import current_actor
 from .approval import approval_state
+from .config import PROJECT_FILE
 from .errors import refused
 from .globs import matches_any
 from .ledger import Ledger
@@ -28,20 +29,21 @@ def compare(ledger: Ledger, rel: str, plan: Plan, freshness: Freshness | None = 
     unapproved = [c["path"] for c in changed
                   if declared and not matches_any(c["path"], declared) and not matches_any(c["path"], allowed)]
     untouched = [g for g in declared if not any(matches_any(c["path"], [g]) for c in changed)]
+    settings = [c["path"] for c in changed if c["path"] == PROJECT_FILE]
     items = evaluate(ledger, plan, freshness)
     missing = [item_id for item_id, entry in items.items() if entry["state"] != "ok"]
     if not ledger.git or not base:
         result = "no_base"
     elif not declared:
         result = "scope_undeclared"
-    elif unapproved or missing:
+    elif unapproved or missing or settings:
         result = "findings"
     else:
         result = "clean"
     return {"plan_id": plan.id, "plan_ref": plan.id, "base_commit": base,
             "approval": approval_state(ledger, plan.id, sources), "declared_paths": declared,
             "changed": changed, "unapproved": unapproved, "untouched_declared": untouched,
-            "missing_evidence": missing, "result": result}
+            "missing_evidence": missing, "settings_changed": settings, "result": result}
 
 
 def reconcile_diff(ledger: Ledger, plan_path: str, sources: list[Path] | None = None) -> dict:

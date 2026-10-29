@@ -6,6 +6,7 @@ A small stand-in for the aqt-trail writer (ping and append over a Unix socket in
 
 import copy
 import json
+import os
 import shutil
 import socketserver
 import tempfile
@@ -15,11 +16,13 @@ from pathlib import Path
 import pytest
 from aqt_evidence import canonical_json, new_id
 
-from aqt_change import hooks, plans, receipts
+from aqt_change import gitio, hooks, plans, receipts
 from aqt_change.errors import ChangeError
 from aqt_change.finish import finish
 from aqt_change.gate import gate
+from aqt_change.ledger import Ledger
 from aqt_change.review import add_review
+from aqt_change.scope import reconcile_diff
 from conftest import CHECK_SCRIPT, edit, git
 
 P = "plans/s01.md"
@@ -202,3 +205,163 @@ def test_sparse_checkout_needs_manual_check_not_no_go(ledger, project):
     assert not (project / "tests/check.py").exists()
     result = gate(ledger, P)
     assert "sparse_checkout" in reasons(result) and "hidden_worktree_change" not in reasons(result)
+
+
+# --- hidden changes through Git's stat cache ------------------------------------------------------
+
+def _fsmonitor(project, tmp_path):
+    """A core.fsmonitor hook that always answers 'nothing changed' (protocol v2: token, NUL, no paths)."""
+    hook = tmp_path / "fsmonitor.sh"
+    hook.write_text("#!/bin/sh\nprintf 'token\\0'\n")
+    hook.chmod(0o755)
+    git(project, "config", "core.fsmonitor", str(hook))
+    git(project, "status", "--porcelain")
+    git(project, "status", "--porcelain")
+
+
+def _relaxed_stat(project, tmp_path):
+    """core.checkStat=minimal and core.trustctime=false: a same-size edit with the old mtime is not seen."""
+    git(project, "config", "core.checkStat", "minimal")
+    git(project, "config", "core.trustctime", "false")
+    for name in ("tests/check.py", "src/calc.py"):
+        os.utime(project / name, (1_600_000_000, 1_600_000_000))      # older than the index: not racy
+    git(project, "status", "--porcelain")                                        # Git stores the new stat data
+
+
+def _same_size_edit(path, old, new):
+    stamp = path.stat().st_mtime
+    assert len(old) == len(new)
+    edit(path, old, new)
+    os.utime(path, (stamp, stamp))
+
+
+@pytest.mark.parametrize("hide", [_fsmonitor, _relaxed_stat], ids=["fsmonitor", "checkstat"])
+def test_stat_cache_cannot_hide_a_weakened_check(ledger, project, tmp_path, hide):
+    plans.begin(ledger, P)
+    receipts.run(ledger, [], plan_path=P, item="V01", echo=False)
+    hide(project, tmp_path)
+    _same_size_edit(project / "src/calc.py", "return a + b", "return a - b")
+    _same_size_edit(project / "tests/check.py", "ok = calc.add(2, 3) == 5", "ok = calc.add(2, 3) != 5")
+    status = git(project, "status", "--porcelain")
+    assert "check.py" not in status and "calc.py" not in status                    # Git sees nothing
+    entry = receipts.evaluate(ledger, plans.read_plan(ledger, P)[1])["V01"]
+    assert entry["state"] == "stale"                                                # the content changed
+    [record] = receipts.run(ledger, [], plan_path=P, item="V01", echo=False)
+    assert record["data"]["passed"] and "hidden_worktree_change" in {w["code"] for w in record["data"]["warnings"]}
+    result = gate(ledger, P)
+    assert result["decision"] == "NO-GO" and "hidden_worktree_change" in reasons(result)
+    assert "tests/check.py" in next(r["detail"] for r in result["reasons"] if r["code"] == "hidden_worktree_change")
+    edit(project / P, "- [ ] [V01]", "- [x] [V01]")
+    code, message = hooks.claude_code({"hook_event_name": "Stop"}, ledger)
+    assert code == 2 and "tests/check.py" in message
+    with pytest.raises(ChangeError) as info:
+        finish(ledger, P, key="k1", summary="done", paths=["src/calc.py"], waivers={"V02": "no screen"},
+               ack_warnings="later")
+    assert info.value.code == "finish_hidden_changes"
+
+
+def test_untouched_tree_has_the_same_fingerprint_as_before(ledger, project):
+    """Hashing every tracked file gives the value the stat-based fingerprint gave: old receipts stay fresh."""
+    (project / "src/calc.py").write_text("def add(a, b):\n    return a + b  # edited\n")
+    (project / "notes.txt").write_text("untracked\n")
+    (project / "tests/check.py").unlink()
+    tree = ledger.git.head_tree()
+    tree.pop("tests/check.py")
+    tree.update(ledger.git.hash_paths(["src/calc.py", "notes.txt"]))
+    assert ledger.fingerprint([P]) == gitio._digest(tree, {P}, [])
+    os.symlink("calc.py", project / "src/alias.py")             # a symlink counts by its link text, as Git stores it
+    git(project, "add", "src/alias.py")
+    tree["src/alias.py"] = git(project, "ls-files", "-s", "src/alias.py").split()[1]
+    assert ledger.fingerprint([P]) == gitio._digest(tree, {P}, [])
+    assert ledger.git.hidden_changes() == []
+
+
+# --- the project can require the trail --------------------------------------------------------------
+
+def _require_trail(project):
+    (project / ".aqt").mkdir()
+    (project / ".aqt/change.toml").write_text("# aqt-change project settings\nrequire_trail = true\n")
+    git(project, "add", ".aqt/change.toml")
+    git(project, "commit", "-qm", "require the trail")
+
+
+def _agent_env(monkeypatch, tmp_path):
+    """What an agent can do to its own environment: no trail found, records to a file."""
+    empty = tmp_path / "empty"
+    empty.mkdir(exist_ok=True)
+    for name in ("XDG_STATE_HOME", "XDG_CONFIG_HOME", "XDG_RUNTIME_DIR"):
+        monkeypatch.setenv(name, str(empty))
+    monkeypatch.setenv("AQT_SINK", f"file:{empty / 'evidence.jsonl'}")
+    monkeypatch.delenv("AQT_EVIDENCE", raising=False)
+
+
+def test_required_trail_missing_blocks_everything(ledger, project, tmp_path, monkeypatch):
+    _require_trail(project)
+    _agent_env(monkeypatch, tmp_path)
+    plans.begin(ledger, P)
+    edit(project / P, "- [ ] [V01]", "- [x] [V01]")
+    [receipt] = receipts.run(ledger, [], plan_path=P, item="V01", echo=False)
+    result = gate(ledger, P)
+    assert result["decision"] == "NO-GO" and {"trail_required", "receipt_unverified"} <= reasons(result)
+    assert result["trail"]["checked"] and result["trail"]["required"]
+    assert "require_trail" in next(r["detail"] for r in result["reasons"] if r["code"] == "trail_required")
+    with pytest.raises(ChangeError) as info:
+        finish(ledger, P, key="k1", summary="done", waivers={"V02": "no screen"}, ack_warnings="later")
+    assert info.value.code == "finish_trail_required"
+    code, message = hooks.claude_code({"hook_event_name": "Stop"}, ledger)
+    assert code == 2 and "require_trail" in message
+    msg = tmp_path / "msg"
+    msg.write_text(f"Work\n\nAQT-Plan: s01 sha256:abc\nAQT-Receipts: {receipt['id']}\n")
+    code, message = hooks.commit_msg(ledger, str(msg))
+    assert code == 1 and "require_trail" in message
+
+
+def test_required_trail_cannot_be_switched_off_during_a_plan(ledger, project, tmp_path, monkeypatch):
+    _require_trail(project)
+    plans.begin(ledger, P)
+    _agent_env(monkeypatch, tmp_path)
+    (project / ".aqt/change.toml").write_text("require_trail = false\n")              # working tree only
+    assert ledger.trail_check().required
+    git(project, "commit", "-qam", "relax")                                          # committed: still the base's
+    assert Ledger.open(project).trail_check().required
+    result = gate(Ledger.open(project), P)
+    assert {"trail_required", "project_settings_changed"} <= reasons(result) and result["decision"] == "NO-GO"
+    assert reconcile_diff(Ledger.open(project), P)["data"]["settings_changed"] == [".aqt/change.toml"]
+
+
+def test_required_trail_with_the_trail_reaches_go(ledger, project, trail):
+    _require_trail(project)
+    plans.begin(ledger, P)
+    receipts.run(ledger, [], plan_path=P, item="V01", echo=False)
+    receipts.attest(ledger, P, "V02", [], "seen")
+    edit(project / P, "- [ ] [T01]", "- [x] [T01]")
+    edit(project / P, "- [ ] [T02]", "- [x] [T02]")
+    finish(ledger, P, key="k1", summary="done")
+    result = gate(ledger, P)
+    assert result["decision"] == "GO", result["reasons"]
+    assert result["trail"]["required"] and result["trail"]["logs"]
+
+
+def test_invalid_project_settings_refuse(ledger, project):
+    (project / ".aqt").mkdir()
+    (project / ".aqt/change.toml").write_text("require_trail = 'yes'\n")
+    with pytest.raises(ChangeError) as info:
+        gate(ledger, P)
+    assert info.value.code == "config_invalid"
+
+
+def test_trail_history_keeps_the_check_on_without_a_trail(ledger, project, trail, tmp_path, monkeypatch):
+    """Records came back from a writer earlier; an environment without a trail does not count the mirror."""
+    failed = broken(ledger, project)
+    fake = forge(ledger, failed, passed=True, exit_code=0, outcome="passed",
+                 counts={"source": "pytest", "passed": 1, "total": 1})
+    _agent_env(monkeypatch, tmp_path)
+    led = Ledger.open(project)
+    entry = receipts.evaluate(led, plans.read_plan(led, P)[1])["V01"]
+    assert entry["state"] == "unverified" and entry["untrusted"] == [{"receipt": fake["id"], "trust": "unreadable"}]
+    result = gate(led, P)
+    assert result["decision"] != "GO" and "receipt_unverified" in reasons(result) and result["trail"]["checked"]
+    with pytest.raises(ChangeError) as info:
+        finish(led, P, key="k1", summary="done", paths=["src/calc.py"], ack_warnings="tasks later")
+    assert info.value.code == "finish_evidence_missing"
+    assert hooks.claude_code({"hook_event_name": "Stop"}, led)[0] == 2

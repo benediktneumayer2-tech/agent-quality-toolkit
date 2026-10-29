@@ -227,7 +227,8 @@ def _run_one(ledger, argv, plan, rel, item_id, junit, timeout, echo) -> dict:
         excludes.append(ledger.rel(junit))
     before = ledger.fingerprint(excludes)
     result = execute(argv, ledger.root, timeout or ledger.config.timeout_seconds, echo)
-    after = ledger.fingerprint(excludes)
+    snapshot = ledger.snapshot()
+    after = ledger.fingerprint(excludes, snapshot)
     counts = parse_counts(result["stdout"].decode("utf-8", "replace") + "\n" +
                           result["stderr"].decode("utf-8", "replace"))
     warnings = []
@@ -248,7 +249,7 @@ def _run_one(ledger, argv, plan, rel, item_id, junit, timeout, echo) -> dict:
     if before != after:
         warnings.append({"code": "command_modified_worktree",
                          "detail": "the working tree changed while the command ran"})
-    hidden = [h for h in ledger.git.hidden_changes() if h["state"] != "sparse"] if ledger.git else []
+    hidden = [h for h in ledger.git.hidden_changes(snapshot) if h["state"] != "sparse"] if ledger.git else []
     if hidden:
         warnings.append({"code": "hidden_worktree_change", "detail": hidden_text(hidden)})
     if plan is not None and ledger.git:
@@ -318,6 +319,11 @@ def attest(ledger: Ledger, plan_path: str, item: str, evidence: list[str], reaso
     return ledger.emit(record)
 
 
+HIDDEN_FIX = ("for skip-worktree / assume-unchanged run git update-index --no-skip-worktree / "
+              "--no-assume-unchanged; for stat-cache remove core.fsmonitor or a relaxed core.checkStat / "
+              "core.trustctime and touch the files")
+
+
 def hidden_text(hidden: list[dict], limit: int = 20) -> str:
     """``Git.hidden_changes()`` as one line."""
     text = ", ".join(f"{h['path']} ({h['flag']}, {h['state']})" for h in hidden[:limit])
@@ -337,12 +343,24 @@ def trust_blocks(entry: dict) -> bool:
 # --- evaluation ------------------------------------------------------------------
 
 class Freshness:
-    """Caches the current fingerprints per exclude set, and the trail check, during one evaluation."""
+    """Caches the working tree's blob ids, the fingerprints per exclude set and the trail check during
+    one evaluation."""
 
     def __init__(self, ledger: Ledger):
         self.ledger = ledger
         self.cache: dict[tuple, str] = {}
         self._trail: TrailCheck | None = None
+        self._snapshot: dict[str, str] | None = None
+
+    @property
+    def snapshot(self) -> dict[str, str] | None:
+        if self._snapshot is None:
+            self._snapshot = self.ledger.snapshot()
+        return self._snapshot
+
+    def hidden(self) -> list[dict]:
+        """``Git.hidden_changes()`` of the cached snapshot ([] without Git)."""
+        return self.ledger.git.hidden_changes(self.snapshot) if self.ledger.git else []
 
     @property
     def trail(self) -> TrailCheck:
@@ -353,7 +371,7 @@ class Freshness:
     def fingerprint(self, excludes: list[str]) -> str:
         key = tuple(sorted(excludes))
         if key not in self.cache:
-            self.cache[key] = self.ledger.fingerprint(list(key))
+            self.cache[key] = self.ledger.fingerprint(list(key), self.snapshot)
         return self.cache[key]
 
     def is_fresh(self, receipt: dict, basis: str) -> bool:

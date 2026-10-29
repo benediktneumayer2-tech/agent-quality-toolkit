@@ -16,9 +16,9 @@ from pathlib import Path
 
 from .errors import ChangeError
 from .gitio import trailers
-from .ledger import TRUST_NOGO, TRUST_TEXT, Ledger
+from .ledger import TRAIL_REQUIRED, TRUST_NOGO, TRUST_TEXT, Ledger
 from .plans import STATES_OK, active_plans, status
-from .receipts import Freshness, evaluate, hidden_text, trust_note
+from .receipts import HIDDEN_FIX, Freshness, evaluate, hidden_text, trust_note
 
 ID_REF = re.compile(r"\[([A-Za-z][A-Za-z0-9._-]{0,127})\]")
 SNIPPET = {
@@ -87,11 +87,12 @@ def claude_code(payload: dict, ledger: Ledger | None = None) -> tuple[int, str]:
                     problems.append(_not_ok(plan.id, item.id, items[item.id], ticked=True))
     else:
         return 0, ""
-    hidden = [h for h in ledger.git.hidden_changes() if h["state"] != "sparse"] if (checked and ledger.git) else []
+    if checked and freshness.trail.missing:
+        problems.append(TRAIL_REQUIRED)
+    hidden = [h for h in freshness.hidden() if h["state"] != "sparse"] if checked else []
     if hidden:
-        problems.append("Git is told to ignore working-tree changes, so receipts do not test what would be "
-                        "committed (git update-index --no-skip-worktree / --no-assume-unchanged): "
-                        + hidden_text(hidden))
+        problems.append("Git does not show some working-tree changes, so receipts do not test what would be "
+                        f"committed ({HIDDEN_FIX}): " + hidden_text(hidden))
     if not problems:
         return 0, ""
     hint = "Run 'aqt-change run --plan <plan> --item <ID>' (or --all) to record receipts."

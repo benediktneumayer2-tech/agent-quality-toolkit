@@ -10,10 +10,11 @@ from pathlib import Path
 
 from . import antigaming
 from .config import INDEPENDENCE
-from .ledger import TRUST_NOGO, TRUST_TEXT, Ledger
+from .config import PROJECT_FILE
+from .ledger import TRAIL_REQUIRED, TRUST_NOGO, TRUST_TEXT, Ledger
 from .plan import Plan
 from .plans import STATES_OK, read_plan, require_valid, status
-from .receipts import Freshness, evaluate, hidden_text, run, trust_blocks, trust_note, utc_stamp
+from .receipts import HIDDEN_FIX, Freshness, evaluate, hidden_text, run, trust_blocks, trust_note, utc_stamp
 from .scope import compare
 
 RANK = {name: index for index, name in enumerate(("none", *INDEPENDENCE))}
@@ -68,6 +69,8 @@ def evaluate_gate(ledger: Ledger, rel: str, plan: Plan, *, sources: list[Path] |
         waivers = (finish["data"].get("waivers") if finish else None) or []
     waived = {w["item"] for w in waivers}
     freshness = Freshness(ledger)
+    if freshness.trail.missing:
+        nogo.append({"code": "trail_required", "detail": TRAIL_REQUIRED})
     items = evaluate(ledger, plan, freshness)
     receipts = []
     for item_id, entry in items.items():
@@ -95,12 +98,15 @@ def evaluate_gate(ledger: Ledger, rel: str, plan: Plan, *, sources: list[Path] |
         manual.append({"code": "scope_unverifiable", "detail": "no Git base commit to compare against"})
     if scope["unapproved"]:
         nogo.append({"code": "unapproved_change", "detail": ", ".join(scope["unapproved"][:20])})
-    hidden = ledger.git.hidden_changes() if ledger.git else []
+    if scope.get("settings_changed"):
+        manual.append({"code": "project_settings_changed", "detail": f"the change edits {PROJECT_FILE} "
+                       "(aqt-change project settings such as require_trail); a human checks it"})
+    hidden = freshness.hidden()
     sparse = [h for h in hidden if h["state"] == "sparse"]
     hidden = [h for h in hidden if h["state"] != "sparse"]
     if hidden:
-        nogo.append({"code": "hidden_worktree_change", "detail": "Git is told to ignore working-tree changes "
-                     "(git update-index --no-skip-worktree / --no-assume-unchanged): " + hidden_text(hidden)})
+        nogo.append({"code": "hidden_worktree_change", "detail": "Git does not show working-tree changes of "
+                     f"tracked files, so a commit would leave them out ({HIDDEN_FIX}): " + hidden_text(hidden)})
     if sparse:
         manual.append({"code": "sparse_checkout", "detail": f"{len(sparse)} tracked file(s) outside the sparse "
                        "checkout were not in the working tree when the receipts ran"})
