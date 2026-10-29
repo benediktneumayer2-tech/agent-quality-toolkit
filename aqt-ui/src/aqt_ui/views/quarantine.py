@@ -6,7 +6,8 @@ original is shown only when it still has that hash (``Decider.case_content``), i
 again right before a decision, and the hash shown is passed to the decision as
 ``expected_sha256``, so the person signs over the text they were shown.
 
-A release or threat declaration also needs the whole of that text on screen first. The default
+A release also needs the whole of that text on screen first (declaring a threat withholds the
+content, so the excerpt is enough for it). The default
 view shows only the passages around the detector evidence, and the full view shows the content in
 pages of ``FULL_LIMIT`` characters. The browser session notes which pages of which content (case
 id and hash) it was sent; release and declare are offered, and accepted, only once every page was
@@ -194,7 +195,8 @@ class QuarantineView:
             "content_verified": verified, "unseen_pages": unseen,
             "needs_full_view": verified and bool(unseen) and case.state in ("held", "warned", "threat", "released"),
             "can_release": verified and not unseen and case.state in ("held", "warned", "threat"),
-            "can_declare": verified and not unseen and case.state in ("held", "warned", "released"),
+            # Declaring a threat withholds the content (the safe direction): the excerpt is enough.
+            "can_declare": verified and case.state in ("held", "warned", "released"),
             "journal_problems": [str(p) for p in decider.store.journal_problems if p.case_id == case_id],
         }
 
@@ -221,7 +223,7 @@ class QuarantineView:
         else:
             text, changed = self.original(decider, case)
             stale = f"nothing was signed: {changed}" if changed else None
-            if text is not None:
+            if text is not None and kind == "release":   # a threat declaration may rest on the excerpt
                 seen = (shown or {}).get((case_id, shown_sha256), set())
                 missing = [number + 1 for number in range(pages_of(len(text))) if number not in seen]
                 if missing:

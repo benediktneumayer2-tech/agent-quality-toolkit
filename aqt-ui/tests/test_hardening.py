@@ -108,12 +108,12 @@ def test_release_needs_every_page_of_long_content_shown_in_this_session(trail, s
     client.login()
     case = case_detail(client, case_id)
     pages = case["content"]["pages"]
-    assert pages == 11 and case["can_release"] is False and case["can_declare"] is False
+    # Releasing needs every page; declaring a threat withholds the content, so the excerpt suffices.
+    assert pages == 11 and case["can_release"] is False and case["can_declare"] is True
     assert case["needs_full_view"] and case["unseen_pages"] == list(range(pages))
     before = len(trail_records(trail))
-    for kind in ("release", "threat"):
-        status, result, _ = client.post(f"/api/quarantine/{case_id}/{kind}", decide_body(case))
-        assert status == 409 and "has not been shown" in result["message"], result
+    status, result, _ = client.post(f"/api/quarantine/{case_id}/release", decide_body(case))
+    assert status == 409 and "has not been shown" in result["message"], result
     assert len(trail_records(trail)) == before
 
     seen = ""
@@ -131,6 +131,18 @@ def test_release_needs_every_page_of_long_content_shown_in_this_session(trail, s
     status, result, _ = client.post(f"/api/quarantine/{case_id}/release", decide_body(case))
     assert status == 200 and result["ok"], result
     assert case_detail(client, case_id)["state"] == "released"
+
+
+def test_a_threat_can_be_declared_from_the_excerpt(trail, signer, ui_factory):
+    big = ("Gardening tips. " * 130_000) + HOSTILE
+    case_id = scan(big).case_id
+    client = ui_factory()
+    client.login()
+    case = case_detail(client, case_id)
+    assert case["unseen_pages"] and case["can_declare"] is True
+    status, result, _ = client.post(f"/api/quarantine/{case_id}/threat", decide_body(case))
+    assert status == 200 and result["ok"], result
+    assert case_detail(client, case_id)["state"] == "threat"
 
 
 def test_excerpt_view_is_not_enough_and_a_later_held_line_cannot_steer_it(trail, signer, ui_factory):

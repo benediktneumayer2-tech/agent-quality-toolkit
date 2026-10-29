@@ -18,7 +18,7 @@ from .config import Config, config_home, load_config
 from .decisions import Decider, DecisionError, adopt_identity, create_identity, slug
 from .engine import Engine, Source, text_hash
 from .report import html_page, terminal
-from .store import Store, StoreError, normalise_case_id
+from .store import Store, StoreError, normalise_case_id, _inert
 from .wrap import unchecked_notice, wrap
 
 CLAUDE_SNIPPET = {
@@ -308,9 +308,11 @@ def cmd_sources_list(args) -> int:
     _report_journal(decider.store)
     for ignored in decider.store.ignored_sources:
         record = ignored.record
-        print(f"aqt-quarantine: source decision {record.get('id')} ignored ({ignored.status}"
-              f"{'; ' + ignored.note if ignored.note else ''}): {record.get('action')} "
-              f"{(record.get('data') or {}).get('domain')} by {(record.get('actor') or {}).get('id')}", file=sys.stderr)
+        inert = _inert   # journal values: no control or format characters on the terminal
+        print(f"aqt-quarantine: source decision {inert(record.get('id'))} ignored ({ignored.status}"
+              f"{'; ' + inert(ignored.note) if ignored.note else ''}): {inert(record.get('action'))} "
+              f"{inert((record.get('data') or {}).get('domain'))} by {inert((record.get('actor') or {}).get('id'))}",
+              file=sys.stderr)
     rows = [{"domain": s.domain, "subdomains": s.subdomains, "expires": s.expires, "active": s.active(),
              "by": s.record.get("actor", {}).get("id"), "record": s.record["id"]} for s in sources]
     lines = [f"{r['domain']}{' (+subdomains)' if r['subdomains'] else ''}  until {r['expires']}  "
