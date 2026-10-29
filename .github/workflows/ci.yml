@@ -25,3 +25,20 @@ jobs:
           python-version: "3.12"
       - name: Built wheels in a fresh venv outside the checkout, the tools and the demo
         run: scripts/clean_install_check.sh
+  pip-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          python-version: "3.12"
+      - name: Known vulnerabilities in the third-party dependencies (all packages, all extras)
+        run: |
+          uv venv /tmp/audit
+          uv pip install --python /tmp/audit/bin/python -e "./aqt-spec[schema,test]" -e "./aqt-trail[test]" \
+            -e "./aqt-signoff[schema,test]" -e "./aqt-change[test]" -e "./aqt-sensei[test]" \
+            -e "./aqt-quarantine[hf,test]" -e "./aqt-validate[test]" -e "./aqt-capa[test]" -e "./aqt-ui[test]" \
+            -e "./aqt-cli[test]"
+          # the aqt-* packages are editable and left out: they are not on PyPI
+          uv pip freeze --python /tmp/audit/bin/python --exclude-editable > /tmp/audit-requirements.txt
+          uvx pip-audit@2.9.0 -r /tmp/audit-requirements.txt --no-deps --disable-pip --progress-spinner off
