@@ -28,7 +28,9 @@ DEFAULTS: dict = {
         "drain_interval_s": 30,
         "max_request_bytes": 16 * 1024 * 1024,
     },
-    "anchor": {"tsa_url": "", "tsa_ca": "", "timeout_s": 10},
+    # test_tsa: trust the built-in TEST ONLY authority (demos and tests): its CA in verify, its anchors in
+    # status, review and ALCOA++. Otherwise its anchors never count, whoever asked the writer for them.
+    "anchor": {"tsa_url": "", "tsa_ca": "", "timeout_s": 10, "test_tsa": False},
     "import": {"excerpt_chars": 160},
     "review": {
         "timezone": "UTC",

@@ -45,11 +45,11 @@ aqt-trail import claude-code tests/fixtures/claude-session.jsonl   # synthetic e
 aqt-trail checkpoint --anchor --tsa test:        # TEST ONLY time-stamp authority, offline
 aqt-trail head --export >> /media/usb/trail-heads.jsonl   # head copies out of the agent's reach
 
-aqt-trail verify --test-tsa --heads /media/usb/trail-heads.jsonl
+aqt-trail verify --test-tsa --heads /media/usb/trail-heads.jsonl   # --test-tsa: TEST ONLY anchors count (demo)
 aqt-trail alcoa --test-tsa                       # fails 'attributable' if an agent claimed to be alice
-aqt-trail review run                             # writes a worksheet with findings
+aqt-trail review run --test-tsa                  # writes a worksheet with findings
 aqt-trail review sign <worksheet.json> --reviewer human:dora \
-    --disposition all=ok --reason "weekly audit-trail review"   # dora enrolled with aqt-signoff
+    --disposition all=ok --reason "weekly audit-trail review"   # dora enrolled with aqt-signoff init
 aqt-trail export --out trail-bundle              # copy with checksums; verify it with your own trust anchors
 ```
 
@@ -89,15 +89,18 @@ flowchart LR
   survive chaining and re-signing.
 - **Verification** recomputes every hash, checks the service signatures, checkpoints, external heads, RFC 3161
   tokens (imprint = the 32-byte head hash; signature, `timeStamping` usage and a chain of CA certificates to your
-  TSA CA) and detached signatures against the shared signer registry (the key must belong to the named signer and
-  be valid at signing time; a `trail.review` must be signed by its reviewer, who did not act in its scope). A token
+  TSA CA) and detached signatures against the shared signer registry (the key must belong to the named signer, be
+  backed by its `signoff.key.enrolled` record in the trail and be valid at signing time; a `trail.review` must be
+  signed by its reviewer, who did not act in its scope, and counts once). The enrolment check uses aqt-signoff's
+  rules when aqt-signoff is installed; without it `verify` warns that the keys rest on `signers.json` alone. A token
   can also be checked independently with
   `openssl ts -verify -digest <head hex> -in token.der -token_in -CAfile tsa-ca.pem`.
 - **What "intact" covers.** Every line is canonical and chained and signed by the service key you trust. Records
   after the newest head copy you keep elsewhere, or after the newest RFC 3161 anchor verified to your CA, are not
   protected against someone who can read the service key (user mode); `verify` says which seq range that is, and
   how many records follow the newest checkpoint (dropping those would go unnoticed). Only RFC 3161 anchors the
-  writer itself wrote count. Bundles certify nothing about themselves: `verify --bundle` uses the service key,
+  writer itself wrote count, and anchors from the TEST ONLY authority only in test mode (`--test-tsa` or
+  `[anchor] test_tsa = true`): any client may ask the writer for one. Bundles certify nothing about themselves: `verify --bundle` uses the service key,
   TSA CA and signer registry you give (`--pin-key`, `--tsa-ca`, `--signers`), never the copies inside.
 
 Details: [docs/usage.md](docs/usage.md) (commands, records, configuration),
@@ -131,7 +134,8 @@ Protection is against **agents**, not against the owner or root.
 | Truncate / roll back the log | possible | prevented | head copies, checkpoints, anchors |
 | Rewrite everything under a new key | possible (key readable) | prevented | `--pin-key`, head copies, anchors |
 | Append under a human's name | possible | possible | `attribution_mismatch`, a heuristic on the observed process chain: an agent harness in it fails, a chain that could not be read completely is flagged |
-| Edit a review worksheet, or append a review | possible | possible | `review sign` recomputes the worksheet from the trail; `verify` checks a review's signature, reviewer key and scope |
+| Edit a review worksheet, or append a review | possible | possible | `review sign` recomputes the worksheet from the trail and shows the profile's parameters (differences from the built-in defaults flagged and signed); `verify` checks a review's signature, reviewer key and scope, and a copied review counts once |
+| Add a key to `signers.json` | possible | possible | with aqt-signoff installed: the key has no enrolment record, so `review sign` refuses it and `verify` reports its signatures; without aqt-signoff only a warning that keys were not checked |
 | Forge spooled records | possible | possible | marked `via: spool`, flagged in review |
 | Not calling the writer at all / disabling hooks | possible | possible | not by the trail alone; session imports help |
 | Agent with root or `docker` group | anything | anything | only anchors made before the attack |

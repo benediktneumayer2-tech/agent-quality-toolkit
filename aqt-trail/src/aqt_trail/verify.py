@@ -10,10 +10,14 @@ warning say how far those reach. Truncation (records dropped from the end) is de
 only up to the newest checkpoint; ``checkpoint_seq`` and a warning give the records after it.
 
 Detached signatures are bound to the registry (``signers``): the key must belong to
-the signer the statement names, be enrolled before and not revoked at ``signed_at``,
+the signer the statement names, be backed by its ``signoff.key.enrolled`` record in this
+trail (aqt-signoff's rules, when aqt-signoff is installed; otherwise a warning says the keys
+rest on ``signers.json`` alone), be enrolled before and not revoked at ``signed_at``,
 and the statement must name the record's type and meaning. A ``trail.review`` must be
 signed that way by its reviewer, cover its own content, and name a scope whose head
-and actors match the trail, with a reviewer who did not act in it.
+and actors match the trail, with a reviewer who did not act in it. A review statement
+counts once: a copy in a later record is a problem. TEST ONLY anchors count only when
+their CA is trusted (``--test-tsa``); otherwise they are a warning, never a problem.
 
 Malformed payloads are reported as problems; verification never stops on them.
 """
@@ -30,10 +34,11 @@ from aqt_evidence import (CanonicalError, checkpoint_problems, content_hash, par
                           verify_chain, verify_checkpoint, verify_statement)
 
 from . import tsa
-from .review import in_period, is_writer_record, scope_actors
-from .signers import SignerInfo, key_owners, parse_time
+from .review import _profile_entry, in_period, is_test_anchor, is_writer_record, scope_actors
+from .signers import SignerInfo, check_enrolment, key_owners, parse_time
 
 STATEMENT_VERSION = "0.1"
+UNCHECKED = "the key rests on signers.json alone: it was not checked against its enrolment record"
 
 
 @dataclass
@@ -183,7 +188,18 @@ def _check_anchor(record: dict, seq: int, data: dict, records: list[dict], keys:
     except (KeyError, ValueError, TypeError, AttributeError, IndexError):
         report.problems.append(f"anchor seq {seq}: token unreadable")
         return
-    check = tsa.verify_token(token, digest, ca_certs=tsa_ca)
+    if is_test_anchor(record):     # any client may ask for one: it never breaks verify and counts only if trusted
+        own = tsa.verify_token(token, digest)
+        if own.problems:
+            report.problems.append(f"anchor seq {seq}: {'; '.join(own.problems)}")
+            return
+        check = tsa.verify_token(token, digest, ca_certs=tsa_ca) if tsa_ca else None
+        if check is None or check.problems or not check.chain_checked:
+            report.warnings.append(f"anchor seq {seq}: from the built-in TEST ONLY authority; not counted "
+                                   "(--test-tsa trusts it, for tests and demos)")
+            return
+    else:
+        check = tsa.verify_token(token, digest, ca_certs=tsa_ca)
     if check.problems:
         report.problems.append(f"anchor seq {seq}: {'; '.join(check.problems)}")
     elif check.chain_checked:
@@ -198,11 +214,13 @@ def signature_status(record: dict, *, signers: dict[str, SignerInfo] | None = No
                      keys: dict | None = None) -> tuple[str, str]:
     """``(status, detail)`` of the detached statement in ``record['data']['signature']``.
 
-    ``signers`` is the full registry (``load_registry()``); without one, ``keys`` (``{key_id: public key}``) can only
-    show that some trusted key signed. Status: ``valid``; ``invalid`` (malformed, altered, not bound to the record's
-    type or meaning, or signed with a key that belongs to someone else); ``revoked`` (signed before the key was
-    enrolled or at/after its revocation); ``unknown-key`` (key not in the registry); ``unbound`` (verifies, but the
-    key's owner is unknown); ``unsigned`` (no statement)."""
+    ``signers`` is the full registry, checked against the trail's enrolment records
+    (``load_registry(records=...)`` or ``check_enrolment``); without one, ``keys`` (``{key_id: public key}``) can
+    only show that some trusted key signed. Status: ``valid``; ``invalid`` (malformed, altered, not bound to the
+    record's type or meaning, or signed with a key that belongs to someone else); ``revoked`` (signed before the key
+    was enrolled or at/after its revocation); ``unknown-key`` (key not in the registry, or in it but not backed by
+    its enrolment record); ``unbound`` (verifies, but the key's owner is unknown); ``unsigned`` (no statement).
+    ``valid`` from a registry whose keys were not checked says so in ``detail`` (``UNCHECKED``)."""
     data = record.get("data") if isinstance(record.get("data"), dict) else {}
     block = data.get("signature")
     if not isinstance(block, dict) or not isinstance(block.get("statement"), dict):
@@ -243,15 +261,23 @@ def signature_status(record: dict, *, signers: dict[str, SignerInfo] | None = No
         return "invalid", f"key {key_id} belongs to {owners[0][0].id}, but the statement names {signer['id']}"
     if entry.public is None or not verify_statement(block, {key_id: entry.public}):
         return "invalid", "signature does not verify (statement altered or wrong key)"
+    if entry.backed is False:
+        return "unknown-key", (f"key {key_id} of {signer['id']} is in signers.json but not backed by its enrolment "
+                               f"record ({entry.evidence}); see 'aqt-signoff signers check'")
     enrolled, revoked = parse_time(entry.enrolled_at), parse_time(entry.revoked_at)
     if enrolled is not None and signed_at < enrolled:
         return "revoked", f"signed before key {key_id} was enrolled ({entry.enrolled_at})"
     if entry.revoked_at and (revoked is None or signed_at >= revoked):
         return "revoked", f"key {key_id} was revoked at {entry.revoked_at}"
+    notes = []
     stored = parse_time(record.get("time"))
     if revoked is not None and stored is not None and stored >= revoked:
-        return "valid", f"signed before key {key_id} was revoked ({entry.revoked_at}) but stored after it"
-    return "valid", ""
+        notes.append(f"signed before key {key_id} was revoked ({entry.revoked_at}) but stored after it")
+    if entry.backed is None:
+        notes.append(f"{UNCHECKED} ({entry.evidence or 'the registry was not checked against the trail'})")
+    elif entry.evidence:
+        notes.append(f"key {key_id}: {entry.evidence}")
+    return "valid", "; ".join(notes)
 
 
 def _review_problems(record: dict, seq: int, data: dict, records: list[dict]) -> list[str]:
@@ -269,6 +295,11 @@ def _review_problems(record: dict, seq: int, data: dict, records: list[dict]) ->
     if subject.get("kind") != "trail-review" or subject.get("sha256") != content_hash(body) \
             or record.get("subject") != subject:
         problems.append("review content differs from what was signed")
+    if "profile_params" in data:     # reviews since the parameters are signed: they must be the profile's
+        params, queries = data.get("profile_params"), data.get("profile_queries")
+        if not isinstance(params, dict) or not isinstance(queries, list) or \
+                _profile_entry(str(data.get("profile")), queries, params)["sha256"] != data.get("profile_sha256"):
+            problems.append("its profile parameters do not match its profile hash")
     scope = data.get("scope") if isinstance(data.get("scope"), dict) else {}
     start, end = scope.get("from_seq"), scope.get("to_seq")
     if type(start) is not int or type(end) is not int or not 0 <= start <= end < seq:
@@ -288,12 +319,51 @@ def _review_problems(record: dict, seq: int, data: dict, records: list[dict]) ->
     return problems
 
 
+def _statement_digest(data: dict) -> str | None:
+    try:
+        return content_hash(data["signature"]["statement"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def review_statuses(records: list[dict], *, signers: dict[str, SignerInfo] | None = None,
+                    keys: dict | None = None) -> list[tuple[dict, str, str]]:
+    """``(record, status, detail)`` for every ``trail.review`` in ``records``, which must be the whole trail (its
+    enrolment records and the reviewed scopes are read from it). ``valid`` only when the signature is valid against
+    ``signers`` (checked here against the trail's enrolment records), the review is bound to its content, its scope
+    and an independent reviewer as ``verify`` checks, and its signed statement did not appear in an earlier
+    record: a copy counts once and is ``invalid``. Only a ``valid`` review shows that a review was done."""
+    if signers:
+        signers = check_enrolment(signers, records)
+    results, first = [], {}
+    for record in records:
+        if not isinstance(record, dict) or record.get("type") != "trail.review":
+            continue
+        try:
+            data = record.get("data") if isinstance(record.get("data"), dict) else {}
+            status, detail = signature_status(record, signers=signers, keys=keys)
+            if status == "valid":
+                problems = _review_problems(record, record["chain"]["seq"], data, records)
+                if problems:
+                    status, detail = "invalid", "; ".join(problems)
+            digest = _statement_digest(data) if status != "unsigned" else None
+            if digest in first:
+                status, detail = "invalid", f"replayed copy of the review signed in record {first[digest]}; it counts once"
+            elif digest:
+                first[digest] = record.get("id")
+        except (TypeError, AttributeError, KeyError, ValueError, IndexError) as error:
+            status, detail = "invalid", f"malformed trail.review ({type(error).__name__})"
+        results.append((record, status, detail))
+    return results
+
+
 def verify_trail(path: str | os.PathLike, *, keys: dict, checkpoints: str | os.PathLike | None = None,
                  heads: str | os.PathLike | None = None, tsa_ca: list | None = None,
                  signer_keys: dict | None = None, log_id: str | None = None, pinned: bool = False,
                  signers: dict[str, SignerInfo] | None = None) -> TrailReport:
     """``signers`` is the signer registry to check detached signatures against; ``registry_keys(...)`` passed as
-    ``signer_keys`` carries it too. A plain ``{key_id: key}`` dict only shows that a trusted key signed."""
+    ``signer_keys`` carries it too. Its keys are checked against the enrolment records in this trail
+    (``check_enrolment``). A plain ``{key_id: key}`` dict only shows that a trusted key signed."""
     report = TrailReport(ok=False, log_id=log_id)
     if not keys:
         report.problems.append("no service public key to verify with")
@@ -322,6 +392,8 @@ def verify_trail(path: str | os.PathLike, *, keys: dict, checkpoints: str | os.P
     if not pinned:
         report.warnings.append("service key not pinned (--pin-key): a full rewrite under a new key is only "
                                "detected by external heads or anchors")
+    if signers:
+        signers = check_enrolment(signers, records)
     if checkpoints and Path(checkpoints).exists():
         for point in _load_points(checkpoints, "checkpoints", report):
             report.checkpoints += 1
@@ -336,7 +408,8 @@ def verify_trail(path: str | os.PathLike, *, keys: dict, checkpoints: str | os.P
             if _check_point(point, records, keys, "external head", report):
                 _cover(report, point["seq"])
                 _outside(report, point["seq"])
-    unknown, unbound, unchecked_reviews = 0, 0, 0
+    unknown, unbound, unchecked_reviews, unenrolled, unchecked_keys = 0, 0, 0, 0, 0
+    reviewed: dict[str, int] = {}      # signed review statement -> seq of its first record
     for record in records:
         seq = record["chain"]["seq"]
         data = record.get("data") if isinstance(record.get("data"), dict) else {}
@@ -348,6 +421,14 @@ def verify_trail(path: str | os.PathLike, *, keys: dict, checkpoints: str | os.P
                                       and isinstance(data["signature"].get("statement"), dict)):
                 continue
             status, detail = signature_status(record, signers=signers, keys=signer_keys)
+            if is_review and status != "unsigned":
+                digest = _statement_digest(data)
+                if digest in reviewed:
+                    report._signature_problem(f"seq {seq}: trail.review repeats the review signed at seq "
+                                              f"{reviewed[digest]} (same signed statement); it counts once")
+                    continue
+                if digest:
+                    reviewed[digest] = seq
             if status != "unsigned":
                 report.signatures += 1
             if is_review:
@@ -358,6 +439,7 @@ def verify_trail(path: str | os.PathLike, *, keys: dict, checkpoints: str | os.P
                 if status != "invalid":
                     for problem in _review_problems(record, seq, data, records):
                         report._signature_problem(f"seq {seq}: review signature: {problem}")
+            in_registry = bool(signers) and bool(key_owners(signers, str(data["signature"].get("key"))))
             if status in ("invalid", "revoked"):
                 report._signature_problem(f"seq {seq}: detached signature in data.signature is invalid: {detail}")
             elif status == "unknown-key":
@@ -365,12 +447,18 @@ def verify_trail(path: str | os.PathLike, *, keys: dict, checkpoints: str | os.P
                     report._signature_problem(f"seq {seq}: review signature: {detail}")
                 elif is_review:
                     unchecked_reviews += 1
+                elif in_registry:
+                    unenrolled += 1
                 else:
                     unknown += 1
             elif status == "unbound":
                 unbound += 1
             elif detail:
-                report.warnings.append(f"seq {seq}: {detail}")
+                if UNCHECKED in detail:
+                    unchecked_keys += 1
+                    detail = detail.split(UNCHECKED)[0].rstrip("; ")
+                if detail:
+                    report.warnings.append(f"seq {seq}: {detail}")
         except (TypeError, AttributeError, KeyError, ValueError, IndexError) as error:
             text = f"seq {seq}: malformed {record.get('type')} payload ({type(error).__name__})"
             if record.get("type") == "trail.anchor":
@@ -379,6 +467,12 @@ def verify_trail(path: str | os.PathLike, *, keys: dict, checkpoints: str | os.P
                 report._signature_problem(text)
     if unknown:
         report.warnings.append(f"{unknown} detached signature(s) by keys not in the signer registry")
+    if unenrolled:
+        report.warnings.append(f"{unenrolled} detached signature(s) by registry keys not backed by their enrolment "
+                               "records; they do not count (aqt-signoff signers check)")
+    if unchecked_keys:
+        report.warnings.append(f"{unchecked_keys} detached signature(s) rest on signers.json alone: "
+                               f"{getattr(signers, 'enrolment', None) or 'registry keys were not checked'}")
     if unchecked_reviews:
         report.warnings.append(f"{unchecked_reviews} review signature(s) not checked: no signer registry, so the "
                                "reviewer's identity is unverified")

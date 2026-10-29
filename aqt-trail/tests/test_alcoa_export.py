@@ -30,6 +30,7 @@ def report_for(config, **kw):
     records = read_records(config.trail_path)
     ca = load_ca(config.state / "test-tsa" / "ca.pem") if (config.state / "test-tsa").exists() else None
     report = verify_trail(config.trail_path, keys=service_keys(config), checkpoints=config.checkpoints_path, tsa_ca=ca)
+    kw.setdefault("test_tsa", True)      # these trails are anchored by the TEST ONLY authority on purpose
     return alcoa_report(records, report, export_check=lambda: export_dry_run(config), **kw)
 
 

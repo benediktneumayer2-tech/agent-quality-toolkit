@@ -9,7 +9,7 @@ refused, 2 usage or runtime error.
 |---|---|
 | `init [--log-id ID]` | create the state directory, the service key (`keys/service.key`, unencrypted so the writer starts unattended, 0600) and `trail.json` |
 | `serve` | run the writer; records `service.start` (version, key, config hash), drains the spool at start and every `drain_interval_s`, records `service.stop` on SIGTERM/SIGINT |
-| `status` | writer running, head, spooled count, last anchor |
+| `status [--test-tsa]` | writer running, head, spooled count, last anchor (writer-written RFC 3161; TEST ONLY anchors only in test mode, else shown as `last_test_anchor`), last review (signature valid against the enrolment-checked registry, a copied statement counted once) |
 | `append [FILE\|-]` | send records (JSON object, array or JSON lines) |
 | `event --action A [--reason R] [--subject KIND:REF] [--data JSON] [--actor ID]` | a `trail.event` |
 | `hook claude-code` | one Claude Code hook payload from stdin → `trail.import`; always exits 0 |
@@ -32,7 +32,7 @@ One JSON request per connection; the client closes its write side and reads one 
 |---|---|
 | `{"op": "append", "record": {…}}` | `{"ok": true, "record": stored, "created": bool}` |
 | `{"op": "drain", "records": [...], "source": "…"}` | `{"ok": true, "appended", "already_stored", "refused", "gap"}` |
-| `{"op": "checkpoint", "anchor": bool, "export": bool, "tsa_url": "…"}` | `{"ok": true, "checkpoint", "anchor"}`; `tsa_url` may only be empty, the configured `[anchor] tsa_url` or `test:` (the TEST ONLY authority in the writer's state directory); anything else is refused (`unauthorized`) |
+| `{"op": "checkpoint", "anchor": bool, "export": bool, "tsa_url": "…"}` | `{"ok": true, "checkpoint", "anchor"}`; `tsa_url` may only be empty, the configured `[anchor] tsa_url` or `test:` (the TEST ONLY authority in the writer's state directory); anything else is refused (`unauthorized`). A `test:` anchor or an export note any client asked for never counts as an anchor outside test mode |
 | `{"op": "head"}`, `{"op": "ping"}` | head / version |
 
 Errors: `{"ok": false, "code": "invalid_record|unauthorized|duplicate_id|unavailable|internal", "message"}`.
@@ -58,7 +58,7 @@ same content counts as already stored, one with other content is refused (`dupli
 | `trail.gap` | `spool.drained` | `reason`, `count`, `first_time`, `last_time`, `spool_ids`, `source` |
 | `trail.refused` | `refused` | `attempted_action`, `reason_code`, `agent_markers`, `message`, `attempted_sha256`, `attempted_id`, `attempted_type` |
 | `trail.import` | `prompt`, `message`, `tool.call`, `tool.result`, `model.change`, `permission.mode`, `compaction`, `session.start`, `session.end`, `session.continued`, `turn.start`, `turn.end`, `rollback`, `stop` | `source {format, session, event_id}`, `source_hash`, `source_time`, `tool {name, use_id, input_sha256, input_excerpt, output_sha256, is_error}`, `prompt_sha256`, `prompt_excerpt`, `model`, … |
-| `trail.anchor` | `rfc3161`, `external-head` | `checkpoint`, `imprint`, `tsa {url, token_b64, gen_time, serial, policy, cert_sha256}`; only anchors the writer wrote itself (`observed.origin: writer`) count, others are a `verify` problem |
+| `trail.anchor` | `rfc3161`, `external-head` | `checkpoint`, `imprint`, `tsa {url, token_b64, gen_time, serial, policy, cert_sha256}`; only anchors the writer wrote itself (`observed.origin: writer`) count, others are a `verify` problem; an anchor from the TEST ONLY authority (`tsa.url` `test:` or its test policy) counts only in test mode and is otherwise a `verify` warning, never a problem |
 | `trail.review` | `review.signed` | see [review.md](review.md) |
 
 `observed` (writer-owned): `pid`, `uid`, `gid`, `process_chain` (nearest first), `processes`
@@ -78,7 +78,10 @@ an existing terminal server on an agent's request looks `complete`. The writer's
 `origin: writer`. Records sent through the `drain` op carry `drained_by`, the observation of the client that
 sent them; the `trail.gap` before them carries it as its own `observed`. The gap's `reason`,
 `first_time` and `last_time` come from the spooled records, so they are the client's account.
-Review and `alcoa` count a record that claims a human as attributed only with `complete` and no agent marker. Older records have no `chain_status`; there `chain_complete: false` marked a chain with a process that had already exited.
+Review and `alcoa` count a record that claims a human as attributed only with `complete` and no agent marker.
+A spooled record that claims a human and came through the `drain` op is judged by its drainer: an agent harness in
+`drained_by` is an `attribution_mismatch` (major), a `drained_by.chain_status` other than `complete` an
+unconfirmed one (minor). Older records have no `chain_status`; there `chain_complete: false` marked a chain with a process that had already exited.
 
 ## Importers
 
@@ -103,7 +106,15 @@ See [`examples/trail.toml`](../examples/trail.toml). Paths: state `$AQT_TRAIL_ST
 `$XDG_STATE_HOME/aqt/trail`; config `$XDG_CONFIG_HOME/aqt/trail.toml`; socket from `[writer] socket`,
 `AQT_SINK=unix:…`, `$XDG_RUNTIME_DIR/aqt/trail.sock`, or `<state>/aqt-trail.sock`, in that order.
 AF_UNIX paths are limited to about 104 bytes. Signer registry `$AQT_SIGNERS` or `$XDG_CONFIG_HOME/aqt/signers.json`;
-reviewer keys in `$AQT_KEYS_DIR` or `$XDG_CONFIG_HOME/aqt/keys/`.
+reviewer keys in `$AQT_KEYS_DIR` or `$XDG_CONFIG_HOME/aqt/keys/`. The registry is plain configuration: a key counts
+only when its `signoff.key.enrolled` record in the trail backs it, judged with aqt-signoff's rules
+(`aqt_trail.signers.check_enrolment`, `load_registry(records=...)`). aqt-trail does not depend on aqt-signoff;
+without it the keys are left unchecked and `verify` warns that they rest on `signers.json` alone.
+
+Test mode (`--test-tsa` on `verify`, `alcoa`, `status` and `review run`, or `[anchor] test_tsa = true`) trusts
+the built-in TEST ONLY authority: its CA in `verify`, its anchors in `status`, `unanchored_head` and ALCOA++
+`enduring`. In `review run` it is recorded in the profile (`test_tsa = true`, a difference from the built-in
+defaults). Outside test mode TEST ONLY anchors never count, since any client may ask the writer for one.
 
 To run the writer as a systemd **user** service, copy [`examples/aqt-trail.service`](../examples/aqt-trail.service)
 to `~/.config/systemd/user/`, set `ExecStart` to your `aqt-trail`, then

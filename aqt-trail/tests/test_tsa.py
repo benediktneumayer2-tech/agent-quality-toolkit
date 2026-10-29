@@ -80,7 +80,7 @@ def test_anchor_record_in_trail_verifies(config):
     report = verify_trail(config.trail_path, keys=service_keys(config), checkpoints=config.checkpoints_path, tsa_ca=ca)
     assert report.ok and report.anchors == 1 and report.anchors_verified == 1
     unverified = verify_trail(config.trail_path, keys=service_keys(config))
-    assert unverified.ok and any("not checked" in w for w in unverified.warnings)
+    assert unverified.ok and any("TEST ONLY authority; not counted" in w for w in unverified.warnings)
     token = base64.b64decode(read_records(config.trail_path)[-1]["data"]["tsa"]["token_b64"])
     assert tsa.parse_token(token).imprint == bytes.fromhex(point["head"][7:])
 

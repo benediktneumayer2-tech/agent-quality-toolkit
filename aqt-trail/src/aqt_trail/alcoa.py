@@ -13,7 +13,7 @@ from pathlib import Path
 
 from aqt_evidence import validate_record
 
-from .review import anchored_seq, attribution, is_writer_record
+from .review import anchored_seq, attribution, is_test_anchor, is_writer_record
 from .text import md
 from .verify import TrailReport
 
@@ -44,8 +44,10 @@ def _result(attribute, status, detail):
 
 
 def alcoa_report(records: list[dict], report: TrailReport, *, skew_ms: int = 5000, unanchored_hours: int = 24,
-                 export_check=None, now: datetime | None = None) -> list[dict]:
-    """``records`` may be a selection (``--since``/``--until``); ``report`` is the verification of the whole trail."""
+                 export_check=None, now: datetime | None = None, test_tsa: bool = False) -> list[dict]:
+    """``records`` may be a selection (``--since``/``--until``); ``report`` is the verification of the whole trail.
+    TEST ONLY anchors count for ``enduring`` only with ``test_tsa``; exported-head notes never do (only head copies
+    that ``verify --heads`` matched, ``report.covered_seq``)."""
     results = []
     socket_records = [r for r in records if _observed(r).get("via") == "socket"]
     spooled = [r for r in records if _observed(r).get("via") == "spool"]
@@ -110,16 +112,24 @@ def alcoa_report(records: list[dict], report: TrailReport, *, skew_ms: int = 500
     results.append(_result("consistent", "warn" if backwards or len(keys) > 1 else "pass",
                            f"{len(keys)} service key(s); writer time went backwards {backwards} time(s)"))
 
-    anchors = [r for r in records if anchored_seq(r) is not None]
+    anchors = [r for r in records if anchored_seq(r, test_tsa=test_tsa) is not None]
     exported = [r for r in records if r.get("type") == "trail.anchor" and r.get("action") == "external-head"
                 and is_writer_record(r)]
     forged = [r for r in records if r.get("type") == "trail.anchor" and not is_writer_record(r)]
-    ignored = f"; {len(forged)} trail.anchor record(s) not written by the writer were ignored" if forged else ""
+    tests = [] if test_tsa else [r for r in records if r.get("type") == "trail.anchor" and is_writer_record(r)
+                                 and r.get("action") == "rfc3161" and is_test_anchor(r)]
+    ignored = (f"; {len(forged)} trail.anchor record(s) not written by the writer were ignored" if forged else "") + \
+              (f"; {len(tests)} TEST ONLY anchor(s) not counted (--test-tsa)" if tests else "")
     if not anchors:
-        results.append(_result("enduring", "warn" if exported else "fail",
-                               (f"no RFC 3161 anchor; {len(exported)} exported head(s) noted (they count only where "
-                                "you keep them: verify --heads)" if exported else
-                                "no anchor: a rewrite of the whole trail would go unnoticed") + ignored))
+        noted = (f"; {len(exported)} exported head(s) noted (they count only where you keep them: verify --heads)"
+                 if exported else "")
+        if report.covered_seq is not None:
+            results.append(_result("enduring", "warn", f"no RFC 3161 anchor counted; head copies matched by verify "
+                                                       f"--heads or CA-verified anchors cover seq {report.covered_seq}"
+                                                       f"{noted}{ignored}"))
+        else:
+            results.append(_result("enduring", "fail", "no anchor: a rewrite of the whole trail would go "
+                                                       f"unnoticed{noted}{ignored}"))
     else:
         last = _time(anchors[-1].get("time"))
         newest = _time(records[-1].get("time")) if records else last

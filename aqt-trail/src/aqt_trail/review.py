@@ -31,7 +31,8 @@ from aqt_evidence import (Signer, actor, bytes_hash, content_hash, new_record, r
                           verify_chain)
 
 from . import tsa
-from .signers import SignerInfo, build_statement, key_owners, sign_statement
+from .config import DEFAULTS
+from .signers import SignerInfo, build_statement, check_enrolment, key_owners, sign_statement
 from .text import md
 
 QUERIES = ("self_approval", "missing_reason", "attribution_mismatch", "gaps", "out_of_hours",
@@ -101,15 +102,34 @@ def is_writer_record(record) -> bool:
     return observed.get("origin") == "writer" and "via" not in observed and _aid(record) == WRITER_ID
 
 
-def anchored_seq(record) -> int | None:
+def is_test_anchor(record) -> bool:
+    """A ``trail.anchor`` from the built-in TEST ONLY authority (``tsa.url`` ``test:`` or its test policy). Any
+    client may ask the writer for one, so it counts only where the user chose test mode (``--test-tsa``,
+    ``[anchor] test_tsa``)."""
+    stamp = _data(record).get("tsa")
+    if not isinstance(stamp, dict):
+        return False
+    if str(stamp.get("url", "")).startswith("test:"):
+        return True
+    try:
+        return tsa.parse_token(base64.b64decode(str(stamp.get("token_b64", "")), validate=True)).policy \
+            == tsa.TEST_POLICY
+    except Exception:  # noqa: BLE001 - an unreadable token is no test marker; anchored_seq rejects it anyway
+        return False
+
+
+def anchored_seq(record, *, test_tsa: bool = False) -> int | None:
     """For a writer-written RFC 3161 ``trail.anchor`` whose token covers its checkpoint's head (imprint and TSA
-    signature; ``verify`` also checks the certificate chain), the seq the checkpoint covers; else None."""
+    signature; ``verify`` also checks the certificate chain), the seq the checkpoint covers; else None.
+    An anchor from the TEST ONLY authority counts only with ``test_tsa`` (the user chose test mode)."""
     if record.get("type") != "trail.anchor" or record.get("action") != "rfc3161" or not is_writer_record(record):
         return None
     data = _data(record)
     point, stamp = data.get("checkpoint"), data.get("tsa")
     if not isinstance(point, dict) or type(point.get("seq")) is not int or not isinstance(point.get("head"), str) \
             or not isinstance(stamp, dict) or point["seq"] >= _seq(record):
+        return None
+    if not test_tsa and is_test_anchor(record):
         return None
     try:
         token = base64.b64decode(str(stamp.get("token_b64", "")), validate=True)
@@ -119,13 +139,30 @@ def anchored_seq(record) -> int | None:
     return point["seq"] if tsa.verify_token(token, digest).ok else None
 
 
+def _drainer(record) -> dict | None:
+    """The observation of the client that pushed a spooled record with the ``drain`` op, if any."""
+    observed = _observed(record)
+    drainer = observed.get("drained_by")
+    return drainer if observed.get("via") == "spool" and isinstance(drainer, dict) else None
+
+
 def attribution(record) -> str | None:
-    """How well a socket record that claims a human is attributed, or None for other records:
+    """How well a record that claims a human is attributed, or None for other records:
     ``agent`` (an agent harness was observed), ``unconfirmed`` (``observed.chain_status`` partial or
     unavailable: the sender's process chain could not be read completely), ``legacy`` (written before
-    ``chain_status`` existed: only the absence of agent markers speaks for a human), ``human``."""
+    ``chain_status`` existed: only the absence of agent markers speaks for a human), ``human``.
+    A spooled record pushed with the ``drain`` op is judged by its drainer (``observed.drained_by``): ``agent``
+    or ``unconfirmed`` as above; a drainer that looked human gives None (the sender itself was not observed:
+    a gap finding)."""
     observed = _observed(record)
-    if observed.get("via") != "socket" or _actor(record).get("kind") != "human":
+    if _actor(record).get("kind") != "human":
+        return None
+    drainer = _drainer(record)
+    if drainer is not None:
+        if drainer.get("harness"):
+            return "agent"
+        return None if drainer.get("chain_status") == "complete" else "unconfirmed"
+    if observed.get("via") != "socket":
         return None
     if observed.get("harness"):
         return "agent"
@@ -194,14 +231,17 @@ def q_attribution_mismatch(scope, everything, params):
     findings, unconfirmed, legacy = [], [], []
     for record in scope:
         observed = _observed(record)
-        if observed.get("via") != "socket":
+        drainer = _drainer(record)
+        if observed.get("via") != "socket" and drainer is None:
             continue
         state = attribution(record)
         if state == "agent":
-            chain = observed.get("process_chain") if isinstance(observed.get("process_chain"), list) else []
+            seen = drainer or observed
+            chain = seen.get("process_chain") if isinstance(seen.get("process_chain"), list) else []
+            how = "pushed through the spool by a drain request from inside" if drainer else "sent from inside"
             findings.append(_finding("attribution_mismatch", "major", [record],
-                                     f"claims human {_aid(record)} but was sent from inside "
-                                     f"{observed['harness']} ({' <- '.join(str(c) for c in chain[:6])})"))
+                                     f"claims human {_aid(record)} but was {how} "
+                                     f"{seen['harness']} ({' <- '.join(str(c) for c in chain[:6])})"))
         elif state == "unconfirmed":
             unconfirmed.append(record)
         elif state == "legacy":
@@ -212,8 +252,9 @@ def q_attribution_mismatch(scope, everything, params):
                                      "claims an agent session but no agent harness was observed"))
     if unconfirmed:
         findings.append(_finding("attribution_mismatch", "minor", unconfirmed,
-                                 f"{len(unconfirmed)} record(s) claim a human, but the sender's process chain was "
-                                 "incomplete or unreadable (observed.chain_status): not confirmed as human"))
+                                 f"{len(unconfirmed)} record(s) claim a human, but the sender's (or, for drained "
+                                 "records, the drainer's) process chain was incomplete or unreadable "
+                                 "(observed.chain_status): not confirmed as human"))
     if legacy:
         findings.append(_finding("attribution_mismatch", "info", legacy,
                                  f"{len(legacy)} record(s) claim a human and were written before "
@@ -225,15 +266,26 @@ def q_gaps(scope, everything, params):
     findings = []
     for record in scope:
         if record.get("type") == "trail.gap":
-            data = _data(record)
+            data, drainer = _data(record), _observed(record)
+            if drainer.get("via") == "socket":    # pushed with the drain op: the drainer was observed
+                how = (f"pushed by a drain request from {drainer.get('harness') or 'a process without an agent '
+                       'harness'} (pid {drainer.get('pid')}, chain {drainer.get('chain_status') or 'not recorded'}); "
+                       "the drainer was observed, the senders were not")
+            else:
+                how = "their senders were not observed"
             findings.append(_finding("gaps", "major", [record],
                                      f"{data.get('count')} record(s) spooled between {data.get('first_time')} and "
-                                     f"{data.get('last_time')}; their attribution was not observed"))
+                                     f"{data.get('last_time')}; {how}"))
         elif record.get("action") == "log.repaired":
             findings.append(_finding("gaps", "minor", [record], "an incomplete last line was removed at start"))
     spooled = [r for r in scope if _observed(r).get("via") == "spool"]
-    if spooled:
-        findings.append(_finding("gaps", "minor", spooled, "records delivered through the spool (claimed, not observed)"))
+    drained = [r for r in spooled if _drainer(r) is not None]
+    if drained:
+        findings.append(_finding("gaps", "minor", drained, "records delivered through the spool by a drain request "
+                                                           "(the drainer was observed, the sender was not)"))
+    if len(drained) < len(spooled):
+        findings.append(_finding("gaps", "minor", [r for r in spooled if _drainer(r) is None],
+                                 "records delivered through the spool (claimed, not observed)"))
     starts = [r for r in everything if r.get("type") == "trail.event" and r.get("action") in ("service.start", "service.stop")]
     in_scope = {r.get("id") for r in scope}
     for previous, current in zip(starts, starts[1:]):
@@ -329,14 +381,17 @@ def q_invalidated_signatures(scope, everything, params):
 
 def q_unanchored_head(scope, everything, params):
     """Records after the last RFC 3161 anchor the writer wrote. Exported heads are not counted: the trail
-    cannot see whether a copy was really kept elsewhere."""
+    cannot see whether a copy was really kept elsewhere. TEST ONLY anchors count only with ``test_tsa``."""
     if not everything:
         return []
-    last, covered = None, -1
+    test_tsa = params.get("test_tsa") is True
+    last, covered, tests = None, -1, 0
     for record in everything:
-        seq = anchored_seq(record)
+        seq = anchored_seq(record, test_tsa=test_tsa)
         if seq is not None:
             last, covered = record, max(covered, seq)
+        elif record.get("type") == "trail.anchor" and is_writer_record(record) and is_test_anchor(record):
+            tests += 1
     after = [r for r in everything
              if _seq(r) > covered and not (r.get("type") == "trail.anchor" and is_writer_record(r))]
     if not after:
@@ -346,6 +401,8 @@ def q_unanchored_head(scope, everything, params):
     age = newest - since if since and newest else timedelta(0)
     if last is None or age > timedelta(hours=int(params.get("unanchored_hours", 24))):
         what = "no RFC 3161 anchor" if last is None else f"last RFC 3161 anchor {last.get('time')}"
+        if tests and not test_tsa:
+            what += f"; {tests} TEST ONLY anchor(s) not counted"
         return [_finding("unanchored_head", "minor", after[-1:],
                          f"{len(after)} record(s) not covered by an anchor ({what})")]
     return []
@@ -355,8 +412,12 @@ QUERY_FUNCTIONS = {name: globals()[f"q_{name}"] for name in QUERIES}
 
 
 # -- profiles and worksheets -----------------------------------------------------------
+BUILTIN_PARAMS = {**DEFAULTS["review"], "test_tsa": False}    # the code's defaults, whatever trail.toml says
+
+
 def load_profile(spec: str | None, defaults: dict) -> dict:
-    """The built-in ``default`` profile, or a TOML file with ``name``, ``queries`` and ``[params]``."""
+    """The built-in ``default`` profile, or a TOML file with ``name``, ``queries`` and ``[params]``.
+    ``defaults`` are the configured ``[review]`` values (plus ``test_tsa`` when test mode is on)."""
     profile = {"name": "default", "queries": list(QUERIES), "params": dict(defaults)}
     if spec and spec != "default":
         path = Path(spec)
@@ -367,12 +428,31 @@ def load_profile(spec: str | None, defaults: dict) -> dict:
         profile["params"].update(loaded.get("params", {}))
         if profile["name"] == "default" and profile["queries"] != list(QUERIES):
             raise ValueError(f"{path}: a profile that leaves out queries may not be named 'default'")
+        if profile["name"] == "default" and profile["params"] != dict(defaults):
+            raise ValueError(f"{path}: a profile that changes parameters may not be named 'default'")
     return profile
+
+
+def profile_differences(params: dict) -> dict:
+    """``{param: {"value", "builtin"}}`` for every parameter that differs from the code's built-in defaults
+    (``BUILTIN_PARAMS``; ``builtin`` None for a parameter the code does not know). A profile can carry any
+    thresholds, whatever its name: these are shown before signing and signed with the review."""
+    return {key: {"value": params[key], "builtin": BUILTIN_PARAMS.get(key)} for key in sorted(params)
+            if key not in BUILTIN_PARAMS or params[key] != BUILTIN_PARAMS[key]}
+
+
+def describe_params(params: dict) -> str:
+    """One line: every parameter, those that differ from the built-in defaults marked with theirs."""
+    differs = profile_differences(params)
+    return ", ".join(f"{key}={json.dumps(value)}" + (f" (built-in {json.dumps(differs[key]['builtin'])})"
+                                                     if key in differs else "")
+                     for key, value in sorted(params.items()))
 
 
 def _profile_entry(name: str, queries: list[str], params: dict) -> dict:
     sha = bytes_hash(json.dumps({"name": name, "queries": queries, "params": params}, sort_keys=True).encode())
-    return {"name": name, "sha256": sha, "params": params, "queries": list(queries)}
+    return {"name": name, "sha256": sha, "params": params, "queries": list(queries),
+            "differs_from_builtin": profile_differences(params)}
 
 
 def _evaluate(records: list[dict], profile: dict, *, since: str | None, until: str | None) -> dict:
@@ -413,6 +493,7 @@ def worksheet_digest(sheet: dict) -> str:
 def worksheet_markdown(sheet: dict) -> str:
     scope = sheet["scope"]
     queries = sheet["profile"].get("queries")
+    differs = profile_differences(sheet["profile"].get("params") or {})
     lines = [f"# Audit-trail review worksheet {md(sheet['id'])}", "",
              f"- Log: {md(sheet['log_id'])}, seq {md(scope['from_seq'])}–{md(scope['to_seq'])} "
              f"({md(scope['count'])} records)",
@@ -420,6 +501,9 @@ def worksheet_markdown(sheet: dict) -> str:
              f"- Head at end of scope: {md(scope['head'])}",
              f"- Profile: {md(sheet['profile']['name'])} ({md(sheet['profile']['sha256'])})"
              + (f", queries: {md(', '.join(queries))}" if queries is not None and list(queries) != list(QUERIES) else ""),
+             f"- Parameters: {md(describe_params(sheet['profile'].get('params') or {}))}",
+             (f"- **Differs from the built-in defaults:** {md(', '.join(sorted(differs)))}" if differs else
+              "- Parameters are the built-in defaults"),
              f"- Actors in scope (may not sign this review): {md(', '.join(sheet['actors_reviewed'])) or 'none'}", "",
              "| Finding | Query | Severity | Records | Explanation |", "|---|---|---|---|---|"]
     for finding in sheet["findings"]:
@@ -512,20 +596,29 @@ def build_review(sheet: dict, records: list[dict], *, reviewer_id: str, signer: 
     """The signed ``trail.review`` client record. Raises ``ReviewRefused`` or ``ValueError``.
 
     ``records`` must be the trail itself, not a copy that came with the worksheet: the worksheet is recomputed from
-    them (``check_worksheet``) and only the recomputed scope, actors and findings are signed. With a non-empty
-    ``registry`` the reviewer must be registered and sign with one of their active keys; a key registered to
-    someone else is always refused."""
+    them (``check_worksheet``) and only the recomputed scope, actors, findings and profile parameters (with those
+    that differ from the built-in defaults) are signed. With a non-empty ``registry`` the reviewer must be
+    registered and sign with one of their active keys, backed by its enrolment record in ``records``
+    (``check_enrolment``); a key registered to someone else is always refused."""
     if not reviewer_id.startswith("human:"):
         raise ReviewRefused("not_human", "a review is signed by a human identity (human:<id>)")
     fresh = check_worksheet(sheet, records, log_id=log_id, keys=keys, expected_sha256=expected_sha256)
     if reviewer_id in fresh["actors_reviewed"]:
         raise ReviewRefused("not_independent", f"{reviewer_id} is an actor in the reviewed scope")
+    if registry:
+        registry = check_enrolment(registry, records)
     others = sorted({owner.id for owner, _key in key_owners(registry, signer.key_id) if owner.id != reviewer_id})
     if others:
         raise ReviewRefused("key_mismatch", f"key {signer.key_id} is registered to {', '.join(others)}, "
                                             f"not to {reviewer_id}")
     info = registry.get(reviewer_id)
     if info is not None:
+        entry = info.keys.get(signer.key_id)
+        if entry is not None and entry.backed is False:
+            raise ReviewRefused("unenrolled_key", f"key {signer.key_id} of {reviewer_id} is in signers.json but not "
+                                                  f"backed by its enrolment record in the trail ({entry.evidence}); "
+                                                  f"run 'aqt-signoff signers check' (a key made by another tool is "
+                                                  f"recorded by 'aqt-signoff rekey --signer {reviewer_id}')")
         if signer.key_id in info.revoked_keys:
             raise ReviewRefused("revoked_key", f"key {signer.key_id} of {reviewer_id} is revoked")
         if signer.key_id not in info.active_keys:
@@ -548,7 +641,8 @@ def build_review(sheet: dict, records: list[dict], *, reviewer_id: str, signer: 
                          **({"note": note} if note else {})})
     data = {"worksheet": fresh["id"], "log_id": fresh["log_id"], "scope": scope, "head": scope["head"],
             "profile": fresh["profile"]["name"], "profile_sha256": fresh["profile"]["sha256"],
-            "profile_queries": fresh["profile"]["queries"], "worksheet_sha256": worksheet_digest(sheet),
+            "profile_queries": fresh["profile"]["queries"], "profile_params": fresh["profile"]["params"],
+            "profile_differs": fresh["profile"]["differs_from_builtin"], "worksheet_sha256": worksheet_digest(sheet),
             "actors_reviewed": fresh["actors_reviewed"], "findings": findings, "conclusion": conclusion,
             "signer_registered": info is not None}
     review_subject = subject("trail-review", fresh["id"], sha256=content_hash(review_body(data)))

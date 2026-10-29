@@ -18,6 +18,8 @@ tsa_url = ""               # e.g. an RFC 3161 TSA you trust (eIDAS-qualified if 
                            # "test:" uses the built-in TEST ONLY authority (offline demos)
 tsa_ca = ""                # PEM file with the TSA's CA certificate(s), used by verify
 timeout_s = 10
+test_tsa = false           # true: trust the TEST ONLY authority everywhere (verify, status, review, alcoa);
+                           # demos and tests only. Otherwise TEST ONLY anchors never count, whoever asked for them
 
 [import]
 excerpt_chars = 160        # 0 disables excerpts; full texts are never stored, only hashes

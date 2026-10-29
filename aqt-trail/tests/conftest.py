@@ -34,6 +34,13 @@ def pytest_unconfigure(config):
         shutil.rmtree(_SESSION_HOME, ignore_errors=True)
 
 
+@pytest.fixture(autouse=True)
+def without_signoff(monkeypatch):
+    """aqt-trail does not depend on aqt-signoff: by default the tests run as without it (registry keys
+    unchecked), whatever the venv holds. ``tests/test_enrolment.py`` uses aqt-signoff's real rules."""
+    monkeypatch.setattr("aqt_trail.signers._signoff_registry", lambda: None)
+
+
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     """Isolated XDG directories; a short runtime dir because AF_UNIX paths are limited."""

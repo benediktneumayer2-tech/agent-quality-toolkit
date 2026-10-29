@@ -241,7 +241,10 @@ def test_valid_registered_review_verifies(worked, keys, env):
     put(worked, sign(worked, sheet, keys["dora"], "human:dora", signers))
     report = verify(worked, signers)
     assert report.ok and report.reviews == 1 and report.signatures == 1, report.problems
-    assert not [w for w in report.warnings if "signature" in w]
+    # aqt-signoff is not installed here: the key could not be checked against an enrolment record, and verify says so
+    assert [w for w in report.warnings if "signature" in w] == [
+        "1 detached signature(s) rest on signers.json alone: aqt-signoff is not installed, so registry keys were not "
+        "checked against their enrolment records"]
 
 
 def test_detached_statement_naming_another_signer_is_a_problem(worked, keys, env):
@@ -316,7 +319,7 @@ def test_client_sent_anchor_does_not_count(worked):
     with opened(worked) as w:
         anchors.checkpoint(w, tsa_url="test:", test_dir=worked.state / "test-tsa")
     anchored = read_records(worked.trail_path)
-    assert not q_unanchored_head(anchored, anchored, params)
+    assert not q_unanchored_head(anchored, anchored, dict(params, test_tsa=True))   # TEST ONLY: only in test mode
 
 
 # -- C-4: ALCOA reflects verification problems ---------------------------------------------------------------
@@ -399,3 +402,173 @@ def test_verify_states_what_follows_the_newest_checkpoint(worked):
     report = verify(worked)
     assert report.checkpoint_seq == 1
     assert any("1 record(s) after the newest checkpoint (seq 1)" in w for w in report.warnings)
+
+
+# -- verification round 2: TEST ONLY anchors and export notes are not anchors unless test mode is chosen -------
+def test_test_anchor_requested_by_a_client_counts_only_in_test_mode(server, config, capsys):
+    from aqt_trail import cli, tsa
+    from aqt_trail.client import TrailClient, request
+    from aqt_trail.review import anchored_seq
+    TrailClient(config.socket_path).append(event("work", who=human("alice")))
+    response = request(config.socket_path, {"op": "checkpoint", "anchor": True, "tsa_url": "test:"})   # any client
+    assert response["ok"]
+    records = read_records(config.trail_path)
+    anchor = records[-1]
+    assert anchor["data"]["tsa"]["url"] == "test:" and anchored_seq(anchor) is None
+    assert anchored_seq(anchor, test_tsa=True) == anchor["data"]["checkpoint"]["seq"]
+    findings = q_unanchored_head(records, records, {"unanchored_hours": 24})
+    assert findings and "1 TEST ONLY anchor(s) not counted" in findings[0]["explanation"]
+    assert not q_unanchored_head(records, records, {"unanchored_hours": 24, "test_tsa": True})
+    report = verify(config)
+    enduring = next(r for r in alcoa_report(records, report) if r["attribute"] == "enduring")
+    assert enduring["status"] == "fail" and "TEST ONLY" in enduring["detail"]
+    other_ca = verify_trail(config.trail_path, keys=service_keys(config), log_id="trail_test",
+                            tsa_ca=[tsa.TestTSA().ca_cert])            # a real CA is configured: never a problem
+    assert other_ca.ok and any("TEST ONLY authority; not counted" in w for w in other_ca.warnings)
+    trusted = verify_trail(config.trail_path, keys=service_keys(config), log_id="trail_test",
+                           tsa_ca=tsa.load_ca(config.state / "test-tsa" / "ca.pem"))
+    assert trusted.ok and trusted.anchors_verified == 1
+    capsys.readouterr()
+    assert cli.main(["--json", "status"]) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["last_anchor"] is None and "TEST ONLY" in status["last_test_anchor"]
+    assert cli.main(["--json", "status", "--test-tsa"]) == 0
+    assert json.loads(capsys.readouterr().out)["last_anchor"] == anchor["time"]
+
+
+def test_export_note_does_not_make_the_trail_enduring(server, config):
+    from aqt_trail.client import TrailClient, request
+    TrailClient(config.socket_path).append(event("work", who=human("alice")))
+    assert request(config.socket_path, {"op": "checkpoint", "export": True})["ok"]
+    records = read_records(config.trail_path)
+    assert records[-1]["action"] == "external-head"
+    enduring = next(r for r in alcoa_report(records, verify(config)) if r["attribute"] == "enduring")
+    assert enduring["status"] == "fail" and "1 exported head(s) noted" in enduring["detail"]
+
+
+def test_review_run_in_test_mode_records_it_in_the_profile(worked, capsys):
+    from aqt_trail import cli
+    with opened(worked) as w:
+        anchors.checkpoint(w, tsa_url="test:", test_dir=worked.state / "test-tsa")
+    sheets = {}
+    for flags in ([], ["--test-tsa"]):
+        capsys.readouterr()
+        assert cli.main(["--json", "review", "run", *flags]) == 0
+        sheets[bool(flags)] = json.loads(open(json.loads(capsys.readouterr().out)["worksheet"]).read())
+    assert "unanchored_head" in {f["query"] for f in sheets[False]["findings"]}
+    assert "unanchored_head" not in {f["query"] for f in sheets[True]["findings"]}
+    assert sheets[True]["profile"]["params"]["test_tsa"] is True
+    assert sheets[True]["profile"]["differs_from_builtin"]["test_tsa"] == {"value": True, "builtin": False}
+
+
+# -- verification round 2: the profile's parameters are shown and signed ----------------------------------------
+NEUTERED = {"repeated_failures": 100000, "unanchored_hours": 100000, "skew_ms": 100000000}
+
+
+def test_profile_parameters_are_shown_flagged_and_signed(worked, keys, env, tmp_path):
+    from aqt_trail.cli import _describe
+    from aqt_trail.review import check_worksheet, worksheet_markdown
+    lenient = tmp_path / "evil.toml"
+    lenient.write_text('name = "default"\n[params]\nrepeated_failures = 100000\n')
+    with pytest.raises(ValueError, match="may not be named 'default'"):
+        load_profile(str(lenient), DEFAULTS["review"])
+    # a worksheet made in code can still call any parameters 'default': they are shown and signed
+    params = dict(profile()["params"], **NEUTERED)
+    sheet = run_review(read_records(worked.trail_path), {"name": "default", "queries": profile()["queries"],
+                                                         "params": params}, log_id="trail_test")
+    markdown = worksheet_markdown(sheet)
+    assert "repeated_failures=100000 (built-in 3)" in markdown
+    assert "**Differs from the built-in defaults:**" in markdown and "skew_ms" in markdown
+    described = _describe(check_worksheet(sheet, read_records(worked.trail_path)))
+    assert "WARNING: these parameters differ from the built-in defaults" in described
+    assert "unanchored_hours=100000 (built-in 24)" in described
+    record = sign(worked, sheet, keys["dora"], "human:dora")
+    assert record["data"]["profile_params"] == params
+    assert set(NEUTERED) <= set(record["data"]["profile_differs"])
+    put(worked, record)
+    assert verify(worked).ok
+    altered = json.loads(json.dumps(record["data"]))           # a review whose shown parameters are not the profile's
+    altered["profile_params"]["repeated_failures"] = 3
+    body = {k: v for k, v in altered.items() if k != "signature"}
+    sub = subject("trail-review", altered["worksheet"], sha256=content_hash(body))
+    statement = build_statement(record_type="trail.review", signer={"id": "human:dora", "name": "D", "role": "qa"},
+                                key=keys["dora"].key_id, meaning="reviewed", reason="r", subject=sub,
+                                signed_at=utc_now(), tz="UTC")
+    altered["signature"] = sign_statement(statement, keys["dora"])
+    forge(worked, new_record("trail.review", human("dora"), "review.signed", subject=sub, reason="r",
+                             meaning="reviewed", data=altered))
+    report = verify(worked)
+    assert any("profile parameters do not match its profile hash" in p for p in report.problems)
+
+
+# -- verification round 2: a signed review counts once; only a valid one shows that a review was done -----------
+def test_replayed_review_counts_once(worked, keys, env, capsys):
+    from aqt_trail import cli
+    from aqt_trail.verify import review_statuses
+    sheet = run_review(read_records(worked.trail_path), profile(), log_id="trail_test")
+    review = put(worked, sign(worked, sheet, keys["dora"], "human:dora"))[0]
+    put(worked, event("much later work", who=human("alice")))
+    replay = new_record("trail.review", review["actor"], "review.signed", subject=review["subject"],
+                        reason="monthly review incl. later work", meaning="reviewed", data=review["data"],
+                        links=review["links"])
+    altered = json.loads(json.dumps(review["data"]))
+    altered["signature"]["statement"]["reason"] = "signed something else"
+    forged = new_record("trail.review", review["actor"], "review.signed", subject=review["subject"], reason="r",
+                        meaning="reviewed", data=altered)
+    put(worked, replay, forged)
+    report = verify(worked)
+    assert not report.ok and report.reviews == 2      # the original and the forgery; the copy counts once
+    assert any(f"repeats the review signed at seq {review['chain']['seq']}" in p for p in report.problems)
+    signers = registry(env, ("human:dora", keys["dora"], "2026-01-01T00:00:00Z", None))
+    statuses = {r["id"]: (status, detail)
+                for r, status, detail in review_statuses(read_records(worked.trail_path), signers=signers)}
+    assert statuses[review["id"]][0] == "valid"
+    assert statuses[replay["id"]][0] == "invalid" and "replayed copy" in statuses[replay["id"]][1]
+    assert statuses[forged["id"]][0] == "invalid"
+    capsys.readouterr()
+    assert cli.main(["--json", "status"]) == 0
+    assert json.loads(capsys.readouterr().out)["last_review"] == review["time"]
+    assert cli.main(["--json", "review", "list"]) == 0
+    listed = {row["id"]: row["signature"] for row in json.loads(capsys.readouterr().out)}
+    assert listed == {review["id"]: "valid", replay["id"]: "invalid", forged["id"]: "invalid"}
+
+
+# -- verification round 2: a human claim pushed by an agent through the drain op -----------------------------------
+def _drained(config, drainer):
+    claimed = event("release.decided", who=human("owner"), meaning="released")
+    spooled = {"process_chain": [], "processes": [], "harness": None, "via": "spool", "drained_by": drainer}
+    return forge(config, claimed, observed=spooled)[0]
+
+
+@pytest.mark.parametrize("drainer,state,severity", [
+    ({"via": "socket", "harness": "claude-code", "chain_status": "complete", "process_chain": ["python3", "claude"]},
+     "agent", "major"),
+    ({"via": "socket", "harness": None, "chain_status": "partial", "process_chain": ["python3"]}, "unconfirmed",
+     "minor"),
+    ({"via": "socket", "harness": None, "chain_status": "complete", "process_chain": ["python3", "bash"]}, None, None),
+])
+def test_drained_human_claim_is_judged_by_its_drainer(worked, drainer, state, severity):
+    from aqt_trail.review import attribution, q_gaps
+    stored = _drained(worked, drainer)
+    records = read_records(worked.trail_path)
+    assert attribution(stored) == state
+    found = [f for f in q_attribution_mismatch(records, records, {}) if stored["id"] in f["record_ids"]]
+    assert [f["severity"] for f in found] == ([severity] if severity else [])
+    if state == "agent":
+        assert "drain request from inside claude-code" in found[0]["explanation"]
+        attributable = next(r for r in alcoa_report(records, verify(worked)) if r["attribute"] == "attributable")
+        assert attributable["status"] == "fail"
+    gaps = [f["explanation"] for f in q_gaps(records, records, {}) if stored["id"] in f["record_ids"]]
+    assert gaps == ["records delivered through the spool by a drain request (the drainer was observed, the sender "
+                    "was not)"]
+
+
+def test_gap_of_a_drain_request_names_the_drainer(server, config):
+    from aqt_trail.client import request
+    from aqt_trail.review import q_gaps
+    claimed = event("release.decided", who=human("owner"), meaning="released")
+    assert request(config.socket_path, {"op": "drain", "records": [claimed], "source": "client spool"})["ok"]
+    records = read_records(config.trail_path)
+    gap = next(f for f in q_gaps(records, records, {}) if f["severity"] == "major")
+    assert "pushed by a drain request from" in gap["explanation"] and "the drainer was observed" in gap["explanation"]
+    assert "not observed" not in gap["explanation"].split(";")[0]

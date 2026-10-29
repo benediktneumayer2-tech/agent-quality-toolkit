@@ -20,14 +20,14 @@ from .alcoa import alcoa_report, export_dry_run, render as render_alcoa
 from .client import TrailClient, TrailRefused, locked_spool
 from .config import load_config, spool_path
 from .export import export_bundle, render_html, render_markdown, row, select, verify_bundle
-from .review import (ReviewRefused, anchored_seq, build_review, check_worksheet, load_profile, refusal_record,
-                     run_review, save_worksheet)
+from .review import (ReviewRefused, anchored_seq, build_review, check_worksheet, describe_params, is_test_anchor,
+                     is_writer_record, load_profile, refusal_record, run_review, save_worksheet)
 from .server import drain_local_spool, run_service
-from .signers import key_file, load_registry, registry_keys
+from .signers import check_enrolment, key_file, load_registry, registry_keys
 from .state import init_state, open_writer, read_records, service_keys
 from .text import printable
 from .tsa import load_ca
-from .verify import load_lines, signature_status, verify_trail
+from .verify import load_lines, review_statuses, verify_trail
 from .writer import LogBroken, WriterBusy
 
 
@@ -99,16 +99,34 @@ def cmd_serve(args, config):
     return run_service(config)
 
 
+def _test_mode(args, config) -> bool:
+    """Test mode (``--test-tsa`` or ``[anchor] test_tsa = true``): the built-in TEST ONLY authority is trusted,
+    its CA in verify and its anchors in status, review and ALCOA++. Never for real use."""
+    return bool(getattr(args, "test_tsa", False) or config.section("anchor").get("test_tsa") is True)
+
+
 def cmd_status(args, config):
     up = _service_up(config)
     head = _client(config).request({"op": "head"}) if up else None
     records = _records(config)
-    anchors_ = [r for r in records if anchored_seq(r) is not None]
+    test_mode = _test_mode(args, config)
+    anchors_ = [r for r in records if anchored_seq(r, test_tsa=test_mode) is not None]
     with locked_spool() as (entries, _clear):
         pending = len(entries)
+    try:
+        signers = load_registry()
+    except (ValueError, OSError):
+        signers = {}
+    reviews = [r for r, status, _ in review_statuses(records, signers=signers) if status == "valid"]
     value = {"writer": "running" if up else "not running", "socket": str(config.socket_path),
              "records": len(records), "head_seq": records[-1]["chain"]["seq"] if records else None,
-             "spooled": pending, "last_anchor": anchors_[-1]["time"] if anchors_ else None}
+             "spooled": pending, "last_anchor": anchors_[-1]["time"] if anchors_ else None,
+             "last_review": reviews[-1]["time"] if reviews else None}
+    if not test_mode:
+        tests = [r for r in records if r.get("type") == "trail.anchor" and r.get("action") == "rfc3161"
+                 and is_writer_record(r) and is_test_anchor(r)]
+        if tests:   # shown, never counted: any client may ask the writer for one
+            value["last_test_anchor"] = f"{tests[-1]['time']} (TEST ONLY, not counted; --test-tsa counts it)"
     if head:
         value["head"] = head.get("head")
     _out(args, value, "\n".join(f"{k}: {v}" for k, v in value.items()))
@@ -288,8 +306,8 @@ def _verify(args, config):
     else:
         keys = service_keys(config)
     ca = _tsa_ca(args, config)
-    if ca is None and (config.state / "test-tsa" / "ca.pem").exists() and getattr(args, "test_tsa", False):
-        ca = load_ca(config.state / "test-tsa" / "ca.pem")
+    if (config.state / "test-tsa" / "ca.pem").exists() and _test_mode(args, config):
+        ca = (ca or []) + load_ca(config.state / "test-tsa" / "ca.pem")
     log_id = config.meta()["log_id"] if config.meta_path.exists() else None
     return verify_trail(getattr(args, "trail", None) or config.trail_path, keys=keys,
                         checkpoints=config.checkpoints_path, heads=getattr(args, "heads", None), tsa_ca=ca,
@@ -354,7 +372,7 @@ def cmd_alcoa(args, config):
     params = config.section("review")
     results = alcoa_report(records, report, skew_ms=int(params["skew_ms"]),
                            unanchored_hours=int(params["unanchored_hours"]),
-                           export_check=lambda: export_dry_run(config))
+                           export_check=lambda: export_dry_run(config), test_tsa=_test_mode(args, config))
     if args.json or args.format == "json":
         print(json.dumps(results, indent=2))
     else:
@@ -375,7 +393,10 @@ def _reviews_dir(config, out: str | None) -> Path:
 
 
 def cmd_review_run(args, config):
-    profile = load_profile(args.profile, config.section("review"))
+    defaults = dict(config.section("review"))
+    if _test_mode(args, config):
+        defaults["test_tsa"] = True          # bound into the profile: shown and signed as a difference
+    profile = load_profile(args.profile, defaults)
     sheet = run_review(_records(config), profile, log_id=config.meta()["log_id"], since=args.since,
                        until=args.until, trail=str(config.trail_path))
     path = save_worksheet(sheet, _reviews_dir(config, args.out))
@@ -413,9 +434,13 @@ def _trail_records(config) -> list[dict]:
 
 def _describe(sheet: dict) -> str:
     scope, profile = sheet["scope"], sheet["profile"]
+    differs = profile.get("differs_from_builtin") or {}
     lines = [f"Signing a review of log {sheet['log_id']}, seq {scope['from_seq']}–{scope['to_seq']} "
              f"({scope['count']} records), period {scope['since'] or 'start'} – {scope['until'] or 'now'}",
              f"profile {profile['name']} ({profile['sha256']}), queries: {', '.join(profile['queries'])}",
+             f"parameters: {describe_params(profile['params'])}",
+             (f"WARNING: these parameters differ from the built-in defaults: {', '.join(sorted(differs))}"
+              if differs else "parameters are the built-in defaults"),
              f"actors in scope: {', '.join(sheet['actors_reviewed']) or 'none'}",
              f"{len(sheet['findings'])} finding(s)"]
     lines += [f"  {f['id']} {f['severity']} {f['query']}: {f['explanation']}" for f in sheet["findings"]]
@@ -436,6 +461,9 @@ def cmd_review_sign(args, config):
     except ReviewRefused as refused:
         return _refuse_review(config, args.reviewer, refused.code, refused.message)
     print(_describe(fresh), file=sys.stderr)
+    registry = check_enrolment(load_registry(), records)
+    if registry and registry.enrolment != "checked":
+        print(f"warning: {registry.enrolment}; run 'aqt-signoff signers check'", file=sys.stderr)
     key_path = Path(args.key) if args.key else key_file(args.reviewer)
     if not key_path.exists():
         raise CliError(f"no key at {key_path}; pass --key PEM or enrol the reviewer with aqt-signoff")
@@ -452,7 +480,7 @@ def cmd_review_sign(args, config):
     try:
         record = build_review(sheet, records, reviewer_id=args.reviewer, signer=signer,
                               dispositions=_pairs(args.disposition, "disposition"), notes=_pairs(args.note, "note"),
-                              reason=args.reason, conclusion=args.conclusion, registry=load_registry(),
+                              reason=args.reason, conclusion=args.conclusion, registry=registry,
                               name=args.name, role=args.role, tz=args.tz or config.section("review")["timezone"],
                               log_id=log_id, keys=keys)
     except ReviewRefused as refused:
@@ -469,15 +497,12 @@ def cmd_review_sign(args, config):
 
 
 def cmd_review_list(args, config):
-    """Every ``trail.review`` with the state of its signature (only ``valid`` reviews count as signed)."""
-    signers = load_registry()
+    """Every ``trail.review`` with the state of its signature (only ``valid`` reviews count as signed; a copy of
+    an earlier review's signed statement is ``invalid``)."""
     rows = []
-    for record in _records(config):
-        if record.get("type") != "trail.review":
-            continue
+    for record, status, detail in review_statuses(_records(config), signers=load_registry()):
         data = record.get("data") if isinstance(record.get("data"), dict) else {}
         scope = data.get("scope") if isinstance(data.get("scope"), dict) else {}
-        status, detail = signature_status(record, signers=signers)
         rows.append({"id": record.get("id"), "time": record.get("time"), "reviewer": row(record)["actor"],
                      "scope": scope, "findings": len(data.get("findings") or []), "signature": status,
                      "detail": detail})
@@ -517,7 +542,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     add("init", cmd_init, "create the state directory and the service key").add_argument("--log-id")
     add("serve", cmd_serve, "run the writer service on the Unix socket")
-    add("status", cmd_status, "writer, head, spool and anchor status")
+    add("status", cmd_status, "writer, head, spool, anchor and review status").add_argument(
+        "--test-tsa", action="store_true", help="count anchors from the TEST ONLY authority")
     add("append", cmd_append, "append records (JSON or JSONL) from a file or stdin").add_argument("file", nargs="?", default="-")
     p = add("event", cmd_event, "append a trail.event")
     p.add_argument("--action", required=True)
@@ -571,6 +597,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--since")
     p.add_argument("--until")
     p.add_argument("--profile", default="default")
+    p.add_argument("--test-tsa", action="store_true", help="count anchors from the TEST ONLY authority "
+                                                           "(recorded in the profile as a difference)")
     p.add_argument("--out", help="folder for the worksheet (default <state>/reviews, or your own state folder "
                                  "when that is not writable)")
     p = review.add_parser("sign", help="sign a worksheet as an independent human reviewer", parents=[common])

@@ -49,6 +49,28 @@ Security review fixes, verification side:
   wrote. `review run --out DIR`, and a fallback folder when the state is not writable (separate-user mode).
   `review list` shows each review's signature state.
 
+Security review fixes, round 2:
+
+- Registry keys count only when their `signoff.key.enrolled` record in the trail backs them, judged with
+  aqt-signoff's rules (`check_enrolment`, `load_registry(records=...)`; aqt-trail still does not depend on
+  aqt-signoff). `verify` reports a review signed with a key that is only in `signers.json` (and warns for other
+  signatures), `review sign` refuses it (`unenrolled_key`), and revocation records apply even when the file says
+  active. Without aqt-signoff the keys are left unchecked and `verify` warns that they rest on `signers.json`
+  alone (ALCOA++ `accurate` warns). A registry key id that does not belong to its public key is unusable.
+- TEST ONLY anchors (any client may ask the writer for one) count only in test mode: `--test-tsa` on `verify`,
+  `alcoa`, `status` and `review run`, or `[anchor] test_tsa = true`. Otherwise they are a `verify` warning, never a
+  problem (a configured real `tsa_ca` no longer turns them into a permanent failure), and `unanchored_head`,
+  ALCOA++ `enduring`, `status` and `anchored_seq(record)` ignore them. An exported-head note no longer turns
+  `enduring` from fail into warn; head copies matched with `verify --heads` do.
+- A review profile's parameters are shown on the worksheet and before signing, those that differ from the built-in
+  defaults flagged, and signed (`profile_params`, `profile_differs`; `verify` checks them against
+  `profile_sha256`). A profile file named `default` may not change parameters.
+- A signed `trail.review` copied into a later record counts once: `verify` reports the copy, `review list` shows
+  it `invalid`, `status` shows the last valid review (`verify.review_statuses`).
+- A human claim pushed through the `drain` op is judged by `observed.drained_by`: an agent harness is an
+  `attribution_mismatch` (major, ALCOA++ `attributable` fails), an incomplete chain an unconfirmed one; the gap
+  finding names the drainer instead of saying nothing was observed.
+
 - Fix: Claude Code hook fields `source` (SessionStart) and `reason` (SessionEnd) are stored as
   `session_source` and `end_reason`; they overwrote `data.source` and broke payload conformance.
 - Tests remove their temporary HOME at the end of the run.
