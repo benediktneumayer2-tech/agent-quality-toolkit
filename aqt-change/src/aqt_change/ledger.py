@@ -32,8 +32,8 @@ ID_TOKEN = re.compile(rb"rec_[0-9a-f]{28}")
 CHECKED_TYPES = ("change.receipt", "change.review")
 TRUST_NOGO = ("absent", "mismatch")       # the trail contradicts the mirror: NO-GO
 TRUST_TEXT = {
-    "absent": "not in the aqt-trail log (written to the local mirror only, or spooled while the writer was "
-              "down: run the commands again with the writer running)",
+    "absent": "not in the aqt-trail log (written only to the local mirror or a sink file, or spooled while the "
+              "writer was down: run the commands again with the writer running)",
     "mismatch": "differs from the record with the same id in the aqt-trail log",
     "unattributed": "reached the aqt-trail log through the spool, without an observed sender; run the commands "
                     "again with the writer running",
@@ -43,14 +43,16 @@ TRUST_TEXT = {
 
 
 def trail_logs(environ: dict | None = None) -> tuple[bool, list[Path]]:
-    """(a trail is in use, its log files). A trail is in use when records go to an aqt-trail writer
-    (``resolve_sink()`` kind ``unix``) or its log exists, unless ``AQT_SINK`` names a file. The log is
-    each ``AQT_EVIDENCE`` entry named ``trail.jsonl``, else ``trail.jsonl`` in the trail state directory;
-    the sink file and the spool never count (anyone with the agent's rights can write them)."""
+    """(a trail is in use, its log files). A trail is in use when a trail log exists or records go to an
+    aqt-trail writer (``resolve_sink()`` kind ``unix``); ``AQT_SINK=file:`` does not switch the check off
+    while a log exists (an agent sets its own environment). The log is each ``AQT_EVIDENCE`` entry named
+    ``trail.jsonl``, else ``trail.jsonl`` in the trail state directory; the sink file and the spool never
+    count (anyone with the agent's rights can write them)."""
     environ = os.environ if environ is None else environ
-    if environ.get("AQT_SINK", "").startswith("file:"):
-        return False, []
     side = {state_dir() / "evidence.jsonl", spool_file()}
+    sink = environ.get("AQT_SINK", "")
+    if sink.startswith("file:"):
+        side.add(Path(sink[5:]))
     logs = [path for path in evidence_sources(environ) if path.name == "trail.jsonl" and path not in side] \
         if environ.get("AQT_EVIDENCE") else []
     if not logs:

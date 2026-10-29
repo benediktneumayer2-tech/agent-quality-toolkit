@@ -109,6 +109,18 @@ def test_forged_mirror_receipt_does_not_count_with_a_trail(ledger, project, trai
     assert code == 1 and "not in the aqt-trail log" in message
 
 
+def test_file_sink_in_the_environment_does_not_switch_the_check_off(ledger, project, trail, tmp_path, monkeypatch):
+    failed = broken(ledger, project)
+    forge(ledger, failed, passed=True, exit_code=0, outcome="passed", counts={"source": "pytest", "passed": 1, "total": 1})
+    monkeypatch.setenv("AQT_SINK", f"file:{tmp_path / 'x.jsonl'}")       # the agent's own environment
+    result = gate(ledger, P)
+    assert result["trail"]["checked"] and result["decision"] == "NO-GO" and "receipt_unverified" in reasons(result)
+    with pytest.raises(ChangeError) as info:
+        finish(ledger, P, key="k1", summary="done", ack_warnings="tasks later")
+    assert info.value.code == "finish_evidence_missing" and "unverified" in info.value.message
+    assert hooks.claude_code({"hook_event_name": "Stop"}, ledger)[0] == 2
+
+
 def test_edited_mirror_copy_mismatches_the_trail(ledger, project, trail):
     failed = broken(ledger, project)
     lines = (ledger.state / "records.jsonl").read_bytes().splitlines()
@@ -155,7 +167,7 @@ def test_trail_in_use_but_log_unreadable_needs_manual_check(ledger, project, tra
 
 
 def test_without_a_trail_the_mirror_counts(ledger, project):
-    """No trail in use (AQT_SINK names a file): today's behaviour, a documented limit."""
+    """No trail log and a file sink: today's behaviour, a documented limit."""
     plans.begin(ledger, P)
     receipts.run(ledger, [], plan_path=P, item="V01", echo=False)
     entry = receipts.evaluate(ledger, plans.read_plan(ledger, P)[1])["V01"]

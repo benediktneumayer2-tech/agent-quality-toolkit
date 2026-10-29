@@ -48,14 +48,14 @@ Files marked `git update-index --skip-worktree` or `--assume-unchanged` are fing
 
 `gate`, `finish` and the hooks read receipts and reviews from the ledger's local copy of the records (`<git-dir>/aqt-change/records.jsonl`), which the agent's user can edit. When a trail is in use, they count a receipt or review only if the trail log confirms it:
 
-- A trail is in use when records go to an aqt-trail writer (`aqt_evidence.resolve_sink()` kind `unix`) or a trail log exists, unless `AQT_SINK` names a file. The log is each `AQT_EVIDENCE` entry named `trail.jsonl`, else `trail.jsonl` in the trail state directory; the sink file and the spool never count. In separate-user mode, set `AQT_EVIDENCE` to the trail log (for example `/var/lib/aqt-trail/trail.jsonl`).
+- A trail is in use when a trail log exists or records go to an aqt-trail writer (`aqt_evidence.resolve_sink()` kind `unix`). `AQT_SINK=file:` does not switch the check off while a log exists, because an agent sets its own environment; records written to a file sink are then not confirmed. The log is each `AQT_EVIDENCE` entry named `trail.jsonl`, else `trail.jsonl` in the trail state directory; the sink file and the spool never count. In separate-user mode, set `AQT_EVIDENCE` to the trail log (for example `/var/lib/aqt-trail/trail.jsonl`).
 - A record is confirmed when the log holds a record with the same id and content hash (`record_content_hash`, which leaves out the writer's `time`, `chain`, `observed` and `sig`) that the writer received over its socket (`observed.via = socket`).
 - A fresh passing receipt that is not confirmed makes its item `unverified` (gate `receipt_unverified`): NO-GO when the log lacks the record or holds a different one with that id; MANUAL when the record reached the trail through the spool (no observed sender) or no log is readable. `finish` refuses unverified items and the hooks block on them. A failing or stale receipt counts from the local copy as before.
 - A PASS, CONCERNS or WAIVED review that is not confirmed does not count (gate `review_unverified`, NO-GO or MANUAL as above) and cannot replace an earlier FAIL. A FAIL review counts from the local copy.
 - The commit-msg hook rejects an `AQT-Receipts` entry that the log lacks or contradicts.
 - The gate JSON reports `trail: {checked, logs}`.
 
-When the writer was down, records wait in the spool and are not confirmed yet; run the commands again with the writer running (`gate --rerun` does this for the gate). Without a trail, the local copy counts as it is; see the limits in the README.
+When the writer was down, records wait in the spool and are not confirmed yet; run the commands again with the writer running (`gate --rerun` does this for the gate). Without any trail log and without a writer, the local copy counts as it is; see the limits in the README.
 
 ## Commands
 

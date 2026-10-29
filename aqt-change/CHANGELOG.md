@@ -6,8 +6,9 @@
   receipt or review only if the trail log holds the same record (id and content hash) received over the
   writer's socket. A record only in the local `records.jsonl`, or edited there, gives NO-GO
   (`receipt_unverified`, `review_unverified`); one that came through the spool, or an unreadable log, gives
-  MANUAL. An unconfirmed review cannot replace a FAIL. The gate JSON reports `trail`. Without a trail,
-  behaviour is unchanged (documented limit).
+  MANUAL. An unconfirmed review cannot replace a FAIL. The gate JSON reports `trail`. The check is on whenever
+  a trail log exists or a writer is the sink; `AQT_SINK=file:` does not switch it off. Without any trail log
+  and without a writer, behaviour is unchanged (documented limit).
 - Security: files marked `skip-worktree` or `assume-unchanged` are fingerprinted by their working-tree
   content; a hidden change gives NO-GO (`hidden_worktree_change`), a run warning, a `finish` refusal
   (`finish_hidden_changes`) and a blocking hook. Files outside a sparse checkout give MANUAL (`sparse_checkout`).
