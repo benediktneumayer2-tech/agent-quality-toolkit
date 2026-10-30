@@ -4,18 +4,19 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
-from aqt_evidence import (MEANINGS, HumanCheckError, JsonlSink, SinkError, actor, bytes_hash, evidence_sources,
-                          iter_evidence, new_record, open_sink, record_content_hash, require_human, sign_record,
-                          subject as make_subject)
+from aqt_evidence import (MEANINGS, HumanCheckError, JsonlSink, SinkError, actor, bytes_hash, content_hash,
+                          evidence_sources, iter_evidence, new_record, open_sink, record_content_hash, require_human,
+                          sign_record, subject as make_subject)
 from aqt_evidence import detect_agent_context, generate_key, load_public_key
 from aqt_evidence.crypto import key_file_format
 
 from .errors import AuthFailed, NotFound, Refused, SignoffError, UsageError
-from .registry import Authenticator, Registry, SignerEntry, TtyAuthenticator, parse_time, unlock
+from .enrolment import ENROLLED, REVOKED, kind_of
+from .registry import Authenticator, KeyEntry, Registry, SignerEntry, TtyAuthenticator, parse_time, unlock
 from .settings import Policy, Settings, load_settings
 from .statements import SignatureStatus, build_statement, check_block, sign, statement_digest, statement_of
 from .store import Store
@@ -25,6 +26,10 @@ SERVICE = actor("service", "service:aqt-signoff")
 
 def format_time(moment: datetime) -> str:
     return moment.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def _data_of(record: dict) -> dict:
+    return record.get("data") if isinstance(record.get("data"), dict) else {}
 
 
 def file_ref(path: Path) -> str:
@@ -171,8 +176,11 @@ class Signoff:
         return [p for p in self.sources() if p.name == "trail.jsonl" and (p.parent / "trail.json").exists()]
 
     def trust(self, records: list[dict] | None = None) -> Registry:
-        """The registry, reconciled with the enrolment and revocation records (see ``Registry.reconcile``).
-        Enrolments count from the chained trail when there is one, else from every evidence source."""
+        """The registry, reconciled with the enrolment and revocation records (see ``Registry.reconcile``
+        and ``enrolment``). Enrolments count from the chained trail when there is one, else from every
+        evidence source; revocations from every source. With a trail, ``registry.pre_trail`` lists the
+        enrolment records that exist only in other sources (written before the trail) and were not
+        imported."""
         registry = self.registry
         trail = self.trail_sources()
         stamp = (self._stamp([self.settings.registry_path]), self._stamp(self.sources()))
@@ -181,21 +189,73 @@ class Signoff:
         records = self.records() if records is None else records
         enrolments = list(iter_evidence(trail)) if trail else records
         registry.reconcile(enrolments, records, source="trail" if trail else "evidence")
+        registry.pre_trail = self._pre_trail(trail, enrolments, registry) if trail else []
         registry._stamp = stamp
         return registry
 
+    def _side_enrolments(self, trail: list[Path], enrolments: list[dict], registry: Registry) -> list[dict]:
+        """Enrolment and revocation records in the non-trail sources that the trail does not hold, neither
+        directly nor through an import that counts (``registry`` is reconciled with ``enrolments``)."""
+        known = {r.get("id") for r in enrolments if isinstance(r, dict)}
+        counted = {entry["record"] for entry in registry.history.imports} if registry.history else set()
+        for record in enrolments:
+            if kind_of(record) == "import" and record.get("id") in counted:
+                known.update(item.get("id") for item in record["data"]["imported"] if isinstance(item, dict))
+        side = [p for p in self.sources() if p not in trail]
+        return [r for r in iter_evidence(side) if isinstance(r, dict) and r.get("type") in (ENROLLED, REVOKED)
+                and r.get("id") not in known]
+
+    def _pre_trail(self, trail: list[Path], enrolments: list[dict], registry: Registry) -> list[dict]:
+        """Enrolment requests for registry keys that only non-trail sources hold."""
+        registered = {(s.id, k.key_id) for s in registry.signers for k in s.keys}
+        return [r for r in self._side_enrolments(trail, enrolments, registry) if kind_of(r) == "request"
+                and (_data_of(r).get("signer"), _data_of(r).get("key_id")) in registered]
+
     def check_signers(self) -> dict:
-        """Every registry key and whether its enrolment evidence backs it (``aqt-signoff signers check``).
-        ``ok`` is False when a key does not count; ``notes`` are discrepancies that do not stop it."""
+        """Every registry key and whether the enrolment evidence backs it (``aqt-signoff signers check``).
+
+        ``ok`` is False when a key does not count (pending approval, conflicting records, a registry entry
+        that contradicts its enrolment), when a record signed by an enrolled key does not count, when
+        enrolment records from before the trail were not imported, or when a re-bootstrap is not confirmed.
+        ``notes`` are discrepancies that do not stop a key. ``bootstrap`` is the first signer (counted
+        without approval), ``rebootstrap`` every later one, ``pending`` every enrolment waiting for an
+        approval (also those not in the registry), ``problems``/``ignored`` registry-wide findings."""
         registry = self.trust()
+        history = registry.history
         keys = []
+        pre_trail = {(_data_of(r).get("signer"), _data_of(r).get("key_id")): r for r in registry.pre_trail}
         for signer in registry.signers:
             for key in signer.keys:
                 ev = registry.key_evidence(key.key_id, signer.id)
-                keys.append({"name": signer.name, "role": signer.role,
-                             "state": "revoked" if key.revoked_at else "active", **ev.as_dict()})
-        return {"ok": all(k["counts"] for k in keys), "registry": str(self.settings.registry_path),
-                "evidence": "trail" if self.trail_sources() else "evidence", "keys": keys}
+                row = {"name": signer.name, "role": signer.role,
+                       "state": "revoked" if key.revoked_at else "active", **ev.as_dict()}
+                if (signer.id, key.key_id) in pre_trail and ev.missing:
+                    row["problems"] = [*row["problems"], "its enrolment record is in a file written before the trail "
+                                       "(" + ", ".join(str(p) for p in self._pre_trail_files()) + "): a signer imports "
+                                       "it once with 'aqt-signoff signers import'"]
+                keys.append(row)
+        in_registry = {(k["signer"], k["key_id"]) for k in keys}
+        pending = [{"signer": s.signer, "key_id": s.key_id, "name": s.name, "role": s.role, "record": s.request.get("id"),
+                    "time": s.time, "in_registry": (s.signer, s.key_id) in in_registry,
+                    "observed": s.request.get("observed"),
+                    "approve": f"aqt-signoff signers approve {s.signer} --key {s.key_id}"} for s in history.pending()]
+        problems = list(history.problems)
+        if registry.pre_trail:
+            problems.append(f"{len(registry.pre_trail)} enrolment record(s) from before the trail are only in "
+                            + ", ".join(str(p) for p in self._pre_trail_files())
+                            + ": their keys do not count until a signer imports them once with "
+                              "'aqt-signoff signers import'")
+        rebootstrap = [dict(entry) for entry in history.rebootstraps]
+        ok = (all(k["counts"] for k in keys) and not problems
+              and all(entry["confirmed_by"] for entry in rebootstrap))
+        return {"ok": ok, "registry": str(self.settings.registry_path),
+                "evidence": "trail" if self.trail_sources() else "evidence", "keys": keys,
+                "bootstrap": history.bootstrap, "rebootstrap": rebootstrap, "pending": pending,
+                "imports": list(history.imports), "problems": problems, "ignored": list(history.notes)}
+
+    def _pre_trail_files(self) -> list[Path]:
+        trail = self.trail_sources()
+        return [p for p in self.sources() if p not in trail and p.exists()]
 
     def emit(self, record: dict, key=None) -> dict:
         """Append to the sink. The envelope is signed only for a JSONL sink (aqt-trail signs its own)."""
@@ -246,10 +306,11 @@ class Signoff:
             code = "agent_context" if error.context.is_agent else "no_tty"
             raise self.refuse(attempted, who, code, str(error), error.context.markers) from None
 
-    def unlock(self, signer: SignerEntry, purpose: str, *, adopt: bool = True):
+    def unlock(self, signer: SignerEntry, purpose: str, *, adopt: bool = True, require_counting: bool = True):
         """The signer's key, unlocked with a freshly entered passphrase. A key that is in the registry
         but has no enrolment record yet (made by another tool) gets one now (``adopt``); a key whose
-        registry entry contradicts its enrolment record is refused."""
+        registry entry contradicts its enrolment record, or (``require_counting``) whose enrolment
+        waits for an approval, is refused."""
         try:
             key = unlock(self.registry, signer, self.authenticator, purpose)
         except AuthFailed as error:
@@ -261,26 +322,61 @@ class Signoff:
                 pass
             raise
         if adopt:
-            self._ensure_enrolled(signer, key)
+            self._ensure_enrolled(signer, key, require_counting=require_counting)
         return key
 
-    def _ensure_enrolled(self, signer: SignerEntry, key) -> None:
-        evidence = self.trust().key_evidence(key.key_id, signer.id)
-        if evidence is not None and evidence.counts:
-            return
-        if evidence is None or not evidence.missing:
-            why = "; ".join(evidence.problems) if evidence else "the key is not in the registry"
-            raise self.refuse("sign", self.signer_actor(signer), "registry_mismatch",
-                              f"the registry entry of {signer.id} does not match its enrolment record ({why}); "
-                              "run 'aqt-signoff signers check'")
-        entry = signer.active_key()
-        self.emit(self.signed_record(
-            "signoff.key.enrolled", "enroll", signer=signer, key=key, meaning="acknowledged",
-            reason="Enrolment recorded at first use of a key enrolled outside aqt-signoff init",
+    def _enrolment_record(self, signer: SignerEntry, key, entry: KeyEntry, *, role: str | None = None,
+                          reason: str = "Key enrolled for electronic signatures", **extra) -> dict:
+        """A self-signed enrolment request for ``entry`` (the key proves that its holder has it)."""
+        role = role or signer.role
+        as_enrolled = SignerEntry(signer.id, signer.name, role, signer.keys)
+        return self.signed_record(
+            ENROLLED, "enroll", signer=as_enrolled, key=key, meaning="acknowledged", reason=reason,
             envelope_meaning=False, enrolled_at=entry.enrolled_at,
             subject=make_subject("key", entry.key_id, sha256=bytes_hash(entry.public_pem.encode("ascii"))),
-            data={"signer": signer.id, "name": signer.name, "role": signer.role, "key_id": entry.key_id,
-                  "public_pem": entry.public_pem, "adopted": True}), key)
+            data={"signer": signer.id, "name": signer.name, "role": role, "key_id": entry.key_id,
+                  "public_pem": entry.public_pem, **extra})
+
+    def _ensure_enrolled(self, signer: SignerEntry, key, *, require_counting: bool = True,
+                         reason: str = "Enrolment recorded at first use of a key enrolled outside aqt-signoff init",
+                         adopted: bool = True) -> dict | None:
+        """Record the enrolment of a registry key that has none (returns the record), refuse a key whose
+        registry entry contradicts its enrolment, and with ``require_counting`` one that does not count."""
+        registry = self.trust()
+        evidence = registry.key_evidence(key.key_id, signer.id)
+        if evidence is not None and evidence.counts:
+            return None
+        stored = None
+        if evidence is not None and evidence.missing:
+            if any(_data_of(r).get("key_id") == key.key_id for r in registry.pre_trail):
+                raise self.refuse("sign", self.signer_actor(signer), "import_needed",
+                                  f"the enrolment of {signer.id} is in a file written before the trail; a signer "
+                                  "imports those records once with 'aqt-signoff signers import'")
+            entry = next(k for k in signer.keys if k.key_id == key.key_id)
+            stored = self.emit(self._enrolment_record(signer, key, entry, reason=reason,
+                                                      **({"adopted": True} if adopted else {})), key)
+            evidence = self.trust().key_evidence(key.key_id, signer.id)
+            if evidence is not None and (evidence.counts or not require_counting):
+                return stored
+        if evidence is not None and evidence.pending:
+            if not require_counting:
+                return stored
+            raise self.refuse("sign", self.signer_actor(signer), "enrolment_pending",
+                              f"the key {key.key_id} of {signer.id} does not count yet: its enrolment waits for an "
+                              f"approval by another enrolled signer ('aqt-signoff signers approve {signer.id} "
+                              f"--key {key.key_id}')")
+        why = "; ".join(evidence.problems) if evidence else "the key is not in the registry"
+        raise self.refuse("sign", self.signer_actor(signer), "registry_mismatch",
+                          f"the registry entry of {signer.id} does not match its enrolment record ({why}); "
+                          "run 'aqt-signoff signers check'")
+
+    def record_enrolment(self, signer_id: str, key, *, tool: str = "another tool") -> dict | None:
+        """Record the self-signed enrolment of a registry key that ``tool`` just created with its holder's
+        passphrase (aqt-quarantine init). None when the key already has one. The enrolment counts at once
+        only for the first signer; otherwise it waits for an approval (``approve_enrolment``)."""
+        signer = self.reload_registry().get(signer_id)
+        return self._ensure_enrolled(signer, key, require_counting=False, adopted=False,
+                                     reason=f"Key enrolled for electronic signatures ({tool})")
 
     def signed_record(self, type: str, action: str, *, signer: SignerEntry, key, meaning: str, reason: str,
                       subject: dict, data: dict | None = None, links=None, envelope_meaning: bool = True,
@@ -293,15 +389,35 @@ class Signoff:
                            meaning=meaning if envelope_meaning else None, links=links, data=payload)
 
     # ---- identities ---------------------------------------------------------------------------
+    def _require_imported(self) -> None:
+        if self.trust().pre_trail:
+            raise UsageError(f"enrolment records from before the trail are only in "
+                             f"{', '.join(map(str, self._pre_trail_files()))}; import them once first with "
+                             "'aqt-signoff signers import' (run by a signer listed there)", code="import_needed")
+
     def init_signer(self, signer_id: str, name: str, role: str, *, add_key: bool = False) -> dict:
-        """Create a signer (or a new key for a signer whose keys are all revoked) and record the enrolment."""
+        """Create a signer (or a new key for an existing signer) and record the enrolment request.
+
+        The first signer counts at once (bootstrap). Every later enrolment counts after another enrolled
+        signer approves it (``approve_enrolment``). ``add_key`` for a signer whose active key counts is a
+        rotation: the old key approves the new one and is revoked (same role; a role change is approved
+        by another signer). ``add_key`` for a signer without an active key records a new request with
+        ``role`` (default: the signer's role)."""
         who = actor("human", signer_id, role=role or None, display=name or None)
         self.require_human("init", who)
         registry = self.reload_registry()
+        self._require_imported()
+        requested = None
         if add_key:
             signer = registry.get(signer_id)
-            if signer.active_key():
-                raise UsageError(f"{signer_id} still has an active key; revoke it first", code="active_key")
+            active = signer.active_key()
+            if active:
+                evidence = self.trust().key_evidence(active.key_id, signer.id)
+                if evidence is not None and evidence.counts and not evidence.revoked_at:
+                    return self._rotate(signer, role)
+                raise UsageError(f"{signer_id} still has an active key {active.key_id} that does not count; revoke "
+                                 "it first", code="active_key")
+            requested = (role or "").strip() or signer.role
         else:
             signer = registry.add_signer(signer_id, name, role)
         passphrase = self.authenticator.new_passphrase(signer_id, self.settings.passphrase_min_length)
@@ -316,35 +432,176 @@ class Signoff:
             entry = registry.add_key(signer, public, self.now())
             from aqt_evidence import load_signer
             key = load_signer(path, passphrase=passphrase)
-            record = self.signed_record(
-                "signoff.key.enrolled", "enroll", signer=signer, key=key, meaning="acknowledged",
-                reason="Key enrolled for electronic signatures", envelope_meaning=False, enrolled_at=entry.enrolled_at,
-                subject=make_subject("key", entry.key_id, sha256=bytes_hash(entry.public_pem.encode("ascii"))),
-                data={"signer": signer.id, "name": signer.name, "role": signer.role,
-                      "key_id": entry.key_id, "public_pem": entry.public_pem})
-            stored = self.emit(record, key)
+            stored = self.emit(self._enrolment_record(signer, key, entry, role=requested), key)
             registry.save()
         except BaseException:
             for leftover in (path, Path(f"{path}.pub")):
                 leftover.unlink(missing_ok=True)
             self.reload_registry()
             raise
+        if requested and requested != signer.role:      # a re-bootstrap counts at once: the file follows it
+            evidence = self.trust().key_evidence(entry.key_id, signer.id)
+            if evidence is not None and evidence.basis == "rebootstrap":
+                signer.role = requested
+                registry.save()
         return stored
+
+    def _rotate(self, signer: SignerEntry, role: str | None) -> dict:
+        """Replace the signer's counting key: the new key's request, approved by the old key, then the
+        old key's revocation, both signed by it. Returns the request record."""
+        if role and role.strip() and role.strip() != signer.role:
+            raise UsageError(f"a role change is approved by another enrolled signer: "
+                             f"'aqt-signoff signers approve {signer.id} --key KEY --role {role.strip()}'",
+                             code="role_change")
+        registry = self.registry
+        old = signer.active_key()
+        old_key = self.unlock(signer, "rotate your key (current passphrase)")
+        passphrase = self.authenticator.new_passphrase(signer.id, self.settings.passphrase_min_length)
+        path = registry.key_path(signer.id)
+        fresh = path.with_name(f"{path.stem}.new.key")
+        for leftover in (fresh, Path(f"{fresh}.pub")):
+            leftover.unlink(missing_ok=True)
+        generate_key(fresh, passphrase=passphrase)
+        try:
+            from aqt_evidence import load_signer
+            _, public = load_public_key(f"{fresh}.pub")
+            new_key = load_signer(fresh, passphrase=passphrase)
+            entry = registry.add_key(signer, public, self.now())
+            request = self._enrolment_record(signer, new_key, entry, reason="Key rotated: new key")
+            stored = self.emit(request, new_key)
+            approval = self.emit(self._approval_record(signer, old_key, request, signer.id, entry, signer.role,
+                                                       f"Key rotation from {old.key_id}"), old_key)
+            approved_at = parse_time(approval.get("time") or self.now())     # the trail writer's time
+            revoked_at = format_time(max(self.clock(), approved_at + timedelta(microseconds=1)))
+            self.emit(self.signed_record(
+                REVOKED, "revoke", signer=signer, key=old_key, meaning="acknowledged",
+                reason=f"Key rotated to {entry.key_id}", envelope_meaning=False,
+                subject=make_subject("key", old.key_id, sha256=bytes_hash(old.public_pem.encode("ascii"))),
+                data={"signer": signer.id, "key_id": old.key_id, "revoked_at": revoked_at, "signed": True,
+                      "rotated_to": entry.key_id}), old_key)
+            old.revoked_at = revoked_at
+            registry.retire_key_file(signer.id, old.key_id)
+            os.replace(fresh, path)
+            os.replace(f"{fresh}.pub", f"{path}.pub")
+            registry.save()
+        except BaseException:
+            for leftover in (fresh, Path(f"{fresh}.pub")):
+                leftover.unlink(missing_ok=True)
+            self.reload_registry()
+            raise
+        return stored
+
+    def _approval_record(self, approver: SignerEntry, key, request: dict, signer_id: str, entry, role: str,
+                         reason: str) -> dict:
+        data = request.get("data") or {}
+        enrolment = {"signer": signer_id, "name": data.get("name"), "role": role, "request": request["id"],
+                     "request_sha256": record_content_hash(request)}
+        return self.signed_record(
+            ENROLLED, "enroll", signer=approver, key=key, meaning="approved", reason=reason, envelope_meaning=False,
+            subject=make_subject("key", entry.key_id, sha256=bytes_hash(entry.public_pem.encode("ascii"))),
+            data={"signer": signer_id, "name": data.get("name"), "role": role, "key_id": entry.key_id,
+                  "public_pem": entry.public_pem, "approves": request["id"], "approved_by": approver.id},
+            enrolment=enrolment)
+
+    def approve_enrolment(self, signer_id: str, key_id: str, *, role: str | None = None,
+                          approver_id: str | None = None, reason: str | None = None) -> dict:
+        """Approve the enrolment of ``key_id`` for ``signer_id`` (or change the signer's role to ``role``),
+        signed with the approver's passphrase. The approver's key must count; nobody approves their own
+        enrolment or role. Returns the approval record; the registry follows it (key and role)."""
+        registry = self.reload_registry()
+        approver = self.signer_entry(approver_id)
+        if approver.id == signer_id:
+            raise UsageError("nobody approves their own enrolment or role; another enrolled signer does (a key "
+                             f"rotation is 'aqt-signoff init --id {signer_id} --add-key')", code="self_approval")
+        who = self.signer_actor(approver)
+        self.require_human("approve-enrolment", who)
+        history = self.trust().history
+        state = history.keys.get(key_id)
+        if state is None or state.signer != signer_id:
+            raise NotFound(f"no enrolment record for key {key_id} of {signer_id} in the {history.source}; the key "
+                           "holder records it with 'aqt-signoff init' (or 'aqt-signoff rekey')", code="no_enrolment")
+        if state.conflict:
+            raise UsageError(f"key {key_id} has conflicting enrolment records; it cannot be approved "
+                             "(see 'aqt-signoff signers check')", code="enrolment_conflict")
+        role = (role or "").strip() or (history.current_role(signer_id) if state.start else state.role)
+        key = self.unlock(approver, f"approve the enrolment of {signer_id} ({role})")
+        mine = self.trust().key_evidence(key.key_id, approver.id)
+        if mine is None or mine.revoked_at:
+            raise self.refuse("approve-enrolment", who, "no_active_key", f"the key of {approver.id} is revoked")
+        entry = KeyEntry(key_id, state.public_pem, state.time)
+        record = self._approval_record(approver, key, state.request, signer_id, entry, role,
+                                       reason or (f"Enrolment of {signer_id} as {role} approved"))
+        stored = self.emit(record, key)
+        try:
+            target = registry.get(signer_id)
+        except NotFound:
+            target = registry.add_signer(signer_id, state.name or signer_id, role)
+        if not any(k.key_id == key_id for k in target.keys):
+            target.keys.append(entry)
+        target.role = role
+        registry.save()
+        return stored
+
+    def import_preview(self) -> dict:
+        """What ``import_enrolments`` would carry into the trail: ``records`` (enrolment and revocation records
+        only in non-trail sources), ``sources`` and ``view`` (a registry reconciled with them alone)."""
+        trail = self.trail_sources()
+        if not trail:
+            raise UsageError("there is no trail: enrolments already count from the evidence files", code="no_trail")
+        records = self._side_enrolments(trail, list(iter_evidence(trail)), self.trust())
+        view = Registry(self.settings.registry_path, self.settings.keys_dir)
+        view.reconcile(records, records, source="evidence")
+        return {"records": records, "sources": [str(p) for p in self._pre_trail_files()], "view": view}
+
+    def import_enrolments(self, *, signer_id: str | None = None, reason: str | None = None) -> dict:
+        """Carry the enrolment records written before the trail existed into the trail, once, signed by a
+        signer whose key counts there (or in the trail). Records added to those files later do not count."""
+        preview = self.import_preview()
+        records = preview["records"]
+        if not records:
+            raise UsageError("no enrolment records from before the trail to import", code="nothing_to_import")
+        if isinstance(self.sink, JsonlSink) and self.sink.path not in self.trail_sources():
+            raise UsageError(f"records go to {self.sink.path}, not to the trail; start 'aqt-trail serve' (or point "
+                             "AQT_SINK at the trail writer) and import again", code="sink_not_trail")
+        importer = self.signer_entry(signer_id)
+        who = self.signer_actor(importer)
+        self.require_human("import-enrolments", who)
+        key = self.unlock(importer, "import the enrolment records from before the trail", adopt=False)
+        before = preview["view"].key_evidence(key.key_id, importer.id)
+        now = self.trust().key_evidence(key.key_id, importer.id)
+        counted = self.trust().history.counted
+        if counted and not (now and now.counts and not now.revoked_at):
+            raise self.refuse("import-enrolments", who, "importer_not_enrolled",
+                              f"keys already count in the trail; the import is made by one of their holders, not by "
+                              f"{importer.id}")
+        if not counted and not (before and before.counts and not before.revoked_at):
+            raise self.refuse("import-enrolments", who, "importer_not_enrolled",
+                              f"the key of {importer.id} does not count in the records to import")
+        record = self.signed_record(
+            ENROLLED, "enroll", signer=importer, key=key, meaning="approved", envelope_meaning=False,
+            reason=reason or f"{len(records)} enrolment record(s) from before the trail imported",
+            subject=make_subject("enrolment-import", "pre-trail", sha256=content_hash(records)),
+            data={"signer": importer.id, "key_id": key.key_id, "imported": records,
+                  "imported_from": preview["sources"]})
+        return self.emit(record, key)
 
     def rekey(self, signer_id: str | None = None) -> dict:
         """Unlock the signer's key once: a key file from an earlier version (PKCS#8, PBKDF2) is
-        re-encrypted with scrypt, and a key without an enrolment record gets one."""
+        re-encrypted with scrypt, and a key without an enrolment record gets one (which waits for an
+        approval unless it is the first signer's)."""
         signer = self.signer_entry(signer_id)
         self.require_human("rekey", self.signer_actor(signer))
         path = self.registry.key_path(signer.id)
         before = key_file_format(path) if path.exists() else None
         active = signer.active_key()
         evidence = self.trust().key_evidence(active.key_id, signer.id) if active else None
-        self.unlock(signer, "re-encrypt your key file")
+        self.unlock(signer, "re-encrypt your key file", require_counting=False)
         after = key_file_format(path)
+        now = self.trust().key_evidence(active.key_id, signer.id) if active else None
         return {"signer": signer.id, "path": str(path), "format": after,
                 "upgraded": before != after and after == "aqt-key",
-                "enrolled": not (evidence and evidence.counts)}
+                "enrolled": bool(evidence and evidence.missing and now and not now.missing),
+                "pending": bool(now and now.pending)}
 
     def revoke(self, signer_id: str, reason: str, *, compromised_since: str | None = None,
                lost: bool = False) -> dict:

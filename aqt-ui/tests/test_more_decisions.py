@@ -130,18 +130,17 @@ def candidates(trail, signer, env):
 
 
 @pytest.fixture
-def reviewer(trail):
+def reviewer(trail, signer):
     """A reviewer whose key counts: made by aqt-quarantine, its enrolment recorded in the trail by
-    'aqt-signoff rekey'. Returns the time after the enrolment: a review starts there, since the
-    enrolment counts as the reviewer's activity."""
+    'aqt-signoff rekey' and approved by the first signer (the QM of ``signer``). Returns the time
+    after the enrolment: a review starts there, since an approval of someone else's enrolment is activity."""
     from aqt_evidence import utc_now
     from aqt_quarantine.config import load_config
     from aqt_quarantine.decisions import create_identity
-    from aqt_signoff import Signoff, StaticPassphrase, load_settings
+    from conftest import make_counting
     create_identity(load_config(), signer_id=REVIEWER, name="Robin Review", role="quality-manager",
                     passphrase=lambda _prompt: PASSPHRASE)
-    Signoff(load_settings(), authenticator=StaticPassphrase(PASSPHRASE), environ={}, chain=[],
-            require_tty=False).rekey(REVIEWER)
+    make_counting(REVIEWER)
     time.sleep(0.01)
     return utc_now()
 

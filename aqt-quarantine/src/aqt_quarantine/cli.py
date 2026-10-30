@@ -358,8 +358,17 @@ def cmd_doctor(args) -> int:
             check("state dir", "fail", str(error))
         signers = config.responsible or list(decider.registry)
         keys = [s for s in signers if (config.keys_dir / f"{slug(s)}.key").exists()]
+        view = decider.enrolment()
+        if view is not None:              # aqt-signoff installed: only keys its enrolment check counts
+            counting = {signer for (signer, _key), ev in view.items() if ev["counts"] and not ev["revoked_at"]}
+            missing = [s for s in keys if s not in counting]
+            keys = [s for s in keys if s in counting]
+            if missing:
+                check("signer enrolment", "fail" if config.require_signed_decisions else "warn",
+                      f"{', '.join(missing)}: key does not count by its enrolment records; see aqt-signoff signers "
+                      "check (a key made by aqt-quarantine init: aqt-signoff rekey --signer ID)")
         if keys:
-            check("signers", "ok", f"{', '.join(keys)} (registry {config.registry})")
+            check("signers", "ok", f"{', '.join(keys)} (registry {config.registry}; {decider.enrolment_note})")
         else:
             check("signers", "fail" if config.require_signed_decisions else "warn",
                   f"no responsible person with a key in {config.keys_dir}; run aqt-quarantine init")

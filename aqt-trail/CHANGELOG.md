@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Security (round 3, with aqt-signoff): registry keys count only as aqt-signoff's counter-signed enrolment
+  rules count them (a self-signed enrolment record of a new key waits for an approval by an enrolled signer);
+  `check_enrolment` uses them unchanged. Reviewer independence (`scope_actors`) no longer counts a signer's
+  records about their own key (enrolment, rotation, revocation) as activity; approving someone else's enrolment
+  counts. `verify` still accepts reviews signed with the earlier actor list (`scope_actors(..., legacy=True)`).
+- Fix: `verify` reported every signed `signoff.key.revoked` record (and now every enrolment request, which the
+  writer stamps just after it is signed) as a signature problem; a key's own enrolment request and revocation are
+  judged by their signature only (`verify.own_key_statement`).
+
 - Security (writer): `observed.chain_status` (`complete` | `partial` | `unavailable`, with `chain_detail`) says how
   far the observed process chain goes; `partial` for an ancestor that exited, a reused parent pid or a process
   reparented to init or the systemd user manager (its session leader is not an ancestor), `unavailable` when the

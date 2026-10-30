@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+### Security (review round 3: counter-signed enrolment)
+- A self-signed enrolment record no longer makes a counting key. The first enrolment of the evidence counts
+  (bootstrap); every later enrolment, extra key or role change counts only after an enrolled signer whose key
+  counts and is active approves it: new `aqt-signoff signers approve ID --key KEY [--role ROLE]`
+  (`Signoff.approve_enrolment`), an approval record of type `signoff.key.enrolled` signed by the approver
+  (statement field `enrolment`, bound to the request's record id and content hash). Pending enrolments are listed by
+  `signers check` / `check_signers()` (`pending`, per key `pending`) and refuse to sign (`enrolment_pending`).
+- Enrolment times are the record times (the trail writer's time), not the statement's claimed time; an approval is
+  retroactive to its request. Roles form a timeline from approvals: `SignatureStatus.authorized_role` is the role in
+  effect at `signed_at`, so a role change keeps earlier signatures valid with their role. A registry role that
+  differs from the current enrolled role still stops the key.
+- Two enrolment requests for one key are a conflict (the key does not count). Nobody approves their own enrolment
+  or role; `init --add-key` while the key counts is a rotation (the old key approves the new one and is revoked;
+  `--role` that differs is refused), otherwise it records a new request with `--role`. A new key enrolled when no
+  other key counts any more is a re-bootstrap: it counts, `check_signers()["rebootstrap"]` lists it and `ok` is
+  False until another signer approves it. Revocations without a signature never turn an earlier pending request into
+  a re-bootstrap.
+- A trail added after the fallback evidence file: new `aqt-signoff signers import` (`Signoff.import_preview`,
+  `Signoff.import_enrolments`) carries the earlier enrolment and revocation records into the trail once (a
+  `signoff.key.enrolled` record with `data.imported`, signed by a signer whose key counts in them or in the trail);
+  their order and times are kept. Until then `check_signers()` reports them and `init`, signing and adoption refuse
+  (`import_needed`). Records added to the old file afterwards do not count.
+- `check_signers()` adds `bootstrap`, `rebootstrap`, `pending`, `imports`, `problems` and `ignored`; per key
+  `pending`, `basis`, `approvals` and `roles`. `ok` also needs no pending key in the registry, no registry-wide
+  problem and no unconfirmed re-bootstrap. `rekey` reports `pending`. New `Signoff.record_enrolment` for keys other
+  tools create (aqt-quarantine). `check_block` does not judge a key's own enrolment request or revocation against
+  its validity period (they are signed just before they are stored).
+- Changed for existing data: after upgrading, every signer except the first needs one approval
+  (`signers check` prints the command); the approval is retroactive, so their earlier signatures count again.
+
 ### Security (review fixes)
 - A signed statement is identified by its digest (`statement_digest`, `SignatureStatus.statement_sha256`): a copy
   in another record counts once and is reported `invalid` (replay), and a withdrawal applies to every copy. New

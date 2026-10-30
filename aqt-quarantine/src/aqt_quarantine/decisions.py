@@ -9,6 +9,11 @@ statement verifies against the signer registry (spec §12.2), so a record an age
 appends to the journal, or a command it types into the owner's terminal
 without the passphrase, has no effect. Every refusal is recorded as
 ``quarantine.refused``.
+
+When aqt-signoff is installed, a registry key counts only as aqt-signoff's enrolment
+check counts it (``enrolment_view``: its own enrolment request, and the first signer or an
+approval by another enrolled signer); without aqt-signoff the keys rest on signers.json
+alone, and ``Decider.enrolment_note`` says so.
 """
 
 from __future__ import annotations
@@ -105,6 +110,26 @@ def _registered_key(registry: dict[str, dict], signer_id: str, key_id: str) -> d
     return None
 
 
+UNCHECKED = "aqt-signoff is not installed: signer keys rest on signers.json alone (not checked against enrolment records)"
+
+
+def enrolment_view(config: Config) -> tuple[dict | None, str]:
+    """``({(signer id, key id): {counts, enrolled_at, revoked_at, why}}, note)``: the registry keys as aqt-signoff
+    reconciles them with the enrolment evidence (``aqt_signoff.Signoff.trust``). ``(None, UNCHECKED)`` when
+    aqt-signoff is not installed; ``({}, why)`` when the check failed (then no key counts)."""
+    try:
+        from aqt_signoff import Signoff, load_settings
+    except ImportError:
+        return None, UNCHECKED
+    try:
+        registry = Signoff(load_settings(registry=config.registry, keys_dir=config.keys_dir)).trust()
+    except Exception as error:  # noqa: BLE001 - fail closed: no key counts
+        return {}, f"the enrolment check failed ({type(error).__name__}: {error}); no signer key counts"
+    return ({key: {"counts": ev.counts, "enrolled_at": ev.enrolled_at, "revoked_at": ev.revoked_at,
+                   "why": "; ".join(ev.problems)} for key, ev in registry.evidence.items()},
+            "checked against the enrolment records (aqt-signoff)")
+
+
 # -- statements --------------------------------------------------------------------------------------
 def sign_statement(signer, *, person: dict, meaning: str, reason: str, decision: dict, record_type: str,
                    ref: str, tz: str | None) -> dict:
@@ -149,13 +174,16 @@ def _bound(record: dict, data: dict, statement: dict) -> bool:
     return all(data[key] == decision.get(key) for key in {*decision, *APPLIED[kind]} - {"action"} if key in data)
 
 
-def verify_decision(record: dict, registry: dict[str, dict], responsible: list[str] | None = None) -> str:
+def verify_decision(record: dict, registry: dict[str, dict], responsible: list[str] | None = None, *,
+                    enrolment=None) -> str:
     """valid | unsigned | mismatch | unknown-signer | revoked | not-responsible | invalid.
 
     ``mismatch``: the statement does not belong to this record, or a field the record applies (case id,
     content hash, overrule, domain, subdomains, expiry, action, subject) differs from the signed decision.
-    ``unknown-signer``: the key is not in the registry, or signed before it was enrolled (as aqt-signoff).
-    ``revoked``: signed at or after the key's revocation."""
+    ``unknown-signer``: the key is not in the registry, does not count by its enrolment evidence, or signed
+    before it was enrolled (as aqt-signoff). ``revoked``: signed at or after the key's revocation.
+    ``enrolment``: ``enrolment_view(...)[0]`` (or a callable returning it, called only when needed); with it
+    the key must count and its times are the evidence's. None: the registry file alone decides."""
     data = record.get("data") or {}
     signature = data.get("signature")
     if not signature:
@@ -178,11 +206,19 @@ def verify_decision(record: dict, registry: dict[str, dict], responsible: list[s
     key = _registered_key(registry, who, signature.get("key"))
     if key is None:
         return "unknown-signer"
-    enrolled_at = parse_time(key.get("enrolled_at"))
+    times = key
+    if callable(enrolment):
+        enrolment = enrolment()
+    if enrolment is not None:
+        evidence = enrolment.get((who, signature.get("key")))
+        if not evidence or not evidence["counts"]:
+            return "unknown-signer"
+        times = evidence
+    enrolled_at = parse_time(times.get("enrolled_at"))
     if enrolled_at is None or signed_at < enrolled_at:
         return "unknown-signer"
-    revoked_at = parse_time(key.get("revoked_at")) if key.get("revoked_at") else None
-    if key.get("revoked_at") and (revoked_at is None or revoked_at <= signed_at):
+    revoked_at = parse_time(times.get("revoked_at")) if times.get("revoked_at") else None
+    if times.get("revoked_at") and (revoked_at is None or revoked_at <= signed_at):
         return "revoked"
     try:
         public = serialization.load_pem_public_key(key["public_pem"].encode("ascii"))
@@ -215,9 +251,23 @@ class Decider:
         self.passphrase = passphrase or (lambda prompt: getpass.getpass(prompt))
         self.human_check = human_check or require_human
         self.registry = load_registry(config.registry)
+        self._enrolment: tuple | None = None
+
+    def enrolment(self) -> dict | None:
+        """The enrolment view (``enrolment_view``), computed once and only when a signature is checked."""
+        if self._enrolment is None:
+            self._enrolment = enrolment_view(self.config)
+        return self._enrolment[0]
+
+    @property
+    def enrolment_note(self) -> str:
+        """How signer keys are checked: against the enrolment records, or (no aqt-signoff) not at all."""
+        self.enrolment()
+        return self._enrolment[1]
 
     def verifier(self):
-        return lambda record: verify_decision(record, self.registry, self.config.responsible or None)
+        return lambda record: verify_decision(record, self.registry, self.config.responsible or None,
+                                              enrolment=self.enrolment)
 
     def fold(self):
         return self.store.fold(self.verifier(), require_signed=self.config.require_signed_decisions)
@@ -268,6 +318,14 @@ class Decider:
             return None, self._refuse(who, attempted, "unknown_key", [],
                                       f"key {signer.key_id} is not an active key of {who['id']} in {self.config.registry}",
                                       extra)
+        view = self.enrolment()
+        evidence = view.get((who["id"], signer.key_id)) if view is not None else None
+        if view is not None and not (evidence and evidence["counts"] and not evidence["revoked_at"]):
+            why = (evidence or {}).get("why") or self.enrolment_note
+            return None, self._refuse(who, attempted, "unenrolled_key", [],
+                                      f"key {signer.key_id} of {who['id']} does not count by its enrolment records "
+                                      f"({why}); run 'aqt-signoff signers check' (a key made by aqt-quarantine init "
+                                      f"is recorded with 'aqt-signoff rekey --signer {who['id']}')", extra)
         return sign_statement(signer, person=who, tz=self.config.tz, **statement), None
 
     def _case(self, case_id: str) -> Case:

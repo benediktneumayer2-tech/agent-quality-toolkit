@@ -52,14 +52,30 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("init", parents=common, help="create a signer with a passphrase-protected key")
     p.add_argument("--id", required=True, help="signer id, e.g. human:alice")
     p.add_argument("--name", default="", help="printed name")
-    p.add_argument("--role", default="", help="role, e.g. quality-manager")
-    p.add_argument("--add-key", action="store_true", help="new key for an existing signer (old key revoked)")
+    p.add_argument("--role", default="", help="role, e.g. quality-manager (with --add-key: the role requested)")
+    p.add_argument("--add-key", action="store_true",
+                   help="new key for an existing signer: a rotation while the old key counts (it approves the "
+                        "new key and is revoked), else a new enrolment that waits for approval")
 
-    signers = sub.add_parser("signers", parents=common, help="list, check or export the signer registry")
+    signers = sub.add_parser("signers", parents=common, help="list, check, approve, import or export signers")
     signers_sub = signers.add_subparsers(dest="signers_command", required=True)
     signers_sub.add_parser("list", parents=common)
     signers_sub.add_parser("check", parents=common,
-                           help="check every registry key against its enrolment record in the evidence")
+                           help="check every registry key against the enrolment evidence; list pending enrolments")
+    approve = signers_sub.add_parser("approve", parents=common,
+                                     help="approve another signer's enrolment (or change their role) with your key")
+    approve.add_argument("signer", help="the signer whose enrolment you approve, e.g. human:bob")
+    approve.add_argument("--key", required=True, dest="key_id", help="the key id shown by 'signers check'")
+    approve.add_argument("--role", default="", help="the role you approve (default: the role requested); "
+                                                    "a different role is a role change")
+    approve.add_argument("--signer", dest="approver", help="you, the approver (default [signoff] signer)")
+    approve.add_argument("--reason", default="", help="reason recorded with the approval")
+    imp = signers_sub.add_parser("import", parents=common,
+                                 help="once, after adding aqt-trail: carry the enrolment records written before "
+                                      "the trail into it")
+    imp.add_argument("--signer", dest="importer", help="you, the importer (default [signoff] signer)")
+    imp.add_argument("--reason", default="")
+    imp.add_argument("--dry-run", action="store_true", help="show what would be imported; sign nothing")
     export = signers_sub.add_parser("export", parents=common)
     export.add_argument("file", nargs="?")
 
@@ -186,19 +202,54 @@ def _report_text(report: VerifyReport) -> str:
 
 def _signers_text(result: dict) -> str:
     lines = [f"registry {result['registry']}, enrolments from the {result['evidence']}"]
+    boot = result.get("bootstrap")
+    if boot:
+        lines.append(f"first signer (counted without approval): {boot['signer']} key {boot['key_id']} at "
+                     f"{boot['time']} (record {boot['record']}{', via import ' + boot['import'] if boot.get('import') else ''})")
+    for entry in result.get("rebootstrap") or []:
+        confirmed = ", ".join(c["by"] for c in entry["confirmed_by"])
+        lines.append(f"WARNING: RE-BOOTSTRAP {entry['signer']} key {entry['key_id']} at {entry['time']}: enrolled when "
+                     "no other key counted any more; " + (f"confirmed by {confirmed}" if confirmed else
+                                                         "not confirmed by another signer"))
     for k in result["keys"]:
         where = k["enrolment"] or {}
-        state = "ok" if k["counts"] else "DOES NOT COUNT"
+        state = "ok" if k["counts"] else ("PENDING" if k.get("pending") else "DOES NOT COUNT")
+        how = {"bootstrap": "first signer", "rebootstrap": "re-bootstrap", "approved": "approved by "
+               + ", ".join(sorted({a["by"] for a in k.get("approvals") or []}))}.get(k.get("basis"), "")
         lines.append(f"  {k['signer']}  {k['key_id']}  {k['state']}  {state}"
-                     + (f"  (enrolment {where.get('id')}{', adopted' if where.get('adopted') else ''})"
-                        if where else ""))
+                     + (f"  (enrolment {where.get('id')}{', adopted' if where.get('adopted') else ''}"
+                        f"{'; ' + how if how else ''})" if where else ""))
         lines.extend(f"    problem: {text}" for text in k["problems"])
         lines.extend(f"    note: {text}" for text in k["notes"])
     if not result["keys"]:
         lines.append("  no signers")
+    for entry in result.get("pending") or []:
+        if not entry["in_registry"]:
+            lines.append(f"  pending enrolment not in the registry: {entry['signer']} key {entry['key_id']} "
+                         f"({entry['role']}, record {entry['record']} at {entry['time']})")
+    lines.extend(f"  problem: {text}" for text in result.get("problems") or [])
+    lines.extend(f"  ignored: {text}" for text in result.get("ignored") or [])
     lines.append("all keys are backed by enrolment records" if result["ok"] else
-                 "keys without matching enrolment evidence are ignored by every check; a key enrolled by another "
-                 "tool gets its record at the next signing (or 'aqt-signoff rekey --signer ID')")
+                 "keys that do not count are ignored by every check. A pending enrolment counts once another enrolled "
+                 "signer approves it ('aqt-signoff signers approve ID --key KEY'); approve only people and keys you "
+                 "know. A key enrolled by another tool gets its record at the next signing (or 'aqt-signoff rekey "
+                 "--signer ID')")
+    return "\n".join(lines)
+
+
+def _import_text(preview: dict) -> str:
+    view = preview["view"]
+    lines = [f"enrolment records from before the trail ({', '.join(preview['sources']) or 'no files'}):"]
+    for record in preview["records"]:
+        data = record.get("data") or {}
+        what = {"signoff.key.revoked": "revocation"}.get(record.get("type"), "enrolment")
+        lines.append(f"  {record.get('time')}  {what:10} {data.get('signer') or record.get('actor', {}).get('id')}  "
+                     f"{data.get('key_id')}  {data.get('role') or ''}  ({record.get('id')})")
+    for signer in view.signers:
+        for key in signer.keys:
+            ev = view.key_evidence(key.key_id, signer.id)
+            lines.append(f"  -> {signer.id} {key.key_id}: "
+                         + ("counts" if ev.counts else ("pending" if ev.pending else "does not count")))
     return "\n".join(lines)
 
 
@@ -241,7 +292,13 @@ def run(args) -> int:
     cmd = args.command
     if cmd == "init":
         record = so.init_signer(args.id, args.name, args.role, add_key=args.add_key)
-        _out(args, record, f"enrolled {args.id} with key {record['data']['key_id']}\n"
+        kid = record["data"]["key_id"]
+        ev = so.trust().key_evidence(kid, args.id)
+        state = ("counts now (first signer)" if ev and ev.basis == "bootstrap" else
+                 "counts now (key rotation)" if ev and ev.counts else
+                 "RE-BOOTSTRAP: counts now, no other key counted any more" if ev and ev.basis == "rebootstrap" else
+                 f"waits for approval: another enrolled signer runs 'aqt-signoff signers approve {args.id} --key {kid}'")
+        _out(args, record, f"enrolled {args.id} with key {kid}: {state}\n"
                            f"registry: {so.settings.registry_path}\nkey:      {so.registry.key_path(args.id)}")
         return 0
     if cmd == "signers":
@@ -250,6 +307,23 @@ def run(args) -> int:
             result = so.check_signers()
             _out(args, result, _signers_text(result))
             return 0 if result["ok"] else 1
+        if args.signers_command == "approve":
+            record = so.approve_enrolment(args.signer, args.key_id, role=args.role or None, approver_id=args.approver,
+                                          reason=args.reason or None)
+            _out(args, record, f"approved {args.signer} key {args.key_id} as {record['data']['role']}: {record['id']}")
+            return 0
+        if args.signers_command == "import":
+            preview = so.import_preview()
+            if args.dry_run or not preview["records"]:
+                text = _import_text(preview) if preview["records"] else "nothing to import"
+                _out(args, {"records": preview["records"], "sources": preview["sources"]}, text)
+                return 0
+            if not args.json:
+                print(_import_text(preview))
+                print("these records are signed into the trail with your key; continue only if you know them")
+            record = so.import_enrolments(signer_id=args.importer, reason=args.reason or None)
+            _out(args, record, f"imported {len(record['data']['imported'])} record(s): {record['id']}")
+            return 0
         if args.signers_command == "export":
             text = json.dumps(data, indent=2, sort_keys=True) + "\n"
             if args.file:
@@ -269,7 +343,9 @@ def run(args) -> int:
         result = so.rekey(args.signer)
         _out(args, result, f"{result['signer']}: key file {result['path']} "
                            + ("re-encrypted with scrypt" if result["upgraded"] else f"already in the {result['format']} format")
-                           + ("; enrolment recorded" if result["enrolled"] else ""))
+                           + ("; enrolment recorded" if result["enrolled"] else "")
+                           + ("; the enrolment waits for approval by another enrolled signer ('aqt-signoff signers "
+                              f"approve {result['signer']} --key KEY')" if result.get("pending") else ""))
         return 0
     if cmd == "revoke":
         record = so.revoke(args.signer, args.reason, compromised_since=args.compromised_since, lost=args.lost)

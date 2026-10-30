@@ -6,7 +6,12 @@ export XDG_CONFIG_HOME="$demo/config" XDG_STATE_HOME="$demo/state" AQT_SINK="fil
 cd "$demo"
 printf '# Release notes 1.2\n' > notes.md
 
-aqt-signoff init --id human:alice --name "Alice Example" --role quality-manager
+aqt-signoff init --id human:alice --name "Alice Example" --role quality-manager      # the first signer counts at once
+aqt-signoff init --id human:bob --name "Bob Example" --role developer
+bob_key=$(aqt-signoff --json signers list | python3 -c 'import json,sys; d=json.load(sys.stdin); print([k["key_id"] for s in d["signers"] if s["id"]=="human:bob" for k in s["keys"]][0])')
+aqt-signoff signers check || echo "-> Bob's enrolment waits for an approval"
+aqt-signoff signers approve human:bob --key "$bob_key" --signer human:alice --reason "Bob is our developer"
+aqt-signoff signers check
 aqt-signoff sign notes.md --meaning approved --reason "Reviewed against CR-12" --signer human:alice
 aqt-signoff verify notes.md
 aqt-signoff manifest notes.md

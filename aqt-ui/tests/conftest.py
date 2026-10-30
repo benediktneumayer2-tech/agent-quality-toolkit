@@ -84,12 +84,28 @@ def trail_records(config) -> list[dict]:
     return [json.loads(line) for line in path.read_bytes().splitlines() if line.strip()] if path.exists() else []
 
 
+def make_counting(signer_id: str) -> None:
+    """Record the enrolment of a key made by aqt-quarantine init ('aqt-signoff rekey'); unless it is the
+    first signer, another enrolled signer approves it ('aqt-signoff signers approve'), as a person would."""
+    from aqt_signoff import Signoff, StaticPassphrase, load_settings
+
+    def so(signer=None):
+        return Signoff(load_settings(), authenticator=StaticPassphrase(PASSPHRASE), environ={}, chain=[],
+                       require_tty=False)
+    so().rekey(signer_id)
+    check = so().check_signers()
+    for row in check["keys"]:
+        if row["signer"] == signer_id and row.get("pending"):
+            so().approve_enrolment(signer_id, row["key_id"], approver_id=check["bootstrap"]["signer"])
+
+
 @pytest.fixture
 def signer(env):
     from aqt_quarantine.config import load_config
     from aqt_quarantine.decisions import create_identity
     create_identity(load_config(), signer_id=SIGNER, name="Quinn Test", role="quality-manager",
                     passphrase=lambda _prompt: PASSPHRASE)
+    make_counting(SIGNER)
     return SIGNER
 
 

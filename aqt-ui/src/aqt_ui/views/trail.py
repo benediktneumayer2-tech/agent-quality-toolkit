@@ -17,7 +17,8 @@ sends back and aqt-trail checks again (``expected_sha256``), so editing the save
 The record inspector shows how far the writer's observation confirms a human claim, in the
 review's words (``aqt_trail.review.attribution``: agent, unconfirmed, legacy, human; a spooled
 record's sender was not observed, and ``observed.drained_by`` names who drained it), and a
-detached signature only with its ``signature_status`` against the signer registry.
+detached signature only with its ``signature_status`` against the signer registry, its keys checked
+against the trail's enrolment records (``TrailView.enrolled_signers``).
 
 "Last anchor" counts only RFC 3161 anchors the writer wrote whose token covers its checkpoint
 (``aqt_trail.review.anchored_seq``), TEST ONLY anchors only with ``[anchor] test_tsa = true``; "last
@@ -214,10 +215,12 @@ class TrailIndex:
         return self.full(rows[position]) if position is not None else None
 
 
-def detached_signature(record: dict) -> dict | None:
+def detached_signature(record: dict, signers: dict | None = None) -> dict | None:
     """The detached statement in ``data.signature`` with its ``signature_status`` against the signer
-    registry (``valid``, ``invalid``, ``revoked``, ``unknown-key``, ``unbound``), or None."""
-    from aqt_trail.signers import load_registry
+    registry (``valid``, ``invalid``, ``revoked``, ``unknown-key``, ``unbound``), or None. ``signers``: the
+    registry checked against the trail's enrolment records (``TrailView.enrolled_signers``); without it the
+    registry is checked against no records, so no key counts (never the file alone)."""
+    from aqt_trail.signers import check_enrolment, load_registry
     from aqt_trail.verify import signature_status
     data = record.get("data") if isinstance(record.get("data"), dict) else {}
     block = data.get("signature")
@@ -225,10 +228,11 @@ def detached_signature(record: dict) -> dict | None:
         return None
     statement = block.get("statement") if isinstance(block.get("statement"), dict) else {}
     signer = statement.get("signer") if isinstance(statement.get("signer"), dict) else {}
-    try:
-        signers = load_registry()
-    except (ValueError, OSError):
-        signers = {}
+    if signers is None:
+        try:
+            signers = check_enrolment(load_registry(), [])
+        except (ValueError, OSError):
+            signers = {}
     try:
         status, detail = signature_status(record, signers=signers)
     except Exception as error:  # noqa: BLE001 - a malformed statement is shown as invalid, never crashes
@@ -261,6 +265,7 @@ class TrailView:
         self._selection: tuple = (None, [])     # (key, rows) of the last filtered selection
         self._sheets: dict[str, tuple[str, dict]] = {}   # worksheet id -> (digest, sheet) prepared here
         self._review_cache: tuple = (None, None)         # (index version, registry, rows) -> last review time
+        self._signers_cache: tuple = (None, None)        # (index version, enrolments, registry) -> checked registry
 
     # -- writer and spool --------------------------------------------------------------------------
     def writer(self) -> dict:
@@ -380,21 +385,34 @@ class TrailView:
             "writer": self.writer(), "unreadable": self.index.unreadable,
         }
 
+    def enrolled_signers(self) -> dict:
+        """The signer registry with its keys checked against the trail's enrolment records
+        (``aqt_trail.signers.check_enrolment``: aqt-signoff's reconciliation when it is installed; otherwise
+        the keys are marked unchecked and every status says so). Cached until the trail or the registry
+        changes."""
+        from aqt_trail.signers import check_enrolment, load_registry, registry_path
+        self.index.refresh()
+        key = (self.index.version, len(self.index.enrolments), fingerprint(registry_path()))
+        if self._signers_cache[0] != key:
+            try:
+                signers = check_enrolment(load_registry(), [self.index.full(row) for row in self.index.enrolments])
+            except (ValueError, OSError):
+                signers = {}
+            self._signers_cache = (key, signers)
+        return self._signers_cache[1]
+
     def last_review(self) -> str | None:
         """Time of the newest ``trail.review`` whose signature is ``valid`` against the signer
         registry, its keys checked against the trail's enrolment records. A statement copied into a
         later record counts once, at its first record."""
         from aqt_evidence import content_hash
-        from aqt_trail.signers import check_enrolment, load_registry, registry_path
+        from aqt_trail.signers import registry_path
         from aqt_trail.verify import signature_status
         rows = list(self.index.reviews)
         key = (self.index.version, len(rows), fingerprint(registry_path()))
         if self._review_cache[0] == key:
             return self._review_cache[1]
-        try:
-            signers = check_enrolment(load_registry(), [self.index.full(row) for row in self.index.enrolments])
-        except (ValueError, OSError):
-            signers = {}
+        signers = self.enrolled_signers()
         seen, last = set(), None
         for row in rows:
             try:
@@ -452,7 +470,7 @@ class TrailView:
         state = attribution(record)
         return {"record": record, "claimed": claimed, "observed": observed, "attribution": state,
                 "attribution_mismatch": bool(state and state["state"] == "agent"),
-                "signature": detached_signature(record)}
+                "signature": detached_signature(record, self.enrolled_signers())}
 
     def refusals_since(self, hours: int = 24) -> list[dict]:
         self.index.refresh()

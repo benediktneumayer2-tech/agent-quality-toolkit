@@ -43,6 +43,7 @@ DECISION_ACTIONS = {"approve", "approved", "release", "released", "reject", "rej
                     "sign", "signed", "declare-threat", "trust-source", "accept", "dismiss", "close", "resolve"}
 # Types whose actors do not count as "involved" for reviewer independence.
 NOT_ACTIVITY = {"trail.refused", "trail.review", "trail.gap", "trail.anchor"}
+OWN_KEY_TYPES = {"signoff.key.enrolled", "signoff.key.revoked"}     # see own_key_record
 WRITER_ID = "service:aqt-trail"
 WORKSHEET_KEYS = ("aqt_worksheet", "id", "log_id", "scope", "profile", "actors_reviewed", "findings")
 _WORKSHEET_ID = re.compile(r"^rv_[0-9a-f]{12}$")
@@ -172,10 +173,19 @@ def attribution(record) -> str | None:
     return "human" if status == "complete" else "unconfirmed"
 
 
-def scope_actors(scope: list[dict]) -> list[str]:
+def own_key_record(record: dict) -> bool:
+    """A signer's enrolment, rotation or revocation of their own key (``data.signer`` is the actor). It is not
+    activity for reviewer independence; approving someone else's enrolment, or importing enrolments, is."""
+    data = _data(record)
+    return record.get("type") in OWN_KEY_TYPES and data.get("signer") == _aid(record) and "imported" not in data
+
+
+def scope_actors(scope: list[dict], *, legacy: bool = False) -> list[str]:
     """Identities that acted in ``scope`` (they may not review it): every non-service actor, except on
-    records that are not activity (refusals, reviews, gaps, anchors)."""
-    return sorted({_aid(r) for r in scope if _actor(r).get("kind") != "service" and r.get("type") not in NOT_ACTIVITY})
+    records that are not activity (refusals, reviews, gaps, anchors) and on a signer's records about their own
+    key (``own_key_record``). ``legacy``: the rule before that exception (reviews signed with it still verify)."""
+    return sorted({_aid(r) for r in scope if _actor(r).get("kind") != "service" and r.get("type") not in NOT_ACTIVITY
+                   and (legacy or not own_key_record(r))})
 
 
 def in_period(record, since: str | None, until: str | None) -> bool:

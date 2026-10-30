@@ -209,6 +209,47 @@ def test_record_inspector_shows_the_signature_status(trail, held_case, ui_factor
     assert client.get(f"/api/trail/record/{unregistered['id']}")[1]["signature"]["status"] == "unknown-key"
 
 
+def test_record_inspector_checks_registry_keys_against_the_enrolment_records(trail, held_case, ui_factory, tmp_path):
+    """An agent adds its own key to the QM's registry entry, records a self-signed enrolment for it and signs a
+    decision: the inspector shows that key as not counting (it waits for approval), never as valid."""
+    from aqt_evidence import (bytes_hash, generate_key, load_signer, new_id, new_record, open_sink, sign_statement,
+                              subject)
+    from aqt_evidence.crypto import public_pem
+    from aqt_signoff.settings import load_settings
+    client = ui_factory()
+    client.login()
+    case = case_detail(client, held_case)
+    status, result, _ = client.post(f"/api/quarantine/{held_case}/release", decide_body(case))
+    assert status == 200
+    generate_key(tmp_path / "agent.key")
+    agent_key = load_signer(tmp_path / "agent.key")
+    pem = public_pem(agent_key.public_key).decode()
+    path = load_settings().registry_path
+    registry = json.loads(path.read_text())
+    next(s for s in registry["signers"] if s["id"] == SIGNER)["keys"].append(
+        {"key_id": agent_key.key_id, "public_pem": pem, "enrolled_at": "2026-01-01T00:00:00Z", "revoked_at": None})
+    path.write_text(json.dumps(registry))
+    request = {"aqt_signature": "0.1", "record_type": "signoff.key.enrolled", "key": agent_key.key_id,
+               "signer": {"id": SIGNER, "name": "Quinn Test", "role": "quality-manager"}, "meaning": "acknowledged",
+               "reason": "enrolled", "signed_at": "2026-01-01T00:00:00.000000Z", "tz": "UTC", "nonce": "00" * 8,
+               "subject": subject("key", agent_key.key_id, sha256=bytes_hash(pem.encode()))}
+    open_sink().append(new_record(
+        "signoff.key.enrolled", {"kind": "human", "id": SIGNER}, "enroll", subject=request["subject"],
+        data={"signer": SIGNER, "role": "quality-manager", "key_id": agent_key.key_id, "public_pem": pem,
+              "signature": sign_statement(request, agent_key)}))
+    released = next(r for r in trail_records(trail) if r["id"] == result["record_id"])
+    forged = json.loads(json.dumps(released))
+    for key in ("chain", "observed", "sig"):
+        forged.pop(key, None)
+    forged["id"] = new_id()
+    statement = dict(forged["data"]["signature"]["statement"], key=agent_key.key_id)
+    forged["data"]["signature"] = sign_statement(statement, agent_key)
+    open_sink().append(forged)
+    shown = client.get(f"/api/trail/record/{forged['id']}")[1]["signature"]
+    assert shown["status"] == "unknown-key" and "waits for approval" in shown["detail"], shown
+    assert client.get(f"/api/trail/record/{result['record_id']}")[1]["signature"]["status"] == "valid"
+
+
 def test_attribution_uses_the_review_wording():
     from aqt_ui.views.trail import attribution, compact
     human = {"kind": "human", "id": "human:alex"}
@@ -232,18 +273,17 @@ def test_attribution_uses_the_review_wording():
 
 # -- AQT-UI-002: the review signed is the worksheet shown ------------------------------------------------
 @pytest.fixture
-def reviewer(trail):
+def reviewer(trail, signer):
     """A reviewer whose key counts: made by aqt-quarantine, its enrolment recorded in the trail by
-    'aqt-signoff rekey'. Returns the time after the enrolment: a review starts there, since the
-    enrolment counts as the reviewer's activity."""
+    'aqt-signoff rekey' and approved by the first signer (the QM of ``signer``). Returns the time
+    after the enrolment: a review starts there, since an approval of someone else's enrolment is activity."""
     from aqt_evidence import utc_now
     from aqt_quarantine.config import load_config
     from aqt_quarantine.decisions import create_identity
-    from aqt_signoff import Signoff, StaticPassphrase, load_settings
+    from conftest import make_counting
     create_identity(load_config(), signer_id=REVIEWER, name="Robin Review", role="quality-manager",
                     passphrase=lambda _prompt: PASSPHRASE)
-    Signoff(load_settings(), authenticator=StaticPassphrase(PASSPHRASE), environ={}, chain=[],
-            require_tty=False).rekey(REVIEWER)
+    make_counting(REVIEWER)
     time.sleep(0.01)
     return utc_now()
 

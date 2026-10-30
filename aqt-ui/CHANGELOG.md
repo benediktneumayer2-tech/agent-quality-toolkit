@@ -6,6 +6,11 @@ First version.
 
 Security review fixes (same version, not yet released):
 
+- Round 3: the record inspector checks a detached signature against the registry reconciled with the trail's
+  enrolment records (`TrailView.enrolled_signers`, shared with "last review"), so a key an agent added to
+  `signers.json` with a self-signed enrolment record shows `unknown-key` (its enrolment waits for approval), not
+  `valid`. Quarantine decisions follow aqt-quarantine's enrolment check.
+
 - What you see is what you sign: held content is shown and can be released only while it has the
   recorded hash, and the hash shown is passed to aqt-quarantine (`expected_sha256`); a prepared
   action is decidable only while its stored specification hashes to the action hash; the review is

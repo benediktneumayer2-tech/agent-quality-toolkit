@@ -38,7 +38,12 @@ def person(aqt_signoff, env, signer_id: str):
     settings = aqt_signoff.load_settings(sink=f"file:{env.others}", evidence=[env.others, env.sink_path])
     so = aqt_signoff.Signoff(settings, authenticator=aqt_signoff.StaticPassphrase(PASSPHRASE), environ={}, chain=[],
                              require_tty=False)
-    so.init_signer(signer_id, signer_id.split(":")[1].title(), "quality")
+    enrolled = so.init_signer(signer_id, signer_id.split(":")[1].title(), "quality")
+    first = so.check_signers()["bootstrap"]["signer"]
+    if first != signer_id:                  # every later enrolment counts after an enrolled signer approves it
+        approver = aqt_signoff.Signoff(settings, authenticator=aqt_signoff.StaticPassphrase(PASSPHRASE), environ={},
+                                       chain=[], require_tty=False)
+        approver.approve_enrolment(signer_id, enrolled["data"]["key_id"], approver_id=first)
     return so
 
 

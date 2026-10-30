@@ -167,3 +167,111 @@ def test_key_id_that_belongs_to_another_public_key_is_unusable(env, tmp_path):
          "enrolled_at": "2026-01-01T00:00:00Z", "revoked_at": None}]}]}))
     entry = load_registry()["human:dora"].keys[dora.key_id]
     assert entry.public is None and dora.key_id not in load_registry()["human:dora"].active_keys
+
+
+# ---- counter-signed enrolment through a real writer (security review round 3) -------------------------------
+def signoff_as(signer_id: str | None = None):
+    from aqt_signoff import Signoff, StaticPassphrase, load_settings
+    settings = load_settings()
+    settings.signer = signer_id
+    return Signoff(settings, authenticator=StaticPassphrase(PASSPHRASE), environ={}, chain=[], require_tty=False)
+
+
+def forged_request(config, signer_id: str, key, env, *, client_time: str | None = None):
+    """What any same-user process can do: its own key in signers.json and a self-signed enrolment record sent
+    through the writer socket (no aqt-signoff command, no terminal)."""
+    from aqt_evidence import bytes_hash, new_record, sign_statement, subject
+    add_to_registry(signer_id, key, env)
+    pem = public_pem(key.public_key).decode()
+    statement = {"aqt_signature": "0.1", "record_type": "signoff.key.enrolled",
+                 "signer": {"id": signer_id, "name": signer_id.split(":")[1].title(), "role": "quality-manager"},
+                 "key": key.key_id, "meaning": "acknowledged", "reason": "enrolled", "tz": "UTC",
+                 "signed_at": client_time or "2026-01-01T00:00:00.000000Z", "nonce": "00" * 8,
+                 "enrolled_at": client_time or "2026-01-01T00:00:00.000000Z",
+                 "subject": subject("key", key.key_id, sha256=bytes_hash(pem.encode()))}
+    record = new_record("signoff.key.enrolled", {"kind": "human", "id": signer_id}, "enroll",
+                        subject=statement["subject"], time=client_time or "2026-01-01T00:00:00.000000Z",
+                        data={"signer": signer_id, "name": statement["signer"]["name"], "role": "quality-manager",
+                              "key_id": key.key_id, "public_pem": pem, "signature": sign_statement(statement, key)})
+    return TrailClient(config.socket_path).append(record)
+
+
+def review_since(config, since, signer, reviewer):
+    records = read_records(config.trail_path)
+    profile = load_profile("default", dict(DEFAULTS["review"], work_start="00:00", work_end="23:59",
+                                           workdays=[1, 2, 3, 4, 5, 6, 7]))
+    sheet = run_review(records, profile, log_id="trail_test", since=since)
+    return build_review(sheet, records, reviewer_id=reviewer, signer=signer, dispositions={"all": "ok"}, notes={},
+                        reason="weekly", conclusion="no concerns", registry=load_registry())
+
+
+def test_self_signed_enrolment_through_the_writer_waits_for_approval(signoff, trail, env, tmp_path):
+    enrol("human:dora")                                               # the first signer
+    mal = agent_key(tmp_path)
+    stored = forged_request(trail, "human:mallory", mal, env)
+    assert stored["time"] != "2026-01-01T00:00:00.000000Z"            # the writer's time, not the claimed one
+    entry = load_registry(records=read_records(trail.trail_path))["human:mallory"].keys[mal.key_id]
+    assert entry.backed is False and "waits for approval" in entry.evidence
+    with pytest.raises(ReviewRefused) as refused:
+        review(trail, mal, "human:mallory", load_registry())
+    assert refused.value.code == "unenrolled_key"
+    check = signoff_as().check_signers()
+    assert not check["ok"] and [p["signer"] for p in check["pending"]] == ["human:mallory"]
+
+
+def test_approved_enrolment_counts_from_the_writer_time_of_its_request(signoff, trail, env, tmp_path):
+    enrol("human:dora")
+    erin = enrol("human:erin")
+    info = load_registry(records=read_records(trail.trail_path))["human:erin"].keys[erin.key_id]
+    assert info.backed is False
+    signoff_as("human:dora").approve_enrolment("human:erin", erin.key_id)
+    records = read_records(trail.trail_path)
+    request = next(r for r in records if r["type"] == "signoff.key.enrolled" and r["data"]["key_id"] == erin.key_id)
+    info = load_registry(records=records)["human:erin"].keys[erin.key_id]
+    assert info.backed and info.enrolled_at == request["time"]       # retroactive to the request, writer-stamped
+    TrailClient(trail.socket_path).append(review(trail, erin, "human:erin", load_registry()))
+    assert verify(trail).ok
+
+
+def test_verify_accepts_a_keys_own_revocation_and_rotation(signoff, trail):
+    enrol("human:dora")
+    signoff_as("human:dora").init_signer("human:dora", "", "", add_key=True)     # rotation: old key approves, revoked
+    enrol("human:erin")
+    signoff_as("human:erin").revoke("human:erin", reason="left")
+    report = verify(trail)
+    assert report.ok and not report.signature_problems, report.signature_problems
+    registry = load_registry(records=read_records(trail.trail_path))
+    assert len(registry["human:dora"].active_keys) == 1 and len(registry["human:dora"].revoked_keys) == 1
+
+
+def test_own_enrolment_is_not_activity_but_approving_someone_else_is(signoff, trail):
+    client = TrailClient(trail.socket_path)
+    since = client.append(event("edit", who=agent()))["time"]
+    dora = enrol("human:dora")                                       # dora's own enrolment, inside the period
+    signoff_as("human:dora").init_signer("human:dora", "", "", add_key=True)     # and her own key rotation
+    dora = load_signer(key_file("human:dora"), passphrase=PASSPHRASE.encode())
+    record = review_since(trail, since, dora, "human:dora")
+    assert "human:dora" not in record["data"]["actors_reviewed"]
+    client.append(record)
+    assert verify(trail).ok
+    erin = enrol("human:erin")
+    signoff_as("human:dora").approve_enrolment("human:erin", erin.key_id)        # dora approves someone else
+    with pytest.raises(ReviewRefused) as refused:
+        review_since(trail, since, dora, "human:dora")
+    assert refused.value.code == "not_independent"
+
+
+def test_review_signed_with_the_earlier_actor_list_still_verifies(signoff, trail, monkeypatch):
+    from aqt_trail import review as review_module
+    dora = enrol("human:dora")
+    client = TrailClient(trail.socket_path)
+    since = client.append(event("edit", who=agent()))["time"]
+    enrol("human:carl")                                              # carl's own enrolment request in the period
+    legacy = review_module.scope_actors
+    monkeypatch.setattr(review_module, "scope_actors", lambda scope: legacy(scope, legacy=True))
+    record = review_since(trail, since, dora, "human:dora")          # as an earlier aqt-trail computed it
+    monkeypatch.setattr(review_module, "scope_actors", legacy)
+    assert "human:carl" in record["data"]["actors_reviewed"]
+    assert "human:carl" not in legacy([r for r in read_records(trail.trail_path) if r["time"] >= since])
+    client.append(record)
+    assert verify(trail).ok, verify(trail).signature_problems

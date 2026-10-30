@@ -107,9 +107,17 @@ See [`examples/trail.toml`](../examples/trail.toml). Paths: state `$AQT_TRAIL_ST
 `AQT_SINK=unix:…`, `$XDG_RUNTIME_DIR/aqt/trail.sock`, or `<state>/aqt-trail.sock`, in that order.
 AF_UNIX paths are limited to about 104 bytes. Signer registry `$AQT_SIGNERS` or `$XDG_CONFIG_HOME/aqt/signers.json`;
 reviewer keys in `$AQT_KEYS_DIR` or `$XDG_CONFIG_HOME/aqt/keys/`. The registry is plain configuration: a key counts
-only when its `signoff.key.enrolled` record in the trail backs it, judged with aqt-signoff's rules
-(`aqt_trail.signers.check_enrolment`, `load_registry(records=...)`). aqt-trail does not depend on aqt-signoff;
-without it the keys are left unchecked and `verify` warns that they rest on `signers.json` alone.
+only as the `signoff.key.enrolled` records in the trail count it, judged with aqt-signoff's rules
+(`aqt_trail.signers.check_enrolment`, `load_registry(records=...)`): its own enrolment request, and the first signer
+or an approval by another enrolled signer (`aqt-signoff signers approve`); a pending enrolment does not count. A
+key's own enrolment request and revocation are proofs of possession and are not judged against its validity period.
+aqt-trail does not depend on aqt-signoff; without it the keys are left unchecked and `verify` warns that they rest
+on `signers.json` alone.
+
+Reviewer independence: the reviewer may not be an actor in the reviewed scope. A signer's records about their own
+key (enrolment request, rotation approval, revocation: `data.signer` is the actor) are not activity; an approval of
+someone else's enrolment, or an import of enrolment records, is. Reviews signed before this rule listed those
+signers too and still verify.
 
 Test mode (`--test-tsa` on `verify`, `alcoa`, `status` and `review run`, or `[anchor] test_tsa = true`) trusts
 the built-in TEST ONLY authority: its CA in `verify`, its anchors in `status`, `unanchored_head` and ALCOA++

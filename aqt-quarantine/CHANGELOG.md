@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Security fix (round 3): with aqt-signoff installed, decisions count only with keys its enrolment check counts
+  (`enrolment_view`, `verify_decision(..., enrolment=)`): a key an agent writes into `signers.json`, even with a
+  self-signed enrolment record, releases nothing, and the decider refuses to sign with it (`unenrolled_key`).
+  `Decider.enrolment_note` and `doctor` say whether keys were checked or rest on `signers.json` alone (aqt-signoff
+  not installed). Changed: a key made by `aqt-quarantine init` needs `aqt-signoff rekey --signer ID` (and, unless it
+  is the first signer, an approval with `aqt-signoff signers approve`) before its decisions count.
+
 - Security fix: a signed decision acts only through its signed `data.decision`. A record whose unsigned fields
   (case id, content hash, overrule, domain, subdomains, expiry, action, subject) differ from it is `mismatch`
   and has no effect, so a signature can no longer be copied onto another case or domain, and a signed revocation

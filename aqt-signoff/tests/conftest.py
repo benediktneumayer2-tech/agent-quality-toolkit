@@ -61,12 +61,19 @@ def make(tmp_path, clock, config):
     return factory
 
 
+def key_id_of(make, signer_id: str) -> str:
+    return make(signer_id).reload_registry().get(signer_id).active_key().key_id
+
+
 @pytest.fixture
 def people(make, clock):
-    """Alice (quality-manager), Bob (developer), Carol (qa) enrolled."""
+    """Alice (quality-manager, the first signer), Bob (developer) and Carol (qa) enrolled; Alice approved
+    Bob's and Carol's enrolments (every enrolment after the first needs an enrolled signer's approval)."""
     for signer, name, role in (("human:alice", "Alice Example", "quality-manager"),
                                ("human:bob", "Bob Example", "developer"),
                                ("human:carol", "Carol Example", "qa")):
         make(signer).init_signer(signer, name, role)
+    for signer in ("human:bob", "human:carol"):
+        make("human:alice").approve_enrolment(signer, key_id_of(make, signer))
     clock.advance(seconds=1)
     return {signer: make(signer) for signer in PASSWORDS}

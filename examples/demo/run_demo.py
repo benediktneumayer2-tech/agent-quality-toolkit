@@ -189,11 +189,21 @@ class Demo:
 
         from aqt_signoff import Signoff, StaticPassphrase, load_settings
         self._signoff = (Signoff, StaticPassphrase, load_settings)
+        requests = {}
         for ident, (name, role, _) in PEOPLE.items():
             record = self.signoff(ident).init_signer(ident, name, role)
+            requests[ident] = record
             self.note(f"enrolled {ident} ({role}) -> {record['type']} {record['id']}")
+        check = self.signoff(QM).check_signers()
+        self.expect(check["bootstrap"]["signer"] == QM and [p["signer"] for p in check["pending"]] == [DEV],
+                    "the first signer counts at once; the second enrolment waits for an approval")
+        approval = self.signoff(QM).approve_enrolment(DEV, requests[DEV]["data"]["key_id"],
+                                                     reason="Devon is our developer; key checked in person")
+        self.note(f"the QM approved {DEV}'s enrolment -> signoff.key.enrolled {approval['id']} "
+                  f"(aqt-signoff signers approve {DEV} --key ...)")
         enrolled = self.of_type("signoff.key.enrolled")
-        self.expect(len(enrolled) == 2, "two signoff.key.enrolled records in the trail")
+        self.expect(len(enrolled) == 3 and self.signoff(QM).check_signers()["ok"],
+                    "two enrolment requests and one approval in the trail; every key counts")
         self.expect((self.config / "aqt" / "signers.json").exists(), "shared signer registry signers.json written")
         self.say("   DEMO ONLY: passphrases are fixed strings injected through aqt_signoff.StaticPassphrase.")
 

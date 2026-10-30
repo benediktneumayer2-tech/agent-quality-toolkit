@@ -27,7 +27,11 @@ def test_init_writes_registry_keys_and_enrolment(people, make, isolated):
     assert stat.S_IMODE(os.stat(key_file).st_mode) == 0o600
     assert b"ENCRYPTED" in key_file.read_bytes()
     enrolled = [r for r in records(make) if r["type"] == "signoff.key.enrolled"]
-    assert len(enrolled) == 3
+    requests = [r for r in enrolled if r["actor"]["id"] == r["data"]["signer"]]
+    approvals = [r for r in enrolled if r["actor"]["id"] != r["data"]["signer"]]
+    assert len(requests) == 3 and len(approvals) == 2        # Alice approved Bob and Carol
+    assert {r["actor"]["id"] for r in approvals} == {"human:alice"}
+    assert {r["data"]["approves"] for r in approvals} == {r["id"] for r in requests[1:]}
     so = people["human:alice"]
     assert all(check_block(r["data"]["signature"], so.registry, record=r).valid for r in enrolled)
     with pytest.raises(Exception, match="already exists"):
@@ -146,6 +150,10 @@ def test_revocation_with_compromise_time(people, make, clock, isolated):
     with pytest.raises(AuthFailed):
         fresh.sign(fresh.file_subject(doc), "approved", "after revocation")
     fresh.init_signer("human:alice", "", "", add_key=True)
+    with pytest.raises(Refused, match="waits for an approval"):       # a new key after a revocation
+        make("human:alice").sign(fresh.file_subject(doc), "approved", "too early")
+    new_key = make("human:alice").reload_registry().get("human:alice").active_key().key_id
+    make("human:bob").approve_enrolment("human:alice", new_key)       # another enrolled signer approves it
     clock.advance(seconds=1)
     newest = make("human:alice")
     newest.sign(newest.file_subject(doc), "approved", "new key")
@@ -180,7 +188,8 @@ def test_signature_over_record_survives_trail_storage(people, make, clock):
     for seq, record in enumerate([*enrolments, target, signature]):
         stored = link(record, seq=seq, prev=GENESIS)
         stored["observed"] = {"pid": 1, "client_time": stored["time"]}
-        stored["time"] = "2026-10-21T13:00:00.000000Z"
+        if record in (target, signature):
+            stored["time"] = "2026-10-21T13:00:00.000000Z"
         trail.append(stored)
     trail_file = make.sink.with_name("trail.jsonl")
     trail_file.write_text("".join(json.dumps(r) + "\n" for r in trail))

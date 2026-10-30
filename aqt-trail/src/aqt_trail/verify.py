@@ -261,6 +261,11 @@ def signature_status(record: dict, *, signers: dict[str, SignerInfo] | None = No
         return "invalid", f"key {key_id} belongs to {owners[0][0].id}, but the statement names {signer['id']}"
     if entry.public is None or not verify_statement(block, {key_id: entry.public}):
         return "invalid", "signature does not verify (statement altered or wrong key)"
+    if own_key_statement(record):
+        # A key's own enrolment request or revocation proves possession of the key; it is signed just
+        # before the writer stores it (and a revocation at its revocation time), so the key's validity
+        # period does not apply. Whether the key counts is the enrolment check's business.
+        return "valid", ("" if entry.backed is not False else f"key {key_id} does not count: {entry.evidence}")
     if entry.backed is False:
         return "unknown-key", (f"key {key_id} of {signer['id']} is in signers.json but not backed by its enrolment "
                                f"record ({entry.evidence}); see 'aqt-signoff signers check'")
@@ -278,6 +283,14 @@ def signature_status(record: dict, *, signers: dict[str, SignerInfo] | None = No
     elif entry.evidence:
         notes.append(f"key {key_id}: {entry.evidence}")
     return "valid", "; ".join(notes)
+
+
+def own_key_statement(record: dict) -> bool:
+    """A ``signoff.key.enrolled`` request or a ``signoff.key.revoked`` record signed by the key it is about."""
+    data = record.get("data") if isinstance(record.get("data"), dict) else {}
+    block = data.get("signature") if isinstance(data.get("signature"), dict) else {}
+    return (record.get("type") in ("signoff.key.enrolled", "signoff.key.revoked") and "imported" not in data
+            and isinstance(block.get("key"), str) and data.get("key_id") == block["key"])
 
 
 def _review_problems(record: dict, seq: int, data: dict, records: list[dict]) -> list[str]:
@@ -311,8 +324,10 @@ def _review_problems(record: dict, seq: int, data: dict, records: list[dict]) ->
     if (since is not None and not isinstance(since, str)) or (until is not None and not isinstance(until, str)):
         problems.append("its period is malformed")
         return problems
-    actors = scope_actors([r for r in records[start:end + 1] if in_period(r, since, until)])
-    if data.get("actors_reviewed") != actors:
+    selected = [r for r in records[start:end + 1] if in_period(r, since, until)]
+    actors = scope_actors(selected)
+    # reviews signed before a signer's own enrolment stopped counting as activity list those signers too
+    if data.get("actors_reviewed") not in (actors, scope_actors(selected, legacy=True)):
         problems.append("its actors in scope differ from the trail")
     if signer.get("id") in actors:
         problems.append(f"the reviewer {signer.get('id')} acted in the reviewed scope (not independent)")

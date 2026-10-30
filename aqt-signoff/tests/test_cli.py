@@ -38,9 +38,17 @@ def cli(isolated, monkeypatch, capsys):
 
 def test_cli_end_to_end(cli, isolated):
     cli("init", "--id", "human:alice", "--name", "Alice Example", "--role", "quality-manager")
-    cli("init", "--id", "human:bob", "--name", "Bob Example", "--role", "developer")
+    bob = cli("init", "--id", "human:bob", "--name", "Bob Example", "--role", "developer")
     signers = cli("signers", "list")
     assert [s["id"] for s in signers["signers"]] == ["human:alice", "human:bob"]
+    check = cli("signers", "check", expect=1)                # Bob's enrolment waits for Alice's approval
+    assert check["bootstrap"]["signer"] == "human:alice"
+    assert [(p["signer"], p["in_registry"]) for p in check["pending"]] == [("human:bob", True)]
+    key = bob["data"]["key_id"]
+    cli("signers", "approve", "human:bob", "--key", key, "--signer", "human:bob", expect=2)   # not yourself
+    approval = cli("signers", "approve", "human:bob", "--key", key, "--signer", "human:alice")
+    assert approval["actor"]["id"] == "human:alice" and approval["data"]["approves"] == bob["id"]
+    assert cli("signers", "check")["ok"]
 
     doc = isolated / "report.md"
     doc.write_text("# Report\n")

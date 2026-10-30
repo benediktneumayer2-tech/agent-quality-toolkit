@@ -10,10 +10,12 @@ earlier PKCS#8 keys still load and are re-encrypted at the next unlock; 0600) an
 ``<slug>.key.pub``. The slug is the signer id with ``:`` replaced by ``-``.
 
 The file is plain configuration that any process of the user can edit. A key therefore
-counts only when ``reconcile`` finds its ``signoff.key.enrolled`` record in the evidence (the
-chained trail when there is one): same signer, key, public key and role, with a statement
-that the key itself signed. Enrolment and revocation times are taken from that evidence;
-a revocation record always applies, even when the file says the key is active.
+counts only as ``reconcile`` finds it in the enrolment evidence (the chained trail when there
+is one; rules in ``enrolment``): its own signed enrolment request, and either the first
+enrolment of all (bootstrap) or an approval by another enrolled signer. Enrolment times, roles
+and revocations are taken from that evidence; a revocation record always applies, even when
+the file says the key is active, and a registry role that differs from the enrolled role
+stops the key.
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ import getpass
 import json
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Protocol
@@ -30,9 +32,10 @@ from typing import Protocol
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-from aqt_evidence import Signer, bytes_hash, key_id as key_id_of, load_signer, verify_statement
+from aqt_evidence import Signer, key_id as key_id_of, load_signer
 from aqt_evidence.crypto import upgrade_key
 
+from .enrolment import EnrolmentHistory, parse_time, revocations as revocations_of
 from .errors import AuthFailed, NotFound, UsageError
 
 _ID = re.compile(r"^human:[a-z0-9][a-z0-9._-]{0,63}$")
@@ -41,10 +44,6 @@ SLACK_S = 300   # registry, statement and trail times of one enrolment may diffe
 
 def slug(signer_id: str) -> str:
     return re.sub(r"[^a-z0-9._-]", "_", signer_id.replace(":", "-"))
-
-
-def parse_time(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
 @dataclass
@@ -78,22 +77,27 @@ class SignerEntry:
 
 @dataclass
 class KeyEvidence:
-    """A registry key reconciled with its enrolment and revocation records."""
+    """A registry key reconciled with the enrolment evidence (``enrolment.EnrolmentHistory``)."""
     signer_id: str
     key_id: str
     counts: bool
     problems: list
     notes: list
-    enrolled_at: str | None = None
+    enrolled_at: str | None = None    # from when the key counts: its enrolment request's record time
     revoked_at: str | None = None
-    enrolled_role: str | None = None
-    record: dict | None = None        # id, time, source, adopted and observed of the enrolment record
+    enrolled_role: str | None = None  # the signer's role now, from the evidence
+    record: dict | None = None        # id, time, source, adopted and observed of the enrolment request
     missing: bool = False             # no enrolment record at all (aqt-signoff records one at the next unlock)
+    pending: bool = False             # enrolment recorded, waiting for an approval
+    basis: str | None = None          # bootstrap | rebootstrap | approved
+    approvals: list = field(default_factory=list)
+    roles: list = field(default_factory=list)   # [{"from", "role", "record"}] of the signer
 
     def as_dict(self) -> dict:
         return {"signer": self.signer_id, "key_id": self.key_id, "counts": self.counts, "problems": self.problems,
                 "notes": self.notes, "enrolled_at": self.enrolled_at, "revoked_at": self.revoked_at,
-                "enrolled_role": self.enrolled_role, "enrolment": self.record}
+                "enrolled_role": self.enrolled_role, "enrolment": self.record, "pending": self.pending,
+                "basis": self.basis, "approvals": self.approvals, "roles": self.roles}
 
 
 def _data(record: dict) -> dict:
@@ -114,6 +118,8 @@ class Registry:
         self.signers: list[SignerEntry] = []
         self.reconciled = False
         self.evidence: dict[tuple[str, str], KeyEvidence] = {}   # (signer id, key id) -> evidence
+        self.history: EnrolmentHistory | None = None
+        self.pre_trail: list[dict] = []     # set by Signoff.trust: enrolment requests only outside the trail
         if self.path.exists():
             try:
                 data = json.loads(self.path.read_text(encoding="utf-8"))
@@ -156,19 +162,12 @@ class Registry:
         return self.evidence.get((signer_id, key_id))
 
     def reconcile(self, enrolments: list[dict], revocations: list[dict], *, source: str = "evidence") -> None:
-        """Check every key against ``signoff.key.enrolled`` records in ``enrolments`` and apply
-        every ``signoff.key.revoked`` record in ``revocations``. Sets ``evidence`` and ``reconciled``."""
-        enrolled: dict[str, list[dict]] = {}
-        for record in enrolments:
-            if isinstance(record, dict) and record.get("type") == "signoff.key.enrolled":
-                enrolled.setdefault(str(_data(record).get("key_id")), []).append(record)
-        revoked: dict[str, list[str]] = {}
-        for record in revocations:
-            if not isinstance(record, dict):
-                continue
-            data = _data(record)
-            if record.get("type") == "signoff.key.revoked" and _time(data.get("revoked_at")):
-                revoked.setdefault(str(data.get("key_id")), []).append(data["revoked_at"])
+        """Build the enrolment history from ``enrolments`` (in order; see ``enrolment``) and check every
+        registry key against it; every ``signoff.key.revoked`` record in ``revocations`` (or carried by an
+        import) applies. Sets ``history``, ``evidence`` and ``reconciled``."""
+        revoked = revocations_of([*revocations, *enrolments])
+        pems = {key.key_id: key.public_pem for signer in self.signers for key in signer.keys}
+        self.history = EnrolmentHistory(revoked, source, pems).run(enrolments)
         self.evidence = {}
         owners: dict[str, set[str]] = {}
         for signer in self.signers:
@@ -176,16 +175,24 @@ class Registry:
                 owners.setdefault(key.key_id, set()).add(signer.id)
         for signer in self.signers:
             for key in signer.keys:
-                ev = self._reconcile_key(signer, key, enrolled.get(key.key_id, []), revoked.get(key.key_id, []),
-                                         source)
+                ev = self._reconcile_key(signer, key, revoked.get(key.key_id, []), source)
                 if len(owners[key.key_id]) > 1 or sum(k.key_id == key.key_id for k in signer.keys) > 1:
                     ev.problems.append("the key id is registered more than once")
                     ev.counts = ev.missing = False
                 self.evidence[(signer.id, key.key_id)] = ev
+            active = [k.key_id for k in signer.keys if self.evidence[(signer.id, k.key_id)].counts
+                      and not self.evidence[(signer.id, k.key_id)].revoked_at]
+            if len(active) > 1:
+                for key_id in active:
+                    self.evidence[(signer.id, key_id)].notes.append(
+                        f"{signer.id} has {len(active)} active keys that count ({', '.join(active)})")
         self.reconciled = True
 
-    def _reconcile_key(self, signer: SignerEntry, key: KeyEntry, candidates: list[dict], revocations: list[str],
-                       source: str) -> KeyEvidence:
+    def role_at(self, signer_id: str, moment: datetime) -> str | None:
+        """The signer's role in effect at ``moment`` (reconciled registries only)."""
+        return self.history.role_at(signer_id, moment) if self.history else None
+
+    def _reconcile_key(self, signer: SignerEntry, key: KeyEntry, revocations: list[str], source: str) -> KeyEvidence:
         ev = KeyEvidence(signer.id, key.key_id, False, [], [])
         try:
             public = key.public_key()
@@ -195,42 +202,63 @@ class Registry:
         if key_id_of(public) != key.key_id:
             ev.problems.append("the registry key_id does not belong to its public key")
             return ev
-        best, best_time, rejected = None, None, []
-        for record in candidates:
-            why = self._enrolment_problem(record, signer, key, public)
-            if why:
-                rejected.append(why)
-                continue
-            st = _data(record)["signature"]["statement"]
-            moment = _time(st.get("signed_at"))
-            if best is None or moment < best_time:
-                best, best_time = record, moment
-        if best is None:
-            ev.missing = not candidates
-            ev.problems.append(f"no signoff.key.enrolled record for this key in the {source}" if not candidates
+        history = self.history
+        state = history.keys.get(key.key_id)
+        if state is None:
+            rejected = history.rejected.get(key.key_id, [])
+            ev.missing = not rejected
+            ev.problems.append(f"no signoff.key.enrolled record for this key in the {source}" if not rejected
                                else "its enrolment record does not match: " + "; ".join(rejected))
             return ev
-        st = _data(best)["signature"]["statement"]
-        ev.enrolled_role = st["signer"].get("role")
-        ev.enrolled_at = st.get("enrolled_at") if _time(st.get("enrolled_at")) else st["signed_at"]
-        ev.record = {"id": best.get("id"), "time": best.get("time"), "source": source,
-                     "adopted": bool(_data(best).get("adopted")), "observed": best.get("observed")}
-        if signer.role != ev.enrolled_role:
-            ev.problems.append(f"registry role {signer.role!r} differs from the enrolled role {ev.enrolled_role!r}")
-        if signer.name != st["signer"].get("name"):
-            ev.notes.append(f"registry name {signer.name!r} differs from the enrolled name "
-                            f"{st['signer'].get('name')!r}")
-        registered = _time(key.enrolled_at)
-        if registered is None or (_time(ev.enrolled_at) - registered).total_seconds() > SLACK_S:
+        request = state.request
+        ev.record = {"id": request.get("id"), "time": state.time, "source": state.source,
+                     "adopted": bool(_data(request).get("adopted")), "observed": request.get("observed")}
+        if state.imported:
+            ev.record["imported"] = state.imported
+        ev.basis, ev.approvals = state.basis, list(state.approvals)
+        ev.roles = [{"from": when, "role": role, "record": rid} for when, role, rid in history.roles.get(signer.id, [])]
+        if state.signer != signer.id:
+            ev.problems.append(f"its enrolment record names {state.signer}, the registry {signer.id}")
+        if state.public_pem.strip() != key.public_pem.strip():
+            ev.problems.append("its enrolment record holds another public key")
+        ev.problems.extend(state.problems)
+        if state.conflict:
+            pass
+        elif state.start is None:
+            ev.pending = True
+            ev.problems.append(f"enrolment {request.get('id')} ({state.time}) waits for approval: another enrolled "
+                               f"signer runs 'aqt-signoff signers approve {signer.id} --key {key.key_id}'")
+        else:
+            ev.enrolled_at = state.start
+            ev.enrolled_role = history.current_role(signer.id)
+            if signer.role != ev.enrolled_role:
+                ev.problems.append(f"registry role {signer.role!r} differs from the enrolled role {ev.enrolled_role!r} "
+                                   f"(a role changes with 'aqt-signoff signers approve {signer.id} --key KEY --role "
+                                   "ROLE' by another signer)")
+        if signer.name != state.name:
+            ev.notes.append(f"registry name {signer.name!r} differs from the enrolled name {state.name!r}")
+        st = _data(request).get("signature", {}).get("statement", {})
+        registered, stated = _time(key.enrolled_at), _time(st.get("enrolled_at")) or _time(st.get("signed_at"))
+        if registered is None or (_time(state.time) - registered).total_seconds() > SLACK_S:
             ev.notes.append(f"registry enrolled_at {key.enrolled_at} is earlier than the enrolment record "
-                            f"({ev.enrolled_at}); the record's time applies")
-        recorded = _time(best.get("time"))
+                            f"({state.time}); the record's time applies")
         if ev.record["adopted"]:
             ev.notes.append(f"enrolled outside 'aqt-signoff init'; the enrolment was recorded at its first use "
-                            f"({best.get('time')}, record {best.get('id')}); check that this person and key are known")
-        elif recorded and (recorded - _time(ev.enrolled_at)).total_seconds() > SLACK_S:
-            ev.notes.append(f"enrolment recorded at {best.get('time')}, later than the enrolment time it states "
-                            f"({ev.enrolled_at})")
+                            f"({state.time}, record {request.get('id')}); check that this person and key are known")
+        elif stated and (_time(state.time) - stated).total_seconds() > SLACK_S:
+            ev.notes.append(f"enrolment recorded at {state.time}, later than the enrolment time it states "
+                            f"({st.get('enrolled_at') or st.get('signed_at')}); the recorded time applies")
+        if state.imported:
+            ev.notes.append(f"enrolment from before the trail, imported by {state.imported['by']} "
+                            f"(record {state.imported['record']})")
+        for entry in history.rebootstraps:
+            if entry["key_id"] == key.key_id:
+                confirmed = ", ".join(c["by"] for c in entry["confirmed_by"])
+                ev.notes.append(f"RE-BOOTSTRAP: enrolled at {entry['time']} when no other key counted any more "
+                                f"(all revoked); it counts without an approval"
+                                + (f"; confirmed by {confirmed}" if confirmed else
+                                   "; check that this was you, and let another signer confirm it with "
+                                   f"'aqt-signoff signers approve {signer.id} --key {key.key_id}'"))
         times = [t for t in (key.revoked_at, *revocations) if _time(t)]
         if key.revoked_at and not _time(key.revoked_at):
             ev.problems.append(f"registry revoked_at {key.revoked_at!r} is not a time")
@@ -240,31 +268,6 @@ class Registry:
                             f"{ev.revoked_at}; the revocation applies")
         ev.counts = not ev.problems
         return ev
-
-    @staticmethod
-    def _enrolment_problem(record: dict, signer: SignerEntry, key: KeyEntry, public) -> str | None:
-        data = _data(record)
-        block = data.get("signature")
-        st = block.get("statement") if isinstance(block, dict) else None
-        if not isinstance(st, dict):
-            return f"{record.get('id')}: no signed statement"
-        subject = st.get("subject") if isinstance(st.get("subject"), dict) else {}
-        signer_part = st.get("signer") if isinstance(st.get("signer"), dict) else {}
-        checks = [
-            (st.get("record_type") == "signoff.key.enrolled", "statement is not an enrolment"),
-            (signer_part.get("id") == signer.id and data.get("signer") in (None, signer.id), "other signer"),
-            (block.get("key") == st.get("key") == key.key_id, "other key"),
-            (subject.get("kind") == "key" and subject.get("ref") == key.key_id
-             and subject.get("sha256") == bytes_hash(key.public_pem.encode("ascii")), "other public key"),
-            (data.get("public_pem") in (None, key.public_pem), "other public key"),
-            (_time(st.get("signed_at")) is not None, "no signing time"),
-        ]
-        for ok, why in checks:
-            if not ok:
-                return f"{record.get('id')}: {why}"
-        if not verify_statement(block, {key.key_id: public}):
-            return f"{record.get('id')}: not signed by this key"
-        return None
 
     def key_path(self, signer_id: str) -> Path:
         return self.keys_dir / f"{slug(signer_id)}.key"

@@ -62,8 +62,9 @@ def sign(statement: dict, key: Signer) -> dict:
 @dataclass
 class SignatureStatus:
     """One signature and what it is worth now. ``role`` is the signed (displayed) role;
-    ``authorized_role`` is the registry role, set only when it equals the signed role and the
-    key is backed by its enrolment record. Role policies use ``authorized_role``."""
+    ``authorized_role`` is the signer's enrolled role in effect at ``signed_at`` (from the
+    enrolment evidence; the registry role without it), set only when it equals the signed role
+    and the key counts. Role policies use ``authorized_role``."""
     record_id: str | None
     record_type: str | None
     status: str
@@ -101,8 +102,9 @@ def check_block(block, registry: Registry, *, record: dict | None = None) -> Sig
     """Verify a ``data.signature`` block against the pinned registry (no content check).
 
     With a reconciled registry (``Registry.reconcile``, done by ``Signoff``) a key counts only
-    when its enrolment record backs it, and the enrolment and revocation times come from the
-    evidence; with an unreconciled registry its own times are used."""
+    when the enrolment evidence backs it (bootstrap or approved), and the enrolment and
+    revocation times and the role come from the evidence; with an unreconciled registry its own
+    times and role are used."""
     rid = record.get("id") if isinstance(record, dict) else None
     rtype = record.get("type") if isinstance(record, dict) else None
     status = SignatureStatus(rid, rtype, "valid")
@@ -156,16 +158,24 @@ def check_block(block, registry: Registry, *, record: dict | None = None) -> Sig
         return status
     enrolled_at, revoked_at = key.enrolled_at, key.revoked_at
     evidence = registry.key_evidence(key.key_id, entry.id) if registry.reconciled else None
+    role = entry.role
     if registry.reconciled:
         if evidence is None or not evidence.counts:
             why = "; ".join(evidence.problems) if evidence else "no enrolment evidence"
             status.worsen("unknown-signer", f"registry key not backed by its enrolment record: {why}")
             return status
         enrolled_at, revoked_at = evidence.enrolled_at, evidence.revoked_at
-    if (entry.name, entry.role) != (signer.get("name"), signer.get("role")):
-        status.detail = "registry name or role differs from the signed values; the signed values are shown"
-    if entry.role == signer.get("role"):
-        status.authorized_role = entry.role
+        role = registry.role_at(entry.id, signed_at)      # the role in effect when it was signed
+    if (entry.name, role) != (signer.get("name"), signer.get("role")):
+        status.detail = (f"signed as {signer.get('role')!r}, but the enrolled role at that time was {role!r}"
+                         if role != signer.get("role") else
+                         "registry name differs from the signed name; the signed values are shown")
+    if role is not None and role == signer.get("role"):
+        status.authorized_role = role
+    data = record.get("data") if isinstance(record, dict) and isinstance(record.get("data"), dict) else {}
+    if rtype in ("signoff.key.enrolled", "signoff.key.revoked") and data.get("key_id") == key.key_id \
+            and "imported" not in data:
+        return status      # the key's own enrolment or revocation: signed just before it is stored
     if signed_at < parse_time(enrolled_at):
         status.worsen("unknown-signer", "signed before the key was enrolled")
     elif revoked_at and signed_at >= parse_time(revoked_at):
