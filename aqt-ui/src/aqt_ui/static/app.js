@@ -252,6 +252,7 @@ function renderTopbar() {
     else text = status.verifying ? t("Trail: verifying…") : t("Trail: not verified yet");
     if (status.state !== "missing" && status.writer && !status.writer.running) { text += ` · ${t("writer down")}`; if (kind === "pass") kind = "warn"; }
     if (status.writer && status.writer.spooled) { text += ` · ${t("{n} spooled", { n: status.writer.spooled })}`; if (kind === "pass") kind = "warn"; }
+    if (status.test_mode) { text += ` · ${t("TEST MODE")}`; if (kind === "pass") kind = "warn"; }
     pill.className = `pill ${kind}`;
     put(pill, h("span", { "aria-hidden": "true", text: ICON[kind] }), text);
   } else put(pill, t("Trail: loading"));
@@ -477,7 +478,9 @@ async function renderOverview(main) {
      [t("Writer"), stWord(status.writer.running ? "running" : "missing", status.writer.running ? t("Running") : t("Not running"))],
      [t("Spool"), status.writer.spooled ? stWord("warn", t("{n} waiting", { n: status.writer.spooled })) : t("empty")],
      [t("Last anchor"), status.last_anchor ? ago(status.last_anchor) : t("none")],
-     [t("Last review"), status.last_review ? ago(status.last_review) : t("none")]]
+     [t("Last review"), status.last_review ? ago(status.last_review) : t("none")],
+     [t("Test mode"), status.test_mode ? stWord("warn", t("On")) : t("Off")],
+     [t("Review parameters"), profileWord(status.review_profile)]]
       .map(([k, v]) => h("div", {}, h("dt", { text: k }), h("dd", {}, v))));
   put(main, section([`${t("Trail status")} `, h("span", { class: "hint" }, verifyBtn)], band,
     status.state === "broken" ? h("p", { class: "small", text: `${t("Verifier:")} ${check.summary}` }) : null));
@@ -635,8 +638,25 @@ function reviewStart() {
     h("p", { class: "small muted", text: t("Runs the risk queries over a period and lists the findings. Preparing writes a worksheet file, no evidence; the signed review is recorded in the trail.") }),
     h("div", { class: "field-row" }, since, until), h("div", { class: "actions" }, run), out);
 }
+// The review profile's parameters, those that differ from aqt-trail's built-in defaults marked (trail.toml
+// belongs to the user's account, so an agent can edit it).
+function profileWord(profile) {
+  const differs = Object.keys((profile && profile.differs_from_builtin) || {});
+  return differs.length ? stWord("warn", t("{n} differ", { n: differs.length })) : t("Built-in");
+}
+function profileNotes(profile, testMode) {
+  const differs = (profile && profile.differs_from_builtin) || {};
+  const keys = Object.keys(differs).sort();
+  return [
+    testMode ? h("p", { class: "flag", text: t("TEST MODE: TEST ONLY anchors count ([anchor] test_tsa = true in trail.toml). Never for real use.") }) : null,
+    keys.length ? h("p", { class: "flag", text: t("These parameters differ from the built-in defaults: {list}. A review signs them; check that you set them in trail.toml.",
+      { list: keys.map((k) => `${k}=${JSON.stringify(differs[k].value)} (${t("built-in")} ${JSON.stringify(differs[k].builtin)})`).join(", ") }) }) : null,
+  ];
+}
 function reviewPanel(sheet) {
   const scope = sheet.scope;
+  const profile = sheet.profile || {};
+  const testMode = !!(S.overview && S.overview.status && S.overview.status.test_mode) || (profile.params || {}).test_tsa === true;
   const dispositions = {};
   const notes = {};
   const list = h("div", { class: "findings" });
@@ -670,7 +690,10 @@ function reviewPanel(sheet) {
   return [
     inspSection(t("Audit-trail review"), h("p", { class: "insp-title mono", text: sheet.id }),
       kv([[t("Records"), `seq ${scope.from_seq}–${scope.to_seq} (${num(scope.count)})`], [t("Period"), `${scope.since || t("start")} – ${scope.until || t("now")}`],
-        [t("Head"), hashButton(scope.head, 16)], [t("Acted in the period"), actors.join(", ") || t("none")], [t("Worksheet"), h("span", { class: "mono small", text: sheet.path })]])),
+        [t("Head"), hashButton(scope.head, 16)], [t("Acted in the period"), actors.join(", ") || t("none")], [t("Worksheet"), h("span", { class: "mono small", text: sheet.path })],
+        [t("Profile"), [profile.name || "?", " · ", profileWord(profile)]],
+        [t("Parameters"), h("span", { class: "mono small break", text: Object.entries(profile.params || {}).sort().map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(", ") })]]),
+      profileNotes(profile, testMode)),
     inspSection(t("Findings ({n})", { n: sheet.findings.length }), list),
     panel,
   ];

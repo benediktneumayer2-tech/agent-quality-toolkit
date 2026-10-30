@@ -383,7 +383,25 @@ class TrailView:
             "changed": changed, "verifying": self.running, "appended_since_check": unverified,
             "last_anchor": self.index.last_anchor, "last_review": self.last_review(),
             "writer": self.writer(), "unreadable": self.index.unreadable,
+            "test_mode": self.test_mode(), "review_profile": self.review_profile(),
         }
+
+    def test_mode(self) -> bool:
+        """``[anchor] test_tsa = true``: TEST ONLY anchors count, here and in reviews (as in aqt-trail)."""
+        return self.config.section("anchor").get("test_tsa") is True
+
+    def review_profile(self) -> dict:
+        """The profile a review prepared here uses, as ``aqt-trail review run`` builds it: the ``[review]``
+        values of trail.toml (plus ``test_tsa`` in test mode), with every parameter that differs from the
+        built-in defaults (``differs_from_builtin``) and a one-line ``description``."""
+        from aqt_trail.review import describe_params, load_profile, profile_differences
+        defaults = dict(self.config.section("review"))
+        if self.test_mode():
+            defaults["test_tsa"] = True          # bound into the profile: shown and signed as a difference
+        profile = load_profile("default", defaults)
+        return {"name": profile["name"], "params": profile["params"],
+                "differs_from_builtin": profile_differences(profile["params"]),
+                "description": describe_params(profile["params"])}
 
     def enrolled_signers(self) -> dict:
         """The signer registry with its keys checked against the trail's enrolment records
@@ -492,7 +510,10 @@ class TrailView:
         config = self.config
         if not config.trail_path.exists():
             raise UsageProblem("there is no trail to review yet")
-        profile = load_profile("default", config.section("review"))
+        defaults = dict(config.section("review"))
+        if self.test_mode():
+            defaults["test_tsa"] = True
+        profile = load_profile("default", defaults)
         try:
             sheet = run_review(read_records(config.trail_path), profile, log_id=config.meta()["log_id"],
                                since=since or None, until=until or None, trail=str(config.trail_path))

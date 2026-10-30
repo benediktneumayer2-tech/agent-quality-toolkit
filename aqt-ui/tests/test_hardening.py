@@ -377,6 +377,28 @@ def test_needs_you_counts_only_valid_reviews_and_writer_anchors(trail, reviewer,
     assert last_anchor is None and "unanchored" in needs     # it counts only with [anchor] test_tsa = true
 
 
+def test_an_edited_trail_toml_shows_test_mode_and_review_parameters(trail, reviewer, held_case, ui_factory, env):
+    """trail.toml belongs to the user's account: test mode and review thresholds that differ from aqt-trail's
+    built-in defaults are shown in the status, the Needs-you queue and the worksheet before anyone signs."""
+    client = ui_factory()
+    client.login()
+    status = client.get("/api/trail/status")[1]["status"]
+    assert status["test_mode"] is False and status["review_profile"]["differs_from_builtin"] == {}
+    assert not {"test_mode", "review_params"} & {n["code"] for n in client.get("/api/overview")[1]["needs"]}
+    (env / "config/aqt").mkdir(parents=True, exist_ok=True)
+    (env / "config/aqt/trail.toml").write_text("[review]\nrepeated_failures = 100000\n[anchor]\ntest_tsa = true\n")
+    client = ui_factory()
+    client.login()
+    status = client.get("/api/trail/status")[1]["status"]
+    assert status["test_mode"] is True
+    assert set(status["review_profile"]["differs_from_builtin"]) == {"repeated_failures", "test_tsa"}
+    needs = {n["code"]: n for n in client.get("/api/overview")[1]["needs"]}
+    assert needs["test_mode"]["severity"] == "high"
+    assert "repeated_failures=100000 (built-in 3)" in needs["review_params"]["detail"]
+    status_, sheet, _ = client.post("/api/trail/review/run", {"since": reviewer})
+    assert status_ == 200 and set(sheet["profile"]["differs_from_builtin"]) == {"repeated_failures", "test_tsa"}
+
+
 # -- AQT-UI-003: an action approval binds the specification shown ------------------------------------------
 def prepare_action(key="deploy-x", argv=("printf", "UNSEEN")):
     from aqt_evidence import actor

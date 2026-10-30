@@ -5,6 +5,7 @@ The queue is derived on every request from the tools' own state; nothing is stor
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 from . import ViewProblem, evidence_fingerprint, fingerprint, installed
@@ -23,6 +24,10 @@ def item(severity: str, view: str, title: str, detail: str = "", ref: str | None
     ``title`` and ``detail`` are the English words."""
     return {"severity": severity, "view": view, "title": title, "detail": detail, "ref": ref, "code": code,
             "key": key or code, "args": {name: value for name, value in args.items() if value is not None}}
+
+
+def _word(value) -> str:
+    return json.dumps(value)
 
 
 def _age_hours(value) -> float | None:
@@ -78,6 +83,17 @@ def build(app) -> dict:
         if anchor_age is None or anchor_age > 24:
             needs.append(item("low", "trail", "Trail head not anchored for 24 h",
                               "aqt-trail checkpoint --anchor", code="unanchored"))
+    if status.get("test_mode"):
+        needs.append(item("high", "trail", "TEST MODE: TEST ONLY anchors count",
+                          "trail.toml sets [anchor] test_tsa = true: anchors from the built-in TEST ONLY authority "
+                          "count, here and in reviews. Never for real use; remove the line.", code="test_mode"))
+    differs = (status.get("review_profile") or {}).get("differs_from_builtin") or {}
+    if differs:
+        what = ", ".join(f"{key}={_word(value['value'])} (built-in {_word(value['builtin'])})"
+                         for key, value in sorted(differs.items()))
+        needs.append(item("medium", "trail", "Review parameters differ from the built-in defaults",
+                          f"trail.toml [review]: {what}. A review prepared here uses and signs them; check that "
+                          "you set them", ref="review", code="review_params", params=what))
     counts["trail"] = sum(1 for n in needs if n["view"] == "trail" and n["severity"] in ("critical", "high"))
 
     # quarantine

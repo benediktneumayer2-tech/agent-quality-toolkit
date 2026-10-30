@@ -203,6 +203,13 @@ export const DE = {
   "Run report": "Laufbericht", "Issued": "Ausgestellt", "Report": "Bericht", "Thresholds in use (aqt-quarantine)": "Verwendete Schwellenwerte (aqt-quarantine)",
   "aqt-quarantine is not installed.": "aqt-quarantine ist nicht installiert.", "Calibrated": "Kalibriert", "not calibrated (defaults)": "nicht kalibriert (Standardwerte)",
   "Requalification triggers are shown as recorded; aqt-validate check in a terminal evaluates and records new ones.": "Auslöser für eine Requalifizierung werden wie aufgezeichnet gezeigt; aqt-validate check im Terminal bewertet und zeichnet neue auf.",
+
+  // review profile and test mode
+  "TEST MODE": "TESTMODUS", "Test mode": "Testmodus", "On": "An", "Off": "Aus",
+  "Review parameters": "Review-Parameter", "Built-in": "Eingebaut", "built-in": "eingebaut", "{n} differ": "{n} abweichend",
+  "Profile": "Profil", "Parameters": "Parameter",
+  "TEST MODE: TEST ONLY anchors count ([anchor] test_tsa = true in trail.toml). Never for real use.": "TESTMODUS: TEST-ONLY-Anker zählen ([anchor] test_tsa = true in trail.toml). Nie für den echten Einsatz.",
+  "These parameters differ from the built-in defaults: {list}. A review signs them; check that you set them in trail.toml.": "Diese Parameter weichen von den eingebauten Standardwerten ab: {list}. Ein Review unterschreibt sie mit; prüfen, ob Sie sie in trail.toml gesetzt haben.",
 };
 
 // "Needs you" entries by key: [title, detail]; {name} takes the entry's values, null keeps the
@@ -217,6 +224,8 @@ export const NEEDS = {
   spooled: ["{n} Einträge im Zwischenspeicher", "Sie gelangen mit aqt-trail drain in den Audit Trail"],
   review_due: ["Audit-Trail-Review fällig", "Kein unterschriebenes Review seit {days} Tagen: in der Ansicht Audit Trail vorbereiten und unterschreiben"],
   unanchored: ["Kopf des Audit Trails seit 24 h nicht verankert", "aqt-trail checkpoint --anchor"],
+  test_mode: ["TESTMODUS: TEST-ONLY-Anker zählen", "trail.toml setzt [anchor] test_tsa = true: Anker der eingebauten TEST-ONLY-Stelle zählen, hier und in Reviews. Nie für den echten Einsatz; die Zeile entfernen."],
+  review_params: ["Review-Parameter weichen von den eingebauten Standardwerten ab", "trail.toml [review]: {params}. Ein hier vorbereitetes Review verwendet und unterschreibt sie; prüfen, ob Sie sie gesetzt haben"],
   case_held: ["Zurückgehaltener Fall {case}", "{source}, Score {score} ppm"],
   case_warned: ["Gewarnter Fall {case}", "{source}, Score {score} ppm"],
   action_prepared: ["Vorbereitete Aktion {action} wartet auf Genehmigung", null],

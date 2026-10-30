@@ -6,6 +6,12 @@ First version.
 
 Security review fixes (same version, not yet released):
 
+- Round 4: test mode (`[anchor] test_tsa = true`) and the review profile's parameters are visible before signing:
+  `/api/trail/status` has `test_mode` and `review_profile` (`params`, `differs_from_builtin`, `description`); the top
+  bar says TEST MODE; Needs you has `test_mode` (high) and `review_params` (medium, every differing parameter with
+  its built-in value); the review panel shows the profile, all parameters and a warning for each difference. A
+  review prepared here binds `test_tsa` into the profile in test mode, as `aqt-trail review run` does.
+
 - Round 3: the record inspector checks a detached signature against the registry reconciled with the trail's
   enrolment records (`TrailView.enrolled_signers`, shared with "last review"), so a key an agent added to
   `signers.json` with a self-signed enrolment record shows `unknown-key` (its enrolment waits for approval), not
