@@ -51,10 +51,11 @@ Integration with the hardened packages (same version, not yet released):
 
 Second review round (same version, not yet released):
 
-- Quarantine: release and threat declaration need the whole content on screen first. The full view
+- Quarantine: a release needs the whole content on screen first (declaring a threat keeps the content withheld
+  and may rest on the excerpt). The full view
   shows the content in pages of 200,000 characters; the browser session notes which pages of which
   content (case id and hash) it was sent, and the server refuses a decision (nothing signed) until
-  every page was shown in that session. The excerpt view alone no longer offers a decision. Journal
+  every page was shown in that session. The excerpt view alone no longer offers a release. Journal
   lines that aqt-quarantine ignored (malformed, or a later `quarantine.held` for an existing case)
   are listed on the case and counted in the case list. API: `GET /api/quarantine/<id>?full=1&page=N`;
   the case answer adds `content.page`, `content.pages`, `content.complete`, `unseen_pages`,
