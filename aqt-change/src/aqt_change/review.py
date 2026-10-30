@@ -75,7 +75,7 @@ def add_review(ledger: Ledger, plan_path: str, *, reviewer: str, independence: s
     findings = load_findings(findings_file)
     state = ledger.plan_state(plan.id) or {}
     base = base or state.get("base_commit") or plan.base_commit or ledger.head()
-    tree = ledger.fingerprint([rel], scope=plan.declared_paths)
+    tree = ledger.fingerprint([rel], scope=plan.declared_paths, plan_id=plan.id)
     diff_sha = ledger.git.diff_sha256(base, {rel}) if (ledger.git and base) else tree
     data = {"plan_id": plan.id, "plan_ref": plan.id,
             "reviewer": {k: v for k, v in {"kind": reviewer_kind, "id": reviewer, "harness": harness,

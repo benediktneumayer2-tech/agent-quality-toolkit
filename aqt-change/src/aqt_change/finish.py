@@ -80,6 +80,9 @@ def _preflight(ledger, rel, plan, key, request, request_sha, sources) -> dict:
     if any(r["code"] == "trail_required" for r in preview["reasons"]):
         raise refused("finish_trail_required", "cannot check the receipts: " + TRAIL_REQUIRED,
                       phase="preflight_failed")
+    mismatch = [r for r in preview["reasons"] if r["code"] == "plan_base_mismatch"]
+    if mismatch:
+        raise refused("finish_plan_base_mismatch", mismatch[0]["detail"], phase="preflight_failed")
     hidden = [r for r in preview["reasons"] if r["code"] == "hidden_worktree_change"]
     if hidden:
         raise refused("finish_hidden_changes", hidden[0]["detail"] + "; the commit would not contain what the "
@@ -114,9 +117,10 @@ def _preflight(ledger, rel, plan, key, request, request_sha, sources) -> dict:
     if left:
         raise refused("finish_tested_change_not_committed", "the commit would not hold what the receipts tested: "
                       + left_out_text(left) + ". Name the files with --path, or undo the changes (delete an "
-                      "untracked file or ignore it in .gitignore) and run the checks again"
-                      + ("; a file ignored locally needs its rule removed from .git/info/exclude or core.excludesFile"
-                         " before Git adds it" if any(e["state"] == "ignored locally" for e in left) else ""),
+                      "untracked file or ignore it in a committed .gitignore) and run the checks again"
+                      + ("; a file ignored locally needs its rule removed from .git/info/exclude, core.excludesFile"
+                         " or an untracked .gitignore before Git adds it"
+                         if any(e["state"] == "ignored locally" for e in left) else ""),
                       phase="preflight_failed", paths=[entry["path"] for entry in left[:50]])
     receipts = preview["receipts"]
     ok_items = {i for i, e in preview["items"].items() if e["state"] == "ok"}

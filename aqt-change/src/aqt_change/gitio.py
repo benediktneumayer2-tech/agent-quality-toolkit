@@ -7,8 +7,9 @@ Calls run with ``SAFE_CONFIG``: Git looks at the files themselves instead of tru
 hook, the untracked cache or a relaxed stat check (only the hidden-change check also asks Git with the
 repository's own settings, to find what they hide). The fingerprint and the hidden-change check do not
 trust the index's stat data at all: they hash every tracked file's content. Untracked files count unless the
-repository's own ``.gitignore`` files ignore them: ``.git/info/exclude`` and ``core.excludesFile`` are local
-rules a clean checkout does not have, so they do not hide a file from the fingerprint.
+repository's own tracked ``.gitignore`` files ignore them: ``.git/info/exclude``, ``core.excludesFile`` and an
+untracked ``.gitignore`` are local rules a clean checkout does not have, so they do not hide a file from the
+fingerprint.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ import hashlib
 import os
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 
 from .errors import ChangeError, refused
@@ -24,6 +26,7 @@ from .globs import matches_any
 
 SAFE_CONFIG = ("-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c", "core.checkStat=default",
                "-c", "core.trustctime=true", "-c", "core.ignoreStat=false")
+TOOL_DIRS = (".venv", ".tox", ".nox", ".pytest_cache", ".mypy_cache", ".ruff_cache")   # names no import can use
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?$")
 TRAILER_RE = re.compile(r"^(?P<key>[A-Za-z0-9-]+):\s*(?P<value>.*)$")
 
@@ -150,6 +153,21 @@ class Git:
                     found.append((rev, out[pos:pos + size]))
                 pos += size + 1
         return found
+
+    def existing_commits(self, revs: set[str]) -> set[str]:
+        """The commit ids of ``revs`` (full ids, ``COMMIT_RE``) that name a commit in this repository."""
+        revs = sorted(rev for rev in revs if isinstance(rev, str) and COMMIT_RE.match(rev))
+        if not revs:
+            return set()
+        out = self.run("cat-file", "--batch-check", input="".join(f"{rev}^{{commit}}\n" for rev in revs).encode())
+        return {rev for rev, line in zip(revs, out.stdout.decode().splitlines())
+                if len(line.split()) == 3 and line.split()[1] == "commit"}
+
+    def commits_touching(self, base: str, path: str) -> list[str]:
+        """Commits in ``base..HEAD`` that change ``path`` (every one, also on merged side branches)."""
+        if not self.head():
+            return []
+        return self.text("rev-list", "--full-history", f"{base}..HEAD", "--", path).split()
 
     def index_entries(self) -> dict[str, tuple[str, str, str]]:
         """{path: (tag, mode, object id)} of the stage-0 index entries (``ls-files -v -s``; tag ``S``
@@ -280,16 +298,50 @@ class Git:
         return sorted(set(result), key=lambda item: item[1])
 
     def untracked(self, repository_rules: bool = False) -> list[str]:
-        """Untracked files that are not ignored. ``repository_rules``: only the repository's ``.gitignore``
-        files ignore, not ``.git/info/exclude`` or ``core.excludesFile``."""
-        rules = "--exclude-per-directory=.gitignore" if repository_rules else "--exclude-standard"
-        raw = self.run("ls-files", "--others", rules, "-z").stdout
+        """Untracked files that are not ignored. ``repository_rules``: only the repository's own rules ignore
+        (``repository_excludes()``), not ``.git/info/exclude``, ``core.excludesFile`` or a ``.gitignore`` that
+        is itself untracked."""
+        if not repository_rules:
+            return self._others("--exclude-standard")
+        return self._others(excludes=self.repository_excludes())
+
+    def _others(self, *args: str, excludes: bytes | None = None) -> list[str]:
+        """``git ls-files --others`` with ``args``; ``excludes``: patterns for ``--exclude-from``."""
+        if excludes is None:
+            raw = self.run("ls-files", "--others", "-z", *args).stdout
+        else:
+            with tempfile.NamedTemporaryFile(prefix="aqt-change-excludes-") as handle:
+                handle.write(excludes)
+                handle.flush()
+                raw = self.run("ls-files", "--others", "-z", f"--exclude-from={handle.name}", *args).stdout
         return [p.decode("utf-8", "surrogateescape") for p in raw.split(b"\0") if p]
+
+    def repository_excludes(self) -> bytes:
+        """The patterns of every tracked (HEAD or index) ``.gitignore``, as it is in the working tree, rewritten
+        relative to the top of the tree (``_anchored``), root first and deeper files later, so that one
+        ``--exclude-from`` list ignores what these files ignore together; then those of an untracked
+        ``.gitignore`` directly in a tool's cache or environment folder (``TOOL_DIRS``: pytest, mypy, ruff and
+        ``venv``/uv write one that ignores the whole folder). Any other untracked ``.gitignore`` (one that ignores
+        itself is invisible to ``git status``) is a local rule like ``.git/info/exclude``."""
+        names = [p for p in self.tracked() if p == ".gitignore" or p.endswith("/.gitignore")]
+        rules = self._read_ignores(sorted(names, key=lambda p: (p.count("/"), p)))
+        tools = self._others("--", *(f":(glob)**/{name}/.gitignore" for name in TOOL_DIRS), excludes=rules)
+        return rules + self._read_ignores(sorted(tools, key=lambda p: (p.count("/"), p)))
+
+    def _read_ignores(self, paths: list[str]) -> bytes:
+        lines = []
+        for path in paths:
+            full = self.root / path
+            if full.is_symlink() or not full.is_file():
+                continue                                  # Git does not read a .gitignore through a link
+            directory = path[:-len(".gitignore")].rstrip("/").encode("utf-8", "surrogateescape")
+            lines += _anchored(directory, full.read_bytes())
+        return b"".join(line + b"\n" for line in lines)
 
     def local_ignored(self) -> list[str]:
         """Untracked files that only local rules ignore (``.git/info/exclude``, ``core.excludesFile``, by
-        default ``$XDG_CONFIG_HOME/git/ignore``): invisible to ``git status``, but present for a test run, and
-        absent from a clean checkout."""
+        default ``$XDG_CONFIG_HOME/git/ignore``, or an untracked ``.gitignore``): invisible to ``git status``,
+        but present for a test run, and absent from a clean checkout."""
         return sorted(set(self.untracked(repository_rules=True)) - set(self.untracked()))
 
     def diff_text(self, base: str, exclude: set[str] = frozenset()) -> str:
@@ -378,6 +430,50 @@ def trailers(message: str) -> list[tuple[str, str]]:
         if not match:
             return []
         found.append((match.group("key"), match.group("value").strip()))
+    return found
+
+
+def _trim(pattern: bytes) -> bytes:
+    """Git's ``trim_trailing_spaces``: trailing spaces go unless a backslash escapes them."""
+    last_space, index = None, 0
+    while index < len(pattern):
+        char = pattern[index:index + 1]
+        if char == b" ":
+            last_space = index if last_space is None else last_space
+        elif char == b"\\":
+            index += 1
+            if index >= len(pattern):
+                return pattern
+            last_space = None
+        else:
+            last_space = None
+        index += 1
+    return pattern if last_space is None else pattern[:last_space]
+
+
+def _anchored(directory: bytes, text: bytes) -> list[bytes]:
+    """The patterns of the ``.gitignore`` in ``directory`` (b"" for the top) rewritten for an exclude list read
+    relative to the top, with the same meaning (gitignore(5)): a pattern with a slash at the start or in the
+    middle is relative to ``directory``, one without matches at any depth below it."""
+    if text.startswith(b"\xef\xbb\xbf"):
+        text = text[3:]                                   # Git skips a UTF-8 byte order mark
+    prefix = b"/" + re.sub(rb"([*?\[\\])", rb"\\\1", directory) + b"/" if directory else b""
+    found = []
+    for line in text.split(b"\n"):
+        line = _trim(line[:-1] if line.endswith(b"\r") else line)
+        if not line or line.startswith(b"#"):
+            continue
+        negate = line.startswith(b"!")
+        body = line[1:] if negate else line
+        if not prefix:
+            found.append(line)
+            continue
+        must_be_dir = body.endswith(b"/")
+        core = body[:-1] if must_be_dir else body
+        if not core:
+            continue
+        core = core[1:] if core.startswith(b"/") else (core if b"/" in core else b"**/" + core)
+        found.append((b"!" if negate else b"") + prefix + core + (b"/" if must_be_dir else b""))
     return found
 
 

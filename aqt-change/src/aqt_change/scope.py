@@ -22,7 +22,7 @@ def compare(ledger: Ledger, rel: str, plan: Plan, freshness: Freshness | None = 
     state = ledger.plan_state(plan.id) or {}
     base = state.get("base_commit") or plan.base_commit
     declared = plan.declared_paths
-    allowed = list(ledger.project_settings()["always_allowed_paths"])          # committed: counts
+    allowed = list(ledger.project_settings(plan.id)["always_allowed_paths"])   # committed: counts
     by_user = list(ledger.config.gate.always_allowed_paths)                     # the agent's reach: MANUAL
     changed = []
     if ledger.git and base:
@@ -32,7 +32,9 @@ def compare(ledger: Ledger, rel: str, plan: Plan, freshness: Freshness | None = 
     user_allowed = [path for path in outside if matches_any(path, by_user)]
     unapproved = [path for path in outside if path not in user_allowed]
     untouched = [g for g in declared if not any(matches_any(c["path"], [g]) for c in changed)]
-    settings = [c["path"] for c in changed if c["path"] == PROJECT_FILE]
+    settings = [PROJECT_FILE] if any(c["path"] == PROJECT_FILE for c in changed) or (
+        ledger.git and ledger.git.existing_commits({base})
+        and ledger.git.commits_touching(base, PROJECT_FILE)) else []        # also changed and changed back
     items = evaluate(ledger, plan, freshness)
     missing = [item_id for item_id, entry in items.items() if entry["state"] != "ok"]
     if not ledger.git or not base:

@@ -31,6 +31,7 @@ from .config import INDEPENDENCE, PROJECT_FILE, Config, load_config, parse_proje
 from .errors import ChangeError, usage
 from .gitio import COMMIT_RE, Git, _digest, walk_blobs
 from .globs import matches_any
+from .plan import STABLE_ID
 
 
 ID_TOKEN = re.compile(rb"rec_[0-9a-f]{28}")
@@ -172,6 +173,25 @@ class TrailCheck:
             return "unsigned"
         return "ok" if "socket" in routes else "unattributed"
 
+    def confirmed_bases(self, plan_id: str, begins: Iterable[tuple[Path | None, dict]]) -> set[str]:
+        """The base commits that copies of the plan's ``begin``/``baseline`` records (``Ledger.begin_records()``)
+        in a readable log name, received over the socket and, with ``trail_keys``, signed by a pinned key."""
+        found = set()
+        for path, record in begins:
+            if path is None or path not in self.readable or record["data"].get("plan_id") != plan_id:
+                continue
+            observed = record.get("observed") if isinstance(record.get("observed"), dict) else {}
+            if observed.get("via") != "socket":
+                continue
+            if self.pinned is not None:
+                try:
+                    if not any(ok for _, ok in verify_record_signatures(record, self._pinned_keys(path) or {})):
+                        continue
+                except (ValueError, TypeError, RecursionError):
+                    continue
+            found.add(record["data"]["base_commit"])
+        return found
+
     @property
     def missing(self) -> bool:
         """The project requires a trail, but no trail log is readable here."""
@@ -182,6 +202,18 @@ class TrailCheck:
         if self.pinned is not None:
             found["keys"] = list(self.pinned)
         return found
+
+
+def begin_base(record) -> str | None:
+    """The base commit a ``change.plan.reconciled`` ``begin`` or ``baseline`` record names (None: not one)."""
+    if not isinstance(record, dict) or record.get("type") != "change.plan.reconciled" \
+            or record.get("action") not in ("begin", "baseline"):
+        return None
+    data = record.get("data")
+    if not isinstance(data, dict) or not isinstance(data.get("plan_id"), str):
+        return None
+    base = data.get("base_commit")
+    return base if isinstance(base, str) and COMMIT_RE.match(base) else None
 
 
 def atomic_write(path: Path, data: bytes, mode: int = 0o600) -> None:
@@ -223,7 +255,8 @@ def read_json(path: Path) -> dict | None:
 class Ledger:
     def __init__(self, root: Path, state: Path, git: Git | None, config: Config):
         self.root, self.state, self.git, self.config = root, state, git, config
-        self._settings: dict | None = None
+        self._settings: dict[str, dict] = {}
+        self._begins: list[tuple[Path | None, dict]] | None = None
 
     @classmethod
     def open(cls, root: str | os.PathLike | None = None, state: str | os.PathLike | None = None,
@@ -329,28 +362,102 @@ class Ledger:
     def record(self, record_id: str) -> dict | None:
         return next((r for r in self.records() if r.get("id") == record_id), None)
 
-    def trail_check(self) -> TrailCheck:
-        settings = self.project_settings()
+    def trail_check(self, plan_id: str | None = None) -> TrailCheck:
+        settings = self.project_settings(plan_id)
         return TrailCheck(self.records(), required=settings["require_trail"], keys=settings["trail_keys"])
+
+    # --- base commits of plans ----------------------------------------------------
+
+    def begin_records(self) -> list[tuple[Path | None, dict]]:
+        """Every ``begin``/``baseline`` record that names a base commit (``begin_base``): ``(None, record)`` from
+        the local mirror and ``(log, record)`` for each copy in a trail log (``trail_logs()``, every copy: a
+        record only adds a base commit, it cannot remove one)."""
+        if self._begins is None:
+            found: list[tuple[Path | None, dict]] = [(None, r) for r in self.records("change.plan.reconciled")
+                                                     if begin_base(r)]
+            for path in trail_logs()[1]:
+                try:
+                    with open(path, "rb") as handle:
+                        for line in handle:
+                            if b'"change.plan.reconciled"' not in line or b'"base_commit"' not in line:
+                                continue
+                            try:
+                                record = json.loads(line)
+                            except (ValueError, RecursionError):
+                                continue
+                            if begin_base(record):
+                                found.append((path, record))
+                except OSError:
+                    continue
+            self._begins = found
+        return self._begins
+
+    def plan_bases(self, plan_id: str) -> list[str]:
+        """The plan's base commits that exist in this repository: the plan state's (``base_commit`` in
+        ``plans/<id>.json``, which the agent can edit) and every one its ``begin``/``baseline`` records name."""
+        if not self.git:
+            return []
+        state = self.plan_state(plan_id) if STABLE_ID.match(plan_id) else None
+        bases = {(state or {}).get("base_commit")}
+        bases |= {r["data"]["base_commit"] for _, r in self.begin_records() if r["data"]["plan_id"] == plan_id}
+        return sorted(self.git.existing_commits({b for b in bases if isinstance(b, str) and COMMIT_RE.match(b)}))
+
+    def base_problem(self, plan_id: str, trail: TrailCheck) -> dict | None:
+        """``plan_base_mismatch`` when the plan state's base commit is not one the plan's records name: ``nogo``
+        when the trail log confirms other base commits for the plan (``TrailCheck.confirmed_bases``), else (only
+        the local mirror disagrees) a manual check; also a manual check when a log records several base commits
+        for the plan (a made-up second begin record). The base commit decides the scope diff and which copies of
+        the project settings count, so an edited one could hide a commit that removed them. None: they agree."""
+        if not self.git:
+            return None
+        state = self.plan_state(plan_id) if STABLE_ID.match(plan_id) else None
+        base = (state or {}).get("base_commit")
+        begins = self.begin_records()
+        confirmed = self.git.existing_commits(trail.confirmed_bases(plan_id, begins))
+        local = self.git.existing_commits({r["data"]["base_commit"] for path, r in begins
+                                           if path is None and r["data"]["plan_id"] == plan_id})
+        where_state = self.state / "plans" / f"{plan_id}.json"
+        for recorded, nogo, where in ((confirmed, True, "the aqt-trail log"), (local, False, "the local mirror")):
+            if recorded and (base not in recorded or len(recorded) > 1):
+                return {"code": "plan_base_mismatch", "nogo": nogo and base not in recorded,
+                        "detail": f"the plan state {where_state} names base commit {base}, but {where} records "
+                                  f"{', '.join(sorted(recorded))} for this plan; a changed base commit can hide "
+                                  "commits from the scope check and the project settings check (restore the one "
+                                  "the plan began with)"}
+        return None
 
     # --- project settings ------------------------------------------------------------
 
-    def project_settings(self) -> dict:
+    def project_settings(self, plan_id: str | None = None) -> dict:
         """The committed project settings (``.aqt/change.toml``): the strictest of the copy in the working
-        tree, at HEAD and at the base commit of each plan in progress, so neither an uncommitted edit nor a
-        commit during a plan switches a setting off. ``require_trail``: a copy sets it or pins ``trail_keys``
-        (``require_trail_from`` names those copies); ``trail_keys``: the keys every pinning copy names (None
-        when no copy pins any); ``gate``: each policy value at its strictest; ``fingerprint_exclude`` and
-        ``always_allowed_paths`` (which loosen checks): only the globs every copy names."""
-        if self._settings is None:
+        tree, at HEAD, at every base commit (``plan_bases``) of each plan in progress and of ``plan_id`` (the plan
+        being judged, whatever its state), and at every commit since such a base that changed the file, so neither
+        an uncommitted edit, nor a commit during a plan, nor an edited base commit in the plan state switches a
+        setting off. ``require_trail``: a copy sets it or pins ``trail_keys`` (``require_trail_from`` names those
+        copies); ``trail_keys``: the keys every pinning copy names (None when no copy pins any); ``gate``: each
+        policy value at its strictest; ``fingerprint_exclude`` and ``always_allowed_paths`` (which loosen checks):
+        only the globs every copy names. A copy that cannot be read refuses (``config_invalid``), except one at a
+        commit between a base and HEAD, which is left out."""
+        key = plan_id or ""
+        if key not in self._settings:
             copies = []
             if (self.root / PROJECT_FILE).is_file():
-                copies.append((PROJECT_FILE, (self.root / PROJECT_FILE).read_bytes()))
+                copies.append((PROJECT_FILE, (self.root / PROJECT_FILE).read_bytes(), True))
             if self.git:
-                bases = {s.get("base_commit") for s in self.plan_states() if s.get("status") == "in_progress"}
-                revs = ["HEAD", *sorted(b for b in bases if isinstance(b, str) and COMMIT_RE.match(b))]
-                copies += [(f"{rev}:{PROJECT_FILE}", text) for rev, text in self.git.file_at(revs, PROJECT_FILE)]
-            parsed = [(where, parse_project_settings(text.decode("utf-8", "replace"), where)) for where, text in copies]
+                plans = {s.get("plan_id") for s in self.plan_states() if s.get("status") == "in_progress"}
+                plans |= {plan_id} if plan_id else set()
+                bases = sorted({base for p in plans if isinstance(p, str) for base in self.plan_bases(p)})
+                revs = ["HEAD", *bases]
+                later = sorted({c for base in bases for c in self.git.commits_touching(base, PROJECT_FILE)} - set(revs))
+                copies += [(f"{rev}:{PROJECT_FILE}", text, True) for rev, text in self.git.file_at(revs, PROJECT_FILE)]
+                copies += [(f"{rev}:{PROJECT_FILE}", text, False) for rev, text in self.git.file_at(later, PROJECT_FILE)]
+            parsed = []
+            for where, text, strict in copies:
+                try:
+                    parsed.append((where, parse_project_settings(text.decode("utf-8", "replace"), where)))
+                except ChangeError:
+                    if strict:
+                        raise
             required = [where for where, found in parsed if found["require_trail"] or found["trail_keys"]]
             pins = [set(found["trail_keys"]) for _, found in parsed if found["trail_keys"]]
             ranks = ("none", *INDEPENDENCE)
@@ -362,11 +469,12 @@ class Ledger:
             def common(lists: list[list[str]]) -> list[str]:
                 return sorted(set.intersection(*map(set, lists))) if lists else []
 
-            self._settings = {"require_trail": bool(required), "require_trail_from": required,
-                              "trail_keys": sorted(set.intersection(*pins)) if pins else None, "gate": gate,
-                              "fingerprint_exclude": common([found["fingerprint_exclude"] for _, found in parsed]),
-                              "always_allowed_paths": common([g.get("always_allowed_paths", []) for g in gates])}
-        return self._settings
+            self._settings[key] = {
+                "require_trail": bool(required), "require_trail_from": required,
+                "trail_keys": sorted(set.intersection(*pins)) if pins else None, "gate": gate,
+                "fingerprint_exclude": common([found["fingerprint_exclude"] for _, found in parsed]),
+                "always_allowed_paths": common([g.get("always_allowed_paths", []) for g in gates])}
+        return self._settings[key]
 
     # --- working tree --------------------------------------------------------------
 
@@ -379,12 +487,13 @@ class Ledger:
         return self.git.worktree_blobs() if self.git else None
 
     def fingerprint(self, exclude_paths: list[str], snapshot: dict[str, str] | None = None,
-                    scope: list[str] | None = None, tracked: set[str] | None = None) -> str:
+                    scope: list[str] | None = None, tracked: set[str] | None = None,
+                    plan_id: str | None = None) -> str:
         """The tree fingerprint without ``exclude_paths`` (the plan file, a run's JUnit file) and the paths the
-        project's ``fingerprint_exclude`` names. The user's ``fingerprint_exclude`` leaves out only untracked
-        files outside ``scope`` (the plan's paths), so the agent's environment cannot hide the tested code.
-        ``tracked``: the tracked paths, if already known (``Git.tracked()``)."""
-        project = list(self.project_settings()["fingerprint_exclude"])
+        project's ``fingerprint_exclude`` names (``project_settings(plan_id)``). The user's ``fingerprint_exclude``
+        leaves out only untracked files outside ``scope`` (the plan's paths), so the agent's environment cannot
+        hide the tested code. ``tracked``: the tracked paths, if already known (``Git.tracked()``)."""
+        project = list(self.project_settings(plan_id)["fingerprint_exclude"])
         user, scope = list(self.config.fingerprint_exclude), list(scope or [])
         excluded = set(exclude_paths)
         if self.git:

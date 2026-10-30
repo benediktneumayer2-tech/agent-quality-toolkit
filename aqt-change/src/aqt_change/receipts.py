@@ -8,6 +8,7 @@ confirms it (``ledger.TrailCheck``); otherwise its item is ``unverified``.
 A run that changed the fingerprinted tree (``command_modified_worktree``) does not
 count by itself: its item lists it under ``modified`` (gate MANUAL, finish refuses)
 until a later run of the same command leaves the tree unchanged.
+Commands run with a fresh Python bytecode cache (``execute``; the receipt's ``env.python_bytecode``).
 """
 
 from __future__ import annotations
@@ -116,7 +117,7 @@ def _env_summary(argv: list[str]) -> dict:
         digest.update(key + b"=" + os.environb[key] + b"\0")
     executable = shutil.which(argv[0]) if argv else None
     return {"platform": platform.platform(terse=True), "python": platform.python_version(),
-            "executable": executable, "env_sha256": "sha256:" + digest.hexdigest()}
+            "executable": executable, "env_sha256": "sha256:" + digest.hexdigest(), "python_bytecode": "fresh"}
 
 
 def _pump(stream, sink, echo) -> None:
@@ -128,13 +129,24 @@ def _pump(stream, sink, echo) -> None:
 
 
 def execute(argv: list[str], cwd: Path, timeout: int | None, echo: bool) -> dict:
+    """Run ``argv`` in ``cwd``. Python reads and writes bytecode only in a fresh, empty cache directory
+    (``PYTHONPYCACHEPREFIX``, removed afterwards), so ``.pyc`` files already in the tree (``__pycache__/``,
+    which ``.gitignore`` usually hides from the fingerprint) cannot stand in for the source under test."""
+    pycache = tempfile.mkdtemp(prefix="aqt-change-pycache-")
+    try:
+        return _execute(argv, cwd, timeout, echo, {**os.environ, "PYTHONPYCACHEPREFIX": pycache})
+    finally:
+        shutil.rmtree(pycache, ignore_errors=True)
+
+
+def _execute(argv: list[str], cwd: Path, timeout: int | None, echo: bool, env: dict) -> dict:
     out_file = tempfile.TemporaryFile()
     err_file = tempfile.TemporaryFile()
     started, start_clock = utc_stamp(), time.monotonic()
     outcome, exit_code = "completed", 0
     try:
         process = subprocess.Popen(argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                   stdin=subprocess.DEVNULL, start_new_session=True)
+                                   stdin=subprocess.DEVNULL, start_new_session=True, env=env)
     except OSError as error:
         err_file.write(f"aqt-change: cannot start command: {error}\n".encode())
         outcome, exit_code = "error", 127
@@ -234,10 +246,11 @@ def _run_one(ledger, argv, plan, rel, item_id, junit, timeout, echo) -> dict:
         target = ledger.rel(junit)
         if not matches_any(target, scope) and not (ledger.git and target in ledger.git.tracked()):
             excludes.append(target)
-    before = ledger.fingerprint(excludes, scope=scope)
+    plan_id = plan.id if plan else None
+    before = ledger.fingerprint(excludes, scope=scope, plan_id=plan_id)
     result = execute(argv, ledger.root, timeout or ledger.config.timeout_seconds, echo)
     snapshot = ledger.snapshot()
-    after = ledger.fingerprint(excludes, snapshot, scope=scope)
+    after = ledger.fingerprint(excludes, snapshot, scope=scope, plan_id=plan_id)
     counts = parse_counts(result["stdout"].decode("utf-8", "replace") + "\n" +
                           result["stderr"].decode("utf-8", "replace"))
     warnings = []
@@ -320,7 +333,8 @@ def attest(ledger: Ledger, plan_path: str, item: str, evidence: list[str], reaso
     who = current_actor(ledger.config.actor)
     data = {"plan_id": plan.id, "plan_ref": plan.id, "item": item, "kind": "manual", "argv": [],
             "exit_code": 0, "passed": True, "outcome": "attested", "counts": {}, "evidence": files,
-            "tree_fingerprint": ledger.fingerprint([rel], scope=plan.declared_paths), "fingerprint_excludes": [rel],
+            "tree_fingerprint": ledger.fingerprint([rel], scope=plan.declared_paths, plan_id=plan.id),
+            "fingerprint_excludes": [rel],
             "plan_basis_hash": basis_hash(plan), "plan_raw_hash": plan.raw_hash,
             "attested_by": who.get("kind"), "started": utc_stamp()}
     record = new_record("change.receipt", who, "attest", subject=subject("plan-item", f"{plan.id}#{item}"),
@@ -355,12 +369,23 @@ class Freshness:
     """Caches the working tree's blob ids, the fingerprints per exclude set and the trail check during
     one evaluation."""
 
-    def __init__(self, ledger: Ledger):
-        self.ledger = ledger
+    def __init__(self, ledger: Ledger, plan_id: str | None = None):
+        self.ledger, self.plan_id = ledger, plan_id         # plan_id: whose project settings apply
         self.cache: dict[tuple, str] = {}
         self._trail: TrailCheck | None = None
         self._snapshot: dict[str, str] | None = None
         self._tracked: set[str] | None = None
+
+    def of(self, plan_id: str) -> "Freshness":
+        """This cache for the plan ``plan_id`` (itself, or a copy sharing the snapshot of the working tree)."""
+        if plan_id == self.plan_id:
+            return self
+        other = Freshness(self.ledger, plan_id)
+        other._snapshot, other._tracked = self.snapshot, self._tracked
+        mine, theirs = self.ledger.project_settings(self.plan_id), self.ledger.project_settings(plan_id)
+        if all(mine[key] == theirs[key] for key in ("require_trail", "trail_keys")):
+            other._trail = self.trail                       # the same trail check: read the log once
+        return other
 
     @property
     def snapshot(self) -> dict[str, str] | None:
@@ -375,7 +400,7 @@ class Freshness:
     @property
     def trail(self) -> TrailCheck:
         if self._trail is None:
-            self._trail = self.ledger.trail_check()
+            self._trail = self.ledger.trail_check(self.plan_id)
         return self._trail
 
     def fingerprint(self, excludes: list[str], scope: list[str] | None = None) -> str:
@@ -385,7 +410,7 @@ class Freshness:
             if self._tracked is None and self.ledger.git and self.ledger.config.fingerprint_exclude:
                 self._tracked = self.ledger.git.tracked()
             self.cache[key] = self.ledger.fingerprint(list(key[0]), self.snapshot, scope=list(key[1]),
-                                                      tracked=self._tracked)
+                                                      tracked=self._tracked, plan_id=self.plan_id)
         return self.cache[key]
 
     def is_fresh(self, receipt: dict, basis: str, scope: list[str] | None = None) -> bool:
@@ -408,7 +433,7 @@ def evaluate(ledger: Ledger, plan: Plan, freshness: Freshness | None = None) -> 
     ``unverified``: the latest receipt is fresh and passing, but a trail is in use and does not
     confirm it; ``untrusted`` lists those receipts with their ``TrailCheck`` status. ``modified``: the
     ``ok`` receipts whose run changed the working tree (``modified_worktree()``)."""
-    freshness = freshness or Freshness(ledger)
+    freshness = freshness.of(plan.id) if freshness else Freshness(ledger, plan.id)
     basis = basis_hash(plan)
     scope = plan.declared_paths
     receipts = [r for r in ledger.records("change.receipt", plan.id)]

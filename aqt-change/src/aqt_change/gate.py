@@ -52,7 +52,7 @@ def policy_for(ledger: Ledger, plan: Plan) -> dict:
     """The user's ``[gate]`` policy, made stricter by the project's ``[gate]`` (``.aqt/change.toml``) and the
     plan's ``aqt.review.min_independence``: the strictest value of each wins."""
     policy = ledger.config.gate.as_dict()
-    project = ledger.project_settings()["gate"]
+    project = ledger.project_settings(plan.id)["gate"]
     for name in ("require_signed_approval", "warnings_block"):
         policy[name] = bool(policy[name] or project[name])
     plan_review = plan.aqt.get("review") if isinstance(plan.aqt.get("review"), dict) else {}
@@ -74,7 +74,7 @@ def left_out(ledger: Ledger, rel: str, plan: Plan, snapshot: dict | None, commit
     if not ledger.git or snapshot is None:
         return []
     return ledger.git.left_out(snapshot, committed | {rel}, plan.declared_paths,
-                               ledger.project_settings()["fingerprint_exclude"])
+                               ledger.project_settings(plan.id)["fingerprint_exclude"])
 
 
 def evaluate_gate(ledger: Ledger, rel: str, plan: Plan, *, sources: list[Path] | None = None,
@@ -89,9 +89,12 @@ def evaluate_gate(ledger: Ledger, rel: str, plan: Plan, *, sources: list[Path] |
     if waivers is None:
         waivers = (finish["data"].get("waivers") if finish else None) or []
     waived = {w["item"] for w in waivers}
-    freshness = Freshness(ledger)
+    freshness = Freshness(ledger, plan.id)
     if freshness.trail.missing:
         nogo.append({"code": "trail_required", "detail": TRAIL_REQUIRED})
+    base = ledger.base_problem(plan.id, freshness.trail)
+    if base:
+        (nogo if base.pop("nogo") else manual).append(base)
     items = evaluate(ledger, plan, freshness)
     receipts = []
     for item_id, entry in items.items():
@@ -141,8 +144,9 @@ def evaluate_gate(ledger: Ledger, rel: str, plan: Plan, *, sources: list[Path] |
                        "checkout were not in the working tree when the receipts ran"})
     local = ledger.git.local_ignored() if ledger.git else []
     if local:
-        manual.append({"code": "locally_ignored_files", "detail": "untracked files that only .git/info/exclude or "
-                       "core.excludesFile ignore (a clean checkout lacks them, and a test run may load them): "
+        manual.append({"code": "locally_ignored_files", "detail": "untracked files that only .git/info/exclude, "
+                       "core.excludesFile or an untracked .gitignore ignore (a clean checkout lacks them, and a test "
+                       "run may load them): "
                        + ", ".join(local[:20]) + (f" and {len(local) - 20} more" if len(local) > 20 else "")})
     if finish and not for_finish and not any(entry["state"] == "stale" for entry in items.values()):
         # the working tree is the tested tree (stale receipts are NO-GO anyway): HEAD must hold it

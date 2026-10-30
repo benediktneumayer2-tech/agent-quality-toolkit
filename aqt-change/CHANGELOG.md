@@ -61,6 +61,26 @@
   itself) no longer counts by itself: receipts record `tree_fingerprint_before`; the gate gives MANUAL
   (`command_modified_worktree`, per check) and `finish` refuses (`finish_command_modified_worktree`) until a later
   run of the same check leaves the tree unchanged. Output ignored by the repository's `.gitignore` does not count.
+- Security: only tracked `.gitignore` files take an untracked file out of the tree fingerprint. An untracked
+  `.gitignore` (one that ignores itself does not show in `git status`) is a local rule like
+  `.git/info/exclude`: the files it hides are fingerprinted, give MANUAL (`locally_ignored_files`) and, inside
+  the plan's paths, block `finish`. Exception: the `.gitignore` that pytest, mypy, ruff and venv/uv write into
+  their own `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `.venv`, `.tox` or `.nox` folder. Receipts made while
+  other untracked `.gitignore` files existed become stale once.
+- Security: `run` (and `gate --rerun`) give Python a fresh, empty bytecode cache (`PYTHONPYCACHEPREFIX`), so a
+  `.pyc` in `__pycache__/` (for example an unchecked-hash one of a correct implementation next to a wrong
+  source, or of a weakened test) cannot decide a run. Receipts record `env.python_bytecode: "fresh"`. Imports
+  compile from source on every run. Other ignored build output (extension modules next to the source, `.pyc`
+  without a source, other tools' build caches) stays a documented limit: only a clean-checkout run is decisive.
+- Security: an edited base commit in the plan state (`.git/aqt-change/plans/<id>.json`) no longer drops the
+  project settings or hides commits from the scope check. The settings now also count from every base commit
+  that the plan's `begin`/`baseline` records name (local copy and trail log) and from every commit since a base
+  that changed `.aqt/change.toml` (an unreadable copy there is left out); they apply to the plan being judged
+  whatever its state, so also after `finish`. A plan state whose base commit is not one its records name gives
+  `plan_base_mismatch`: NO-GO when the trail log confirms another base commit, MANUAL when only the local copy
+  disagrees or a log records several base commits for the plan; `finish` refuses (`finish_plan_base_mismatch`). A commit since the base that changed
+  `.aqt/change.toml`, also one changed back later, gives MANUAL (`project_settings_changed`). Limit: without a
+  trail, an agent that also rewrites the begin record in the local copy is not noticed.
 - Docs: `docs/usage.md` named `plan status --json` as a place that shows the approval record; `gate`
   (`approval.record`) and the trace report do.
 
