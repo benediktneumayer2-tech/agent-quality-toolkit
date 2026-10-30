@@ -16,6 +16,11 @@ enrolment of all (bootstrap) or an approval by another enrolled signer. Enrolmen
 and revocations are taken from that evidence; a revocation record always applies, even when
 the file says the key is active, and a registry role that differs from the enrolled role
 stops the key.
+
+An export (``aqt-signoff signers export``) adds ``enrolment_evidence``: ``{"source", "exported_at",
+"records": [the enrolment and revocation records, in evidence order], "revocations": [revocations
+from other sources]}``. ``Signoff.trust`` uses it only when the evidence it reads holds no trail
+(verification on another machine); the records are checked like any other evidence.
 """
 
 from __future__ import annotations
@@ -92,12 +97,15 @@ class KeyEvidence:
     basis: str | None = None          # bootstrap | rebootstrap | approved
     approvals: list = field(default_factory=list)
     roles: list = field(default_factory=list)   # [{"from", "role", "record"}] of the signer
+    stopped_at: str | None = None     # conflicting enrolment records: the key does not count from then
+    unsigned_revocations: list = field(default_factory=list)   # [{"record", "revoked_at", "why"}]
 
     def as_dict(self) -> dict:
         return {"signer": self.signer_id, "key_id": self.key_id, "counts": self.counts, "problems": self.problems,
                 "notes": self.notes, "enrolled_at": self.enrolled_at, "revoked_at": self.revoked_at,
                 "enrolled_role": self.enrolled_role, "enrolment": self.record, "pending": self.pending,
-                "basis": self.basis, "approvals": self.approvals, "roles": self.roles}
+                "basis": self.basis, "approvals": self.approvals, "roles": self.roles,
+                "stopped_at": self.stopped_at, "unsigned_revocations": self.unsigned_revocations}
 
 
 def _data(record: dict) -> dict:
@@ -120,6 +128,9 @@ class Registry:
         self.evidence: dict[tuple[str, str], KeyEvidence] = {}   # (signer id, key id) -> evidence
         self.history: EnrolmentHistory | None = None
         self.pre_trail: list[dict] = []     # set by Signoff.trust: enrolment requests only outside the trail
+        self.ignored: list[dict] = []       # set by Signoff.trust: records outside the trail that never count
+        self.unsigned_revocations: list[dict] = []
+        self.embedded: dict | None = None   # an export's ``enrolment_evidence``
         if self.path.exists():
             try:
                 data = json.loads(self.path.read_text(encoding="utf-8"))
@@ -127,6 +138,13 @@ class Registry:
                 raise UsageError(f"{self.path}: not valid JSON") from error
             if data.get("version") != 1:
                 raise UsageError(f"{self.path}: unsupported registry version {data.get('version')!r}")
+            embedded = data.get("enrolment_evidence")
+            if embedded is not None:
+                if not (isinstance(embedded, dict) and all(
+                        isinstance(embedded.get(name, []), list) and all(isinstance(r, dict) for r in embedded.get(name, []))
+                        for name in ("records", "revocations"))):
+                    raise UsageError(f"{self.path}: enrolment_evidence must hold lists of records")
+                self.embedded = embedded
             for item in data.get("signers", []):
                 self.signers.append(SignerEntry(item["id"], item.get("name", ""), item.get("role", ""),
                                                 [KeyEntry(k["key_id"], k["public_pem"], k["enrolled_at"],
@@ -168,6 +186,7 @@ class Registry:
         revoked = revocations_of([*revocations, *enrolments])
         pems = {key.key_id: key.public_pem for signer in self.signers for key in signer.keys}
         self.history = EnrolmentHistory(revoked, source, pems).run(enrolments)
+        self.unsigned_revocations = self._unsigned_revocations(revocations)
         self.evidence = {}
         owners: dict[str, set[str]] = {}
         for signer in self.signers:
@@ -187,6 +206,28 @@ class Registry:
                     self.evidence[(signer.id, key_id)].notes.append(
                         f"{signer.id} has {len(active)} active keys that count ({', '.join(active)})")
         self.reconciled = True
+
+    def _unsigned_revocations(self, revocations: list[dict]) -> list[dict]:
+        """Every revocation (in the enrolment evidence, carried by an import or in another source) that
+        neither the revoked key nor another counting key signed. They apply all the same."""
+        found, seen = [], set()
+        for entry in self.history.revocations:
+            seen.add(entry["record"])
+            if not entry["signed"]:
+                found.append(entry)
+        for record in revocations:
+            if not isinstance(record, dict) or record.get("type") != "signoff.key.revoked" or record.get("id") in seen:
+                continue
+            seen.add(record.get("id"))
+            data = _data(record)
+            if not _time(data.get("revoked_at")):
+                continue
+            why = self.history.revocation_problem(record)
+            if why:
+                found.append({"key_id": str(data.get("key_id")), "signer": data.get("signer"), "record": record.get("id"),
+                              "time": record.get("time"), "revoked_at": data["revoked_at"], "signed": False,
+                              "why": why})
+        return found
 
     def role_at(self, signer_id: str, moment: datetime) -> str | None:
         """The signer's role in effect at ``moment`` (reconciled registries only)."""
@@ -222,13 +263,16 @@ class Registry:
         if state.public_pem.strip() != key.public_pem.strip():
             ev.problems.append("its enrolment record holds another public key")
         ev.problems.extend(state.problems)
-        if state.conflict:
-            pass
+        if state.conflict and (state.start is None or state.conflict_at is None):
+            ev.problems.extend(state.conflicts)
         elif state.start is None:
             ev.pending = True
             ev.problems.append(f"enrolment {request.get('id')} ({state.time}) waits for approval: another enrolled "
                                f"signer runs 'aqt-signoff signers approve {signer.id} --key {key.key_id}'")
         else:
+            if state.conflict:          # it counted until the conflicting record: earlier signatures keep counting
+                ev.stopped_at = state.conflict_at
+                ev.notes.extend(state.conflicts)
             ev.enrolled_at = state.start
             ev.enrolled_role = history.current_role(signer.id)
             if signer.role != ev.enrolled_role:
@@ -253,12 +297,7 @@ class Registry:
                             f"(record {state.imported['record']})")
         for entry in history.rebootstraps:
             if entry["key_id"] == key.key_id:
-                confirmed = ", ".join(c["by"] for c in entry["confirmed_by"])
-                ev.notes.append(f"RE-BOOTSTRAP: enrolled at {entry['time']} when no other key counted any more "
-                                f"(all revoked); it counts without an approval"
-                                + (f"; confirmed by {confirmed}" if confirmed else
-                                   "; check that this was you, and let another signer confirm it with "
-                                   f"'aqt-signoff signers approve {signer.id} --key {key.key_id}'"))
+                ev.notes.append(rebootstrap_text(entry))
         times = [t for t in (key.revoked_at, *revocations) if _time(t)]
         if key.revoked_at and not _time(key.revoked_at):
             ev.problems.append(f"registry revoked_at {key.revoked_at!r} is not a time")
@@ -266,6 +305,10 @@ class Registry:
         if revocations and not key.revoked_at:
             ev.notes.append(f"registry shows the key active, but a signoff.key.revoked record revokes it at "
                             f"{ev.revoked_at}; the revocation applies")
+        ev.unsigned_revocations = [{"record": r["record"], "revoked_at": r["revoked_at"], "why": r["why"]}
+                                   for r in self.unsigned_revocations if r["key_id"] == key.key_id]
+        if ev.stopped_at and (ev.revoked_at is None or _time(ev.stopped_at) < _time(ev.revoked_at)):
+            ev.revoked_at = ev.stopped_at
         ev.counts = not ev.problems
         return ev
 
@@ -305,6 +348,26 @@ class Registry:
         pub = Path(f"{path}.pub")
         if pub.exists():
             os.replace(pub, path.with_name(f"{path.stem}.{suffix}.revoked.key.pub"))
+
+
+def rebootstrap_text(entry: dict, *, who: bool = False) -> str:
+    """One line about a re-bootstrap entry of ``EnrolmentHistory.rebootstraps`` (``who``: name the key)."""
+    confirmed = ", ".join(c["by"] for c in entry.get("confirmed_by") or [])
+    unsigned = entry.get("unsigned_revocations") or []
+    text = ("RE-BOOTSTRAP" + (f" {entry['signer']} key {entry['key_id']}" if who else "")
+            + f": enrolled at {entry['time']} when no other key counted any more (all revoked); it counts without an "
+              "approval")
+    if unsigned:
+        text += ("; the revocations before it were NOT signed by the revoked keys or another counting key ("
+                 + ", ".join(f"{u['signer']} key {u['key_id']}" for u in unsigned)
+                 + "): any process can write such records ('aqt-signoff revoke --lost' does too); if you did not "
+                   "revoke these keys yourself, treat this as an incident")
+    if confirmed:
+        return text + f"; confirmed by {confirmed}"
+    for item in entry.get("not_confirming") or []:
+        text += f"; the approval {item['record']} by {item['by']} does not confirm it ({item['why']})"
+    return text + ("; not confirmed: only a signer whose key counted before the re-bootstrap can confirm it, so check "
+                   "the trail that this was you")
 
 
 def load_public_key_id(path: Path) -> str:

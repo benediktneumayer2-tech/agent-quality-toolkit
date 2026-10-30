@@ -365,7 +365,7 @@ Approve only people and keys you have checked, for example by comparing the key 
 - **Changing a role** is also an approval by another signer: `aqt-signoff signers approve human:dave --key <his key ID> --role quality-manager --signer human:alice`. Earlier signatures keep the role they were made with. A role edited in `signers.json` changes nothing except that the key stops counting (`registry_mismatch`).
 - **A new key for yourself** (rotation): `aqt-signoff init --id human:alice --add-key` while your old key still counts. It asks for the old passphrase, then a new one; the old key approves the new one and is revoked in the same step. The role stays the same. After a lost key, see 3.7.
 
-`signers check` compares every key in `signers.json` with the enrolment records and exits 1 unless every key counts and nothing is pending or unconfirmed. It names the first signer, lists pending enrolments with their approve command, and warns `RE-BOOTSTRAP` when a key counts only because every earlier key was revoked (3.7). An agent can create a key and an enrolment request of its own, but that key stays pending until one of you approves it. Run `signers check` after every enrolment and in the weekly routine (5.3).
+`signers check` compares every key in `signers.json` with the enrolment records and exits 1 unless every key counts and nothing is pending or unconfirmed. It names the first signer, lists pending enrolments with their approve command, and warns `RE-BOOTSTRAP` when a key counts only because every earlier key was revoked (3.7), and about every revocation that neither the revoked key nor another counting key signed. An agent can create a key and an enrolment request of its own, but that key stays pending until one of you approves it. Run `signers check` after every enrolment and in the weekly routine (5.3).
 
 **Upgrading from a version without counter-signed enrolment.** After the update, every signer except the first shows `PENDING`. The first signer approves each of them once; `signers check` prints the commands. The approval counts back to their enrolment, so their earlier signatures count again. A key made by `aqt-quarantine init` first needs **[you]** `aqt-signoff rekey --signer <id>`, which records its enrolment request, and then an approval, unless it is the first signer's.
 
@@ -373,7 +373,7 @@ Approve only people and keys you have checked, for example by comparing the key 
 
 This one key is used by all tools: aqt-quarantine, aqt-trail (review signatures), aqt-change and aqt-capa (through aqt-signoff) share the same registry and key folder. `aqt-quarantine init --id …` reuses this key instead of creating a second one (see 4.1). With aqt-signoff installed, all of them count a key only as `signers check` does; without aqt-signoff, aqt-quarantine and aqt-trail rest on `signers.json` alone and say so.
 
-**Someone who verifies on another machine** needs your public keys. Export them with `aqt-signoff signers export signers-export.json`; they verify with `aqt-signoff --registry signers-export.json verify …`.
+**Someone who verifies on another machine** needs your public keys and the enrolment records that make them count. **[you]** `aqt-signoff signers export signers-export.json` writes both: the registry and, in `enrolment_evidence`, the enrolment requests, approvals, imports and revocations in their order. They verify with `aqt-signoff --registry signers-export.json --evidence <copy of the records with the signatures> verify …`. Where the evidence they read holds no trail, the records in the export are checked like any other evidence (signatures, approvals, order); where it holds a trail, the trail decides. Export again after every enrolment, approval or revocation. The export is a plain file: like the public keys in it, it is only as trustworthy as the way it reached them.
 
 ### 3.5 Basic settings
 
@@ -416,7 +416,7 @@ aqt status
 
 Expected: every line `ok` (a `warn` is allowed but worth reading), and the verdict `ok`. It checks the packages, the trail and its systemd unit, that the writer runs and the spool is empty, where records go, that a signer is enrolled, that every key in the registry counts by its enrolment records (as `aqt-signoff signers check`: nothing pending, imported if needed, no unconfirmed re-bootstrap) and that a signer is named in `signoff.toml`, `trail.toml`, the trail's latest entry and checkpoint, and the test vectors. For speed it checks only the end of the trail; `aqt status --verify` verifies every record, which takes seconds on a large trail. Each problem comes with the command that fixes it.
 
-The line `signer` says `fail` while a key in the registry does not count, and prints the fix: for a key that waits for approval, the approve command for an enrolled signer; for enrolment records from before the trail, `aqt-signoff signers import`; for a key without any enrolment record (for example one created by `aqt-quarantine init`), **[you]** `aqt-signoff rekey --signer human:alice`, after which the key waits for approval unless it is the first signer's. It says `warn` for an unconfirmed re-bootstrap (3.7) and for an enrolment request that is not in the registry. When everything counts, it names the first signer: check that it is you. `aqt setup` cannot apply these fixes, because each needs a passphrase.
+The line `signer` says `fail` while a key in the registry does not count, and prints the fix: for a key that waits for approval, the approve command for an enrolled signer; for enrolment records from before the trail, `aqt-signoff signers import`; for a key without any enrolment record (for example one created by `aqt-quarantine init`), **[you]** `aqt-signoff rekey --signer human:alice`, after which the key waits for approval unless it is the first signer's. It says `warn` for an unconfirmed re-bootstrap (3.7), naming revocations before it that were not signed, and for an enrolment request that is not in the registry. When everything counts, it names the first signer: check that it is you. `aqt setup` cannot apply these fixes, because each needs a passphrase.
 
 The same checks by hand:
 
@@ -445,7 +445,7 @@ Test a restore now and then: `aqt-trail verify --bundle <folder> --pin-key <your
 
 **Keys created before the security fixes of October 2026** use a weaker encryption (PBKDF2). aqt-signoff re-encrypts a key with scrypt the next time you use it; to do it now, run **[you]** `aqt-signoff rekey`. A backup copy of the old key file keeps the weak encryption: replace your backups of `~/.config/aqt/keys/` afterwards.
 
-If a passphrase is lost: **[you]** `aqt-signoff revoke human:alice --reason "passphrase lost" --lost`, then `aqt-signoff init --id human:alice --add-key`. Earlier signatures keep their status; new ones use the new key. The new key needs an approval by another enrolled signer (`aqt-signoff signers approve`), like any new enrolment. If no other key counts any more, the new key counts at once as a **re-bootstrap**, so that a single owner can recover. `signers check` (`RE-BOOTSTRAP`, exit 1) and `aqt status` (`warn`) flag it until another signer approves the key. A takeover would look the same, because a revocation with `--lost` needs no signature: treat a re-bootstrap you did not make yourself as a security incident.
+If a passphrase is lost: **[you]** `aqt-signoff revoke human:alice --reason "passphrase lost" --lost`, then `aqt-signoff init --id human:alice --add-key`. Earlier signatures keep their status; new ones use the new key. The new key needs an approval by another enrolled signer (`aqt-signoff signers approve`), like any new enrolment. If no other key counts any more, the new key counts at once as a **re-bootstrap**, so that a single owner can recover. `signers check` (`RE-BOOTSTRAP`, exit 1), `verify` and `aqt status` (`warn`) keep flagging it: only a key that counted before the re-bootstrap could confirm it, and those are revoked by then; a key that the new key approved, directly or through others, never vouches for it. They also say when the revocations before it were not signed. A takeover would look the same, because a revocation with `--lost` needs no signature: treat a re-bootstrap you did not make yourself, or an unsigned revocation you did not write, as a security incident.
 
 **Keep out of the agent's reach:**
 
@@ -1470,7 +1470,7 @@ Monthly or quarterly:
 
 - **Audit-trail review.** You cannot sign a review of a period in which you decided things (`not_independent`). You can review periods in which only agents acted, for example from a change's first receipt to its finish (`aqt-trail review run --since <first receipt time> --until <finish time>`), and ask a colleague to review the rest from time to time.
 - **CAPA approval.** With `allow_self_approval = true` you approve your own actions. This is recorded and visible, and weaker than a second person.
-- **Your key.** You are the first signer. If you lose your key, the new one counts as a re-bootstrap, which `aqt-signoff signers check` and `aqt status` flag until a second enrolled person approves it (3.7).
+- **Your key.** You are the first signer. If you lose your key, the new one counts as a re-bootstrap, which `aqt-signoff signers check` and `aqt status` keep flagging (3.7): check once that the re-bootstrap and the revocation before it were yours.
 
 **A small team.** Each person enrols with their own ID and passphrase (3.4); the first person enrolled approves the others, and from then on any enrolled person can approve a newcomer or a role change. Use `[policy.released] roles = ["quality-manager"]` so that only the quality function releases, and a reviewer who did not act in the period for audit-trail reviews. Share `aqt-signoff signers export` with anyone who verifies on another machine.
 
@@ -1627,7 +1627,7 @@ Monthly or quarterly:
 | **Qualification** | A person's formal acceptance that a tool is fit for its intended use, for a limited time |
 | **Quarantine** | Holding inputs of unknown status apart until a responsible person decides |
 | **Receipt** | aqt-change's record of one run of a declared verification command |
-| **Re-bootstrap** | A new key that counts without approval because every earlier key was revoked; flagged until another signer approves it |
+| **Re-bootstrap** | A new key that counts without approval because every earlier key was revoked; it stays flagged, because only a key that counted before it could confirm it |
 | **Reconcile** | Accepting an edited plan version as editorial or semantic, with a reason |
 | **Requalification** | Repeating the validation after a change, an expiry or a drift |
 | **Responsible person** | The human authorised to decide, for example to release a quarantined input |

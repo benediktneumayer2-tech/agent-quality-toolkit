@@ -449,10 +449,15 @@ def check_signer(ctx: Context) -> Result:
     unconfirmed = [entry for entry in report.get("rebootstrap") or [] if not entry.get("confirmed_by")]
     if unconfirmed:
         what = ", ".join(f"{entry.get('signer')} key {entry.get('key_id')}" for entry in unconfirmed)
-        return Result(WARN, f"RE-BOOTSTRAP: {what} counts although every earlier key was revoked and no other signer "
-                            "has confirmed it; make sure it was you (the trail shows who enrolled it)",
-                      "aqt-signoff signers check; another signer confirms with: aqt-signoff signers approve",
-                      data=data, can_apply=False)
+        unsigned = sorted({f"{item.get('signer')} key {item.get('key_id')}" for entry in unconfirmed
+                           for item in entry.get("unsigned_revocations") or []})
+        text = (f"RE-BOOTSTRAP: {what} counts although every earlier key was revoked, and no signer whose key counted "
+                "before it has confirmed it; make sure it was you (the trail shows who enrolled it)")
+        if unsigned:
+            text += (f". The revocations before it were NOT signed ({', '.join(unsigned)}): any process can write "
+                     "those; if you did not revoke these keys yourself (for example with 'aqt-signoff revoke --lost'), "
+                     "treat this as an incident")
+        return Result(WARN, text, "aqt-signoff signers check", data=data, can_apply=False)
     requests = [entry for entry in pending if not entry.get("in_registry")]
     if requests:
         what = ", ".join(f"{entry.get('signer')} key {entry.get('key_id')}" for entry in requests)

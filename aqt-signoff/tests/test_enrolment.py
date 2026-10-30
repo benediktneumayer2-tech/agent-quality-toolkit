@@ -6,7 +6,8 @@ import json
 
 import pytest
 
-from aqt_evidence import bytes_hash, content_hash, generate_key, load_public_key, load_signer, read_jsonl, subject
+from aqt_evidence import (bytes_hash, content_hash, generate_key, load_public_key, load_signer, new_record, read_jsonl,
+                          subject)
 from aqt_evidence.crypto import public_pem
 from aqt_signoff import Refused, UsageError
 from aqt_signoff.cli import main
@@ -125,7 +126,9 @@ def test_second_enrolment_record_for_a_key_is_a_conflict_not_a_role(people, make
     assert not status.ok and status.signatures[0].status == "unknown-signer"
     assert status.signatures[0].authorized_role is None
     row = keys(make())[("human:bob", bob_key.key_id)]
-    assert not row["counts"] and any("conflicting enrolment records" in p for p in row["problems"])
+    assert not row["counts"] and row["stopped_at"]                 # stopped by the conflict; the edited role too
+    assert any("conflicting enrolment records" in p for p in row["notes"])
+    assert any("a second, different enrolment record" in p for p in make().check_signers()["problems"])
 
 
 def test_a_signer_cannot_approve_their_own_role_change(people, make, isolated, clock):
@@ -196,6 +199,7 @@ def test_rotation_is_approved_by_the_old_key_which_is_revoked(people, make, isol
     assert rows[("human:alice", new_key)]["counts"] and rows[("human:alice", new_key)]["basis"] == "approved"
     assert rows[("human:alice", new_key)]["approvals"][0]["key"] == old_key
     assert rows[("human:alice", old_key)]["revoked_at"] and make().check_signers()["ok"]
+    assert not make().check_signers()["unsigned_revocations"]        # the old key signed its own revocation
     statuses = {s.record_id: s.status for s in make().verify_file(doc).signatures}
     assert statuses[signed["id"]] == "valid"                         # signed before the rotation: still valid
     newer = make("human:alice")
@@ -230,12 +234,14 @@ def test_rebootstrap_after_all_keys_are_revoked_counts_but_is_flagged(make, isol
     assert any(n.startswith("RE-BOOTSTRAP") for n in keys(make())[("human:alice", new_key)]["notes"])
     assert main(["--sink", f"file:{make.sink}", "signers", "check"]) == 1
     assert "WARNING: RE-BOOTSTRAP" in capsys.readouterr().out
+    assert [u["key_id"] for u in check["rebootstrap"][0]["unsigned_revocations"]] != []   # the --lost revocation
     clock.advance(minutes=1)
     bob = make("human:bob").init_signer("human:bob", "Bob Example", "developer")
     make("human:alice").approve_enrolment("human:bob", bob["data"]["key_id"])
     make("human:bob").approve_enrolment("human:alice", new_key, reason="I know Alice; she lost her passphrase")
-    check = make().check_signers()
-    assert check["ok"] and check["rebootstrap"][0]["confirmed_by"][0]["by"] == "human:bob"
+    check = make().check_signers()           # Bob counts only through Alice's new key: he cannot vouch for it
+    assert not check["ok"] and not check["rebootstrap"][0]["confirmed_by"]
+    assert check["rebootstrap"][0]["not_confirming"][0]["by"] == "human:bob"
 
 
 def test_forged_revocations_do_not_turn_a_pending_enrolment_into_a_rebootstrap(people, make, isolated):
@@ -381,3 +387,240 @@ def test_import_by_a_signer_who_does_not_count_in_the_trail_is_ignored(people, m
     check = with_trail().check_signers()
     assert not check["ok"] and any("does not count in the trail" in n for n in check["problems"])   # a registered key
     assert not keys(with_trail())[("human:mallory", mallory.key_id)]["counts"]
+
+
+# ---- round 4 (verification v3): re-bootstrap puppets, replayed requests, a second import, export -------------
+def approve_with(make, approver_id, approver_key, target_id, target_key):
+    """An approval record any holder of ``approver_key`` can write (no aqt-signoff checks)."""
+    so = make()
+    registry = so.reload_registry()
+    request = next(r for r in records(make, "signoff.key.enrolled")
+                   if r["data"]["key_id"] == target_key.key_id and "approves" not in r["data"])
+    entry = next(k for k in registry.get(target_id).keys if k.key_id == target_key.key_id)
+    return so.emit(so._approval_record(registry.get(approver_id), approver_key, request, target_id, entry,
+                                       request["data"]["role"], "vouch"), approver_key)
+
+
+def test_rebootstrap_after_unsigned_revocations_is_not_confirmed_by_its_own_puppet(people, make, isolated, clock,
+                                                                                  tmp_path, capsys):
+    so = make()
+    reg_path = isolated / "config/aqt/signers.json"
+    doc = json.loads(reg_path.read_text())
+    revoked_at = so.now()
+    for signer in doc["signers"]:             # no passphrase: unsigned revocations of every key, registry agrees
+        for key in signer["keys"]:
+            so.emit(so.record("signoff.key.revoked", {"kind": "human", "id": signer["id"]}, "revoke", reason="rotated",
+                              data={"signer": signer["id"], "key_id": key["key_id"], "revoked_at": revoked_at}))
+            key["revoked_at"] = revoked_at
+    reg_path.write_text(json.dumps(doc))
+    clock.advance(seconds=5)
+    mallory = forge(make, isolated, "human:mallory", "quality-manager")          # the re-bootstrap
+    clock.advance(seconds=5)
+    trent = forge(make, isolated, "human:trent", "quality-manager")
+    clock.advance(seconds=5)
+    approve_with(make, "human:mallory", mallory, "human:trent", trent)
+    clock.advance(seconds=5)
+    approve_with(make, "human:trent", trent, "human:mallory", mallory)          # the puppet "confirms" it
+    check = make().check_signers()
+    entry = check["rebootstrap"][0]
+    assert not check["ok"] and entry["signer"] == "human:mallory" and not entry["confirmed_by"]
+    assert entry["not_confirming"][0]["by"] == "human:trent"
+    assert {u["signer"] for u in entry["unsigned_revocations"]} == {"human:alice", "human:bob", "human:carol"}
+    assert len(check["unsigned_revocations"]) == 3
+    assert all(k["unsigned_revocations"] for k in check["keys"] if k["signer"] in PASSWORDS)
+    assert main(["--sink", f"file:{make.sink}", "signers", "check"]) == 1
+    out = capsys.readouterr().out
+    assert "NOT signed" in out and "does not confirm it" in out and "WARNING: revocation" in out
+    release = isolated / "release.md"
+    release.write_text("ship\n")
+    sign_with(make, "human:mallory", mallory, release)
+    report = make().verify_file(release)          # still SIGNED (a solo owner must be able to recover), but loud
+    assert report.ok and "RE-BOOTSTRAP human:mallory" in report.registry_warnings[0]
+    assert set(entry["counted_before"]) == {k["key_id"] for k in check["keys"] if k["signer"] in PASSWORDS}
+
+
+def test_replayed_enrolment_request_counts_once(people, make, isolated, clock):
+    doc = isolated / "a.md"
+    doc.write_text("a\n")
+    make("human:alice").sign(make("human:alice").file_subject(doc), "approved", "fine")
+    request = next(r for r in records(make, "signoff.key.enrolled") if r["data"]["signer"] == "human:alice"
+                   and "approves" not in r["data"])
+    copy = new_record(request["type"], request["actor"], request["action"], subject=request["subject"],
+                      reason=request.get("reason"), data=request["data"])     # no key or passphrase needed
+    make().sink.append(copy)
+    report = make().verify_file(doc)
+    assert report.ok and report.signatures[0].status == "valid"
+    check = make().check_signers()
+    assert check["ok"] and any("a copy of the enrolment request" in n for n in check["ignored"])
+    clock.advance(seconds=1)
+    make("human:alice").sign(make("human:alice").file_subject(doc), "reviewed", "again")    # not refused
+
+
+def test_conflicting_enrolment_request_stops_the_key_from_its_record_time(people, make, isolated, clock):
+    early, late = isolated / "early.md", isolated / "late.md"
+    early.write_text("early\n")
+    late.write_text("late\n")
+    make("human:bob").sign(make("human:bob").file_subject(early), "reviewed", "before")
+    clock.advance(minutes=1)
+    bob_key = key_of(make, "human:bob")
+    forge(make, isolated, "human:bob", "developer", key=bob_key)       # Bob signs a second, different request
+    clock.advance(minutes=1)
+    sign_with(make, "human:bob", bob_key, late, meaning="reviewed")
+    assert make().verify_file(early).signatures[0].status == "valid"   # judged at its signed time
+    after = make().verify_file(late).signatures[0]
+    assert after.status == "revoked" and "conflicting enrolment records" in after.detail
+    check = make().check_signers()
+    assert not check["ok"] and any("a second, different enrolment record" in p for p in check["problems"])
+    with pytest.raises(Refused) as refused:
+        make("human:bob").sign(make("human:bob").file_subject(late), "reviewed", "after")
+    assert refused.value.code == "registry_mismatch"
+
+
+def plant_extra_key(make, isolated, signer_id, time):
+    """The agent: a new key under ``signer_id`` in signers.json (before the real one) and a self-signed request
+    with a backdated record time in the old evidence file."""
+    registry_path = isolated / "config/aqt/signers.json"
+    path = isolated / "agent.key"
+    generate_key(path, passphrase=b"attacker-passphrase")
+    key = load_signer(path, passphrase=b"attacker-passphrase")
+    kid, public = load_public_key(f"{path}.pub")
+    pem = public_pem(public).decode()
+    reg = json.loads(registry_path.read_text())
+    next(s for s in reg["signers"] if s["id"] == signer_id)["keys"].insert(
+        0, {"key_id": kid, "public_pem": pem, "enrolled_at": time, "revoked_at": None})
+    registry_path.write_text(json.dumps(reg))
+    so = make()
+    so.now = lambda: time
+    signer = so.reload_registry().get(signer_id)
+    so.emit(so.signed_record("signoff.key.enrolled", "enroll", signer=signer, key=key, meaning="acknowledged",
+                             reason="Key enrolled for electronic signatures", envelope_meaning=False, enrolled_at=time,
+                             subject=subject("key", kid, sha256=bytes_hash(pem.encode())),
+                             data={"signer": signer_id, "name": signer.name, "role": signer.role, "key_id": kid,
+                                   "public_pem": pem}), key)
+    return key
+
+
+def test_second_import_is_refused_and_later_records_never_count(people, make, isolated, clock, trail, with_trail,
+                                                                capsys):
+    with_trail("human:alice").import_enrolments()
+    planted = plant_extra_key(make, isolated, "human:alice", "2025-01-01T00:00:00.000000Z")
+    check = with_trail().check_signers()
+    assert not any("signers import" in p for p in check["problems"])          # nobody is sent to import again
+    row = keys(with_trail())[("human:alice", planted.key_id)]
+    assert not row["counts"] and "never counts and cannot be imported" in row["problems"][0]
+    with_trail("human:carol").init_signer("human:dora", "Dora Example", "qa")   # no import_needed
+    with pytest.raises(UsageError) as error:
+        with_trail("human:alice").import_enrolments()
+    assert error.value.code == "already_imported"
+    assert main(["--sink", f"file:{trail}", "--evidence", str(trail), "--evidence", str(make.sink),
+                 "signers", "import", "--dry-run"]) == 2
+    assert "imported once" in capsys.readouterr().err
+    # a second import record signed by Alice's real key (another tool, an older version) does not count either
+    so = with_trail("human:alice")
+    planted_records = [r for r in read_jsonl(make.sink) if r["data"].get("key_id") == planted.key_id]
+    alice = so.registry.get("human:alice")
+    so.emit(so.signed_record("signoff.key.enrolled", "enroll", signer=alice, key=key_of(make, "human:alice"),
+                             meaning="approved", reason="import", envelope_meaning=False,
+                             subject=subject("enrolment-import", "pre-trail", sha256=content_hash(planted_records)),
+                             data={"signer": "human:alice", "key_id": key_id_of(make, "human:alice"),
+                                   "imported": planted_records}), key_of(make, "human:alice"))
+    check = with_trail().check_signers()
+    assert any("only the first import counts" in p for p in check["problems"])
+    assert not keys(with_trail())[("human:alice", planted.key_id)]["counts"]
+    late = isolated / "backdated.md"
+    late.write_text("x\n")
+    so = with_trail()
+    so.now = lambda: "2025-06-01T00:00:00.000000Z"
+    so.emit(so.signed_record("signoff.signature", "sign", signer=so.reload_registry().get("human:alice"), key=planted,
+                             meaning="approved", reason="r", subject=so.file_subject(late),
+                             data={"meaning": "approved"}), planted)
+    assert with_trail().verify_file(late).signatures[0].status == "unknown-signer"
+
+
+def test_import_preview_says_what_counts_and_flags_another_key(people, make, isolated, clock, trail, with_trail):
+    from aqt_signoff.cli import _import_text
+    planted = plant_extra_key(make, isolated, "human:alice", "2025-01-01T00:00:00.000000Z")
+    with_trail().emit(with_trail().record("trail.event", {"kind": "service", "id": "service:t"}, "started"))
+    clock.advance(minutes=1)
+    late = forge(make, isolated, "human:erin", "qa")                  # written after the trail started
+    preview = with_trail().import_preview()
+    rows = {row["key_id"]: row for row in preview["outcome"]}
+    assert rows[planted.key_id]["result"] == "pending" and rows[planted.key_id]["other_keys"]
+    assert rows[key_id_of(make, "human:alice")]["result"] == "counts"
+    assert late.key_id not in rows and any(r["data"]["key_id"] == late.key_id for r in preview["ignored"])
+    text = _import_text(preview)
+    assert "ANOTHER KEY for human:alice" in text and "does not count" not in text
+    assert "COUNTS from" in text and "stays pending" in text and "never imported" in text
+    with_trail("human:alice").import_enrolments()
+    assert not keys(with_trail())[("human:alice", planted.key_id)]["counts"]
+    assert keys(with_trail())[("human:alice", key_id_of(make, "human:alice"))]["counts"]
+
+
+def test_export_carries_the_enrolment_evidence_for_verification_elsewhere(people, make, isolated, clock, tmp_path,
+                                                                         capsys):
+    cfg = tmp_path / "policy.toml"
+    cfg.write_text('[policy.approved]\nroles = ["quality-manager"]\n')
+    doc = isolated / "release.md"
+    doc.write_text("ship it\n")
+    make("human:alice").sign(make("human:alice").file_subject(doc), "approved", "fine")
+    export = isolated / "signers-export.json"
+    assert main(["--sink", f"file:{make.sink}", "signers", "export", str(export)]) == 0
+    exported = json.loads(export.read_text())
+    assert {r["type"] for r in exported["enrolment_evidence"]["records"]} == {"signoff.key.enrolled"}
+    # another machine: only the signature record, the export as the registry, no trail, no signers.json
+    copy = isolated / "elsewhere" / "signatures.jsonl"
+    copy.parent.mkdir()
+    copy.write_text("".join(json.dumps(r) + "\n" for r in records(make, "signoff.signature")))
+    other = dict(registry=str(export), evidence=[copy], keys_dir=str(isolated / "elsewhere/keys"),
+                 state_dir=str(isolated / "elsewhere/state"))
+    report = make(config_path=cfg, **other).verify_file(doc, required=["approved"], record_invalidations=False)
+    assert report.ok and report.signatures[0].authorized_role == "quality-manager"
+    assert make(**other).check_signers()["evidence"] == "registry export"
+    assert main(["--registry", str(export), "--evidence", str(copy), "--config", str(cfg), "verify", str(doc),
+                 "--no-record", "--require", "approved"]) == 0
+    capsys.readouterr()
+    # the embedded records are checked like any other evidence: a forged key in the export does not count
+    forged_dir = isolated / "forged"
+    forged_dir.mkdir()
+    generate_key(forged_dir / "m.key", passphrase=b"attacker-passphrase")
+    mallory = load_signer(forged_dir / "m.key", passphrase=b"attacker-passphrase")
+    kid, public = load_public_key(forged_dir / "m.key.pub")
+    pem = public_pem(public).decode()
+    exported["signers"].append({"id": "human:mallory", "name": "Mallory", "role": "quality-manager",
+                                "keys": [{"key_id": kid, "public_pem": pem, "enrolled_at": "2020-01-01T00:00:00Z",
+                                          "revoked_at": None}]})
+    export.write_text(json.dumps(exported))
+    so = make(**other)
+    signer = so.reload_registry().get("human:mallory")
+    request = so.signed_record("signoff.key.enrolled", "enroll", signer=signer, key=mallory, meaning="acknowledged",
+                               reason="enrol", envelope_meaning=False, enrolled_at="2020-01-01T00:00:00Z",
+                               subject=subject("key", kid, sha256=bytes_hash(pem.encode())),
+                               data={"signer": "human:mallory", "name": "Mallory", "role": "quality-manager",
+                                     "key_id": kid, "public_pem": pem})
+    exported["enrolment_evidence"]["records"].append(request)
+    export.write_text(json.dumps(exported))
+    assert keys(make(**other))[("human:mallory", kid)]["pending"]
+
+
+def test_embedded_export_records_are_ignored_when_there_is_a_trail(people, make, isolated, trail, with_trail):
+    with_trail("human:alice").import_enrolments()
+    registry_path = isolated / "config/aqt/signers.json"
+    exported = with_trail().export_registry()
+    assert exported["enrolment_evidence"]["source"] == "trail"
+    # the agent writes a forged first enrolment into the user's signers.json as "export" records
+    forged_key = forge(make, isolated, "human:mallory", "quality-manager")
+    forged = [r for r in read_jsonl(make.sink) if r["data"].get("key_id") == forged_key.key_id]
+    doc = json.loads(registry_path.read_text())
+    doc["enrolment_evidence"] = {"records": forged, "revocations": []}
+    registry_path.write_text(json.dumps(doc))
+    check = with_trail().check_signers()
+    assert check["evidence"] == "trail" and any("not used" in n for n in check["ignored"])
+    assert not keys(with_trail())[("human:mallory", forged_key.key_id)]["counts"]
+
+
+def test_backdated_request_is_pending_not_a_rebootstrap(people, make, isolated):
+    """Without a trail the record time is the writer's choice: a request dated before every enrolment must not
+    look like one made after all keys were revoked."""
+    planted = plant_extra_key(make, isolated, "human:alice", "2025-01-01T00:00:00.000000Z")
+    row = keys(make())[("human:alice", planted.key_id)]
+    assert row["pending"] and not row["counts"] and not make().check_signers()["rebootstrap"]

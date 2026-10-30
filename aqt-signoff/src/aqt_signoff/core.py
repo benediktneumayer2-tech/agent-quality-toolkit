@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -9,14 +10,15 @@ from pathlib import Path
 from typing import Callable
 
 from aqt_evidence import (MEANINGS, HumanCheckError, JsonlSink, SinkError, actor, bytes_hash, content_hash,
-                          evidence_sources, iter_evidence, new_record, open_sink, record_content_hash, require_human,
-                          sign_record, subject as make_subject)
+                          evidence_sources, iter_evidence, new_record, open_sink, read_jsonl, record_content_hash,
+                          require_human, sign_record, subject as make_subject)
 from aqt_evidence import detect_agent_context, generate_key, load_public_key
 from aqt_evidence.crypto import key_file_format
 
 from .errors import AuthFailed, NotFound, Refused, SignoffError, UsageError
-from .enrolment import ENROLLED, REVOKED, kind_of
-from .registry import Authenticator, KeyEntry, Registry, SignerEntry, TtyAuthenticator, parse_time, unlock
+from .enrolment import ENROLLED, REVOKED, EnrolmentHistory, kind_of, revocations as revocations_of
+from .registry import (Authenticator, KeyEntry, Registry, SignerEntry, TtyAuthenticator, parse_time, rebootstrap_text,
+                       unlock)
 from .settings import Policy, Settings, load_settings
 from .statements import SignatureStatus, build_statement, check_block, sign, statement_digest, statement_of
 from .store import Store
@@ -64,6 +66,7 @@ class VerifyReport:
     required: list[str] = field(default_factory=list)
     recorded: list[str] = field(default_factory=list)
     registry_problems: list[dict] = field(default_factory=list)   # registry keys that do not count
+    registry_warnings: list[str] = field(default_factory=list)    # e.g. an unconfirmed re-bootstrap
 
     @property
     def current(self) -> list[SignatureStatus]:
@@ -89,7 +92,8 @@ class VerifyReport:
         return {"ok": self.ok, "summary": self.summary(), "subject": self.subject,
                 "signatures": [s.as_dict() for s in self.signatures],
                 "policies": {m: p.as_dict() for m, p in self.policies.items()}, "required": self.required,
-                "recorded": self.recorded, "registry_problems": self.registry_problems}
+                "recorded": self.recorded, "registry_problems": self.registry_problems,
+                "registry_warnings": self.registry_warnings}
 
 
 class Signoff:
@@ -177,39 +181,89 @@ class Signoff:
 
     def trust(self, records: list[dict] | None = None) -> Registry:
         """The registry, reconciled with the enrolment and revocation records (see ``Registry.reconcile``
-        and ``enrolment``). Enrolments count from the chained trail when there is one, else from every
-        evidence source; revocations from every source. With a trail, ``registry.pre_trail`` lists the
-        enrolment records that exist only in other sources (written before the trail) and were not
-        imported."""
+        and ``enrolment``). Enrolments count from the chained trail when there is one; else from the
+        enrolment records of an export (``signers export``) that the registry file carries, followed by
+        every evidence source; else from every evidence source. Revocations count from every source.
+        With a trail, ``registry.pre_trail`` lists the enrolment requests that exist only in other sources,
+        were written before the trail and are not imported yet; ``registry.ignored`` the records outside the
+        trail that never count (written after the trail started, or after the one import)."""
         registry = self.registry
         trail = self.trail_sources()
         stamp = (self._stamp([self.settings.registry_path]), self._stamp(self.sources()))
         if registry.reconciled and getattr(registry, "_stamp", None) == stamp:
             return registry
         records = self.records() if records is None else records
-        enrolments = list(iter_evidence(trail)) if trail else records
-        registry.reconcile(enrolments, records, source="trail" if trail else "evidence")
-        registry.pre_trail = self._pre_trail(trail, enrolments, registry) if trail else []
+        enrolments, revocations, source = self._enrolment_inputs(trail, records)
+        registry.reconcile(enrolments, revocations, source=source)
+        importable, registry.ignored = self._side_enrolments(trail, enrolments, registry) if trail else ([], [])
+        registered = {(s.id, k.key_id) for s in registry.signers for k in s.keys}
+        registry.pre_trail = [r for r in importable if kind_of(r) == "request"
+                              and (_data_of(r).get("signer"), _data_of(r).get("key_id")) in registered]
         registry._stamp = stamp
         return registry
 
-    def _side_enrolments(self, trail: list[Path], enrolments: list[dict], registry: Registry) -> list[dict]:
-        """Enrolment and revocation records in the non-trail sources that the trail does not hold, neither
-        directly nor through an import that counts (``registry`` is reconciled with ``enrolments``)."""
+    def _enrolment_inputs(self, trail: list[Path], records: list[dict]) -> tuple[list[dict], list[dict], str]:
+        """(enrolment records in order, revocation sources, source name) for ``Registry.reconcile``."""
+        if trail:
+            return list(iter_evidence(trail)), records, "trail"
+        embedded = self.registry.embedded
+        if embedded:
+            own = list(embedded.get("records") or [])
+            ids = {r.get("id") for r in own}
+            return ([*own, *(r for r in records if r.get("id") not in ids)],
+                    [*records, *(embedded.get("revocations") or [])], "registry export")
+        return records, records, "evidence"
+
+    def _trail_genesis(self, trail: list[Path]) -> datetime | None:
+        """When the trail started: the earliest of its first record's time and ``trail.json`` ``created``."""
+        times = []
+        for path in trail:
+            try:
+                times.append(json.loads((path.parent / "trail.json").read_text(encoding="utf-8")).get("created"))
+            except (OSError, ValueError, AttributeError):
+                pass
+            try:
+                first = next(iter(read_jsonl(path)), None)
+            except (OSError, SinkError, ValueError):
+                first = None
+            times.append(first.get("time") if isinstance(first, dict) else None)
+        moments = []
+        for value in times:
+            try:
+                moment = parse_time(value)
+            except (TypeError, ValueError, AttributeError):
+                continue
+            if moment.tzinfo:
+                moments.append(moment)
+        return min(moments) if moments else None
+
+    def _side_enrolments(self, trail: list[Path], enrolments: list[dict],
+                         registry: Registry) -> tuple[list[dict], list[dict]]:
+        """(importable, ignored): the enrolment and revocation records in the non-trail sources that the
+        trail does not hold, neither directly nor through the import that counts (``registry`` is reconciled
+        with ``enrolments``). Importable are those written before the trail started, as long as nothing was
+        imported yet; ``ignored`` are the other enrolment records, which never count (revocations apply from
+        every source anyway)."""
         known = {r.get("id") for r in enrolments if isinstance(r, dict)}
         counted = {entry["record"] for entry in registry.history.imports} if registry.history else set()
         for record in enrolments:
             if kind_of(record) == "import" and record.get("id") in counted:
                 known.update(item.get("id") for item in record["data"]["imported"] if isinstance(item, dict))
         side = [p for p in self.sources() if p not in trail]
-        return [r for r in iter_evidence(side) if isinstance(r, dict) and r.get("type") in (ENROLLED, REVOKED)
-                and r.get("id") not in known]
+        found = [r for r in iter_evidence(side) if isinstance(r, dict) and r.get("type") in (ENROLLED, REVOKED)
+                 and r.get("id") not in known]
+        if counted:
+            return [], [r for r in found if r.get("type") == ENROLLED]
+        genesis = self._trail_genesis(trail)
 
-    def _pre_trail(self, trail: list[Path], enrolments: list[dict], registry: Registry) -> list[dict]:
-        """Enrolment requests for registry keys that only non-trail sources hold."""
-        registered = {(s.id, k.key_id) for s in registry.signers for k in s.keys}
-        return [r for r in self._side_enrolments(trail, enrolments, registry) if kind_of(r) == "request"
-                and (_data_of(r).get("signer"), _data_of(r).get("key_id")) in registered]
+        def before(record) -> bool:
+            try:
+                moment = parse_time(record.get("time"))
+            except (TypeError, ValueError, AttributeError):
+                return False
+            return genesis is None or (moment.tzinfo is not None and moment < genesis)
+
+        return [r for r in found if before(r)], [r for r in found if r.get("type") == ENROLLED and not before(r)]
 
     def check_signers(self) -> dict:
         """Every registry key and whether the enrolment evidence backs it (``aqt-signoff signers check``).
@@ -224,6 +278,8 @@ class Signoff:
         history = registry.history
         keys = []
         pre_trail = {(_data_of(r).get("signer"), _data_of(r).get("key_id")): r for r in registry.pre_trail}
+        ignored = {(_data_of(r).get("signer"), _data_of(r).get("key_id")): r for r in registry.ignored
+                   if kind_of(r) == "request"}
         for signer in registry.signers:
             for key in signer.keys:
                 ev = registry.key_evidence(key.key_id, signer.id)
@@ -233,6 +289,12 @@ class Signoff:
                     row["problems"] = [*row["problems"], "its enrolment record is in a file written before the trail "
                                        "(" + ", ".join(str(p) for p in self._pre_trail_files()) + "): a signer imports "
                                        "it once with 'aqt-signoff signers import'"]
+                elif (signer.id, key.key_id) in ignored and ev.missing:
+                    late = ignored[(signer.id, key.key_id)]
+                    row["problems"] = [f"its only enrolment record {late.get('id')} ({late.get('time')}) is outside the "
+                                       "trail and was added after the trail started or after the import: it never "
+                                       "counts and cannot be imported. Remove this key from the registry unless you "
+                                       "know it (a key of yours is enrolled again and approved)"]
                 keys.append(row)
         in_registry = {(k["signer"], k["key_id"]) for k in keys}
         pending = [{"signer": s.signer, "key_id": s.key_id, "name": s.name, "role": s.role, "record": s.request.get("id"),
@@ -248,10 +310,37 @@ class Signoff:
         rebootstrap = [dict(entry) for entry in history.rebootstraps]
         ok = (all(k["counts"] for k in keys) and not problems
               and all(entry["confirmed_by"] for entry in rebootstrap))
-        return {"ok": ok, "registry": str(self.settings.registry_path),
-                "evidence": "trail" if self.trail_sources() else "evidence", "keys": keys,
+        notes = list(history.notes)
+        if registry.ignored:
+            notes.append(f"{len(registry.ignored)} enrolment record(s) in "
+                         + ", ".join(str(p) for p in self._pre_trail_files())
+                         + " are not in the trail and were added after the trail started or after the import ("
+                         + ", ".join(str(r.get("id")) for r in registry.ignored[:5])
+                         + (", ..." if len(registry.ignored) > 5 else "") + "): they never count")
+        if registry.embedded and history.source != "registry export":
+            notes.append(f"{self.settings.registry_path} carries the enrolment records of an export; with a trail "
+                         "they are not used")
+        return {"ok": ok, "registry": str(self.settings.registry_path), "evidence": history.source, "keys": keys,
                 "bootstrap": history.bootstrap, "rebootstrap": rebootstrap, "pending": pending,
-                "imports": list(history.imports), "problems": problems, "ignored": list(history.notes)}
+                "imports": list(history.imports), "problems": problems, "ignored": notes,
+                "unsigned_revocations": list(registry.unsigned_revocations)}
+
+    def export_registry(self) -> dict:
+        """The registry with the enrolment evidence that backs it (``enrolment_evidence``: the enrolment and
+        revocation records in evidence order, and revocations from other sources), for verification on
+        another machine (``--registry FILE``; see ``trust``)."""
+        registry = self.trust()
+        records = self.records()
+        enrolments, revocations, source = self._enrolment_inputs(self.trail_sources(), records)
+        own = [r for r in enrolments if isinstance(r, dict) and r.get("type") in (ENROLLED, REVOKED)]
+        ids = {r.get("id") for r in own}
+        extra = []
+        for record in revocations:
+            if isinstance(record, dict) and record.get("type") == REVOKED and record.get("id") not in ids:
+                ids.add(record.get("id"))
+                extra.append(record)
+        return {**registry.as_dict(), "enrolment_evidence": {"source": source, "exported_at": self.now(),
+                                                             "records": own, "revocations": extra}}
 
     def _pre_trail_files(self) -> list[Path]:
         trail = self.trail_sources()
@@ -345,6 +434,12 @@ class Signoff:
         registry = self.trust()
         evidence = registry.key_evidence(key.key_id, signer.id)
         if evidence is not None and evidence.counts:
+            if require_counting and evidence.revoked_at and parse_time(evidence.revoked_at) <= self.clock():
+                why = ("conflicting enrolment records (see 'aqt-signoff signers check')"
+                       if evidence.stopped_at == evidence.revoked_at else "a signoff.key.revoked record revokes it")
+                raise self.refuse("sign", self.signer_actor(signer), "registry_mismatch",
+                                  f"the key {key.key_id} of {signer.id} does not count from {evidence.revoked_at}: "
+                                  f"{why}; revoke it and enrol a new key ('aqt-signoff init --add-key')")
             return None
         stored = None
         if evidence is not None and evidence.missing:
@@ -544,18 +639,59 @@ class Signoff:
 
     def import_preview(self) -> dict:
         """What ``import_enrolments`` would carry into the trail: ``records`` (enrolment and revocation records
-        only in non-trail sources), ``sources`` and ``view`` (a registry reconciled with them alone)."""
+        only in non-trail sources, written before the trail started), ``sources``, ``view`` (a registry
+        reconciled with them alone), ``outcome`` (per enrolled key in them: what it is after the import) and
+        ``ignored`` (records there that are never imported). Refused after the one import (``already_imported``)."""
         trail = self.trail_sources()
         if not trail:
             raise UsageError("there is no trail: enrolments already count from the evidence files", code="no_trail")
-        records = self._side_enrolments(trail, list(iter_evidence(trail)), self.trust())
+        registry = self.trust()
+        history = registry.history
+        if history.imports:
+            first = history.imports[0]
+            raise UsageError(f"the enrolment records from before the trail were imported once (record "
+                             f"{first['record']} by {first['by']} at {first['time']}), and only that import counts. "
+                             "Records added to the old file later never count and are not imported; a key that does "
+                             "not count is enrolled again ('aqt-signoff init', 'init --add-key' or 'rekey') and "
+                             "approved by another signer", code="already_imported")
+        records, ignored = self._side_enrolments(trail, list(iter_evidence(trail)), registry)
         view = Registry(self.settings.registry_path, self.settings.keys_dir)
         view.reconcile(records, records, source="evidence")
-        return {"records": records, "sources": [str(p) for p in self._pre_trail_files()], "view": view}
+        return {"records": records, "sources": [str(p) for p in self._pre_trail_files()], "view": view,
+                "outcome": self._import_outcome(records, registry), "ignored": ignored}
+
+    def _import_outcome(self, records: list[dict], registry: Registry) -> list[dict]:
+        """Per key enrolled in ``records``: what it is in the trail after importing them (as
+        ``EnrolmentHistory._import`` merges them). Every record claims its signer; nothing here proves it."""
+        history = registry.history
+        revoked = {k: list(v) for k, v in history.revoked.items()}
+        for key_id, times in revocations_of(records).items():
+            revoked.setdefault(key_id, []).extend(times)
+        pems = {key.key_id: key.public_pem for signer in registry.signers for key in signer.keys}
+        nested = EnrolmentHistory(revoked, "import", pems).run(records, nested=True)
+        registered = {key.key_id for signer in registry.signers for key in signer.keys}
+        out = []
+        for key_id, state in nested.keys.items():
+            here = history.keys.get(key_id)
+            if here is not None:
+                result = "in-trail"
+            elif state.conflict:
+                result = "conflict"
+            else:
+                result = "counts" if state.start else "pending"
+            others = sorted({k for k, s in [*history.keys.items(), *nested.keys.items()]
+                             if s.signer == state.signer and k != key_id})
+            out.append({"signer": state.signer, "key_id": key_id, "name": state.name, "role": state.role,
+                        "record": state.request.get("id"), "time": state.time, "result": result,
+                        "from": state.start, "basis": state.basis,
+                        "approved_by": sorted({a["by"] for a in state.approvals}),
+                        "in_registry": key_id in registered, "other_keys": others})
+        return out
 
     def import_enrolments(self, *, signer_id: str | None = None, reason: str | None = None) -> dict:
         """Carry the enrolment records written before the trail existed into the trail, once, signed by a
-        signer whose key counts there (or in the trail). Records added to those files later do not count."""
+        signer whose key counts there (or in the trail). Records added to those files after the trail started
+        or after the import never count, and a second import is refused (``already_imported``)."""
         preview = self.import_preview()
         records = preview["records"]
         if not records:
@@ -831,7 +967,10 @@ class Signoff:
                 authors=(), record: bool) -> VerifyReport:
         report = VerifyReport(current, statuses, required=list(required))
         authors = set(authors) | self.record_authors(current["sha256"], records)
-        report.registry_problems = [k for k in self.check_signers()["keys"] if not k["counts"]]
+        check = self.check_signers()
+        report.registry_problems = [k for k in check["keys"] if not k["counts"]]
+        report.registry_warnings = [rebootstrap_text(entry, who=True) for entry in check["rebootstrap"]
+                                    if not entry["confirmed_by"]]
         for status in statuses:
             if status.subject.get("sha256") != current["sha256"] and status.status != "invalid":
                 status.worsen("invalidated", f"content changed since signing (signed {status.subject.get('sha256')})")

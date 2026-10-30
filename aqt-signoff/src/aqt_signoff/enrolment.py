@@ -20,13 +20,22 @@ Rules, applied in evidence order (the trail's order when there is a trail):
   key then counts from its request's record time (the trail writer's time). A signer's own other
   key may approve only a rotation: same role, and the approving key is revoked.
 * A request made when no earlier key counts and is active any more (all revoked) is a
-  **re-bootstrap**: it counts, and stays flagged until another signer approves it.
+  **re-bootstrap**: it counts, and stays flagged until a signer whose key counted *before* it
+  approves it. A key that counts through the re-bootstrapped key (approved by it, directly or
+  through further approvals) never confirms it. In practice every key that counted before is
+  revoked by then, so a re-bootstrap stays flagged.
+* A revocation is *signed* when the revoked key or another key that counts at the revocation's
+  record time signed it; every revocation applies, signed or not, and the unsigned ones are
+  reported (``unsigned_revocations``, and on each re-bootstrap they made possible).
 * The role of a signer changes only through an approval (by another signer); signatures are
   judged by the role in effect at their ``signed_at``.
-* Two different requests for one key are a conflict: the key does not count.
-* An import counts when it is the first enrolment evidence of the trail (its own bootstrap
-  applies, and the importer's key must count in it) or when the importer's key counts and is
-  active in the trail at the import; the imported records keep their own order and times.
+* A copy of a request (same signed statement, another record) counts once. A different signed
+  request for a key that already has one is a conflict: from the conflicting record's time the
+  key stops counting (signatures made before it keep counting), and it is reported.
+* Only the first import that counts counts. It counts when it is the first enrolment evidence of
+  the trail (its own bootstrap applies, and the importer's key must count in it) or when the
+  importer's key counts and is active in the trail at the import; the imported records keep their
+  own order and times.
 """
 
 from __future__ import annotations
@@ -38,6 +47,13 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from aqt_evidence import bytes_hash, content_hash, key_id as key_id_of, record_content_hash, verify_statement
+
+
+def _digest(statement) -> str | None:
+    try:
+        return content_hash(statement) if isinstance(statement, dict) and statement else None
+    except ValueError:
+        return None
 
 ENROLLED, REVOKED = "signoff.key.enrolled", "signoff.key.revoked"
 IMPORT_KIND = "enrolment-import"
@@ -103,6 +119,8 @@ class KeyState:
     problems: list = field(default_factory=list)
     notes: list = field(default_factory=list)
     conflict: bool = False
+    conflict_at: str | None = None   # record time of the first conflicting record: the key stops counting then
+    conflicts: list = field(default_factory=list)
     imported: dict | None = None
 
 
@@ -123,6 +141,7 @@ class EnrolmentHistory:
         self.rejected: dict[str, list[str]] = {}
         self.imports: list[dict] = []
         self.stream_revoked: dict[str, list[str]] = {}
+        self.revocations: list[dict] = []   # every revocation record of the stream, with ``signed``
         self.counted = False
 
     # -- queries ---------------------------------------------------------------------------------
@@ -131,11 +150,35 @@ class EnrolmentHistory:
         return any(_time(t) is not None and _time(t) <= moment for t in times)
 
     def active_at(self, key_id: str, moment: datetime | None, *, stream: bool = False) -> bool:
-        """The key counts and is not revoked at ``moment``."""
+        """The key counts and is not revoked (or stopped by a conflict) at ``moment``."""
         state = self.keys.get(key_id)
-        if moment is None or state is None or state.conflict or state.start is None:
+        if moment is None or state is None or state.start is None:
+            return False
+        if state.conflict and (state.conflict_at is None or moment >= _time(state.conflict_at)):
             return False
         return _time(state.start) <= moment and not self._revoked_by(key_id, moment, stream=stream)
+
+    def revocation_problem(self, record: dict) -> str | None:
+        """Why a ``signoff.key.revoked`` record is not signed by the revoked key or by another key that
+        counts at its record time (None: it is). Such a revocation still applies."""
+        data = _data(record)
+        block, st = _statement(record)
+        key_id = str(data.get("key_id"))
+        if not st:
+            return "not signed"
+        subject = st.get("subject") if isinstance(st.get("subject"), dict) else {}
+        if st.get("record_type") != REVOKED or subject.get("kind") != "key" or subject.get("ref") != key_id:
+            return "its signed statement is not this revocation"
+        signing = str(block.get("key"))
+        if signing == key_id:
+            state = self.keys.get(key_id)
+            public = _public(state.public_pem if state else self.pems.get(key_id))
+            return None if verify_statement(block, {key_id: public}) else "its signature does not verify"
+        other = self.keys.get(signing)
+        if other is None or not self.active_at(signing, _time(record.get("time"))):
+            return f"signed by {signing}, which does not count at {record.get('time')}"
+        return None if verify_statement(block, {signing: _public(other.public_pem)}) else \
+            "its signature does not verify"
 
     def role_at(self, signer_id: str, moment: datetime | None) -> str | None:
         role = None
@@ -159,7 +202,12 @@ class EnrolmentHistory:
             if record.get("type") == REVOKED:
                 data = _data(record)
                 if _time(data.get("revoked_at")):
-                    self.stream_revoked.setdefault(str(data.get("key_id")), []).append(data["revoked_at"])
+                    key_id = str(data.get("key_id"))
+                    self.stream_revoked.setdefault(key_id, []).append(data["revoked_at"])
+                    why = self.revocation_problem(record)
+                    self.revocations.append({"key_id": key_id, "signer": data.get("signer"), "record": record.get("id"),
+                                             "time": record.get("time"), "revoked_at": data["revoked_at"],
+                                             "signed": why is None, "why": why})
                 continue
             kind = kind_of(record)
             try:
@@ -218,10 +266,12 @@ class EnrolmentHistory:
         if existing is not None:
             if existing.request.get("id") == record.get("id"):
                 return                     # the same record read twice
-            existing.conflict = True
-            existing.problems.append(f"a second enrolment record {record.get('id')} for this key (the first is "
-                                     f"{existing.request.get('id')}): conflicting enrolment records, the key does "
-                                     "not count")
+            digest = _digest(st)
+            if digest is not None and digest == _digest(_statement(existing.request)[1]):
+                self.notes.append(f"record {record.get('id')}: a copy of the enrolment request "
+                                  f"{existing.request.get('id')} for key {key_id}; it counts once")
+                return
+            self._conflict(existing, record.get("id"), record.get("time"))
             return
         signer = st["signer"]
         state = KeyState(key_id, signer["id"], signer.get("name") or "", signer["role"],
@@ -233,12 +283,44 @@ class EnrolmentHistory:
             self._role(state.signer, state.time, state.role, record.get("id"))
             self.bootstrap = {"signer": state.signer, "key_id": key_id, "record": record.get("id"),
                               "time": state.time, "via": "enrolment"}
-        elif not any(self.active_at(other, moment, stream=True) for other in self.keys if other != key_id):
+        elif self._all_gone(key_id, moment):
             state.start, state.basis = state.time, "rebootstrap"
             if self.role_at(state.signer, moment) != state.role:
                 self._role(state.signer, state.time, state.role, record.get("id"))
+            before = sorted(k for k, s in self.keys.items() if k != key_id and s.start is not None)
+            unsigned = []
+            for other in before:           # the revocations in force: did any key holder sign one?
+                in_force = [r for r in self.revocations if r["key_id"] == other and _time(r["revoked_at"]) <= moment]
+                if in_force and not any(r["signed"] for r in in_force):
+                    unsigned.append({"key_id": other, "signer": self.keys[other].signer,
+                                     "records": [r["record"] for r in in_force]})
             self.rebootstraps.append({"signer": state.signer, "key_id": key_id, "record": record.get("id"),
-                                      "time": state.time, "confirmed_by": []})
+                                      "time": state.time, "confirmed_by": [], "counted_before": before,
+                                      "unsigned_revocations": unsigned, "not_confirming": []})
+
+    def _all_gone(self, key_id: str, moment: datetime | None) -> bool:
+        """Every other key that counted is revoked (or stopped by a conflict) at ``moment``, by the revocations
+        read so far. A key that starts only after ``moment`` (a backdated request) is not gone."""
+        others = [(k, s) for k, s in self.keys.items() if k != key_id and s.start is not None]
+
+        def gone(other: str, state: KeyState) -> bool:
+            if state.conflict and (state.conflict_at is None or moment >= _time(state.conflict_at)):
+                return True
+            return self._revoked_by(other, moment, stream=True)
+
+        return moment is not None and bool(others) and all(gone(k, s) for k, s in others)
+
+    def _conflict(self, existing: KeyState, record_id, when) -> None:
+        """A different signed request for a key that has one: the key stops counting from ``when``."""
+        if not existing.conflict:
+            existing.conflict, existing.conflict_at = True, when if _time(when) else None
+        self.problems.append(f"key {existing.key_id} of {existing.signer}: a second, different enrolment record "
+                             f"{record_id} (signed by that key; the first is {existing.request.get('id')}): the key "
+                             f"does not count from {existing.conflict_at or when}")
+        existing.conflicts.append(
+            f"a second, different enrolment record {record_id} for this key (the first is "
+            f"{existing.request.get('id')}): conflicting enrolment records; the key does not count from {when} "
+            "(signatures made before that keep counting)")
 
     def _approval(self, record: dict) -> None:
         data = _data(record)
@@ -302,8 +384,15 @@ class EnrolmentHistory:
             self._role(target.signer, record["time"], role, record.get("id"))
         if target.basis == "rebootstrap" and approver_id != target.signer:
             for entry in self.rebootstraps:
-                if entry["key_id"] == target.key_id:
+                if entry["key_id"] != target.key_id:
+                    continue
+                if approver_key in entry.get("counted_before", ()):
                     entry["confirmed_by"].append({"by": approver_id, "record": record.get("id")})
+                else:
+                    entry.setdefault("not_confirming", []).append(
+                        {"by": approver_id, "record": record.get("id"),
+                         "why": f"the key {approver_key} did not count before the re-bootstrap; it counts through keys "
+                                "enrolled after it, so it cannot vouch for it"})
 
     def _import(self, record: dict) -> None:
         data = _data(record)
@@ -340,15 +429,20 @@ class EnrolmentHistory:
             via = "vouched"
         else:
             return ignore("the importer's key does not count in the trail at the import")
+        if self.imports:
+            first = self.imports[0]
+            return ignore(f"only the first import counts (record {first['record']} by {first['by']} at "
+                          f"{first['time']}); records added to the old file later are never imported")
         self.imports.append({"record": record.get("id"), "by": importer, "time": record.get("time"),
                              "count": len(imported), "via": via})
         for key_id, state in nested.keys.items():
             existing = self.keys.get(key_id)
             if existing is not None:
-                if existing.request.get("id") != state.request.get("id"):
-                    existing.conflict = True
-                    existing.problems.append(f"import {record.get('id')} carries another enrolment record "
-                                             f"{state.request.get('id')} for this key: conflicting enrolment records")
+                same = _digest(_statement(state.request)[1])
+                if existing.request.get("id") != state.request.get("id") and \
+                        (same is None or same != _digest(_statement(existing.request)[1])):
+                    self._conflict(existing, f"{state.request.get('id')} (in import {record.get('id')})",
+                                   record.get("time"))
                 continue
             state.imported = {"by": importer, "record": record.get("id"), "time": record.get("time")}
             self.keys[key_id] = state
@@ -357,6 +451,7 @@ class EnrolmentHistory:
                 self.roles[signer_id] = list(entries)
         for key_id, times in nested.stream_revoked.items():
             self.stream_revoked.setdefault(key_id, []).extend(times)
+        self.revocations.extend(nested.revocations)
         for key_id, reasons in nested.rejected.items():
             self.rejected.setdefault(key_id, []).extend(reasons)
         if not self.counted and nested.bootstrap:

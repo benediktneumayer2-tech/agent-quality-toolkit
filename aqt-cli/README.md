@@ -58,7 +58,7 @@ Each check has a result (`ok`, `warn`, `fail` or `skip`), a one-line explanation
 | `fail` | enrolment records written before the trail existed were not carried into it yet | `aqt-signoff signers import` |
 | `fail` | a key waits for approval by an enrolled signer | the approve command, for example `aqt-signoff signers approve human:bob --key ed25519:… --signer <you>` |
 | `fail` | a key lacks its enrolment record (for example one made by `aqt-quarantine init`), or its registry entry contradicts the record | `aqt-signoff rekey --signer ID` for a missing record (the key then waits for approval unless it is the first signer); otherwise `aqt-signoff signers check` |
-| `warn` | **re-bootstrap**: a key counts although every earlier key was revoked, and no other signer has confirmed it | `aqt-signoff signers check`; another signer confirms with `aqt-signoff signers approve` |
+| `warn` | **re-bootstrap**: a key counts although every earlier key was revoked, and no signer whose key counted before it has confirmed it (in practice it stays flagged); the line says when the revocations before it were not signed | `aqt-signoff signers check` |
 | `warn` | an enrolment request that is not in the registry waits for approval | `aqt-signoff signers check` |
 | `ok` | every key counts; the line names the first signer | – |
 

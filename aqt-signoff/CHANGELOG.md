@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Security (verification round 3)
+- Re-bootstrap: only a key that counted before the re-bootstrap confirms it (`rebootstrap[].counted_before`);
+  approvals by a key that counts through the re-bootstrapped key are listed in `not_confirming` and do not confirm
+  it. Every key that counted before is revoked by then, so a re-bootstrap stays flagged: `signers check` exit 1,
+  `VerifyReport.registry_warnings` (printed by `verify`), `aqt status` warn. A request whose record time lies before
+  the keys that count (backdated) is pending, never a re-bootstrap.
+- Revocations that neither the revoked key nor another counting key signed are reported:
+  `check_signers()["unsigned_revocations"]`, per key `unsigned_revocations`, a `WARNING` line in `signers check`,
+  and `rebootstrap[].unsigned_revocations` for the ones before a re-bootstrap. They still apply. Signing with a key
+  that a revocation record (or a conflict) stopped is refused (`registry_mismatch`).
+- A replayed copy of an enrolment request (the same signed statement in another record) counts once (listed under
+  `ignored`) instead of disabling the key. A differently signed second request is a conflict that stops the key from
+  its record time (per key `stopped_at`; signatures made before keep counting) and is a `problems` entry.
+- `signers import`: only the first import that counts counts (a later one is ignored, a problem when a registered
+  key signed it); `import_preview` / `import_enrolments` refuse after it (`already_imported`). Records outside the
+  trail written after the trail started (first record or `trail.json` `created`) or after the import are never
+  importable; `check_signers()` lists them under `ignored` and no longer asks for an import. The preview has
+  `outcome` (per key: `counts`, `pending`, `in-trail`, `conflict`, other keys of the signer) and `ignored`; the text
+  flags another key for a signer who already has one.
+- `signers export` (`Signoff.export_registry`) adds `enrolment_evidence` (`source`, `exported_at`, `records`,
+  `revocations`). A registry file that carries it is used as the enrolment evidence when the sources hold no trail
+  (`check_signers()["evidence"] == "registry export"`); the records are checked like any other evidence. With a
+  trail they are ignored (noted), so the user's own `signers.json` cannot inject enrolments.
+
 ### Security (review round 3: counter-signed enrolment)
 - A self-signed enrolment record no longer makes a counting key. The first enrolment of the evidence counts
   (bootstrap); every later enrolment, extra key or role change counts only after an enrolled signer whose key

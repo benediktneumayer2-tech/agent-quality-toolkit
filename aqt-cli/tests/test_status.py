@@ -185,3 +185,14 @@ def test_signer_check_with_an_aqt_signoff_too_old_to_check_keys(monkeypatch):
     monkeypatch.delattr(aqt_signoff, "check_signers")
     signer = by_id(run_checks(Context()))["signer"]
     assert signer.result == "warn" and "too old" in signer.explanation and "human:alice" in signer.explanation
+
+
+def test_rebootstrap_after_unsigned_revocations_is_a_warning_that_says_so():
+    from aqt_signoff import Signoff, StaticPassphrase, load_settings
+    enrol()
+    so = Signoff(load_settings(), authenticator=StaticPassphrase(PASSPHRASE), environ={}, chain=[], require_tty=False)
+    so.revoke("human:alice", "passphrase forgotten", lost=True)          # unsigned: 'revoke --lost'
+    so.init_signer("human:alice", "", "", add_key=True)                   # a re-bootstrap: a solo owner recovers
+    signer = by_id(run_checks(Context()))["signer"]
+    assert signer.result == "warn" and "RE-BOOTSTRAP" in signer.explanation
+    assert "NOT signed (human:alice key" in signer.explanation and signer.fix == "aqt-signoff signers check"

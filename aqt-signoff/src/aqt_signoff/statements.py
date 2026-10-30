@@ -179,7 +179,9 @@ def check_block(block, registry: Registry, *, record: dict | None = None) -> Sig
     if signed_at < parse_time(enrolled_at):
         status.worsen("unknown-signer", "signed before the key was enrolled")
     elif revoked_at and signed_at >= parse_time(revoked_at):
-        status.worsen("revoked", f"key revoked at {revoked_at}")
+        stopped = evidence is not None and evidence.stopped_at == revoked_at
+        status.worsen("revoked", f"the key stopped counting at {revoked_at}: conflicting enrolment records" if stopped
+                      else f"key revoked at {revoked_at}")
     return status
 
 

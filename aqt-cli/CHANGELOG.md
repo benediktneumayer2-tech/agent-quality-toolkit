@@ -14,7 +14,8 @@ First version.
   registry key is not backed by its enrolment record and names each key and its problems (fix
   `aqt-signoff rekey --signer ID` for a key with no record yet, else `aqt-signoff signers check`), warns
   for discrepancies that do not stop a key, and lists the signers whose keys count. With an aqt-signoff
-  too old to check, it warns.
+  too old to check, it warns. An unconfirmed re-bootstrap is a warning that says when the revocations
+  before it were not signed (`rebootstrap[].unsigned_revocations`).
 - `aqt <tool> ARGS...`: runs `aqt-trail`, `aqt-signoff`, `aqt-change`, `aqt-sensei`, `aqt-quarantine`,
   `aqt-validate`, `aqt-capa`, `aqt-ui` or `aqt-evidence` (as `spec` or `evidence`) with the same
   arguments and exit code.

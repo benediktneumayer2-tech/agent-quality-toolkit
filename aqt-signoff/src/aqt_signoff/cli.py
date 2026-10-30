@@ -16,6 +16,7 @@ from aqt_evidence import SinkError
 from .core import Signoff, VerifyReport
 from .errors import SignoffError, UsageError
 from .manifest import local_time, render
+from .registry import rebootstrap_text
 from .settings import load_settings
 
 _DURATION = re.compile(r"^(\d+)(ms|s|m|h|d)$")
@@ -76,7 +77,9 @@ def build_parser() -> argparse.ArgumentParser:
     imp.add_argument("--signer", dest="importer", help="you, the importer (default [signoff] signer)")
     imp.add_argument("--reason", default="")
     imp.add_argument("--dry-run", action="store_true", help="show what would be imported; sign nothing")
-    export = signers_sub.add_parser("export", parents=common)
+    export = signers_sub.add_parser("export", parents=common,
+                                    help="write the registry with the enrolment records that back it, for "
+                                         "verification elsewhere ('--registry FILE')")
     export.add_argument("file", nargs="?")
 
     p = sub.add_parser("rekey", parents=common,
@@ -197,6 +200,7 @@ def _report_text(report: VerifyReport) -> str:
     if report.registry_problems:
         lines.append(f"  registry: {len(report.registry_problems)} key(s) without matching enrolment evidence do not "
                      "count; run 'aqt-signoff signers check'")
+    lines.extend(f"  registry: WARNING: {text}" for text in report.registry_warnings)
     return "\n".join(lines)
 
 
@@ -207,10 +211,12 @@ def _signers_text(result: dict) -> str:
         lines.append(f"first signer (counted without approval): {boot['signer']} key {boot['key_id']} at "
                      f"{boot['time']} (record {boot['record']}{', via import ' + boot['import'] if boot.get('import') else ''})")
     for entry in result.get("rebootstrap") or []:
-        confirmed = ", ".join(c["by"] for c in entry["confirmed_by"])
-        lines.append(f"WARNING: RE-BOOTSTRAP {entry['signer']} key {entry['key_id']} at {entry['time']}: enrolled when "
-                     "no other key counted any more; " + (f"confirmed by {confirmed}" if confirmed else
-                                                         "not confirmed by another signer"))
+        lines.append(f"WARNING: {rebootstrap_text(entry, who=True)}")
+    for entry in result.get("unsigned_revocations") or []:
+        why = f" ({entry['why']})" if entry.get("why") not in (None, "not signed") else ""
+        lines.append(f"WARNING: revocation {entry['record']} of {entry.get('signer')} key {entry['key_id']} at "
+                     f"{entry['revoked_at']} is not signed by that key or another counting key{why}; it applies, but "
+                     "any process can write such a record ('aqt-signoff revoke --lost' does too)")
     for k in result["keys"]:
         where = k["enrolment"] or {}
         state = "ok" if k["counts"] else ("PENDING" if k.get("pending") else "DOES NOT COUNT")
@@ -238,18 +244,35 @@ def _signers_text(result: dict) -> str:
 
 
 def _import_text(preview: dict) -> str:
-    view = preview["view"]
     lines = [f"enrolment records from before the trail ({', '.join(preview['sources']) or 'no files'}):"]
     for record in preview["records"]:
         data = record.get("data") or {}
         what = {"signoff.key.revoked": "revocation"}.get(record.get("type"), "enrolment")
         lines.append(f"  {record.get('time')}  {what:10} {data.get('signer') or record.get('actor', {}).get('id')}  "
                      f"{data.get('key_id')}  {data.get('role') or ''}  ({record.get('id')})")
-    for signer in view.signers:
-        for key in signer.keys:
-            ev = view.key_evidence(key.key_id, signer.id)
-            lines.append(f"  -> {signer.id} {key.key_id}: "
-                         + ("counts" if ev.counts else ("pending" if ev.pending else "does not count")))
+    lines.append("after the import (each record only claims its signer: any process of your user can write that file):")
+    for row in preview.get("outcome") or []:
+        who = f"key {row['key_id']} enrolled as {row['signer']} ({row['role']}, record {row['record']} at {row['time']})"
+        if row["result"] == "counts":
+            how = ("the first signer of these records" if row["basis"] == "bootstrap" else
+                   "a re-bootstrap" if row["basis"] == "rebootstrap" else
+                   "approved by " + ", ".join(row["approved_by"]))
+            text = f"  COUNTS from {row['from']} ({how}): {who}"
+        elif row["result"] == "pending":
+            text = f"  stays pending (no approval in these records): {who}"
+        elif row["result"] == "in-trail":
+            text = f"  already in the trail, not changed: {who}"
+        else:
+            text = f"  conflicting records, does not count: {who}"
+        if row["other_keys"] and row["result"] in ("counts", "pending"):
+            text += (f"\n    ANOTHER KEY for {row['signer']}, who also has {', '.join(row['other_keys'])}: import "
+                     "only if this key is theirs")
+        if not row["in_registry"]:
+            text += "\n    (not in the registry file)"
+        lines.append(text)
+    if preview.get("ignored"):
+        lines.append(f"  never imported ({len(preview['ignored'])} record(s) written after the trail started): "
+                     + ", ".join(str(r.get("id")) for r in preview["ignored"]))
     return "\n".join(lines)
 
 
@@ -320,12 +343,13 @@ def run(args) -> int:
                 return 0
             if not args.json:
                 print(_import_text(preview))
-                print("these records are signed into the trail with your key; continue only if you know them")
+                print("these records are signed into the trail with your key, once; continue only if you know every "
+                      "key listed as COUNTS")
             record = so.import_enrolments(signer_id=args.importer, reason=args.reason or None)
             _out(args, record, f"imported {len(record['data']['imported'])} record(s): {record['id']}")
             return 0
         if args.signers_command == "export":
-            text = json.dumps(data, indent=2, sort_keys=True) + "\n"
+            text = json.dumps(so.export_registry(), indent=2, sort_keys=True) + "\n"
             if args.file:
                 Path(args.file).write_text(text, encoding="utf-8")
                 print(f"wrote {args.file}")
