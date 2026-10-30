@@ -59,6 +59,12 @@ REFUSALS = {
     "unknown_key": "The key is not registered for this signer",
     "unenrolled_key": "The key is in the signer registry but has no matching enrolment record in the trail, so it "
                       "does not count; check it with aqt-signoff signers check",
+    "enrolment_pending": "The key waits for approval by an enrolled signer and does not count yet; that signer "
+                         "approves it with aqt-signoff signers approve",
+    "import_needed": "Enrolment records from before the trail must be imported into the trail once "
+                     "(aqt-signoff signers import) before keys count",
+    "no_enrolment": "The key has no enrolment record, so it does not count; check it with aqt-signoff signers check",
+    "sink_not_trail": "The record would not reach the audit trail (the writer is not the sink), so nothing was done",
 }
 
 

@@ -149,6 +149,20 @@ def test_key_without_enrolment_record_fails_with_rekey_as_fix():
     assert signer.fix == "aqt-signoff rekey --signer human:bob"
 
 
+def test_second_signer_waits_for_approval_and_the_fix_is_the_approve_command():
+    from aqt_signoff import Signoff, StaticPassphrase, load_settings
+    enrol()                                              # the first signer counts at once
+    enrol("human:bob", "Bob Example", "developer")       # everyone after that waits for an approval
+    signer = by_id(run_checks(Context()))["signer"]
+    assert signer.result == "fail" and "wait for approval" in signer.explanation and "human:bob" in signer.explanation
+    key = next(k["key_id"] for k in signer.data["keys"] if k["signer"] == "human:bob")
+    assert signer.fix == f"aqt-signoff signers approve human:bob --key {key} --signer <you>"
+    Signoff(load_settings(), authenticator=StaticPassphrase(PASSPHRASE), environ={}, chain=[],
+            require_tty=False).approve_enrolment("human:bob", key, approver_id="human:alice")
+    signer = by_id(run_checks(Context()))["signer"]
+    assert signer.result == "ok" and "first signer: human:alice" in signer.explanation
+
+
 def test_registry_that_contradicts_the_enrolment_record_fails():
     enrol()
     _registry_edit(role="auditor")                  # the role was changed in signers.json, not re-enrolled

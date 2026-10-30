@@ -276,4 +276,8 @@ export const REFUSALS_DE = {
   revoked_key: "Der Schlüssel ist widerrufen",
   unknown_key: "Der Schlüssel ist für diesen Unterzeichner nicht registriert",
   unenrolled_key: "Der Schlüssel steht im Unterzeichnerregister, hat aber keinen passenden Registrierungsnachweis im Audit-Trail und zählt daher nicht; prüfen mit aqt-signoff signers check",
+  enrolment_pending: "Der Schlüssel wartet auf die Bestätigung durch einen eingetragenen Unterzeichner und zählt noch nicht; bestätigen mit aqt-signoff signers approve",
+  import_needed: "Registrierungsnachweise aus der Zeit vor dem Audit-Trail müssen einmal in den Audit-Trail übernommen werden (aqt-signoff signers import), bevor Schlüssel zählen",
+  no_enrolment: "Der Schlüssel hat keinen Registrierungsnachweis und zählt daher nicht; prüfen mit aqt-signoff signers check",
+  sink_not_trail: "Der Datensatz würde den Audit-Trail nicht erreichen (der Schreiber ist nicht das Ziel); es wurde nichts ausgeführt",
 };

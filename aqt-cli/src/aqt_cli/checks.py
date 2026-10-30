@@ -418,7 +418,21 @@ def check_signer(ctx: Context) -> Result:
     data = {"registry": report.get("registry"), "evidence": report.get("evidence"),
             "keys": [{name: key.get(name) for name in ("signer", "key_id", "state", "counts", "problems", "notes")}
                      for key in keys]}
+    problems = report.get("problems") or []
+    if problems:
+        fix = ("aqt-signoff signers import" if any("signers import" in str(p) for p in problems)
+               else "aqt-signoff signers check")
+        return Result(FAIL, f"the enrolment records of {report.get('registry')} have problems: "
+                            + "; ".join(str(p) for p in problems), fix, data=data, can_apply=False)
+    pending = report.get("pending") or []
+    approvals = {(entry.get("signer"), entry.get("key_id")): entry.get("approve") for entry in pending}
     bad = [key for key in keys if not key.get("counts")]
+    waiting = [key for key in bad if (key.get("signer"), key.get("key_id")) in approvals]
+    if waiting and len(waiting) == len(bad):
+        what = ", ".join(f"{key['signer']} key {key['key_id']}" for key in waiting)
+        return Result(FAIL, f"{len(waiting)} key(s) wait for approval by an enrolled signer and do not count yet: {what}",
+                      "; ".join(approvals[(key["signer"], key["key_id"])] + " --signer <you>" for key in waiting),
+                      data=data, can_apply=False)
     if bad:
         what = "; ".join(f"{key['signer']} key {key['key_id']}: {', '.join(key.get('problems') or ['does not count'])}"
                          for key in bad)
@@ -432,12 +446,27 @@ def check_signer(ctx: Context) -> Result:
     if not counting:
         return Result(FAIL, f"no active key that counts in {report.get('registry')} (revocation records apply)",
                       "aqt-signoff signers check", data=data, can_apply=False)
+    unconfirmed = [entry for entry in report.get("rebootstrap") or [] if not entry.get("confirmed_by")]
+    if unconfirmed:
+        what = ", ".join(f"{entry.get('signer')} key {entry.get('key_id')}" for entry in unconfirmed)
+        return Result(WARN, f"RE-BOOTSTRAP: {what} counts although every earlier key was revoked and no other signer "
+                            "has confirmed it; make sure it was you (the trail shows who enrolled it)",
+                      "aqt-signoff signers check; another signer confirms with: aqt-signoff signers approve",
+                      data=data, can_apply=False)
+    requests = [entry for entry in pending if not entry.get("in_registry")]
+    if requests:
+        what = ", ".join(f"{entry.get('signer')} key {entry.get('key_id')}" for entry in requests)
+        return Result(WARN, f"enrolment request(s) wait for approval: {what}; approve only people you know",
+                      "aqt-signoff signers check", data=data, can_apply=False)
     notes = [f"{key['signer']}: {note}" for key in keys for note in key.get("notes") or []]
     if notes:
         return Result(WARN, f"{len(counting)} signer(s) enrolled ({', '.join(counting)}), to check: {'; '.join(notes)}",
                       "aqt-signoff signers check", data=data, can_apply=False)
+    first = report.get("bootstrap")
+    first = first.get("signer") if isinstance(first, dict) else first
     return Result(OK, f"{len(counting)} signer(s) enrolled and backed by enrolment records in the "
-                      f"{report.get('evidence')}: {', '.join(counting)}", data=data)
+                      f"{report.get('evidence')}: {', '.join(counting)}"
+                      + (f" (first signer: {first})" if first else ""), data=data)
 
 
 def step_signer(ctx: Context) -> None:
