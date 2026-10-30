@@ -184,6 +184,8 @@ A verifier reports a statement as valid, invalid (signature does not verify), un
 
 Which enrolments count (the first one as the bootstrap, every later one only after an approval, and a flagged re-bootstrap after every key was revoked) is defined by aqt-signoff, whose README describes the rules.
 
+**Registry export.** For verification on another machine, `aqt-signoff signers export` writes the signer registry (§12.2) with one more member, `enrolment_evidence`: `{source, exported_at, records, revocations}`. `records` holds the `signoff.key.enrolled` and `signoff.key.revoked` records of the enrolment evidence, unchanged and in evidence order; `revocations` holds `signoff.key.revoked` records from other sources; `source` says where the records came from (`trail`, `registry export` or `evidence`); `exported_at` is the export time. aqt-signoff, given such a file as its registry, uses these records as the enrolment evidence when the evidence it reads holds no trail, and checks them like any other enrolment records (signatures, approvals, order). Where a trail exists, the trail's records decide and the embedded ones are not used. The file is only as trustworthy as the way it reached the verifier.
+
 ### 6.4 Key pinning
 
 A signature proves only that the holder of *some* key signed. Verifiers MUST check signatures against pinned keys; a log rewritten and re-signed under a fresh key verifies otherwise (vector `tampered/rewritten-fresh-key`). A verifier asked to require signatures without any pinned key MUST fail, not skip the check (vector `tampered/signature-required-no-keys`).
