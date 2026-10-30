@@ -278,8 +278,9 @@ def q_gaps(scope, everything, params):
         if record.get("type") == "trail.gap":
             data, drainer = _data(record), _observed(record)
             if drainer.get("via") == "socket":    # pushed with the drain op: the drainer was observed
-                how = (f"pushed by a drain request from {drainer.get('harness') or 'a process without an agent '
-                       'harness'} (pid {drainer.get('pid')}, chain {drainer.get('chain_status') or 'not recorded'}); "
+                who = drainer.get("harness") or "a process without an agent harness"
+                chain = drainer.get("chain_status") or "not recorded"
+                how = (f"pushed by a drain request from {who} (pid {drainer.get('pid')}, chain {chain}); "
                        "the drainer was observed, the senders were not")
             else:
                 how = "their senders were not observed"
