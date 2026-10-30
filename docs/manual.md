@@ -114,7 +114,7 @@ uv pip install --python .venv/bin/python -e "aqt-spec[schema]" -e aqt-change
 | Validation of a detector or AI reviewer | `aqt-validate` (plus `aqt-quarantine` for its detectors) | aqt-quarantine |
 | Deviations and CAPA | `aqt-capa` | the other tools: it finds deviations in their evidence |
 
-Without aqt-trail, every tool writes its records to the file `~/.local/state/aqt/evidence.jsonl`. You can add aqt-trail later: the tools then find its writer by themselves (3.3), and the tools that read evidence look in both places.
+Without aqt-trail, every tool writes its records to the file `~/.local/state/aqt/evidence.jsonl`. You can add aqt-trail later: the tools then find its writer by themselves (3.3), and the tools that read evidence look in both places. Once the trail exists, signing keys count only by the enrolment records in the trail, so carry the earlier ones over once with **[you]** `aqt-signoff signers import` (3.4).
 
 ### 1.6 Check the install
 
@@ -124,7 +124,7 @@ aqt status
 
 `aqt status` checks every package, the trail, its writer, where records go, your signing identity, the settings and the specification's test vectors, and names a fix for each problem. Right after installing, it lists the setup that chapter 3 does (no trail, no signer yet); the line `packages` and the line `vectors` (the record library computes every hash and signature exactly as the test vectors require) must already say `ok`. `aqt status --json` gives the same for scripts; the exit code is 0 when nothing failed.
 
-To see all tools working together on synthetic data, run the integration demo. It takes about five seconds, runs offline in a temporary folder and never touches your real configuration:
+To see all tools working together on synthetic data, run the integration demo. It takes about ten seconds, runs offline in a temporary folder and never touches your real configuration:
 
 ```bash
 cd ~/agent-quality-toolkit
@@ -134,7 +134,7 @@ uv pip install --python examples/demo/.venv/bin/python -e "aqt-spec[schema]" -e 
 examples/demo/.venv/bin/python examples/demo/run_demo.py
 ```
 
-It ends with `== Summary: 42/42 expected outcomes`. `examples/demo/README.md` explains each step; the demo is the reference for the order used in this manual. All package test suites run with `scripts/test_all.sh`.
+It ends with `== Summary: 43/43 expected outcomes`. `examples/demo/README.md` explains each step; the demo is the reference for the order used in this manual. All package test suites run with `scripts/test_all.sh`.
 
 ### 1.7 Update
 
@@ -196,7 +196,7 @@ The tools detect agents automatically (see 2.4). The variable `AQT_ACTOR` can se
 
 AI coding agents usually run as your Linux user. They can read your files and run your commands. Two controls keep decisions with people:
 
-1. **The passphrase is the real control.** Each person has a private signing key, encrypted with a passphrase only they know. Every decision is signed, and the passphrase is typed again each time (re-authentication). An agent can read the encrypted key file but cannot use it. The tools trust a decision only when its signature verifies against the **signer registry** (`~/.config/aqt/signers.json`, the list of people and their public keys). aqt-signoff also checks the registry itself: it counts a key only when the signed record of its enrolment (in the trail, when there is one) matches the entry (3.4).
+1. **The passphrase is the real control.** Each person has a private signing key, encrypted with a passphrase only they know. Every decision is signed, and the passphrase is typed again each time (re-authentication). An agent can read the encrypted key file but cannot use it. The tools trust a decision only when its signature verifies against the **signer registry** (`~/.config/aqt/signers.json`, the list of people and their public keys). The registry itself is checked too: a key counts only when the signed record of its enrolment is in the evidence (the trail, when there is one) and, for everyone except the first person enrolled, a person who is already enrolled has approved it with their own passphrase (3.4).
 2. **The agent guard catches accidents.** Before a human-only step, the tool looks for signs of an agent session: environment variables that agent programs set (`CLAUDECODE`, `CODEX_THREAD_ID`, `PI_CODING_AGENT`, `AQT_AGENT_SESSION` and others), an agent program among the parent processes (`claude`, `codex`, `pi`, `aider` and others), and whether a terminal is attached. If it finds such a sign, it **refuses** and writes a `….refused` record.
 
 The refusal is recorded on purpose. An agent that tries to release its own quarantined input or approve its own change is exactly what a quality manager wants to know about, and aqt-capa later offers each refusal as a possible deviation.
@@ -209,7 +209,7 @@ The tools follow the XDG convention: settings in `$XDG_CONFIG_HOME` (default `~/
 
 | Path | Content | Keep from agents |
 |---|---|---|
-| `~/.config/aqt/signers.json` | Signer registry: people, roles, public keys | Yes: aqt-signoff checks it against the enrolment records, but aqt-quarantine and aqt-trail read it as it is |
+| `~/.config/aqt/signers.json` | Signer registry: people, roles, public keys | Yes: with aqt-signoff installed, every tool checks it against the enrolment records; without aqt-signoff, aqt-quarantine and aqt-trail read it as it is |
 | `~/.config/aqt/keys/` | Private keys, passphrase-encrypted (`human:alice` → `human-alice.key`), and `.key.pub` files | Yes |
 | `~/.config/aqt/*.toml` | One configuration file per tool: `trail.toml`, `signoff.toml`, `quarantine.toml`, `change.toml`, `capa.toml`, `validate.toml`, `sensei.toml` | Yes (no edits) |
 | `~/.config/aqt/sensei/owner.token` | aqt-sensei owner token | Yes |
@@ -330,26 +330,48 @@ Expected: `rec_… stored`, and the record at the end of the list. If it says `r
 
 ```bash
 aqt-signoff init --id human:alice --name "Alice Example" --role quality-manager
+# enrolled human:alice with key ed25519:ce8db39d4eda204c: counts now (first signer)
 ```
 
-It asks for a new passphrase twice (at least 12 characters; longer is better). It creates `~/.config/aqt/keys/human-alice.key`, encrypted with a key derived from your passphrase by scrypt, which makes guessing slow even for someone who copies the file, and `human-alice.key.pub`. It adds you to `~/.config/aqt/signers.json` and writes a signed `signoff.key.enrolled` record, the **enrolment record**. Check:
+It asks for a new passphrase twice (at least 12 characters; longer is better). It creates `~/.config/aqt/keys/human-alice.key`, encrypted with a key derived from your passphrase by scrypt, which makes guessing slow even for someone who copies the file, and `human-alice.key.pub`. It adds you to `~/.config/aqt/signers.json` and writes a `signoff.key.enrolled` record signed with the new key, the **enrolment request**. The first person enrolled is the **first signer** and counts at once. Check:
 
 ```bash
 aqt-signoff signers list
 # human:alice  Alice Example (quality-manager)  ed25519:ce8db39d4eda204c  active
 aqt-signoff signers check
-# … all keys are backed by enrolment records
+# first signer (counted without approval): human:alice key ed25519:ce8db39d4eda204c at …
+# …
+# all keys are backed by enrolment records
 ```
 
-`signers check` compares every key in `signers.json` with its enrolment record and exits 1 when a key does not count. aqt-signoff ignores a key without a matching record. A role edited in the file makes the key stop counting; enrolment and revocation times always come from the records. An agent can still write an enrolment record for a key of its own, signed with that key and a passphrase it chose; the record is then in the trail with the agent's process chain, and `signers check` lists the key. So run `signers check` after every enrolment and in the weekly routine (5.3), and make sure you know every key it lists.
+**Enrol yourself first**, before an agent works on this machine. The first enrolment counts without anyone's approval, so whoever enrols first becomes the first signer. Make sure that `signers check` and `aqt status` name you.
 
-This one key is used by all tools: aqt-quarantine, aqt-trail (review signatures), aqt-change and aqt-capa (through aqt-signoff) share the same registry and key folder. `aqt-quarantine init --id …` reuses this key instead of creating a second one (see 4.1). Only aqt-signoff, and the approvals that aqt-change and aqt-capa ask it about, check keys against the enrolment records; aqt-quarantine and aqt-trail trust `signers.json` as it is.
-
-**A second person on the same machine** runs the same command with their own ID and passphrase:
+**Everyone after the first signer** runs the same command with their own ID and passphrase. Their key then waits for approval:
 
 ```bash
 aqt-signoff init --id human:dave --name "Dave Example" --role developer
+# enrolled human:dave with key ed25519:…: waits for approval: another enrolled signer runs 'aqt-signoff signers approve human:dave --key ed25519:…'
 ```
+
+**[you]** An enrolled person who knows Dave approves his key with their own passphrase:
+
+```bash
+aqt-signoff signers check     # human:dave  ed25519:…  active  PENDING, and the approve command
+aqt-signoff signers approve human:dave --key ed25519:… --signer human:alice
+```
+
+Approve only people and keys you have checked, for example by comparing the key ID with the person. The approval counts back to the moment Dave's request was recorded. Until then his key counts nowhere and refuses to sign (`enrolment_pending`). Nobody can approve their own enrolment.
+
+- **Changing a role** is also an approval by another signer: `aqt-signoff signers approve human:dave --key <his key ID> --role quality-manager --signer human:alice`. Earlier signatures keep the role they were made with. A role edited in `signers.json` changes nothing except that the key stops counting (`registry_mismatch`).
+- **A new key for yourself** (rotation): `aqt-signoff init --id human:alice --add-key` while your old key still counts. It asks for the old passphrase, then a new one; the old key approves the new one and is revoked in the same step. The role stays the same. After a lost key, see 3.7.
+
+`signers check` compares every key in `signers.json` with the enrolment records and exits 1 unless every key counts and nothing is pending or unconfirmed. It names the first signer, lists pending enrolments with their approve command, and warns `RE-BOOTSTRAP` when a key counts only because every earlier key was revoked (3.7). An agent can create a key and an enrolment request of its own, but that key stays pending until one of you approves it. Run `signers check` after every enrolment and in the weekly routine (5.3).
+
+**Upgrading from a version without counter-signed enrolment.** After the update, every signer except the first shows `PENDING`. The first signer approves each of them once; `signers check` prints the commands. The approval counts back to their enrolment, so their earlier signatures count again. A key made by `aqt-quarantine init` first needs **[you]** `aqt-signoff rekey --signer <id>`, which records its enrolment request, and then an approval, unless it is the first signer's.
+
+**Added aqt-trail after using the evidence file?** Once a trail exists, enrolments count only from the trail. **[you]** Run `aqt-signoff signers import` once, with the writer running: it shows the enrolment and revocation records written before the trail and, after your passphrase, signs them into the trail with their order and times. Until then `signers check` and `aqt status` say so, and signing refuses with `import_needed`. Records added to the old file afterwards do not count.
+
+This one key is used by all tools: aqt-quarantine, aqt-trail (review signatures), aqt-change and aqt-capa (through aqt-signoff) share the same registry and key folder. `aqt-quarantine init --id …` reuses this key instead of creating a second one (see 4.1). With aqt-signoff installed, all of them count a key only as `signers check` does; without aqt-signoff, aqt-quarantine and aqt-trail rest on `signers.json` alone and say so.
 
 **Someone who verifies on another machine** needs your public keys. Export them with `aqt-signoff signers export signers-export.json`; they verify with `aqt-signoff --registry signers-export.json verify …`.
 
@@ -392,9 +414,9 @@ The setup of each single tool (quarantine, change control, CAPA, validation, adv
 aqt status
 ```
 
-Expected: every line `ok` (a `warn` is allowed but worth reading), and the verdict `ok`. It checks the packages, the trail and its systemd unit, that the writer runs and the spool is empty, where records go, that a signer is enrolled, that every key in the registry is backed by its enrolment record (as `aqt-signoff signers check`) and that a signer is named in `signoff.toml`, `trail.toml`, the trail's latest entry and checkpoint, and the test vectors. For speed it checks only the end of the trail; `aqt status --verify` verifies every record, which takes seconds on a large trail. Each problem comes with the command that fixes it.
+Expected: every line `ok` (a `warn` is allowed but worth reading), and the verdict `ok`. It checks the packages, the trail and its systemd unit, that the writer runs and the spool is empty, where records go, that a signer is enrolled, that every key in the registry counts by its enrolment records (as `aqt-signoff signers check`: nothing pending, imported if needed, no unconfirmed re-bootstrap) and that a signer is named in `signoff.toml`, `trail.toml`, the trail's latest entry and checkpoint, and the test vectors. For speed it checks only the end of the trail; `aqt status --verify` verifies every record, which takes seconds on a large trail. Each problem comes with the command that fixes it.
 
-A key created by `aqt-quarantine init`, or any other key without an enrolment record in the trail, makes the line `signer` say `fail` until you run **[you]** `aqt-signoff rekey --signer human:alice` or sign once with aqt-signoff: either records the missing enrolment. `aqt setup` cannot do this for you, because it needs your passphrase.
+The line `signer` says `fail` while a key in the registry does not count, and prints the fix: for a key that waits for approval, the approve command for an enrolled signer; for enrolment records from before the trail, `aqt-signoff signers import`; for a key without any enrolment record (for example one created by `aqt-quarantine init`), **[you]** `aqt-signoff rekey --signer human:alice`, after which the key waits for approval unless it is the first signer's. It says `warn` for an unconfirmed re-bootstrap (3.7) and for an enrolment request that is not in the registry. When everything counts, it names the first signer: check that it is you. `aqt setup` cannot apply these fixes, because each needs a passphrase.
 
 The same checks by hand:
 
@@ -423,12 +445,12 @@ Test a restore now and then: `aqt-trail verify --bundle <folder> --pin-key <your
 
 **Keys created before the security fixes of October 2026** use a weaker encryption (PBKDF2). aqt-signoff re-encrypts a key with scrypt the next time you use it; to do it now, run **[you]** `aqt-signoff rekey`. A backup copy of the old key file keeps the weak encryption: replace your backups of `~/.config/aqt/keys/` afterwards.
 
-If a passphrase is lost: **[you]** `aqt-signoff revoke human:alice --reason "passphrase lost" --lost`, then `aqt-signoff init --id human:alice --add-key`. Earlier signatures keep their status; new ones use the new key.
+If a passphrase is lost: **[you]** `aqt-signoff revoke human:alice --reason "passphrase lost" --lost`, then `aqt-signoff init --id human:alice --add-key`. Earlier signatures keep their status; new ones use the new key. The new key needs an approval by another enrolled signer (`aqt-signoff signers approve`), like any new enrolment. If no other key counts any more, the new key counts at once as a **re-bootstrap**, so that a single owner can recover. `signers check` (`RE-BOOTSTRAP`, exit 1) and `aqt status` (`warn`) flag it until another signer approves the key. A takeover would look the same, because a revocation with `--lost` needs no signature: treat a re-bootstrap you did not make yourself as a security incident.
 
 **Keep out of the agent's reach:**
 
 - your passphrase: type it only at the tool's prompt in your own terminal;
-- `~/.config/aqt/`: an agent that edits the registry could add a key of its own. aqt-signoff ignores a key without its enrolment record, but aqt-quarantine and aqt-trail do not check enrolments, and an agent can also write an enrolment record for its own key (3.4). That record is in the trail, attributed to the agent's process, and `aqt-signoff signers check` lists the key. This is detectable, not impossible;
+- `~/.config/aqt/`: an agent that edits the registry could add a key of its own. With aqt-signoff installed, such a key does not count: without its enrolment request it is ignored, and with a request it stays pending until an enrolled person approves it (3.4). What remains is first use (enrol yourself first) and the re-bootstrap above. Without aqt-signoff installed, aqt-quarantine and aqt-trail cannot check enrolments;
 - `~/.local/state/aqt/quarantine/` (withheld content) and the trail's `service.key`.
 
 For Claude Code, `aqt-quarantine hooks print claude-code` prints deny rules for these folders (see 4.1 and 4.8). Stronger options are a sandbox for agents (for example bubblewrap) that hides `~/.config/aqt/keys` and mounts `signers.json` read-only, and separate-user mode for the trail (3.8).
@@ -448,7 +470,7 @@ sudo sh aqt-trail/scripts/setup-system-user.sh /opt/aqt/bin/aqt-trail
 
 It installs `aqt-trail/examples/aqt-trail-system.service` as the system unit `aqt-trail.service`, which runs with the group `aqt-trail-clients`: you (a member after logging in again) can reach the socket and read the log; only `aqt-trail` can read the service key.
 
-If you set up the user service in 3.2, stop it (`systemctl --user disable --now aqt-trail`). Afterwards set `AQT_SINK=unix:/run/aqt-trail/trail.sock` in `~/.profile` instead of 3.3, and point the reading tools at the log with `AQT_EVIDENCE=/var/lib/aqt-trail/trail.jsonl`. Keep the file name `trail.jsonl` at the end of that path, and do not point at a copy: the tools recognise the trail log by this name. They read it before any other file, and aqt-change checks receipts and reviews against it (4.2); if it cannot find the log, aqt-change answers MANUAL_VERIFY_REQUIRED, because it cannot confirm them.
+If you set up the user service in 3.2, stop it (`systemctl --user disable --now aqt-trail`). Afterwards set `AQT_SINK=unix:/run/aqt-trail/trail.sock` in `~/.profile` instead of 3.3, and point the reading tools at the log with `AQT_EVIDENCE=/var/lib/aqt-trail/trail.jsonl`. Keep the file name `trail.jsonl` at the end of that path, and do not point at a copy: the tools recognise the trail log by this name. They read it before any other file, and aqt-change checks receipts and reviews against it (4.2); if it cannot find the log, aqt-change answers MANUAL_VERIFY_REQUIRED, because it cannot confirm them. An agent controls its own environment and could unset these variables, so in each repository also commit `require_trail = true` and the writer's key ID (`trail_keys`) in `.aqt/change.toml` (4.2): then a missing log means NO-GO, and only a log signed by that writer confirms anything. In this mode the public key is in `/var/lib/aqt-trail/keys/`, which the clients group can read, and the agent cannot read the private key.
 
 ## 4. Workflows
 
@@ -474,7 +496,7 @@ Content that could not be checked (a detector error, an unreadable thresholds fi
    aqt-quarantine init --id human:alice --name "Alice Example"
    ```
 
-   If you enrolled with aqt-signoff (3.4), this reuses that key and prints `reused the existing key ed25519:… at …; human:alice is already enrolled in …`. Without aqt-signoff, it asks for a new passphrase twice and creates the key and the registry entry; aqt-signoff records the enrolment of such a key the first time you use it there (for example with `aqt-signoff rekey --signer human:alice`), and until then does not count it. `aqt-quarantine init --no-key` writes only the configuration.
+   If you enrolled with aqt-signoff (3.4), this reuses that key and prints `reused the existing key ed25519:… at …; human:alice is already enrolled in …`. Without aqt-signoff, it asks for a new passphrase twice and creates the key and the registry entry. Such a key has no enrolment record yet: once aqt-signoff is installed, its decisions count only after **[you]** `aqt-signoff rekey --signer human:alice` has recorded the enrolment request and, unless you are the first signer, an enrolled person has approved it (3.4). `aqt-quarantine doctor` says whether keys were checked against the enrolment records. `aqt-quarantine init --no-key` writes only the configuration.
 
 2. Edit `~/.config/aqt/quarantine.toml` and name who may decide. With more than one registered signer and no `responsible` list, every decision needs `--as <id>`.
 
@@ -588,20 +610,30 @@ Key terms:
 
 #### One-time setup
 
-1. Create `~/.config/aqt/change.toml` (the full example is `aqt-change/examples/change.toml`):
+1. Commit the project's settings in the repository, in `.aqt/change.toml`. They belong to the project, not to one person's environment, which an agent can change, and every setting there can only make checks stricter (all keys: *Project settings* in `aqt-change/docs/usage.md`):
 
    ```toml
-   fingerprint_exclude = ["plans/**"]   # edits to other plan files do not make receipts stale
+   require_trail = true                  # receipts and reviews count only when the trail confirms them
+   trail_keys = ["ed25519:…"]            # the trail writer's service key ID; implies require_trail
+   fingerprint_exclude = ["plans/**"]    # edits to other plan files do not make receipts stale
 
    [gate]
-   require_signed_approval = true       # a person signs each plan version before GO is possible
+   require_signed_approval = true        # a person signs each plan version before GO is possible
    min_review_independence = "different-model"   # none | same-session | fresh-context | different-model | human
-   always_allowed_paths = ["plans/**"]  # plan files never count as unapproved changes
+   always_allowed_paths = ["plans/**"]   # plan files never count as unapproved changes
    ```
 
-   Why the two `plans/**` lines: if you keep several plans in one repository, editing the next plan would otherwise make the finished plan's receipt stale and its gate NO-GO. Set them before the first run.
+   ```bash
+   git add .aqt/change.toml && git commit -m "aqt-change project settings"
+   ```
 
-2. Keep tool output in ignored paths. **Any** new untracked file that git does not ignore (a coverage report, a scratch note) makes receipts stale. Add such paths to `.gitignore`, or to `fingerprint_exclude`.
+   - **Commit it before you begin a plan.** A change to this file inside a plan's diff gives MANUAL_VERIFY_REQUIRED (`project_settings_changed`). `require_trail` and the `[gate]` values count as soon as any copy (working tree, HEAD, the plan's base commit) sets them, but the `plans/**` globs count only when every copy names them.
+   - **`require_trail` and `trail_keys`.** Set them once the project's records go to an aqt-trail writer for everyone who works on it, including CI; otherwise every gate is NO-GO (`trail_required`). The key ID is the `service key` line that `aqt-trail init` printed (3.2), also `key_id` in `~/.local/state/aqt/trail/trail.json`. Without them, an agent that points its environment elsewhere could switch the trail check off, or point it at a log it wrote itself.
+   - **Why the two `plans/**` lines:** if you keep several plans in one repository, editing the next plan would otherwise make the finished plan's receipt stale and its gate NO-GO.
+
+   Your own `~/.config/aqt/change.toml` (the full example is `aqt-change/examples/change.toml`) holds personal settings such as `actor` and `timeout_seconds`. It may set the same `[gate]` keys, but the strictest value of both files wins, so it can only tighten them. Because an agent can edit it, its `fingerprint_exclude` leaves out only untracked files outside the plan's paths, and a path that only its `always_allowed_paths` allows gives MANUAL (`allowed_by_user_config`).
+
+2. Keep tool output in ignored paths. **Any** new untracked file that git does not ignore (a coverage report, a scratch note) makes receipts stale. Add such paths to the repository's `.gitignore`, or to `fingerprint_exclude` in `.aqt/change.toml`. Only the repository's own `.gitignore` takes a file out: a file that only `.git/info/exclude` or your global Git ignore file hides is still fingerprinted and gives MANUAL (`locally_ignored_files`), because a test run may load it and a fresh checkout lacks it.
 
 3. **[agent or you]** In each repository where agents work:
 
@@ -675,7 +707,9 @@ Run the commands inside the repository.
 
    Failing runs are recorded too (`FAIL V01 … receipt rec_…`, exit 1).
 
-   **With aqt-trail in use** (a trail log exists, or records go to a writer), a receipt or review counts only if the trail holds the same record, received from its sender over the writer's socket. aqt-change's own copy in `.git/aqt-change/records.jsonl`, which the agent can edit, is not enough: a record that is only there, or differs there, gives NO-GO (`receipt_unverified`, `review_unverified`), and one that reached the trail through the spool gives MANUAL_VERIFY_REQUIRED. So run the checks while the writer is running; `AQT_SINK=file:` does not switch this check off.
+   **With aqt-trail in use** (a trail log exists, or records go to a writer), a receipt or review counts only if the trail holds the same record, received from its sender over the writer's socket. aqt-change's own copy in `.git/aqt-change/records.jsonl`, which the agent can edit, is not enough: a record that is only there, or differs there, gives NO-GO (`receipt_unverified`, `review_unverified`), and one that reached the trail through the spool gives MANUAL_VERIFY_REQUIRED. So run the checks while the writer is running; `AQT_SINK=file:` does not switch this check off. Where the trail log is comes from the environment that runs the gate, which the agent controls: `require_trail` and `trail_keys` (setup step 1) keep the check on and stop a log the agent wrote itself. Run a gate whose result you rely on in your own shell or in CI.
+
+   A run that changes the working tree while it runs, for example a test that rewrites the code and deletes itself, does not count by itself: the gate gives MANUAL_VERIFY_REQUIRED (`command_modified_worktree`) and `finish` refuses until a later run of the same check leaves the tree unchanged. Output under paths that `.gitignore` covers does not count as a change.
 
 7. **Review.** By an agent of another model, or by you:
 
@@ -703,6 +737,8 @@ Run the commands inside the repository.
    ```
 
    `--key` makes the command safe to repeat: after a hook failure or a crash, run it again and it resumes. Note the printed record ID: it is the `change.finish` record.
+
+   `finish` commits only the files you name, so it checks that the commit holds what the receipts tested: a changed file inside the plan's paths, or covered by the fingerprint, that is not named with `--path` refuses the finish (`finish_tested_change_not_committed`, with the paths). Untracked files outside the plan's paths may stay out. After `finish --no-commit`, the gate gives MANUAL (`tested_change_not_committed`) until HEAD holds the tested content.
 
 10. **[agent or you]** Report and gate:
 
@@ -737,10 +773,11 @@ What each code means and what to do is in chapter 6. The full list is in `aqt-ch
 - **Running a different command.** `aqt-change run … -- <command>` must match the declared command exactly; otherwise `command_mismatch`.
 - **Unrelated staged files** abort `finish`. Commit or unstage them first.
 - **Reading the gate as a permanent verdict.** It is computed from the current working tree. Sign the release right after `finish`.
-- **Agent instruction files inside the project.** Editing `AGENTS.md` in the repository after `finish` shows up as `unapproved_change`. Keep agent instructions in a separate folder, or add them to `always_allowed_paths`.
+- **Agent instruction files inside the project.** Editing `AGENTS.md` in the repository after `finish` shows up as `unapproved_change`. Keep agent instructions in a separate folder, or add them to `[gate] always_allowed_paths` in `.aqt/change.toml` (in your user configuration that gives MANUAL, `allowed_by_user_config`).
 - **Waivers.** `finish --waive V02="reason"` is possible, but a waiver never produces GO; the gate shows `MANUAL_VERIFY_REQUIRED`.
 - **Running the checks while the writer is down.** The receipts are spooled and not yet confirmed by the trail; the gate shows `receipt_unverified`. Start the writer and run the checks again (`aqt-change gate --rerun` does this).
-- **Files hidden from Git.** A file marked with `git update-index --skip-worktree` or `--assume-unchanged` whose content differs from the index gives NO-GO (`hidden_worktree_change`), and `finish` refuses: the commit would not contain what was tested. Clear the flag (`git update-index --no-skip-worktree <path>`) and run the checks again.
+- **Files hidden from Git.** aqt-change hashes the content of every tracked file instead of trusting `git status`. A tracked file that differs from the index while Git does not show it gives NO-GO (`hidden_worktree_change`), and `finish` refuses: the commit would not contain what was tested. Causes are the index flags `git update-index --skip-worktree` or `--assume-unchanged` (clear them with `--no-skip-worktree <path>` or `--no-assume-unchanged <path>`) and, with the flag `stat-cache`, a `core.fsmonitor` hook or relaxed `core.checkStat` / `core.trustctime` settings (remove them and `touch` the files). Then run the checks again.
+- **Settings in the wrong file.** `fingerprint_exclude` and `always_allowed_paths` in `~/.config/aqt/change.toml` no longer loosen the checks fully; move them into the committed `.aqt/change.toml` (setup step 1).
 
 ### 4.3 Signing documents and approved actions (aqt-signoff)
 
@@ -794,7 +831,7 @@ Records are signed the same way, with `--record <record id>` instead of a file. 
 | `valid` | Signature verifies, content unchanged | Nothing |
 | `invalidated` | Content changed, or the signer withdrew it (`aqt-signoff invalidate <signature record> --reason …`) | Review the new content and sign again |
 | `revoked` | The key was revoked before this signature | Investigate; sign again with the new key |
-| `unknown-signer` | Key not in your registry, not backed by its enrolment record, or signed before enrolment | `aqt-signoff signers check` says why; get the signer's registry entry and enrolment record, or treat as unsigned |
+| `unknown-signer` | Key not in your registry, its enrolment still waiting for approval, not backed by its enrolment record, or signed before enrolment | `aqt-signoff signers check` says why; approve a pending enrolment you know (3.4), get the signer's registry entry and enrolment record, or treat as unsigned |
 | `invalid` | The signed statement was altered, signed with another key, or copied into a second record (a replay) | Treat as a data-integrity problem: raise a deviation |
 
 #### Approved actions
@@ -845,8 +882,10 @@ Useful: `aqt-signoff list --status prepared`, `aqt-signoff status act_…`, and 
 #### Common mistakes
 
 - **`error (usage): no signer given`.** Pass `--signer human:alice` or set `[signoff] signer` (3.5).
-- **`error (registry_mismatch): the registry entry of human:alice does not match its enrolment record …`.** Your entry in `signers.json` was changed after enrolment, for example its role. Run `aqt-signoff signers check` to see what differs, and restore the entry from your backup (3.7). Do not edit `signers.json` by hand.
-- **A passphrase typed into an agent chat.** Revoke the key at once (`aqt-signoff revoke human:alice --reason "passphrase exposed" --compromised-since <RFC 3339 time>`) and enrol a new one with `init --add-key`.
+- **`error (registry_mismatch): the registry entry of human:alice does not match its enrolment record …`.** Your entry in `signers.json` was changed after enrolment, for example its role. Run `aqt-signoff signers check` to see what differs, and restore the entry from your backup (3.7). Do not edit `signers.json` by hand; a role changes with `signers approve --role` (3.4).
+- **`error (enrolment_pending): the key … of human:dave does not count yet: its enrolment waits for an approval by another enrolled signer …`.** An enrolled person approves the key with the command shown (3.4).
+- **`error (import_needed): …`.** Enrolment records from before the trail are not in the trail yet: run `aqt-signoff signers import` once (3.4).
+- **A passphrase typed into an agent chat.** Revoke the key at once (`aqt-signoff revoke human:alice --reason "passphrase exposed" --compromised-since <RFC 3339 time>`) and enrol a new one with `init --add-key`; another enrolled signer then approves it (3.7).
 
 ### 4.4 A second opinion from an advisor agent (aqt-sensei)
 
@@ -1218,7 +1257,7 @@ tsa_url = "https://your-tsa.example/tsr"   # a TSA you trust
 tsa_ca = "~/.config/aqt/tsa-ca.pem"        # the TSA's own CA certificate (not a broad root), used by verify
 ```
 
-Only the 32-byte head hash leaves your machine. `--tsa test:` uses a built-in authority marked TEST ONLY: it proves nothing about real time. When the writer is running, it anchors only with the `tsa_url` in its `trail.toml` or with `test:`; any other `--tsa` URL is refused. Only anchors that the writer itself wrote count: a `trail.anchor` record sent by a client is refused. An exported head copy counts only where you keep it, through `verify --heads`; the trail cannot see that place. Remember the principle: the trail is tamper-evident, not tamper-proof, and anchors made *before* an attack are the guarantee.
+Only the 32-byte head hash leaves your machine. `--tsa test:` uses a built-in authority marked TEST ONLY: it proves nothing about real time. When the writer is running, it anchors only with the `tsa_url` in its `trail.toml` or with `test:`; any other `--tsa` URL is refused. Only anchors that the writer itself wrote count: a `trail.anchor` record sent by a client is refused. Because any client may ask the writer for a TEST ONLY time stamp, those count only in **test mode**: `--test-tsa` on `verify`, `alcoa`, `status` and `review run`, or `[anchor] test_tsa = true` in `trail.toml`, for demos and tests. Outside test mode `verify` only warns about them, and the review query `unanchored_head`, ALCOA++ *enduring* and `status` ignore them. An exported head copy counts only where you keep it, through `verify --heads`; the trail cannot see that place. Remember the principle: the trail is tamper-evident, not tamper-proof, and anchors made *before* an attack are the guarantee.
 
 #### ALCOA++ report
 
@@ -1249,7 +1288,7 @@ A documented, risk-based review of the trail by a person who was not involved, w
    # 4 finding(s) {'major': 1, 'minor': 1, 'info': 2}
    ```
 
-   `--profile aqt-trail/examples/review-profile.toml` selects queries and parameters. `--out DIR` writes the worksheet elsewhere; when the trail state is not writable (separate-user mode), it goes to `$XDG_STATE_HOME/aqt/trail-reviews`. The worksheet lists the **actors in scope** (they may not sign) and findings `F1`, `F2` and so on:
+   `--profile aqt-trail/examples/review-profile.toml` selects queries and parameters. The worksheet lists the profile's parameters and flags those that differ from the built-in defaults; `review sign` shows them again before the passphrase prompt and signs them with the review. A profile named `default` may not change parameters. `--out DIR` writes the worksheet elsewhere; when the trail state is not writable (separate-user mode), it goes to `$XDG_STATE_HOME/aqt/trail-reviews`. The worksheet lists the **actors in scope** (they may not sign) and findings `F1`, `F2` and so on:
 
    | Query | Flags |
    |---|---|
@@ -1274,7 +1313,7 @@ A documented, risk-based review of the trail by a person who was not involved, w
        --reason "weekly audit-trail review" --conclusion "no unexplained findings"
    ```
 
-   Your key comes from `~/.config/aqt/keys/`, and the passphrase is asked. Before the prompt, `review sign` recomputes the worksheet from the trail and shows what will be signed: the worksheet file is only a working copy, which any program of your user could have edited. Signing is refused (and recorded) inside an agent session, without a terminal, when the reviewer acted in the period (`not_independent`), when the reviewer is not a `human:` ID, when the trail no longer has the worksheet's head (`stale_worksheet`), when the trail does not verify up to there (`trail_broken`), and when the worksheet differs from the trail (`worksheet_mismatch`; run `review run` again). With a signer registry, the reviewer must be registered (`unknown_signer`) and sign with their own key (`key_mismatch`). `aqt-trail verify` later reports a review that is unsigned, signed by someone other than its reviewer, or signed by a person who acted in its period.
+   Your key comes from `~/.config/aqt/keys/`, and the passphrase is asked. Before the prompt, `review sign` recomputes the worksheet from the trail and shows what will be signed: the worksheet file is only a working copy, which any program of your user could have edited. Signing is refused (and recorded) inside an agent session, without a terminal, when the reviewer acted in the period (`not_independent`), when the reviewer is not a `human:` ID, when the trail no longer has the worksheet's head (`stale_worksheet`), when the trail does not verify up to there (`trail_broken`), and when the worksheet differs from the trail (`worksheet_mismatch`; run `review run` again). With a signer registry, the reviewer must be registered (`unknown_signer`) and sign with their own key (`key_mismatch`), whose enrolment counts by the records in the trail (`unenrolled_key`; see 3.4). Your own enrolment, key rotation or revocation in the period does not count as acting in it; approving someone else's enrolment does. `aqt-trail verify` later reports a review that is unsigned, signed by someone other than its reviewer, or signed by a person who acted in its period, and counts a copied review once.
 
 4. `aqt-trail review list` shows signed reviews. Findings marked `deviation` appear in the next `aqt-capa scan`.
 
@@ -1363,13 +1402,13 @@ aqt-ui
 # login link (works once): http://127.0.0.1:41377/login?t=…
 ```
 
-The browser opens the login link through a private page that only you can read (a `0600` file in `$XDG_RUNTIME_DIR`), so the link appears in no command line. A link works once, and each browser tab needs its own: press Enter in the terminal for a fresh link, which makes older unused links invalid. Every use of a link is printed in the terminal, so a login that was not yours shows up there. Ctrl+C stops the server and ends every session. The session cookie alone is not enough to use the page: each request also carries a session key that only the tab that logged in has.
+The browser opens the login link through a private page that only you can read, so the link appears in no command line: a `0600` file in a `0700` folder `~/aqt-ui-login-*` in your home folder, where snap-packaged browsers (such as Ubuntu's default Firefox) can read it too. The page is deleted once a link was used and when the server stops. If your browser cannot open it (for example a Flatpak browser), use the printed link; after a crash, delete a leftover `~/aqt-ui-login-*` folder. A link works once, and each browser tab needs its own: press Enter in the terminal for a fresh link, which makes older unused links invalid. Every use of a link is printed in the terminal, so a login that was not yours shows up there. Ctrl+C stops the server and ends every session. The session cookie alone is not enough to use the page: each request also carries a session key that only the tab that logged in has.
 
-- **Overview** answers "Is everything in order, and what needs me?": the "Needs you" queue comes first (held cases, prepared actions, gates that are not GO, CAPA candidates, refused attempts, a review that is due, qualifications about to expire), then trail status and ALCOA++ per attribute. Only RFC 3161 anchors that the writer wrote, and signed reviews whose signature is valid and not a copy, count as the last anchor and the last review. Refusals are shown with their code and in plain words.
-- **Decisions in the page:** release a quarantine case or declare it a threat; trust a source until a date (this only lowers the band for later content from that domain and releases no case) or revoke that trust; approve the plan version a gate shows (add your repositories under `[changes] projects` in `~/.config/aqt/ui.toml`); approve or reject a prepared action; accept or dismiss a CAPA candidate, approve an implemented corrective action and close a deviation; sign the audit-trail review (a person who acted in the period cannot sign it; the page signs the worksheet it showed you, and in separate-user mode keeps worksheets in `$XDG_STATE_HOME/aqt/trail-reviews`). Each one shows who signs, with which meaning, over which content, and asks for your passphrase again. If the content changed since you opened it, nothing is signed. Each is recorded by the owning package, as the command line does it.
+- **Overview** answers "Is everything in order, and what needs me?": the "Needs you" queue comes first (held cases, prepared actions, gates that are not GO, CAPA candidates, refused attempts, a review that is due, qualifications about to expire), then trail status and ALCOA++ per attribute. Only RFC 3161 anchors that the writer wrote (TEST ONLY anchors only in test mode), and signed reviews whose signature is valid and not a copy, count as the last anchor and the last review. Refusals are shown with their code and in plain words, for example `enrolment_pending`: "The key waits for approval by an enrolled signer and does not count yet".
+- **Decisions in the page:** release a quarantine case (offered only once this browser session was shown the whole held content; long content comes in pages of 200,000 characters) or declare it a threat (the highlighted passages are enough, because a threat keeps the content withheld); trust a source until a date (this only lowers the band for later content from that domain and releases no case) or revoke that trust; approve the plan version a gate shows (add your repositories under `[changes] projects` in `~/.config/aqt/ui.toml`); approve or reject a prepared action; accept or dismiss a CAPA candidate, approve an implemented corrective action and close a deviation; sign the audit-trail review (a person who acted in the period cannot sign it; the page signs the worksheet it showed you, and in separate-user mode keeps worksheets in `$XDG_STATE_HOME/aqt/trail-reviews`). Each one shows who signs, with which meaning, over which content, and asks for your passphrase again. If the content changed since you opened it, nothing is signed. Each is recorded by the owning package, as the command line does it.
 - **Without a passphrase:** verify the trail, download a verification bundle for an auditor, verify signatures, follow deviations and qualifications. Signing a file or record, the CAPA investigation and action steps, and qualifying a detector stay in the terminal.
 - **Language:** a switch in the top bar shows English or German labels; the browser remembers the choice.
-- **Large trails:** the Trail view shows 100 records per page; the Overview stays fast with tens of thousands of records.
+- **Trail and record inspector:** the Trail view shows 100 records per page; the Overview stays fast with tens of thousands of records. The inspector shows the claimed actor next to the observed process chain and its status (a human claim the writer could not confirm is marked "unconfirmed", as in the review), and each detached signature with its verification status, checked against the trail's enrolment records.
 - **Started by an agent, it is read-only.** A ribbon names the agent markers found, and decision requests are refused and recorded as `<tool>.refused`. A decision request sent by a program that runs under an agent (for example `curl` started by Claude Code) is refused the same way, even when you started the page yourself.
 
 The page listens on `127.0.0.1` only. Its security model and limits are in the [aqt-ui README](../aqt-ui/README.md).
@@ -1415,7 +1454,7 @@ Weekly:
 3. `aqt-capa scan`, decide all candidates; `aqt-capa effectiveness`; `aqt-capa list --overdue`.
 4. `aqt-validate check --protocol … --thresholds …` (or daily from cron). Pass `--observed-fp K/N` when you know how many harmless pages were wrongly held.
 5. `aqt-trail alcoa --since <last week>`.
-6. `aqt-signoff signers check`: every key is backed by its enrolment record, and every enrolment is one you know. An enrolment you do not recognise is a security incident: open a deviation.
+6. `aqt-signoff signers check`: every key counts, the first signer is who you expect, and every enrolment and approval is one you know. Approve pending enrolments of people you have checked. An enrolment you do not recognise, or a `RE-BOOTSTRAP` you did not make yourself, is a security incident: open a deviation.
 
 Monthly or quarterly:
 
@@ -1431,8 +1470,9 @@ Monthly or quarterly:
 
 - **Audit-trail review.** You cannot sign a review of a period in which you decided things (`not_independent`). You can review periods in which only agents acted, for example from a change's first receipt to its finish (`aqt-trail review run --since <first receipt time> --until <finish time>`), and ask a colleague to review the rest from time to time.
 - **CAPA approval.** With `allow_self_approval = true` you approve your own actions. This is recorded and visible, and weaker than a second person.
+- **Your key.** You are the first signer. If you lose your key, the new one counts as a re-bootstrap, which `aqt-signoff signers check` and `aqt status` flag until a second enrolled person approves it (3.7).
 
-**A small team.** Each person enrols with their own ID and passphrase (3.4). Use `[policy.released] roles = ["quality-manager"]` so that only the quality function releases, and a reviewer who did not act in the period for audit-trail reviews. Share `aqt-signoff signers export` with anyone who verifies on another machine.
+**A small team.** Each person enrols with their own ID and passphrase (3.4); the first person enrolled approves the others, and from then on any enrolled person can approve a newcomer or a role change. Use `[policy.released] roles = ["quality-manager"]` so that only the quality function releases, and a reviewer who did not act in the period for audit-trail reviews. Share `aqt-signoff signers export` with anyone who verifies on another machine.
 
 ## 6. Troubleshooting and FAQ
 
@@ -1470,6 +1510,8 @@ Monthly or quarterly:
 
 **`no signing key at …; run aqt-quarantine init (or aqt-signoff init)`.** The deciding person has no key on this machine. Enrol them (3.4).
 
+**`error (enrolment_pending): …`**, **`error (import_needed): …`**, **`unenrolled_key`.** The key does not count yet by its enrolment records: it waits for an approval, the records from before the trail were not imported, or it has no enrolment record. `aqt-signoff signers check` says which and prints the fix (3.4).
+
 **`refused: owner operations cannot come from an agent session`** (aqt-sensei). Run owner commands (`list`, `show`, `approve`, `pair`, `mode` and so on) in your own terminal. Inside a paired pane the message reads "… from a paired agent pane".
 
 ### 6.3 Signatures and gates
@@ -1484,17 +1526,23 @@ Monthly or quarterly:
 | `receipt_stale` | Code, plan or an untracked file changed after the run | `git status`; remove stray files or ignore them; run again |
 | `receipt_failed` | The latest run failed | Fix the code; run again |
 | `plan_unreconciled` | The plan was edited and not accepted | `aqt-change reconcile … --kind editorial\|semantic --reason …` |
-| `unapproved_change` | A changed path lies outside `aqt.paths` | Revert it, widen the scope with a semantic reconcile, or use `always_allowed_paths` |
+| `unapproved_change` | A changed path lies outside `aqt.paths` | Revert it, widen the scope with a semantic reconcile, or add it to `[gate] always_allowed_paths` in `.aqt/change.toml` |
 | `review_fail` | The latest review is FAIL | Fix and review again |
 | `not_finished` | `finish` has not run | `aqt-change finish …` |
 | `approval_unsigned`, `approval_stale` | No valid signature on the current plan version | **[you]** sign `approval.record` (4.2 step 5) |
 | `review_independence_below_policy` | No review of the required class on the current diff | A new review after the last code change |
 | `waiver_present` | A verification item was waived | Accepted risk; a waiver never gives GO |
-| `receipt_unverified`, `review_unverified` | With aqt-trail in use, the trail does not confirm the receipt or review: NO-GO when the trail lacks the record or holds a different one, MANUAL when it came through the spool or no trail log is readable | Start the writer and run the checks again (`gate --rerun`); in separate-user mode set `AQT_EVIDENCE` to the trail log (3.8). A record that the trail contradicts is a data-integrity event |
-| `hidden_worktree_change` | A file marked `skip-worktree` or `assume-unchanged` differs from the index | `git update-index --no-skip-worktree <path>` (or `--no-assume-unchanged`); run again |
+| `receipt_unverified`, `review_unverified` | With aqt-trail in use, the trail does not confirm the receipt or review: NO-GO when the trail lacks the record or holds a different one, or (with `trail_keys`) its copy is not signed by the pinned writer key; MANUAL when it came through the spool or no trail log is readable | Start the writer and run the checks again (`gate --rerun`); in separate-user mode set `AQT_EVIDENCE` to the trail log (3.8). A record that the trail contradicts is a data-integrity event |
+| `trail_required` | `.aqt/change.toml` sets `require_trail` or `trail_keys`, but no trail log (signed by a pinned key) is found | Run the gate where the trail is reachable, with the writer running; in separate-user mode set `AQT_EVIDENCE` (3.8) |
+| `hidden_worktree_change` | A tracked file differs from the index while Git does not show it: index flags `skip-worktree` or `assume-unchanged`, or (flag `stat-cache`) an fsmonitor hook or relaxed stat settings | Clear the flags (`git update-index --no-skip-worktree <path>`, `--no-assume-unchanged <path>`) or remove the settings and `touch` the files; run again |
+| `locally_ignored_files` (MANUAL) | Untracked files that only `.git/info/exclude` or your global Git ignore file hide | Move the patterns into the repository's `.gitignore`, or delete the files |
+| `command_modified_worktree` (MANUAL) | The latest run of a check changed the working tree while it ran | Find out why; run the check again on an unchanged tree |
+| `tested_change_not_committed` (MANUAL) | After `finish`, HEAD does not hold the tested content of a file `finish` would have refused to leave out | Commit those files |
+| `allowed_by_user_config` (MANUAL) | A path outside the plan's paths is allowed only by `always_allowed_paths` in your user configuration | Move the entry into `[gate]` in `.aqt/change.toml`, or widen the plan's scope |
+| `project_settings_changed` (MANUAL) | `.aqt/change.toml` changed inside the plan's diff | Review the change like code; commit settings before a plan begins |
 | `sparse_checkout` | Tracked files lie outside a sparse checkout, so the run did not see them | Check them yourself, or use a full checkout |
 
-**`finish_evidence_missing: …`**, **`plan_editorial_structure_changed`**, **`command_mismatch`.** See the common mistakes in 4.2. **`idempotency_conflict`**: the same `--key` was used for different inputs; use a new key.
+**`finish_evidence_missing: …`**, **`plan_editorial_structure_changed`**, **`command_mismatch`.** See the common mistakes in 4.2. **`idempotency_conflict`**: the same `--key` was used for different inputs; use a new key. **`finish_tested_change_not_committed`**: name the listed files with `--path` (4.2 step 9). **`finish_command_modified_worktree`**, **`finish_trail_required`**, **`finish_hidden_changes`**: the same causes as the gate codes above. **`config_invalid`**: `.aqt/change.toml` (in the working tree, at HEAD or at the plan's base commit) has an unknown key or a wrong value.
 
 ### 6.4 Sandbox, validation and CAPA
 
@@ -1554,7 +1602,8 @@ Monthly or quarterly:
 | **Deviation** | A recorded departure from what should have happened |
 | **Detector** | A program that scores text for prompt-injection risk |
 | **Effectiveness check** | Checking from later evidence whether a corrective action worked |
-| **Enrolment record** | The signed `signoff.key.enrolled` record written when a person's key is added; aqt-signoff counts a key in the signer registry only when this record matches it |
+| **Enrolment record** | A signed `signoff.key.enrolled` record: the request a new key signs itself, an enrolled person's approval of it, or an import of records from before the trail. A key in the signer registry counts only with its request and, except for the first signer, an approval |
+| **First signer** | The first person enrolled; counts without an approval (bootstrap). Check that it is you |
 | **Evidence record** | One JSON entry saying who did what, when, why, with which meaning, on which content |
 | **Fail closed** | When a check cannot be done, the content is held rather than passed |
 | **FPR / TPR** | False-positive rate (harmless items flagged) and true-positive rate (attacks detected) |
@@ -1578,6 +1627,7 @@ Monthly or quarterly:
 | **Qualification** | A person's formal acceptance that a tool is fit for its intended use, for a limited time |
 | **Quarantine** | Holding inputs of unknown status apart until a responsible person decides |
 | **Receipt** | aqt-change's record of one run of a declared verification command |
+| **Re-bootstrap** | A new key that counts without approval because every earlier key was revoked; flagged until another signer approves it |
 | **Reconcile** | Accepting an edited plan version as editorial or semantic, with a reason |
 | **Requalification** | Repeating the validation after a change, an expiry or a drift |
 | **Responsible person** | The human authorised to decide, for example to release a quarantined input |

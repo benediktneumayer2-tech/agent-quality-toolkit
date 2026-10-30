@@ -13,7 +13,7 @@
 
 [![ci](https://github.com/benediktneumayer2-tech/agent-quality-toolkit/actions/workflows/ci.yml/badge.svg)](https://github.com/benediktneumayer2-tech/agent-quality-toolkit/actions/workflows/ci.yml) ![python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue) ![licence](https://img.shields.io/badge/licence-Apache--2.0%20%2F%20CC%20BY%204.0-green) ![status](https://img.shields.io/badge/status-0.1%20preview-orange)
 
-## Quick start: install in about a minute, run in five seconds
+## Quick start: install in about a minute, run in about ten seconds
 
 You need Linux, Python 3.11 or newer, [uv](https://docs.astral.sh/uv/) (a Python installer) and git. You do not need an account, an API key, an AI model or a GPU.
 
@@ -28,7 +28,7 @@ examples/demo/.venv/bin/python examples/demo/run_demo.py
 The demo prints each check as `[ok  ]` while it runs. Each line is one control doing its job, for example "the agent's release attempt is refused" or "the gate turns NO-GO after an unverified edit". It ends like this:
 
 ```text
-== Summary: 42/42 expected outcomes, 5.2 s, outputs in …/agent-quality-toolkit/examples/demo/output
+== Summary: 43/43 expected outcomes, 8.3 s, outputs in …/agent-quality-toolkit/examples/demo/output
 ```
 
 After the install it runs offline, with made-up data, in a temporary folder, and never touches your own settings. [The worked example](#the-worked-example-one-poisoned-web-page) explains what you just saw.
@@ -75,7 +75,7 @@ The editable draw.io sources and their generator are in [`docs/diagrams/`](docs/
 
 | If you want to … | Start with | Then add |
 |---|---|---|
-| See everything work together (**default**) | the [quick start](#quick-start-install-in-about-a-minute-run-in-five-seconds) | the [demo guide](examples/demo/README.md) |
+| See everything work together (**default**) | the [quick start](#quick-start-install-in-about-a-minute-run-in-about-ten-seconds) | the [demo guide](examples/demo/README.md) |
 | Stop "done" claims that have no evidence | [aqt-change](aqt-change/README.md) | aqt-trail, then aqt-signoff for a signed plan approval |
 | Protect an agent that reads the web | [aqt-quarantine](aqt-quarantine/README.md) | aqt-signoff, then aqt-validate to set the thresholds |
 | Show later what happened | [aqt-trail](aqt-trail/README.md) | the Claude Code hooks, which call the tools automatically ([manual 4.8](docs/manual.md#48-combining-the-claude-code-hooks)) |
@@ -166,11 +166,12 @@ The [catalogues](aqt-spec/catalogues/) hold 121 paraphrased requirements from 11
 - **Not a validated system.** Agent Quality Toolkit supports quality-management practices; it is not a validated system and does not by itself make any process compliant with GMP, GDP, 21 CFR Part 11 or EU Annex 11. Validation for your intended use stays with you.
 - **Detectors are a first filter, not a guarantee.** Published research shows that adaptive attackers defeat every injection detector tested. Add sandbox and network limits.
 - **Tamper-evident, not tamper-proof.** The evidence is only as strong as its keys and time stamps; keep them out of the agents' reach. The check for an agent session is a guard that a determined program can fool: the passphrase is the real control, so never type it into an agent chat.
-- **Security review: AI-assisted, not a professional audit.** In October 2026, AI reviewers running models from two vendors attacked the toolkit as a same-user agent would. The [review report](docs/security-review-2026-10.md) lists every finding, its fix and the limits that remain.
+- **A gate is only as trustworthy as the place it runs.** The agent controls its own environment. For QM use, commit the project settings `.aqt/change.toml` (require the trail, pin its writer's key, set the gate policy) and run the gate you rely on in your own shell or in CI ([manual 4.2](docs/manual.md#42-change-control-for-an-agent-task-aqt-change)).
+- **Security review: AI-assisted, not a professional audit.** In October 2026, AI reviewers running models from two vendors attacked the toolkit as a same-user agent would, and fresh AI verifiers then checked the fixes, which led to two more fix rounds. The [review report](docs/security-review-2026-10.md) lists every finding, its fix and the limits that remain. One of them: the first person who enrols a signing key counts without anyone's approval, so enrol yourself before you let agents work, and check the first signer that `aqt status` names.
 - **Some checks are manual.** The Claude Code hooks, a live advisor pairing and the AI-reviewer command lines have documented manual checks, not automated tests. The trail's separate-user mode is not yet tested.
 - **Demo shortcuts.** The demo's people use fixed passphrases (DEMO ONLY), and its time stamps come from a local test authority (TEST ONLY).
 - **Preview.** Version 0.1; interfaces may change before 1.0. Linux only. Not on PyPI (the Python package index) yet: install from this repository. Ready-made hooks exist for Claude Code only; with Codex or pi you run the commands yourself, and aqt-trail imports their session logs.
-- **Tests.** `scripts/test_all.sh` runs 884 offline tests (883 in the ten packages, including the optional aqt-ui and the `aqt` command, and one for the demo) with a throw-away home folder. `scripts/clean_install_check.sh` builds every package, installs only the built packages into a fresh environment outside the checkout and runs every tool, `aqt status` and the demo there (`--docker` does the same in a throw-away container). GitHub's automatic checks (CI) run both, the tests on Python 3.11, 3.12 and 3.13.
+- **Tests.** `scripts/test_all.sh` runs 968 offline tests (967 in the ten packages, including the optional aqt-ui and the `aqt` command, and one for the demo) with a throw-away home folder. `scripts/clean_install_check.sh` builds every package, installs only the built packages into a fresh environment outside the checkout and runs every tool, `aqt status` and the demo there (`--docker` does the same in a throw-away container). GitHub's automatic checks (CI) run both, the tests on Python 3.11, 3.12 and 3.13.
 
 ## Privacy and security
 

@@ -172,9 +172,17 @@ Human and actor signatures live in the payload, never in `sig`:
  "alg": "ed25519", "key": "ed25519:<16 hex>", "value": "<base64>"}
 ```
 
-The value is the Ed25519 signature over `canonical(statement)`. Required statement members: `aqt_signature` (`"0.1"`, which also separates these bytes from records and checkpoints), `signer.id`, `signer.name`, `key`, `meaning`, `signed_at`, `subject` with `sha256`. RECOMMENDED: `signer.role`, `reason`, `tz`, `record_type` (the type of the record that carries the statement), `nonce`; OPTIONAL `expires_at`. Because name, meaning, time and reason are inside the signed bytes, the manifestation cannot be altered without breaking the signature (Part 11 §11.50); because the subject hash is inside, the signature cannot be moved to another record or file (§11.70). aqt-signoff defines statement handling in detail; every tool that signs a human decision uses this shape. Schema: `schemas/signature.schema.json`.
+The value is the Ed25519 signature over `canonical(statement)`. Required statement members: `aqt_signature` (`"0.1"`, which also separates these bytes from records and checkpoints), `signer.id`, `signer.name`, `key`, `meaning`, `signed_at`, `subject` with `sha256`. RECOMMENDED: `signer.role`, `reason`, `tz`, `record_type` (the type of the record that carries the statement), `nonce`; OPTIONAL `expires_at`, `withdraws` (in a withdrawal: the statement digest, `content_hash(statement)`, of the withdrawn statement; the withdrawal applies to that statement wherever it appears), `enrolled_at` (in an enrolment request: the enrolment time the signer states; informational, the record's own time applies) and `enrolment` (in an enrolment approval: `{signer, name, role, request, request_sha256}`, the approved signer and role and the request's record id and `record_content_hash`). Because name, meaning, time and reason are inside the signed bytes, the manifestation cannot be altered without breaking the signature (Part 11 §11.50); because the subject hash is inside, the signature cannot be moved to another record or file (§11.70). aqt-signoff defines statement handling in detail; every tool that signs a human decision uses this shape. Schema: `schemas/signature.schema.json`.
 
 A verifier reports a statement as valid, invalid (signature does not verify), unknown signer (key not pinned) or **invalidated** (valid, but the subject's current hash differs from `subject.sha256`; vector `signed/statement-target-changed`). Revocation status comes from the signer registry (§12.2).
+
+**Enrolment records.** A `signoff.key.enrolled` record (`action: enroll`) is one of three kinds:
+
+- **Request:** signed by the key it enrols (proof of possession). `data` holds `signer`, `name`, `role`, `key_id` and `public_pem`; the subject is the key (`kind: key`, `sha256` over its public key PEM); the statement may carry `enrolled_at`.
+- **Approval:** signed by an already enrolled key: another signer's, or, for a key rotation, the signer's own previous key. The statement carries `enrolment`; the subject is the approved key; `data` repeats the approved key and adds `approves` (the request's record id) and `approved_by`.
+- **Import:** signed by an enrolled signer; `data.imported` holds the enrolment and revocation records written before the trail existed, in their order; the subject has `kind: enrolment-import` and the `content_hash` of those records.
+
+Which enrolments count (the first one as the bootstrap, every later one only after an approval, and a flagged re-bootstrap after every key was revoked) is defined by aqt-signoff, whose README describes the rules.
 
 ### 6.4 Key pinning
 
