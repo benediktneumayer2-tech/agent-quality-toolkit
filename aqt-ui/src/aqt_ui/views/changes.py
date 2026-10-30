@@ -41,6 +41,20 @@ REASONS = {
     "review_independence_below_policy": "No review is independent enough for the policy",
     "scope_undeclared": "The plan declares no paths, so the scope cannot be compared",
     "scope_unverifiable": "There is no Git base commit to compare against",
+    "receipt_unverified": "A test run receipt is not confirmed by the audit trail",
+    "review_unverified": "A review is not confirmed by the audit trail",
+    "trail_required": "The project requires the audit trail, and no trail log was found where the gate ran",
+    "tested_change_not_committed": "The tested code is not the committed code",
+    "command_modified_worktree": "A test run changed the files it tested; run the check again on an unchanged tree",
+    "hidden_worktree_change": "A changed file is hidden from Git (index flags or a stat-cache setting)",
+    "locally_ignored_files": "Files that only a local ignore rule hides could change the test result",
+    "allowed_by_user_config": "Files are allowed only by the user's own settings, not by the project file",
+    "project_settings_changed": "The project settings (.aqt/change.toml) changed during the plan",
+    "plan_base_mismatch": "The plan's base commit does not match the one recorded when the plan began",
+    "sparse_checkout": "Some files are outside the sparse checkout and could not be checked",
+    "junit_missing": "The JUnit report of a test run is missing",
+    "junit_stale": "The JUnit report is older than the test run",
+    "junit_unreadable": "The JUnit report of a test run cannot be read",
 }
 GATE_TTL = 60.0   # seconds; gate evaluation fingerprints the working tree
 

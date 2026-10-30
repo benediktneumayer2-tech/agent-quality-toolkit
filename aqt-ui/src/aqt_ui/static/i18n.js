@@ -259,6 +259,20 @@ export const REASONS_DE = {
   review_independence_below_policy: "Kein Review ist so unabhängig, wie die Richtlinie verlangt",
   scope_undeclared: "Der Plan nennt keine Pfade, daher lässt sich der Umfang nicht vergleichen",
   scope_unverifiable: "Es gibt keinen Git-Basis-Commit zum Vergleich",
+  receipt_unverified: "Ein Testnachweis ist nicht durch den Audit-Trail bestätigt",
+  review_unverified: "Ein Review ist nicht durch den Audit-Trail bestätigt",
+  trail_required: "Das Projekt verlangt den Audit-Trail, und dort, wo das Gate lief, wurde kein Trail gefunden",
+  tested_change_not_committed: "Der getestete Code ist nicht der committete Code",
+  command_modified_worktree: "Ein Testlauf hat die geprüften Dateien verändert; die Prüfung auf einem unveränderten Stand wiederholen",
+  hidden_worktree_change: "Eine geänderte Datei ist vor Git verborgen (Index-Markierung oder Stat-Cache-Einstellung)",
+  locally_ignored_files: "Dateien, die nur eine lokale Ignorier-Regel verbirgt, könnten das Testergebnis beeinflussen",
+  allowed_by_user_config: "Dateien sind nur durch die eigenen Einstellungen des Nutzers erlaubt, nicht durch die Projektdatei",
+  project_settings_changed: "Die Projekteinstellungen (.aqt/change.toml) wurden während des Plans geändert",
+  plan_base_mismatch: "Der Basis-Commit des Plans stimmt nicht mit dem beim Planstart aufgezeichneten überein",
+  sparse_checkout: "Einige Dateien liegen außerhalb des Sparse-Checkouts und konnten nicht geprüft werden",
+  junit_missing: "Der JUnit-Bericht eines Testlaufs fehlt",
+  junit_stale: "Der JUnit-Bericht ist älter als der Testlauf",
+  junit_unreadable: "Der JUnit-Bericht eines Testlaufs ist nicht lesbar",
 };
 
 // Refusal codes of aqt-signoff and of the audit-trail review in German (the code stays visible next to them).
