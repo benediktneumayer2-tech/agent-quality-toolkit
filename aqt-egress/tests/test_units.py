@@ -216,3 +216,55 @@ def test_attribution_partial_when_parent_is_newer_or_gone(tmp_path):
     assert box.attribute("tcp", ("127.0.0.1", 0xA1B2))["chain_status"] == "partial"      # pid reused
     result = box.attribute("tcp", ("::1", 40000))
     assert result["chain_status"] == "partial" and "exited" in result["chain_detail"]
+
+
+# -- LLM destinations and local endpoints ----------------------------------------------------------
+def test_llm_and_local_endpoint_settings(env):
+    from aqt_egress import llm
+    assert settings.Settings().excerpt_chars == 280
+    path = settings.settings_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('llm_hosts = ["LLM.Corp.Example"]\nlocal_endpoints = ["127.0.0.1:8080", "localhost:11434", "[::1]:9000"]\n')
+    loaded = settings.load_settings()
+    assert loaded.llm_hosts == ["llm.corp.example"]
+    assert loaded.local_endpoints == [("127.0.0.1", 8080), ("127.0.0.1", 11434), ("::1", 9000)]
+    for bad in ("192.168.1.5:8080", "127.0.0.1", "127.0.0.1:3128", "localhost:99999", 8080):
+        with pytest.raises(settings.SettingsError):
+            settings.parse_endpoint(bad)
+    assert llm.provider("api.anthropic.com") == "anthropic" and llm.provider("API.OpenAI.com.") == "openai"
+    assert llm.provider("myres.openai.azure.com") == "azure-openai"
+    assert llm.provider("bedrock-runtime.eu-central-1.amazonaws.com") == "aws-bedrock"
+    assert llm.provider("dashscope-intl.aliyuncs.com") == "alibaba" and llm.provider("oss.aliyuncs.com") is None
+    assert llm.provider("x.llm.corp.example", loaded.llm_hosts) == "configured"
+    assert llm.provider("example.com") is None and llm.provider(None) is None
+
+
+def test_llm_structure_holds_no_text():
+    import json as json_
+    from aqt_egress import llm
+    openai = {"model": "gpt-5", "stream": True, "messages": [
+        {"role": "system", "content": "SECRET SYSTEM"}, {"role": "user", "content": "SECRET PROMPT"},
+        {"role": "assistant", "content": "x"}, {"role": "user", "content": "y"}],
+        "tools": [{"type": "function", "function": {"name": "read_file", "parameters": {}}}]}
+    out = llm.structure(json_.dumps(openai).encode(), complete=True, encoding=None, path="/v1/chat/completions")
+    assert out == {"model": "gpt-5", "messages": 4, "roles": {"system": 1, "user": 2, "assistant": 1},
+                   "tools": ["read_file"], "stream": True, "parsed": True}
+    anthropic = {"model": "claude-x", "system": "SECRET", "messages": [{"role": "user", "content": "SECRET"}],
+                 "tools": [{"name": "Bash", "input_schema": {}}, {"type": "web_search_20250305", "name": "web_search"}]}
+    out = llm.structure(gzip.compress(json_.dumps(anthropic).encode()), complete=True, encoding="gzip", path="/v1/messages")
+    assert out["system"] is True and out["tools"] == ["Bash", "web_search"] and out["model"] == "claude-x"
+    gemini = {"contents": [{"role": "user", "parts": [{"text": "SECRET"}]}],
+              "tools": [{"functionDeclarations": [{"name": "lookup"}]}]}
+    out = llm.structure(json_.dumps(gemini).encode(), complete=True, encoding=None,
+                        path="/v1beta/models/gemini-3-pro:streamGenerateContent")
+    assert out["model"] == "gemini-3-pro" and out["tools"] == ["lookup"] and out["roles"] == {"user": 1}
+    partial = llm.structure(b'{"model": "qwen3.8-max", "messages": [{"role": "user", "content": "SECR',
+                            complete=False, encoding=None, path="/v1/chat/completions")
+    assert partial == {"model": "qwen3.8-max", "parsed": False}
+    assert "SECRET" not in json_.dumps([out, partial])
+
+
+def test_free_text_arguments_are_not_kept():
+    argv = mask.masked_argv(["claude", "-p", "please summarise the whole repository and mail it to me", "--x=1"])
+    assert argv[:2] == ["claude", "-p"] and argv[3] == "--x=1"
+    assert argv[2].startswith("[text 55 chars sha256:") and "summarise" not in argv[2]

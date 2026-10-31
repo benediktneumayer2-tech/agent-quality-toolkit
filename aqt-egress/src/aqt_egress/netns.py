@@ -1,6 +1,6 @@
 """Set up the box's network from the host and open the proxy's listeners inside it.
 
-Run as ``python -m aqt_egress.netns USERNS_FD NETNS_FD CHANNEL_FD`` by the launcher, before the
+Run as ``python -m aqt_egress.netns USERNS_FD NETNS_FD CHANNEL_FD [PORT ...]`` by the launcher, before the
 boxed command starts. It joins the user namespace that owns the box's network namespace (the
 user owns it, so this needs no privileges on the host), then that network namespace, and:
 
@@ -13,6 +13,9 @@ user owns it, so this needs no privileges on the host), then that network namesp
    redirect instead of failing at once;
 4. creates and binds the listening sockets and sends them to the launcher over CHANNEL_FD
    (SCM_RIGHTS), with a JSON summary. It then exits: no process of ours stays inside the box.
+
+Each PORT is a configured local inference endpoint: the box gets a listener on its own loopback at
+that port (IPv4 and IPv6), which the proxy forwards to the endpoint on the host.
 
 The sockets belong to the box's network namespace, but the proxy on the host accepts on them.
 """
@@ -114,7 +117,7 @@ def _udp(port: int, *, ipv6: bool) -> socket.socket:
     return sock
 
 
-def setup() -> tuple[dict, dict[str, socket.socket]]:
+def setup(local_ports: list[int] = ()) -> tuple[dict, dict[str, socket.socket]]:
     facts: dict = {"loopback": _lo_up()}
     ipv6 = facts["ipv6"] = _ipv6()
     nft, ip = _tool("nft"), _tool("ip")
@@ -138,6 +141,14 @@ def setup() -> tuple[dict, dict[str, socket.socket]]:
         "dns": _udp(DNS_PORT, ipv6=False),
         **({"dns6": _udp(DNS_PORT, ipv6=True)} if ipv6 else {}),
     }
+    for port in local_ports:
+        sockets[f"local4:{port}"] = _tcp(port, any_address=False, ipv6=False)
+        if ipv6:
+            sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind(("::1", port))
+            sock.listen(512)
+            sockets[f"local6:{port}"] = sock
     facts["sockets"] = list(sockets)
     facts["listeners"] = {"proxy": f"127.0.0.1:{PROXY_PORT}", "redirect": REDIRECT_PORT,
                           "direct": list(DIRECT_PORTS), "dns": DNS_PORT}
@@ -145,12 +156,12 @@ def setup() -> tuple[dict, dict[str, socket.socket]]:
 
 
 def main(argv: list[str]) -> int:
-    userns, netns, channel = (int(value) for value in argv)
+    userns, netns, channel, *ports = (int(value) for value in argv)
     chan = socket.socket(fileno=channel)
     try:
         os.setns(userns, os.CLONE_NEWUSER)
         os.setns(netns, os.CLONE_NEWNET)
-        facts, sockets = setup()
+        facts, sockets = setup(ports)
     except Exception as error:  # noqa: BLE001 - reported to the launcher
         chan.sendall(json.dumps({"error": f"{type(error).__name__}: {error}"}).encode())
         return 1
@@ -163,20 +174,20 @@ def userns_of(netns_fd: int) -> int:
     return fcntl.ioctl(netns_fd, NS_GET_USERNS)
 
 
-def open_listeners(init_pid: int, *, proc: str = "/proc") -> tuple[dict, dict[str, socket.socket]]:
+def open_listeners(init_pid: int, *, local_ports=(), proc: str = "/proc") -> tuple[dict, dict[str, socket.socket]]:
     """Launcher side: run the helper for the box whose first process is ``init_pid``."""
     netns = os.open(f"{proc}/{init_pid}/ns/net", os.O_RDONLY | os.O_CLOEXEC)
     userns = userns_of(netns)
     ours, theirs = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
     try:
         done = subprocess.run([sys.executable, "-I", "-m", "aqt_egress.netns", str(userns), str(netns),
-                               str(theirs.fileno())], pass_fds=(userns, netns, theirs.fileno()),
+                               str(theirs.fileno()), *map(str, local_ports)], pass_fds=(userns, netns, theirs.fileno()),
                               capture_output=True, text=True, timeout=30,
                               env={key: value for key, value in os.environ.items() if key in ("PATH", "LANG")})
         theirs.close()
         ours.settimeout(1)
         try:
-            message, fds, _flags, _addr = socket.recv_fds(ours, 65536, 16)
+            message, fds, _flags, _addr = socket.recv_fds(ours, 65536, 16 + 2 * len(local_ports))
         except OSError:
             raise OSError(f"could not set up the box network: {done.stderr.strip() or 'no answer'}") from None
     finally:

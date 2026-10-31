@@ -13,7 +13,8 @@ A coding agent can send what it reads to any host it can reach: in a `curl` it w
 `aqt-egress` runs the agent in a box whose only way out is a proxy you control. Each request goes into the AQT audit trail with:
 - the process chain inside the box that sent it (for example `curl < bash < claude`);
 - the destination as asked, the address it went to, the protocol and TLS mode;
-- method, path, header names, sizes, body hashes and short masked excerpts (credentials only as fingerprints).
+- method, path, header names, sizes, body hashes and short masked excerpts (credentials only as fingerprints);
+  for LLM API destinations no text at all, only the structure of the request (provider, `model`, messages and roles, tool names).
 
 ## 60-second quick start
 
@@ -40,15 +41,18 @@ Records go where all AQT records go (`aqt_evidence.open_sink()`): to the aqt-tra
 
 **Files stay as they are**, so the agent keeps its configuration and your project. The exceptions:
 - `/run` is empty: the host's service sockets (D-Bus, systemd, systemd-resolved, docker, libvirt, your runtime folder) are not reachable; the trail writer's socket is put back read-only.
+  Side effect: keyrings reached over the session D-Bus (`gh`, git's libsecret credential helper, other secret-service clients) and aqt-sensei's bridge sockets do not work in the box; use file-based credentials there.
 - Hidden: the egress state (CA key, body store, fingerprint key), the quarantine state, the X11 and tmux socket folders in `/tmp`.
 - Read-only: the AQT configuration and state folders (the spool folder stays writable).
+- With `--private-tmp`: a fresh, empty `/tmp` (the project, the home folder and the AQT folders are put back where they live under `/tmp`). This also closes other programs' Unix sockets there.
+- `AQT_AGENT_SESSION` and `AQT_EGRESS_SESSION` name the egress session, so records from agent hooks inside the box can be matched to it (and AQT's human checks see an agent).
 
 ## Records
 
 | Type | Action | What it holds |
 |---|---|---|
 | `egress.session` | `started`, `ended` | session ID, command (masked), project and its `require`, mode `observe`, store, excerpt length, retention, CA fingerprint, box facts (bwrap version, kernel, network setup, hidden and read-only folders), policy version `none`; at the end the exit code, counts and duration |
-| `egress.request` | `observed` | one per HTTP request, WebSocket or TCP connection: process chain, destination (`host` as asked, `ip`, `port`, `sni`, `via` = `proxy`, `redirect`, `direct80`, `direct443`), protocol, TLS mode (`intercepted`, `passthrough` with the reason, `none`), method, path (masked), query as a hash, header names, credential headers as fingerprints, sizes and body hashes, status, timing, masked excerpts, the lookups that led to it, `mode: observe`, `decision: allowed` (or `refused` with `reason_code: host-loopback`, see below), and in full mode the body-store references |
+| `egress.request` | `observed` | one per HTTP request, WebSocket or TCP connection: process chain, destination (`host` as asked, `ip`, `port`, `sni`, `via` = `proxy`, `redirect`, `direct80`, `direct443`, `local`), protocol, TLS mode (`intercepted`, `passthrough` with the reason, `none`), method, path (masked), query as a hash, header names, credential headers as fingerprints, sizes and body hashes, status, timing, masked excerpts (none for LLM destinations, which get `llm`: provider, `model`, messages, roles, tools), the lookups that led to it, `mode: observe`, `decision: allowed` (or `refused` with `reason_code: host-loopback`, see below), and in full mode the body-store references |
 | `egress.lookup` | `observed` | names the box resolver answered without a request following: name, query types, count, process |
 | `egress.pruned` | `pruned` | what `aqt egress prune` deleted: count, bytes, retention, cutoff |
 
@@ -56,18 +60,23 @@ Credential headers (`Authorization`, `Cookie`, API-key headers …) are never re
 
 ## Storage modes and settings
 
-`$XDG_CONFIG_HOME/aqt/egress.toml`; flags override for one session (`--store`, `--excerpt-chars`):
+`$XDG_CONFIG_HOME/aqt/egress.toml`; flags override for one session (`--store`, `--excerpt-chars`, `--local-endpoint`, `--private-tmp`):
 
 ```toml
 store = "excerpt"        # default; "full" also keeps headers and bodies
 retention_days = 90      # full bodies: 7 or more, or "forever"
-excerpt_chars = 512      # masked excerpt length in the records (0 to 4096)
+excerpt_chars = 280      # masked excerpt length in the records (0 to 4096; 0 = none)
 passthrough = []         # hosts whose TLS is passed through unread (clients that pin certificates)
+llm_hosts = []           # more LLM API hosts besides the built-in list (structure only, no text)
+local_endpoints = []     # inference servers on this host the box may reach, e.g. ["127.0.0.1:8080"]
 ```
 
 - **excerpt** keeps hashes, sizes and short masked excerpts in the records.
+- **LLM API destinations** never get a text excerpt, in either mode: the record holds the structure of the request (provider, `model`, number of messages and their roles, whether there is a system prompt, tool names, the stream flag) plus sizes and hashes. Built in: Anthropic, OpenAI (also ChatGPT and Azure OpenAI), Google Gemini and Vertex AI, Mistral, DeepSeek, OpenRouter, Alibaba DashScope, Moonshot, xAI, Groq, Together, Fireworks, Cohere, Perplexity, Cerebras, Zhipu, MiniMax, Hugging Face, AWS Bedrock and GitHub Copilot; add more under `llm_hosts`. In full mode the bodies are in the body store only, never in records. Command-line arguments that are free text (a prompt for `claude -p`, a `sh -c` script) are recorded only as length and hash, and LLM records carry no arguments at all.
 - **full** also keeps request and response headers and bodies in a content-addressed store under `$XDG_STATE_HOME/aqt/egress/bodies/` (folders 0700, files 0600, gzip). Text bodies are decoded and masked before they are stored. The record references each object by its hash, so a changed or deleted body is detected. Full mode keeps whole conversations with your LLM provider: turn it on deliberately.
 - `aqt egress prune [--retention-days N|forever] [--dry-run]` deletes stored objects not used within the retention period and writes an `egress.pruned` record.
+
+**Local inference servers.** The proxy refuses to connect to the host's own loopback for the box (this protects aqt-ui and other local services). A server you want the agent to use, for example llama.cpp on `127.0.0.1:8080`, goes under `local_endpoints` (or `--local-endpoint 127.0.0.1:8080`): the box then has a listener on its own `127.0.0.1:8080` that the proxy forwards to the host. The agent keeps its usual base URL; each request is recorded (`via: local`, TLS mode `none`) and treated as an LLM destination.
 
 A project can commit `.aqt/egress.toml` with `require = true`. The session record carries it; a later `aqt project status` check will warn about agent sessions that ran outside the box.
 
@@ -85,7 +94,7 @@ What it does **not** do:
 - **Make the LLM channel safe.** Your LLM provider receives the whole context by design; a record shows only that it went there, how much, and under which key.
 - **Close allowed channels.** Data can ride on traffic that looks normal (a git push to your own remote, a request to a registry). Timing channels and data hidden inside normal requests are not reliably detectable.
 - **Read pinned TLS.** Passed-through connections are recorded by host, size and time only.
-- **Contain what is not network.** Files stay writable: something in the box can leave a script that runs later outside it (a shell profile, a git hook). Unix sockets outside `/run` and the hidden folders (for example an editor's IPC socket in `/tmp`, an agent socket in your home) stay reachable and may act outside the box. `--die-with-parent` ends the box with the proxy, but it does not undo what was written.
+- **Contain what is not network.** Files stay writable: something in the box can leave a script that runs later outside it (a shell profile, a git hook). Unix sockets outside `/run` and the hidden folders (for example an editor's IPC socket in `/tmp`, an agent socket in your home) stay reachable and may act outside the box; `--private-tmp` closes those in `/tmp`. `--die-with-parent` ends the box with the proxy, but it does not undo what was written.
 - **Watch agents that are not in the box.** It protects only what runs inside `aqt egress run`.
 - **Attribute every byte.** Attribution is read from `/proc` when the connection arrives; a process that exits at once or hands its socket on can leave the chain `partial` or `unavailable`.
 

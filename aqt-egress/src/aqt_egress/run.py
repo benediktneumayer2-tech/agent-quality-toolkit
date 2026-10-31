@@ -46,7 +46,7 @@ def _log_to(path: Path):
     return logging.getLogger("aqt_egress").warning
 
 
-def run(command: list[str], *, project: Path, settings: Settings, say=print) -> int:
+def run(command: list[str], *, project: Path, settings: Settings, private_tmp: bool = False, say=print) -> int:
     if not command:
         raise ValueError("no command given (aqt egress run -- COMMAND ...)")
     project = project.resolve()
@@ -65,9 +65,12 @@ def run(command: list[str], *, project: Path, settings: Settings, say=print) -> 
     store = BodyStore(state / "bodies").ensure() if settings.store == "full" else None
     test = _test_options()
 
-    box = BoxProcess(command, project=project, public=public, env=box_environment(os.environ, session))
+    environ = box_environment(os.environ, session)
+    if private_tmp and environ.get("TMPDIR", "").startswith("/tmp/"):
+        environ["TMPDIR"] = "/tmp"                 # the host's folder under /tmp is not in the box
+    box = BoxProcess(command, project=project, public=public, env=environ, private_tmp=private_tmp)
     try:
-        net, sockets = open_listeners(box.init_pid)
+        net, sockets = open_listeners(box.init_pid, local_ports=[port for _ip, port in settings.local_endpoints])
         attribution = Box(box.init_pid)
     except BaseException:
         box.kill()
@@ -79,6 +82,7 @@ def run(command: list[str], *, project: Path, settings: Settings, say=print) -> 
         "store": settings.store, "excerpt_chars": settings.excerpt_chars,
         "retention_days": settings.retention_days if settings.retention_days is not None else "forever",
         "ca_fingerprint": ca_fingerprint, "policy_version": POLICY_VERSION,
+        "llm_hosts": settings.llm_hosts, "local_endpoints": [f"{ip}:{port}" for ip, port in settings.local_endpoints],
         "box": {**box.facts, "network": net, "init_pid": box.init_pid},
     }
     if not net.get("redirect"):

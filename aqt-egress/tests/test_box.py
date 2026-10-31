@@ -11,6 +11,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -77,13 +78,15 @@ say host_sockets "${found:-none}"
 """
 
 
-def run_box(env_dir: Path, upstream, *args, script: str = SCRIPT, project: Path | None = None) -> tuple:
-    environ = dict(os.environ)
-    environ["AQT_EGRESS_TEST"] = json.dumps({
-        "hosts": {"upstream.test": f"127.0.0.1:{upstream.https_port}",
-                  "203.0.113.10:443": f"127.0.0.1:{upstream.https_port}",
-                  "203.0.113.10:8080": f"127.0.0.1:{upstream.http_port}"},
-        "upstream_ca": upstream.ca})
+def run_box(env_dir: Path, upstream, *args, script: str = SCRIPT, project: Path | None = None,
+            mapped: bool = True, extra_env: dict | None = None) -> tuple:
+    environ = {**os.environ, **(extra_env or {})}
+    if mapped:
+        environ["AQT_EGRESS_TEST"] = json.dumps({
+            "hosts": {"upstream.test": f"127.0.0.1:{upstream.https_port}",
+                      "203.0.113.10:443": f"127.0.0.1:{upstream.https_port}",
+                      "203.0.113.10:8080": f"127.0.0.1:{upstream.http_port}"},
+            "upstream_ca": upstream.ca})
     environ["AQT_TEST_RUNNER_PID"] = str(os.getpid())
     project = project or env_dir
     done = subprocess.run([sys.executable, "-m", "aqt_egress.cli", "run", "--project", str(project), *args, "--",
@@ -178,3 +181,45 @@ def test_box_exit_code_and_report(env, upstream, capsys):
     assert list(destination["processes"]) == ["curl < sh"]
     status = cli.status()
     assert status["ca"] is True and status["last_session"]["exit_code"] == 3
+
+
+LOCAL = r"""
+curl -sS -o /dev/null -w 'local=%{http_code}\n' -H 'Content-Type: application/json' \
+    -d '{"model": "local-gguf", "messages": [{"role": "user", "content": "SECRET-LOCAL"}]}' \
+    "http://127.0.0.1:$LOCAL_PORT/v1/chat/completions"
+curl -sS -o /dev/null -w 'other_loopback=%{http_code}\n' --noproxy '' -x http://127.0.0.1:3128 "http://127.0.0.1:$OTHER_PORT/" 2>/dev/null
+curl -sS -o /dev/null -w 'other_direct=%{http_code}\n' "http://127.0.0.1:$OTHER_PORT/" 2>/dev/null
+echo "agent_session=$AQT_AGENT_SESSION"
+test -e "$MARKER" && echo marker=visible || echo marker=hidden
+test -w /tmp && echo tmp=writable
+"""
+
+
+@pytest.mark.skipif(bool(NEEDS), reason=f"needs {', '.join(NEEDS)} in the box")
+def test_box_local_endpoint_loopback_boundary_private_tmp_and_session(env, upstream):
+    marker = Path(tempfile.mkstemp(prefix="aqt-egress-marker-", dir="/tmp")[1])
+    try:
+        done, results = run_box(env, upstream, "--local-endpoint", f"127.0.0.1:{upstream.http_port}",
+                                "--private-tmp", script=LOCAL, mapped=False,
+                                extra_env={"LOCAL_PORT": str(upstream.http_port), "OTHER_PORT": str(upstream.https_port),
+                                           "MARKER": str(marker)})
+    finally:
+        marker.unlink()
+    assert done.returncode == 0, done.stdout + done.stderr
+    records = list(read_jsonl(Path(os.environ["XDG_STATE_HOME"]) / "aqt" / "evidence.jsonl"))
+    [started] = [r["data"] for r in records if r["type"] == "egress.session" and r["action"] == "started"]
+    requests = {r["data"]["destination"]["port"]: r["data"] for r in records if r["type"] == "egress.request"}
+    # the configured local inference server: reached, recorded like any request, structure only
+    assert results["local"] == "200"
+    local = requests[upstream.http_port]
+    assert local["destination"]["via"] == "local" and local["tls"] == {"mode": "none"}
+    assert local["llm"]["provider"] == "local" and local["llm"]["model"] == "local-gguf"
+    assert "excerpt" not in local["request"] and "SECRET" not in json.dumps(local)
+    assert local["process"]["chain"][0]["comm"] == "curl"
+    assert started["local_endpoints"] == [f"127.0.0.1:{upstream.http_port}"]
+    # any other service on the host's loopback stays outside the box
+    assert results["other_loopback"] == "502" and results["other_direct"] == "000"   # refused / nothing there
+    assert requests[upstream.https_port]["decision"] == "refused"
+    # a fresh /tmp, and the agent session names the egress session
+    assert results["marker"] == "hidden" and results["tmp"] == "writable" and started["box"]["tmp"] == "private"
+    assert results["agent_session"] == started["session"]

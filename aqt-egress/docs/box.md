@@ -61,11 +61,27 @@ Python `urllib` and Node `fetch` (Node 22 honours the proxy variables with `NODE
 - **No bubblewrap or no user namespaces:** `aqt egress run` refuses to start; `aqt egress status` and the `egress`
   line of `aqt status` say why.
 
+## Side effects of the empty `/run`
+
+Keyrings reached over the session D-Bus (`gh`, git's libsecret credential helper, other secret-service clients)
+do not work in the box, and neither do aqt-sensei's bridge sockets in the runtime folder. Agents that keep their
+credentials in files (Claude Code, Codex, pi) are not affected.
+
+## Local inference endpoints and `--private-tmp`
+
+- A configured local endpoint (`local_endpoints`, `--local-endpoint 127.0.0.1:8080`) gets a listener on the box's
+  own loopback at that port (IPv4 and IPv6), opened by the helper like the others; the proxy forwards it to the
+  host's endpoint and records each request (`via: local`, TLS mode `none`, structure only). Every other port on the
+  host's loopback is still refused, and in the box nothing else listens there (verified in `tests/test_box.py`).
+- `--private-tmp` adds `--tmpfs /tmp` and binds the project, the home folder and the AQT folders back where they
+  live under `/tmp`; `TMPDIR` becomes `/tmp` when it pointed below the host's `/tmp`.
+
 ## What stays open
 
 - Files are shared read-write by design; something in the box can leave a script that runs later outside it.
 - Unix sockets outside `/run` and the hidden folders (for example an editor's IPC socket in `/tmp`, or an agent
-  socket in the home folder) stay reachable and may act outside the box. Abstract Unix sockets belong to the
+  socket in the home folder) stay reachable and may act outside the box; `--private-tmp` closes those in `/tmp`. A
+  filter on `AF_UNIX` connections (seccomp) is planned for the enforce stage. Abstract Unix sockets belong to the
   network namespace and are not reachable.
 - Attribution is read from `/proc` when a connection or query arrives; a sender that already exited is recorded
   as `unavailable`.

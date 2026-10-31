@@ -106,8 +106,19 @@ def masked_headers(fields) -> list[list[str]]:
     return [[name, MASK if name.lower() in CREDENTIAL_HEADERS else mask_text(value)] for name, value in fields]
 
 
+TEXT_ARG_CHARS = 40
+
+
+def _arg(arg: str, each: int) -> str:
+    """Free text in a command line (a prompt for ``claude -p``, a ``sh -c`` script) is not kept: only its
+    length and a short hash, so that the records do not store prompts (spec section 3.5)."""
+    if len(arg) > TEXT_ARG_CHARS and any(ch.isspace() for ch in arg):
+        return f"[text {len(arg)} chars sha256:{hashlib.sha256(arg.encode('utf-8', 'surrogateescape')).hexdigest()[:12]}]"
+    return mask_text(arg)[:each]
+
+
 def masked_argv(argv: list[str], *, limit: int = 12, each: int = 200) -> list[str]:
-    out = [mask_text(arg)[:each] for arg in argv[:limit]]
+    out = [_arg(arg, each) for arg in argv[:limit]]
     if len(argv) > limit:
         out.append(f"... ({len(argv) - limit} more)")
     return out

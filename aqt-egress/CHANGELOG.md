@@ -21,3 +21,9 @@ First slice of the outbound checkpoint: observe and record (nothing is blocked).
   and are stored as they pass. `aqt egress prune` with a retention of 7 days to `forever` (default 90).
 - `aqt egress report [--session] [--since] [--json]` and `aqt egress status`.
 - The proxy refuses to connect to the host's own loopback for the box (recorded as `refused`, `host-loopback`).
+- Spec section 3.5: excerpts default to 280 characters; LLM API destinations (built-in list, `llm_hosts`, local
+  endpoints) get no text excerpt, only the request's structure (provider, `model`, messages and roles, tool
+  names, stream flag); free-text command-line arguments are kept only as length and hash.
+- `local_endpoints` / `--local-endpoint HOST:PORT`: an inference server on the host's loopback the box may reach
+  (a listener on the box's own loopback, forwarded and recorded).
+- `--private-tmp`: a fresh `/tmp` in the box. `AQT_AGENT_SESSION` names the egress session inside the box.

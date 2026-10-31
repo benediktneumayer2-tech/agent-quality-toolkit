@@ -180,3 +180,46 @@ def test_a_name_that_lands_on_loopback_after_the_check_is_closed(make_proxy, ups
     records = requests_of(proxy.records(settle=0.5))
     assert records and all(r["data"]["decision"] == "refused" for r in records)
     assert {r["data"]["reason_code"] for r in records} == {"host-loopback"}
+
+
+PROMPT = {"model": "claude-test-1", "system": "You are SECRET-SYSTEM", "stream": False,
+          "messages": [{"role": "user", "content": "SECRET-PROMPT summarise my repository"}],
+          "tools": [{"name": "Read", "input_schema": {}}]}
+
+
+@pytest.mark.parametrize("store", ["excerpt", "full"])
+def test_llm_requests_are_recorded_by_structure_never_text(make_proxy, upstream, store):
+    proxy = make_proxy(settings=Settings(store=store),
+                       test_hosts={"api.anthropic.com": f"127.0.0.1:{upstream.http_port}"})
+    Request = __import__("urllib.request").request.Request
+    body = json.dumps(PROMPT).encode()
+    proxy.opener().open(Request("http://api.anthropic.com/v1/messages", data=body,
+                                headers={"Content-Type": "application/json", "x-api-key": TOKEN})).read()
+    [record] = requests_of(proxy.records())
+    data = record["data"]
+    assert data["llm"] == {"provider": "anthropic", "model": "claude-test-1", "messages": 1, "roles": {"user": 1},
+                           "system": True, "tools": ["Read"], "stream": False, "parsed": True}
+    assert "excerpt" not in data["request"] and "excerpt" not in data["response"]
+    assert data["request"]["bytes"] == len(body) and data["request"]["body_sha256"].startswith("sha256:")
+    assert "SECRET" not in json.dumps(record) and TOKEN not in json.dumps(record)
+    if store == "full":                         # the body lives in the body store only
+        stored = json.loads(proxy.store.read(data["store"]["request_body"]["sha256"]))
+        assert stored["messages"][0]["content"].startswith("SECRET-PROMPT")
+
+
+def test_configured_llm_hosts_get_no_excerpt(make_proxy):
+    proxy = make_proxy(settings=Settings(llm_hosts=["plain.test"]))
+    Request = __import__("urllib.request").request.Request
+    proxy.opener().open(Request("http://plain.test/v1/chat/completions", data=b'{"model": "local-7b", '
+                                b'"messages": [{"role": "user", "content": "SECRET"}]}')).read()
+    [record] = requests_of(proxy.records())
+    assert record["data"]["llm"]["provider"] == "configured" and record["data"]["llm"]["model"] == "local-7b"
+    assert "SECRET" not in json.dumps(record)
+
+
+def test_other_destinations_keep_a_masked_excerpt_of_280_by_default(make_proxy):
+    proxy = make_proxy()
+    Request = __import__("urllib.request").request.Request
+    proxy.opener().open(Request("http://plain.test/upload", data=b"z" * 1000)).read()
+    [record] = requests_of(proxy.records())
+    assert record["data"]["request"]["excerpt"] == "z" * 280 and "llm" not in record["data"]

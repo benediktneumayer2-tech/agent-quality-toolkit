@@ -7,7 +7,11 @@ handlers serve the sockets that ``netns`` created in the box's network namespace
 - ``redirect``: transparent mode; nftables sends every other TCP connection here and the
   original destination comes from the kernel (``SO_ORIGINAL_DST``);
 - ``direct80`` / ``direct443``: clients that ignore the proxy variables and connect to the address
-  the box resolver gave them; the destination is taken from the TLS server name or the Host header.
+  the box resolver gave them; the destination is taken from the TLS server name or the Host header;
+- ``local4:PORT`` / ``local6:PORT``: the box's own loopback at a configured local inference endpoint,
+  forwarded to that endpoint on the host.
+
+Requests to LLM API destinations (``llm``) are recorded by structure only, without text excerpts.
 
 The ``Egress`` add-on attributes each connection to the box process that opened it, lets bodies
 stream through (hashing, counting and, in full mode, spooling them as they pass), and writes one
@@ -34,6 +38,7 @@ from mitmproxy.certs import CertStore
 from mitmproxy.master import Master
 from mitmproxy.proxy.mode_servers import ProxyConnectionHandler, ServerInstance
 
+from . import llm as llm_api
 from .attribution import normal_ip, unattributed
 from .mask import excerpt, headers_summary, mask_text
 from .store import decode_body
@@ -98,18 +103,24 @@ async def serve_listeners(master: Master, addon: "Egress", sockets: dict) -> lis
             await handle(reader, writer)
         return accept
 
-    def direct(port):
+    def fixed(address, *, lazy):
+        """Transparent mode with a destination fixed in advance (or found later, for ``PLACEHOLDER``)."""
         async def handle(reader, writer):
-            handler = ProxyConnectionHandler(ctx.master, reader, writer, _Lazy(ctx.options), transparent.mode)
+            options = _Lazy(ctx.options) if lazy else ctx.options
+            handler = ProxyConnectionHandler(ctx.master, reader, writer, options, transparent.mode)
             handler.layer = transparent.make_top_layer(handler.layer.context)
-            handler.layer.context.server.address = (PLACEHOLDER, port)
+            handler.layer.context.server.address = address
             with manager.register_connection(handler.layer.context.client.id, handler):
                 await handler.handle_client()
         return handle
 
     handlers = {"proxy": regular.handle_stream, "redirect": transparent.handle_stream,
-                "direct80": direct(80), "direct443": direct(443)}
-    return [await asyncio.start_server(via(name, handle), sock=sockets[name])
+                "direct80": fixed((PLACEHOLDER, 80), lazy=True), "direct443": fixed((PLACEHOLDER, 443), lazy=True)}
+    for name in sockets:
+        if name.startswith("local"):
+            port = int(name.rpartition(":")[2])
+            handlers[name] = fixed(addon.local_by_port[port], lazy=False)
+    return [await asyncio.start_server(via("local" if name.startswith("local") else name, handle), sock=sockets[name])
             for name, handle in handlers.items() if name in sockets]
 
 
@@ -117,7 +128,8 @@ async def serve_listeners(master: Master, addon: "Egress", sockets: dict) -> lis
 class Tap:
     """A body passing through: hashed, counted, its head kept for the excerpt, spooled in full mode."""
 
-    def __init__(self, store=None):
+    def __init__(self, store=None, keep: int = HEAD_BYTES):
+        self.keep = keep
         self.sha = hashlib.sha256()
         self.size = 0
         self.head = bytearray()
@@ -129,8 +141,8 @@ class Tap:
         if chunk:
             self.sha.update(chunk)
             self.size += len(chunk)
-            if len(self.head) < HEAD_BYTES:
-                self.head += chunk[:HEAD_BYTES - len(self.head)]
+            if len(self.head) < self.keep:
+                self.head += chunk[:self.keep - len(self.head)]
             if self.file is not None:
                 self.file.write(chunk)
         return chunk
@@ -198,6 +210,13 @@ def _loopback(ip: str) -> bool:
     return address.is_loopback or address.is_unspecified
 
 
+def _without_argv(process: dict) -> dict:
+    """The process chain of an LLM request without command-line arguments (they may hold the prompt)."""
+    chain = [{key: value for key, value in entry.items() if key != "argv"} | ({"argc": len(entry["argv"])}
+             if "argv" in entry else {}) for entry in process.get("chain", [])]
+    return {**process, "chain": chain}
+
+
 def _clean(value):
     """Drop None values (records carry no nulls in this tool)."""
     if isinstance(value, dict):
@@ -212,6 +231,9 @@ class Egress:
     def __init__(self, *, session: str, session_record: str | None, writer, settings, key: bytes,
                  attribute=None, lookups=None, store=None, test_hosts: dict | None = None,
                  allow_loopback: bool = False):
+        local = list(getattr(settings, "local_endpoints", []))
+        self.local = set(local)                       # (ip, port) on the host the box may reach
+        self.local_by_port = {port: (ip, port) for ip, port in local}
         self.session = session
         self.session_record = session_record
         self.writer = writer
@@ -275,6 +297,8 @@ class Egress:
         if host == PLACEHOLDER:
             server.error = "aqt-egress: no destination (no TLS server name and no Host header)"
             return
+        if (host, port) in self.local:                # a configured local inference endpoint
+            return
         mapped = self.test_hosts.get(f"{host}:{port}") or self.test_hosts.get(host)
         if mapped:
             self.asked[server.id] = (host, port)
@@ -303,7 +327,7 @@ class Egress:
         """A name that resolved differently a moment later (DNS rebinding) must not reach the host's
         loopback either: close such a connection before anything is sent on it."""
         peer = data.server.peername
-        if self.allow_loopback or not peer or not _loopback(peer[0]):
+        if self.allow_loopback or not peer or not _loopback(peer[0]) or (normal_ip(peer[0]), peer[1]) in self.local:
             return
         info = self.conns.get(data.client.id)
         if info is not None:
@@ -324,10 +348,18 @@ class Egress:
                 name, _, port = host.rpartition(":") if host.count(":") == 1 else (host, "", "")
                 flow.request.host = (name or host).lower()
                 flow.request.port = int(port) if port.isdigit() else 80
-        tap = Tap(self.store)
+        provider = self._llm(flow.request.pretty_host, info)
+        tap = Tap(self.store, keep=llm_api.KEEP_BYTES if provider else HEAD_BYTES)
+        flow.metadata["aqt.llm"] = provider
         flow.metadata["aqt.request"] = tap
         flow.metadata["aqt.start"] = time.time()
         flow.request.stream = tap
+
+    def _llm(self, host: str | None, info: dict | None) -> str | None:
+        """The LLM provider of a destination, or None: such requests get no text excerpts."""
+        if info is not None and info.get("via") == "local":
+            return "local"
+        return llm_api.provider(host, self.settings.llm_hosts)
 
     def responseheaders(self, flow):
         tap = Tap(self.store)
@@ -439,7 +471,8 @@ class Egress:
         req_tap: Tap | None = flow.metadata.get("aqt.request")
         resp_tap: Tap | None = flow.metadata.get("aqt.response")
         names, credentials = headers_summary(request.headers.items(multi=True), self.key)
-        chars = self.settings.excerpt_chars
+        provider = flow.metadata.get("aqt.llm") or self._llm(host, info)
+        chars = 0 if provider else self.settings.excerpt_chars      # LLM traffic: structure, never text
         data.update(protocol=protocol or request.http_version, tls=self._tls(info, flow.client_conn),
                     method=request.method, path=mask_text(path)[:2048],
                     query_sha256=("sha256:" + hashlib.sha256(query.encode("utf-8", "surrogateescape")).hexdigest())
@@ -449,6 +482,11 @@ class Egress:
                            "content_type": request.headers.get("content-type"),
                            **(req_tap.summary() if req_tap else {"bytes": len(request.raw_content or b"")}),
                            "excerpt": _excerpt(req_tap, req_encoding, chars) if req_tap else None}
+        if provider:
+            data["process"] = _without_argv(data["process"])
+            data["llm"] = {"provider": provider, **(llm_api.structure(
+                bytes(req_tap.head), complete=req_tap.size <= len(req_tap.head), encoding=req_encoding,
+                path=path) if req_tap and req_tap.size else {})}
         if response is not None:
             resp_names, _ = headers_summary(response.headers.items(multi=True), self.key)
             resp_encoding = response.headers.get("content-encoding")
@@ -497,9 +535,14 @@ class Egress:
         data = self._base(info, host, port, ip=server.peername[0] if server.peername else None, sni=server.sni)
         up, down = flow.metadata.get("aqt.up"), flow.metadata.get("aqt.down")
         start = flow.metadata.get("aqt.start")
+        provider = self._llm(host, info)
+        chars = 0 if provider else self.settings.excerpt_chars
+        if provider:
+            data["process"] = _without_argv(data["process"])
+            data["llm"] = {"provider": provider}
         data.update(protocol="tcp", tls=self._tls(info, flow.client_conn),
-                    request={**up.summary(), "excerpt": _excerpt(up, None, self.settings.excerpt_chars)},
-                    response={**down.summary(), "excerpt": _excerpt(down, None, self.settings.excerpt_chars)},
+                    request={**up.summary(), "excerpt": _excerpt(up, None, chars)},
+                    response={**down.summary(), "excerpt": _excerpt(down, None, chars)},
                     timing={"start": _iso(start), "total_ms": _ms(start, time.time()),
                             "connect_ms": _ms(server.timestamp_start, server.timestamp_tcp_setup)})
         if error:

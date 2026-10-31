@@ -1,6 +1,7 @@
 """``aqt-egress`` (also ``aqt egress``): the outbound checkpoint.
 
-  aqt egress run [--project DIR] [--store excerpt|full] [--excerpt-chars N] -- COMMAND [ARGS...]
+  aqt egress run [--project DIR] [--store excerpt|full] [--excerpt-chars N] [--local-endpoint HOST:PORT]
+                 [--private-tmp] -- COMMAND [ARGS...]
         run COMMAND in a box whose only way out is the proxy; every request is recorded with
         the process that sent it (observe only: nothing is blocked)
   aqt egress report [--session ID] [--since 7d|DATE] [--json] [--evidence PATH]
@@ -10,7 +11,8 @@
   aqt egress status [--json]
         installed, CA, box support, last session
 
-Settings: $XDG_CONFIG_HOME/aqt/egress.toml (store, retention_days, excerpt_chars, passthrough).
+Settings: $XDG_CONFIG_HOME/aqt/egress.toml (store, retention_days, excerpt_chars, passthrough, llm_hosts,
+local_endpoints).
 Exit codes: run returns the command's exit code; otherwise 0 ok, 1 problem, 2 usage or runtime error.
 """
 
@@ -22,7 +24,8 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from .settings import SettingsError, check_excerpt, check_store, egress_state, load_settings, parse_retention
+from .settings import (SettingsError, check_excerpt, check_store, egress_state, load_settings, parse_endpoint,
+                       parse_retention)
 
 
 def cmd_run(args) -> int:
@@ -33,9 +36,12 @@ def cmd_run(args) -> int:
         settings.store = check_store(args.store)
     if args.excerpt_chars is not None:
         settings.excerpt_chars = check_excerpt(args.excerpt_chars)
+    for endpoint in args.local_endpoint or []:
+        if parse_endpoint(endpoint) not in settings.local_endpoints:
+            settings.local_endpoints.append(parse_endpoint(endpoint))
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
     try:
-        return run(command, project=Path(args.project or "."), settings=settings)
+        return run(command, project=Path(args.project or "."), settings=settings, private_tmp=args.private_tmp)
     except (BoxUnavailable, OSError) as error:
         print(f"aqt-egress: {error}", file=sys.stderr)
         return 2
@@ -108,7 +114,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("run", help="run a command in the box; every outbound request is recorded")
     p.add_argument("--project", help="the project folder (default: the current folder)")
     p.add_argument("--store", choices=("excerpt", "full"), help="for this session (default from egress.toml)")
-    p.add_argument("--excerpt-chars", type=int, help="length of the masked excerpts (0 to 4096)")
+    p.add_argument("--excerpt-chars", type=int, help="length of the masked excerpts (0 to 4096; default 280)")
+    p.add_argument("--local-endpoint", action="append", metavar="HOST:PORT",
+                   help="an inference server on this host's loopback the box may reach (repeatable)")
+    p.add_argument("--private-tmp", action="store_true",
+                   help="give the box a fresh /tmp (closes other programs' sockets there)")
     p.add_argument("command", nargs=argparse.REMAINDER, help="-- COMMAND [ARGS...]")
     p.set_defaults(func=cmd_run)
     p = sub.add_parser("report", help="who talked to whom")

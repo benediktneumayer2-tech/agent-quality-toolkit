@@ -16,7 +16,12 @@ configuration work unchanged. Exceptions:
 - hidden (empty): the egress state (CA key, body store, fingerprint key), the quarantine state,
   the X11 and tmux socket folders in ``/tmp``;
 - read-only: the AQT configuration and state folders (the spool folder stays writable, so
-  records of agent hooks still reach the trail when its writer is down).
+  records of agent hooks still reach the trail when its writer is down);
+- with ``private_tmp``: a fresh, empty ``/tmp`` (the project, the home folder and the AQT folders are
+  put back where they live under ``/tmp``), which also closes the Unix sockets of other programs there.
+
+The empty ``/run`` has side effects: keyrings reached over the session D-Bus (``gh``, git's libsecret
+credential helper, secret-service clients) and aqt-sensei's bridge sockets are not available in the box.
 """
 
 from __future__ import annotations
@@ -102,6 +107,7 @@ def box_environment(base: dict, session: str) -> dict:
     env["NODE_EXTRA_CA_CERTS"] = f"{BOX_DIR}/ca.pem"
     env["NODE_USE_ENV_PROXY"] = "1"
     env["AQT_EGRESS_SESSION"] = session
+    env["AQT_AGENT_SESSION"] = session        # AQT human checks see an agent; hook records name this session
     for name in [key for key in env if key.startswith("AQT_EGRESS_TEST")]:
         del env[name]
     return env
@@ -128,8 +134,12 @@ def _legacy_tiocsti() -> bool:
         return True      # older kernels: TIOCSTI always works, so keep the box off the terminal's session
 
 
+def _under_tmp(path: Path) -> bool:
+    return path.resolve().is_relative_to("/tmp") and path.resolve() != Path("/tmp")
+
+
 def bwrap_argv(command: list[str], *, project: Path, public: dict[str, Path], info_fd: int,
-               block_fd: int) -> tuple[list[str], dict]:
+               block_fd: int, private_tmp: bool = False) -> tuple[list[str], dict]:
     """The bwrap command line and the facts about it (for the session record)."""
     bwrap = bwrap_path()
     if not bwrap:
@@ -137,6 +147,11 @@ def bwrap_argv(command: list[str], *, project: Path, public: dict[str, Path], in
     argv = [bwrap, "--die-with-parent", "--unshare-user", "--unshare-net", "--unshare-pid", "--unshare-ipc",
             "--disable-userns", "--bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/run"]
     hidden, read_only = [], []
+    if private_tmp:
+        argv += ["--tmpfs", "/tmp"]
+        for folder in (project, Path.home(), config_home().parent, state_dir().parent):
+            if folder.is_dir() and _under_tmp(folder):
+                argv += ["--bind", str(folder.resolve()), str(folder.resolve())]
     runtime = os.environ.get("XDG_RUNTIME_DIR")
     if runtime and (Path(runtime) / "aqt").is_dir():
         argv += ["--ro-bind", str(Path(runtime) / "aqt"), str(Path(runtime) / "aqt")]
@@ -156,7 +171,8 @@ def bwrap_argv(command: list[str], *, project: Path, public: dict[str, Path], in
         spool.mkdir(parents=True, exist_ok=True)
         os.chmod(spool, 0o700)
         argv += ["--bind", str(spool), str(spool)]
-    for folder in (egress_state(), _quarantine_state(), Path("/tmp/.X11-unix"), Path(f"/tmp/tmux-{os.getuid()}")):
+    sockets = () if private_tmp else (Path("/tmp/.X11-unix"), Path(f"/tmp/tmux-{os.getuid()}"))
+    for folder in (egress_state(), _quarantine_state(), *sockets):
         if folder.is_dir():
             argv += ["--tmpfs", str(folder)]
             hidden.append(str(folder))
@@ -165,19 +181,20 @@ def bwrap_argv(command: list[str], *, project: Path, public: dict[str, Path], in
         argv.append("--new-session")
     argv += ["--chdir", str(project), "--info-fd", str(info_fd), "--block-fd", str(block_fd), "--", *command]
     facts = {"bwrap": bwrap_version(), "kernel": platform.release(), "hidden": hidden, "read_only": read_only,
-             "run": "empty tmpfs", "new_session": new_session}
+             "run": "empty tmpfs", "tmp": "private" if private_tmp else "shared", "new_session": new_session}
     return argv, facts
 
 
 class BoxProcess:
     """A started bwrap whose command waits until ``release()``."""
 
-    def __init__(self, command: list[str], *, project: Path, public: dict[str, Path], env: dict):
+    def __init__(self, command: list[str], *, project: Path, public: dict[str, Path], env: dict,
+                 private_tmp: bool = False):
         info_r, info_w = os.pipe()
         block_r, block_w = os.pipe()
         try:
             argv, self.facts = bwrap_argv(command, project=project, public=public, info_fd=info_w,
-                                          block_fd=block_r)
+                                          block_fd=block_r, private_tmp=private_tmp)
             self.process = subprocess.Popen(argv, pass_fds=(info_w, block_r), env=env)
         except BaseException:
             for fd in (info_r, info_w, block_r, block_w):
