@@ -28,3 +28,6 @@ First version.
 - `aqt <tool> ARGS...`: runs `aqt-trail`, `aqt-signoff`, `aqt-change`, `aqt-sensei`, `aqt-quarantine`,
   `aqt-validate`, `aqt-capa`, `aqt-ui` or `aqt-evidence` (as `spec` or `evidence`) with the same
   arguments and exit code.
+- Optional outbound checkpoint: `aqt egress …` runs aqt-egress (extra `agent-quality-toolkit[egress]`, Python
+  3.12+ only; the install hint says so when it is missing), and `aqt status` has an `egress` line (version, CA,
+  box support, last session) that is `skip` without the package and never fails the verdict.

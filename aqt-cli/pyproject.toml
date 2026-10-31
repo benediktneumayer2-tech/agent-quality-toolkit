@@ -24,6 +24,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=8"]
+egress = ["aqt-egress>=0.1.0.dev0; python_version >= '3.12'"]   # the outbound checkpoint (Python 3.12+)
 
 [project.scripts]
 aqt = "aqt_cli.cli:main"
@@ -38,6 +39,7 @@ aqt-quarantine = { path = "../aqt-quarantine", editable = true }
 aqt-validate = { path = "../aqt-validate", editable = true }
 aqt-capa = { path = "../aqt-capa", editable = true }
 aqt-ui = { path = "../aqt-ui", editable = true }
+aqt-egress = { path = "../aqt-egress", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/aqt_cli"]

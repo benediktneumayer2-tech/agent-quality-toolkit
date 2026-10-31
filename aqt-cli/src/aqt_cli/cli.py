@@ -8,7 +8,8 @@
                                      set this repository up (hooks, deny rules, agent instructions,
                                      aqt-change settings); safe to rerun, never commits
   aqt <tool> ARGS...                 run a tool with these arguments: trail, signoff, change, sensei,
-                                     quarantine, validate, capa, ui, spec (or evidence)
+                                     quarantine, validate, capa, ui, spec (or evidence), and the
+                                     optional egress (outbound checkpoint: agent-quality-toolkit[egress])
 
 Exit codes: 0 ok (warnings allowed), 1 a check failed, 2 usage or runtime error.
 """

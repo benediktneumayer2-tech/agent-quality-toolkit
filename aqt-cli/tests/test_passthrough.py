@@ -42,3 +42,11 @@ def test_own_usage(capsys):
     assert "agent-quality-toolkit" in capsys.readouterr().out
     assert main([]) == 2
     assert main(["status", "--bogus"]) == 2
+
+
+def test_egress_is_optional_and_says_what_it_needs(monkeypatch, capsys):
+    monkeypatch.setenv("PATH", "/nonexistent")
+    monkeypatch.setitem(tools.TOOLS, "egress", ("aqt_not_importable.cli", "aqt-not-installed", "aqt-egress"))
+    assert main(["egress", "report"]) == 2
+    err = capsys.readouterr().err
+    assert "aqt-egress is not installed" in err and "-e ./aqt-egress" in err and "Python 3.12" in err

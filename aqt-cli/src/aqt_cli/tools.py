@@ -22,14 +22,21 @@ TOOLS: dict[str, tuple[str, str, str]] = {
     "validate": ("aqt_validate.cli", "aqt-validate", "aqt-validate"),
     "capa": ("aqt_capa.cli", "aqt-capa", "aqt-capa"),
     "ui": ("aqt_ui.cli", "aqt-ui", "aqt-ui"),
+    "egress": ("aqt_egress.cli", "aqt-egress", "aqt-egress"),     # optional: agent-quality-toolkit[egress]
     "spec": ("aqt_evidence.cli", "aqt-evidence", "aqt-spec"),
     "evidence": ("aqt_evidence.cli", "aqt-evidence", "aqt-spec"),
 }
 
 
+# what a package needs beyond the toolkit's own Python 3.11
+REQUIRES = {"aqt-egress": "Python 3.12 or newer, bubblewrap"}
+
+
 def install_command(*distributions: str) -> str:
     """How to install packages today: editable from a clone of the repository (not on PyPI yet)."""
-    return "uv pip install " + " ".join(f"-e ./{dist}" for dist in distributions) + "   (in the repository clone)"
+    needs = [f"{dist} needs {REQUIRES[dist]}" for dist in distributions if dist in REQUIRES]
+    return ("uv pip install " + " ".join(f"-e ./{dist}" for dist in distributions) + "   (in the repository clone"
+            + "".join(f"; {need}" for need in needs) + ")")
 
 
 def distribution_of(module: str | None) -> str:

@@ -12,6 +12,7 @@ personal step (enrolling a signer) always leaves the passphrase to aqt-signoff's
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shutil
@@ -634,6 +635,34 @@ def check_vectors(ctx: Context) -> Result:
     return Result(OK, f"{len(results)} of {len(results)} test vectors agree")
 
 
+def _egress_status() -> dict | None:
+    """aqt-egress's own status, or None when the optional package is not installed."""
+    if importlib.util.find_spec("aqt_egress") is None:
+        return None
+    from aqt_egress.cli import status
+    return status()
+
+
+def check_egress(ctx: Context) -> Result:
+    """The optional outbound checkpoint: never a failure, whether it is installed or not."""
+    try:
+        value = _egress_status()
+    except Exception as error:  # noqa: BLE001 - an optional part must not fail the verdict
+        return Result(WARN, f"aqt-egress is installed but its status could not be read: {type(error).__name__}: "
+                            f"{error}", tools.install_command("aqt-egress"))
+    if value is None:
+        return Result(SKIP, "aqt-egress (optional outbound checkpoint) is not installed")
+    last = value.get("last_session")
+    parts = [f"aqt-egress {value.get('version')}",
+             "CA present" if value.get("ca") else "no CA yet (the first run creates it)",
+             f"last session {last.get('session')} ended {last.get('ended')}, {last.get('requests', 0)} request(s)"
+             if last else "no session yet"]
+    if not value.get("box"):
+        return Result(WARN, ", ".join(parts) + f"; the box cannot start here: {value.get('box_detail')}",
+                      "install bubblewrap (bwrap) and allow unprivileged user namespaces", data=value)
+    return Result(OK, ", ".join(parts), data=value)
+
+
 CHECKS: list[Check] = [
     Check("packages", check_packages),
     Check("trail.init", check_trail_init, step_trail_init, "create the trail (aqt-trail init)"),
@@ -648,6 +677,7 @@ CHECKS: list[Check] = [
           "write trail.toml with the review time zone and working hours"),
     Check("trail.intact", check_trail_intact),
     Check("vectors", check_vectors),
+    Check("egress", check_egress),
 ]
 
 

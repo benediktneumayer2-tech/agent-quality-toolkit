@@ -196,3 +196,23 @@ def test_rebootstrap_after_unsigned_revocations_is_a_warning_that_says_so():
     signer = by_id(run_checks(Context()))["signer"]
     assert signer.result == "warn" and "RE-BOOTSTRAP" in signer.explanation
     assert "NOT signed (human:alice key" in signer.explanation and signer.fix == "aqt-signoff signers check"
+
+
+def test_egress_line_never_fails_the_verdict(monkeypatch):
+    monkeypatch.setattr(checks, "_egress_status", lambda: None)
+    assert by_id(run_checks(Context()))["egress"].result == "skip"
+    monkeypatch.setattr(checks, "_egress_status", lambda: {"version": "0.1", "ca": True, "box": True,
+                                                            "box_detail": "ok", "last_session": {
+                                                                "session": "egs_1", "ended": "2026-10-31T10:00:00Z",
+                                                                "requests": 4}})
+    line = by_id(run_checks(Context()))["egress"]
+    assert line.result == "ok" and "CA present" in line.explanation and "egs_1" in line.explanation
+    monkeypatch.setattr(checks, "_egress_status", lambda: {"version": "0.1", "ca": False, "box": False,
+                                                            "box_detail": "bwrap missing", "last_session": None})
+    line = by_id(run_checks(Context()))["egress"]
+    assert line.result == "warn" and "bwrap missing" in line.explanation
+
+    def broken():
+        raise ModuleNotFoundError("No module named 'mitmproxy'", name="mitmproxy")
+    monkeypatch.setattr(checks, "_egress_status", broken)
+    assert by_id(run_checks(Context()))["egress"].result == "warn"
