@@ -4,6 +4,31 @@
 
 First version.
 
+One flow (same version, not yet released):
+
+- Home is the *Needs you* queue: one line per case with how long it has been waiting, an empty queue
+  says "Everything in order" with the trail status line. Trail status, ALCOA++, tool health and the
+  refusals moved to a *Health* view; the tool views stay as secondary views.
+- One page per case (`/case/<id>`): the subject and its STOP point (a red STOP when it waits for you),
+  the evidence, and the allowed decisions, each with one sentence on its consequence, in the existing
+  decision panel; after a decision the page shows the record ID and time and offers *Next case*.
+  Cases without a decision show the evidence and the exact command. The case pages reuse the panels
+  and server checks of the tool views.
+- One page per change (`/change/<project>/<plan>`, API `GET /api/change/<project>/<plan>[?fresh=1]`):
+  the timeline Plan → Checks → Review → Gate → Release with each step's state and evidence, the
+  current STOP marked, whether the change is released (verified as `aqt-signoff verify --require
+  released`, recording nothing) and the manifest.
+- *Sign released* (`POST /api/change/<project>/<plan>/release`): `aqt-signoff sign --record
+  <change.finish> --meaning released` after the agent check, a fresh gate evaluation that must be GO,
+  the change.finish record and hash shown, and no earlier valid "released" signature by the same
+  signer; `[policy.released]` applies as in `sign()` and is shown.
+- The queue has one entry per plan, for the step it stops at: `plan_approval` (the gate waits for a
+  signed plan version), `gate` (NO-GO or MANUAL), or `release` (finished, GO, not yet released).
+  Queue entries carry `id` (the case page) and `since`; codes and keys stay next to the words.
+- Keyboard: `j`/`k` move through the queue, `Enter` opens, `n` opens the next case, `Escape` closes a
+  sheet; never while typing in a field. A banner names the fix when the trail writer is down.
+- Labels in English and German; the change steps have their own German nouns (`STEPS_DE`).
+
 Security review fixes (same version, not yet released):
 
 - Round 4: test mode (`[anchor] test_tsa = true`) and the review profile's parameters are visible before signing:
