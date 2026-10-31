@@ -4,6 +4,17 @@
 
 First version.
 
+Third review of Sign released (same version, not yet released):
+
+- The finish record signed must be a finish of what the fresh gate evaluated: the plan version accepted now,
+  the receipts the gate counts now and, for a committed finish, HEAD or a commit with HEAD's files. Otherwise
+  nothing is signed and the page says the change moved on (`ui.release.other_plan_version`,
+  `ui.release.other_receipts`, `ui.release.other_head`): finish it again. A `finish --no-commit` record is
+  bound by receipts and plan version; its head is shown as the head before the change.
+- The change page shows HEAD next to the finished commit, and the trail writer's observed sender next to the
+  record's own author; the signature subject names the commit (and HEAD when it differs).
+- The release-state cache is used under a lock.
+
 Second review of the flow (same version, not yet released):
 
 - Sign released signs only this change's finish record: the copy in the evidence aqt-signoff reads must be a

@@ -363,9 +363,19 @@ export const DE = {
   "different-model": "anderes Modell",
   "human": "Mensch",
   "not tied to this change": "dieser Änderung nicht zugeordnet",
-  "The finish record that aqt-change's local copy names cannot be released here: it must be this plan's change.finish record in the evidence (with a trail, in the trail), the same as the local copy, with a commit of this repository. Check the project with aqt-change gate and the trail with aqt-trail verify.": "Der Abschlusseintrag, den die lokale Kopie von aqt-change nennt, kann hier nicht freigegeben werden: Er muss der Eintrag change.finish dieses Plans in den Nachweisen sein (mit Audit Trail: im Audit Trail), gleich der lokalen Kopie, mit einem Commit dieses Repositorys. Das Projekt mit aqt-change gate und den Audit Trail mit aqt-trail verify prüfen.",
+  "The finish record that aqt-change's local copy names cannot be released here. It must be this plan's latest change.finish record in the evidence (with a trail, in the trail), the same as the local copy, and a finish of what the gate evaluates now: the accepted plan version, the receipts the gate counts and HEAD (or a commit with HEAD's files). After later changes, finish the change again with aqt-change finish.": "Der Abschlusseintrag, den die lokale Kopie von aqt-change nennt, kann hier nicht freigegeben werden. Er muss der letzte Eintrag change.finish dieses Plans in den Nachweisen sein (mit Audit Trail: im Audit Trail), gleich der lokalen Kopie, und ein Abschluss dessen, was die Freigabeprüfung jetzt bewertet: der angenommenen Planversion, der Prüfnachweise, die die Freigabeprüfung zählt, und von HEAD (oder einem Commit mit den Dateien von HEAD). Nach späteren Änderungen die Änderung erneut mit aqt-change finish abschließen.",
   "change {plan}, finish record {record}, commit {commit}": "Änderung {plan}, Abschlusseintrag {record}, Commit {commit}",
   "Waits for you: the finish record is not tied to this change; nothing can be signed": "Wartet auf Sie: Der Abschlusseintrag ist dieser Änderung nicht zugeordnet; es kann nichts unterschrieben werden",
+  "By (as the record says)": "Durch (laut Eintrag)",
+  "Observed sender": "Beobachteter Absender",
+  "not observed (no trail writer)": "nicht beobachtet (kein Schreibdienst)",
+  "Finished commit": "Abgeschlossener Commit",
+  "Head before the change": "HEAD vor der Änderung",
+  "HEAD now": "HEAD jetzt",
+  "(the finished commit)": "(der abgeschlossene Commit)",
+  "(same files as the finished commit)": "(dieselben Dateien wie der abgeschlossene Commit)",
+  "change {plan}, finish record {record}, commit {commit}, HEAD {head}": "Änderung {plan}, Abschlusseintrag {record}, Commit {commit}, HEAD {head}",
+  "change {plan}, finish record {record}, head before the change {before}, HEAD {head}": "Änderung {plan}, Abschlusseintrag {record}, HEAD vor der Änderung {before}, HEAD {head}",
 };
 
 // "Needs you" entries by key: [title, detail]; {name} takes the entry's values, null keeps the

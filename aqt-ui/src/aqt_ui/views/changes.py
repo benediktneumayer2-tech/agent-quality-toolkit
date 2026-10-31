@@ -133,9 +133,11 @@ class ChangesView:
         target = ledger.record(approval["record"]) if approval.get("record") else None
         plan["approval_time"] = text_field(target, "time")
         plan["finish_record"], plan["release"] = None, None
+        plan["head"] = ledger.head() if ledger.git else None          # what the gate evaluated, shown beside the finish
         if not plan.get("finish"):
             return
-        record, problem = bind_finish(ledger, plan["plan_id"], plan["path"], plan["finish"], evidence())
+        record, problem = bind_finish(ledger, plan["plan_id"], plan["path"], plan["finish"], evidence(),
+                                      public.get("receipts") or [])
         if problem:
             plan.update(finish_problem=problem, **coded_fields("finish_problem", problem))
             plan["release"] = {"record": plan["finish"], "state": "unbound", "detail": problem,
@@ -380,6 +382,7 @@ class ChangesView:
 
 
 _RELEASES: dict = {}
+_RELEASES_LOCK = threading.Lock()                  # request threads read, fill and evict it
 
 
 def release_state(finish_id: str | None) -> dict | None:
@@ -396,8 +399,9 @@ def release_state(finish_id: str | None) -> dict | None:
     from aqt_signoff.manifest import rows
     so = open_signoff()
     key = (finish_id, fingerprint(*so.sources()), fingerprint(so.settings.registry_path, so.settings.config_path))
-    if key in _RELEASES:
-        return _RELEASES[key]
+    with _RELEASES_LOCK:
+        if key in _RELEASES:
+            return _RELEASES[key]
     try:
         report = so.verify_record(finish_id, required=["released"], record_invalidations=False)
     except SignoffError as error:
@@ -408,15 +412,17 @@ def release_state(finish_id: str | None) -> dict | None:
              **coded_fields("summary", summary), "policy": {**policy, **coded_fields("note", policy["note"])},
              "signatures": [{**r, **coded_fields("detail", r["detail"])} for r in rows(report)
                             if r["meaning"] == "released"]}
-    if len(_RELEASES) > 256:
-        _RELEASES.clear()
-    _RELEASES[key] = value
+    with _RELEASES_LOCK:
+        if len(_RELEASES) > 256:
+            _RELEASES.clear()
+        _RELEASES[key] = value
     return value
 
 
 def forget_release(finish_id: str) -> None:
-    for key in [key for key in _RELEASES if key[0] == finish_id]:
-        _RELEASES.pop(key, None)
+    with _RELEASES_LOCK:
+        for key in [key for key in _RELEASES if key[0] == finish_id]:
+            _RELEASES.pop(key, None)
 
 
 def signer_records() -> list[dict]:
@@ -439,7 +445,8 @@ def once(load: Callable[[], list]) -> Callable[[], list]:
     return get
 
 
-def bind_finish(ledger, plan_id: str, rel: str, finish_id: str, records: list[dict]) -> tuple[dict | None, Text | None]:
+def bind_finish(ledger, plan_id: str, rel: str, finish_id: str, records: list[dict],
+                gate_receipts: list) -> tuple[dict | None, Text | None]:
     """(the change.finish record a release of this change signs, None), or (None, why it cannot be signed).
 
     The gate names the finish record from aqt-change's local mirror, which the agent's user can write. A
@@ -447,8 +454,11 @@ def bind_finish(ledger, plan_id: str, rel: str, finish_id: str, records: list[di
     a ``change.finish`` record of plan ``plan_id`` at ``rel``; the same content as the mirror's copy; with
     a trail in use, in the trail log as aqt-change's own check confirms it (``TrailCheck``, with
     ``trail_keys`` honoured); its commit (or the head it recorded) in this repository's history, a
-    commit carrying the trailer ``AQT-Finish: <plan>/<key>`` that finish writes; and no later finish of the
-    plan in this repository."""
+    commit carrying the trailer ``AQT-Finish: <plan>/<key>`` that finish writes; no later finish of the
+    plan in this repository. And it must be a finish of what the fresh gate evaluated
+    (``gate_receipts``): the plan version the plan state accepts now, the receipts the gate counts now and,
+    for a finish that committed, HEAD or a commit with HEAD's tree. A finish without a commit (``finish
+    --no-commit``) records only the head before the change; receipts and plan version bind it."""
     from aqt_change.gitio import trailers
     from aqt_change.ledger import TRUST_TEXT, TrailCheck
     from aqt_evidence import record_content_hash
@@ -504,16 +514,49 @@ def bind_finish(ledger, plan_id: str, rel: str, finish_id: str, records: list[di
     if later:
         return None, Text("ui.release.not_latest", "{later} is a later change.finish record of plan {plan} than "
                           "{record}", later=str(later[-1].get("id")), plan=plan_id, record=finish_id)
+    # what the fresh gate evaluated: this plan version, these receipts, this tree
+    accepted = (ledger.plan_state(plan_id) or {}).get("accepted_raw")
+    version = found.get("subject").get("sha256") if isinstance(found.get("subject"), dict) else None
+    if not accepted or version != accepted:
+        return None, Text("ui.release.other_plan_version", "the change moved on since it was finished: {record} is "
+                          "for another version of the plan than the accepted one. Finish it again (aqt-change "
+                          "finish).", record=finish_id)
+    named = found["data"].get("receipts")
+    if not isinstance(named, list) or set(map(str, named)) != set(map(str, gate_receipts)):
+        return None, Text("ui.release.other_receipts", "the change moved on since it was finished: the receipts of "
+                          "{record} are not the ones the gate counts now. Finish it again (aqt-change finish).",
+                          record=finish_id)
+    if found["data"].get("commit"):
+        head = ledger.head()
+        if commit != head and tree_of(ledger, commit) != tree_of(ledger, head):
+            return None, Text("ui.release.other_head", "the change moved on since it was finished: HEAD {head} is not "
+                              "the finished commit {commit} and holds other files. Finish it again (aqt-change "
+                              "finish).", head=str(head), commit=commit)
     return found, None
 
 
+def tree_of(ledger, commit: str | None) -> str | None:
+    if not commit:
+        return None
+    done = ledger.git.run("rev-parse", "--verify", "--quiet", f"{commit}^{{tree}}", check=False)
+    if done.returncode != 0:
+        return None
+    return done.stdout.decode().strip() or None
+
+
 def finish_view(record: dict) -> dict:
-    """What the page shows of the bound finish record: all of it from the copy that is signed."""
+    """What the page shows of the bound finish record: all of it from the copy that is signed. ``by`` is the
+    actor the record names; ``observed`` is what the trail writer saw of its sender (absent without a writer)."""
     from aqt_evidence import record_content_hash
     data = record.get("data") or {}
+    seen = record.get("observed") if isinstance(record.get("observed"), dict) else {}
+    chain = seen.get("process_chain") if isinstance(seen.get("process_chain"), list) else []
+    observed = {"via": text_field(seen, "via"), "harness": text_field(seen, "harness"),
+                "chain_status": text_field(seen, "chain_status"),
+                "process_chain": [str(p) for p in chain[:8]]} if seen else None
     return {"id": record.get("id"), "time": record.get("time"), "by": (record.get("actor") or {}).get("id"),
             "commit": data.get("commit"), "head": data.get("head"), "gate": data.get("gate"),
-            "sha256": record_content_hash(record)}
+            "sha256": record_content_hash(record), "observed": observed}
 
 
 def review_row(record: dict, counting: set) -> dict:

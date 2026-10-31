@@ -94,7 +94,14 @@ def finish_project(root: Path, env: Path, monkeypatch) -> Path:
     git(root, "config", "user.email", "dev@example.invalid")
     git(root, "config", "user.name", "Example Dev")
     git(root, "add", "-A")
+    # A fixed date gives two such projects the same initial commit: aqt-change compares the base commit of a
+    # plan id with every begin record of that id in the one trail, and two projects with plan s01 and
+    # different bases would be MANUAL (plan_base_mismatch), depending on whether both began in the same second.
+    monkeypatch.setenv("GIT_AUTHOR_DATE", "2026-10-01T09:00:00+00:00")
+    monkeypatch.setenv("GIT_COMMITTER_DATE", "2026-10-01T09:00:00+00:00")
     git(root, "commit", "-qm", "initial")
+    monkeypatch.delenv("GIT_AUTHOR_DATE")
+    monkeypatch.delenv("GIT_COMMITTER_DATE")
     monkeypatch.chdir(root)                       # aqt-change resolves plan paths from here (set-up only)
     ledger = Ledger.open(root)
     plans.begin(ledger, P)
