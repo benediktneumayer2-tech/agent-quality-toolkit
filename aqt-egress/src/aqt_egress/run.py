@@ -18,8 +18,8 @@ from .attribution import Box
 from .box import BoxProcess, box_environment, write_public
 from .mask import load_key, masked_argv
 from .netns import open_listeners
-from .proxy import Egress, ensure_ca, make_master, serve_listeners
-from .records import RecordWriter
+from .proxy import Egress, ensure_ca, host_addresses, make_master, serve_listeners
+from .records import RecordWriter, drain_spool
 from .resolver import Lookups, ResolverProtocol, UNCLAIMED_S
 from .settings import Settings, egress_state, private_dir, project_settings
 from .store import BodyStore
@@ -64,50 +64,64 @@ def run(command: list[str], *, project: Path, settings: Settings, private_tmp: b
         say(f"aqt-egress: {route['warning']}", file=sys.stderr)
     store = BodyStore(state / "bodies").ensure() if settings.store == "full" else None
     test = _test_options()
+    if test:
+        say(f"aqt-egress: test options in effect ({', '.join(sorted(test))}); this session's records say so",
+            file=sys.stderr)
 
     environ = box_environment(os.environ, session)
     if private_tmp and environ.get("TMPDIR", "").startswith("/tmp/"):
         environ["TMPDIR"] = "/tmp"                 # the host's folder under /tmp is not in the box
     box = BoxProcess(command, project=project, public=public, env=environ, private_tmp=private_tmp)
-    try:
+    try:                                           # until the box is released, any failure ends it
         net, sockets = open_listeners(box.init_pid, local_ports=[port for _ip, port in settings.local_endpoints])
         attribution = Box(box.init_pid)
+        writer = RecordWriter(log=log)
+        drained = drain_spool(writer.sink)
+        started = time.time()
+        session_data = {
+            "session": session, "command": masked_argv(command, limit=32), "project": facts_project,
+            "mode": "observe", "store": settings.store, "excerpt_chars": settings.excerpt_chars,
+            "retention_days": settings.retention_days if settings.retention_days is not None else "forever",
+            "ca_fingerprint": ca_fingerprint, "policy_version": POLICY_VERSION,
+            "llm_hosts": settings.llm_hosts, "local_endpoints": [f"{ip}:{port}" for ip, port in settings.local_endpoints],
+            "box": {**box.facts, "network": net, "init_pid": box.init_pid},
+            "test_options": sorted(test) or None, "spool_drained": drained.get("drained") or None,
+        }
+        if not net.get("redirect"):
+            say("aqt-egress: no nftables redirect in the box "
+                f"({net.get('redirect_error', 'unavailable')}); only proxy-aware clients and ports 80/443 work",
+                file=sys.stderr)
+        session_record = writer.record("egress.session", "started", {k: v for k, v in session_data.items()
+                                                                     if v is not None},
+                                       subject={"kind": "egress.session", "ref": session})
+        writer.append_now(session_record)
+        lookups = Lookups()
+        addon = Egress(session=session, session_record=session_record["id"], writer=writer, settings=settings,
+                       key=key, attribute=attribution.attribute, lookups=lookups, store=store,
+                       test_hosts=test.get("hosts"), allow_loopback=bool(test.get("allow_loopback")),
+                       own_addresses=host_addresses())
     except BaseException:
         box.kill()
         raise
-    writer = RecordWriter(log=log)
-    started = time.time()
-    session_data = {
-        "session": session, "command": masked_argv(command, limit=32), "project": facts_project, "mode": "observe",
-        "store": settings.store, "excerpt_chars": settings.excerpt_chars,
-        "retention_days": settings.retention_days if settings.retention_days is not None else "forever",
-        "ca_fingerprint": ca_fingerprint, "policy_version": POLICY_VERSION,
-        "llm_hosts": settings.llm_hosts, "local_endpoints": [f"{ip}:{port}" for ip, port in settings.local_endpoints],
-        "box": {**box.facts, "network": net, "init_pid": box.init_pid},
-    }
-    if not net.get("redirect"):
-        say("aqt-egress: no nftables redirect in the box "
-            f"({net.get('redirect_error', 'unavailable')}); only proxy-aware clients and ports 80/443 work",
-            file=sys.stderr)
-    session_record = writer.emit("egress.session", "started", session_data,
-                                 subject={"kind": "egress.session", "ref": session})
-    lookups = Lookups()
-    addon = Egress(session=session, session_record=session_record, writer=writer, settings=settings, key=key,
-                   attribute=attribution.attribute, lookups=lookups, store=store,
-                   test_hosts=test.get("hosts"), allow_loopback=bool(test.get("allow_loopback")))
+    outcome: dict = {}
     try:
-        code = asyncio.run(_serve(box, sockets, addon, ca_dir, test.get("upstream_ca"), log))
+        code = asyncio.run(_serve(box, sockets, addon, ca_dir, test.get("upstream_ca"), log, outcome))
     finally:
         for sock in sockets.values():
             sock.close()
         if box.process.poll() is None:
             box.kill()
     addon.flush_lookups(older_than=0)
+    writer.close()                                 # everything queued is written (or counted as lost) first
     ended = {"session": session, "exit_code": code, "duration_ms": int((time.time() - started) * 1000),
-             "counts": {**addon.counts, "lookups": lookups.total}}
-    writer.emit("egress.session", "ended", ended, subject={"kind": "egress.session", "ref": session},
-                links=[{"rel": "session", "ref": session_record}])
-    writer.close()
+             "counts": {**addon.counts, "lookups": lookups.total},
+             "records": {**writer.routes, "failed": writer.failed}}
+    if outcome.get("proxy_stopped"):
+        ended["proxy_stopped"] = outcome["proxy_stopped"]
+    writer.append_now(writer.record("egress.session", "ended", ended, subject={"kind": "egress.session", "ref": session},
+                                    links=[{"rel": "session", "ref": session_record["id"]}]))
+    drain_spool(writer.sink)
+    writer.report()
     summary = {"session": session, "command": session_data["command"], "project": str(project),
                "started": _iso(started), "ended": _iso(time.time()), "exit_code": code,
                "requests": addon.counts["requests"], "store": settings.store,
@@ -121,7 +135,8 @@ def _iso(timestamp: float) -> str:
     return datetime.fromtimestamp(timestamp, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-async def _serve(box: BoxProcess, sockets: dict, addon: Egress, ca_dir: Path, upstream_ca, log) -> int:
+async def _serve(box: BoxProcess, sockets: dict, addon: Egress, ca_dir: Path, upstream_ca, log,
+                 outcome: dict) -> int:
     loop = asyncio.get_running_loop()
     master = make_master(ca_dir, addon, upstream_ca=upstream_ca)
     running = asyncio.create_task(master.run())
@@ -137,10 +152,18 @@ async def _serve(box: BoxProcess, sockets: dict, addon: Egress, ca_dir: Path, up
         while True:
             await asyncio.sleep(UNCLAIMED_S / 3)
             addon.flush_lookups(UNCLAIMED_S)
+            addon.own_addresses = await loop.run_in_executor(None, host_addresses)   # a VPN may have come up
 
     flusher = asyncio.create_task(flush())
     box.release()
-    code = await loop.run_in_executor(None, box.process.wait)
+    waiting = asyncio.ensure_future(loop.run_in_executor(None, box.process.wait))
+    await asyncio.wait({waiting, running}, return_when=asyncio.FIRST_COMPLETED)
+    if not waiting.done():                     # the proxy ended before the box: end the box, and say why
+        error = running.exception() if not running.cancelled() else None
+        outcome["proxy_stopped"] = f"{type(error).__name__}: {error}" if error else "the proxy stopped"
+        log(f"proxy stopped early: {outcome['proxy_stopped']}")
+        box.process.terminate()
+    code = await waiting
     deadline = time.monotonic() + 2.0          # let the hooks of connections that just closed finish
     while addon.conns and time.monotonic() < deadline:
         await asyncio.sleep(0.05)
@@ -151,7 +174,8 @@ async def _serve(box: BoxProcess, sockets: dict, addon: Egress, ca_dir: Path, up
         transport.close()
     master.shutdown()
     try:
-        await asyncio.wait_for(running, 5)
+        if not running.done():
+            await asyncio.wait_for(running, 5)
     except (asyncio.TimeoutError, Exception) as error:  # noqa: BLE001 - shutting down anyway
         log(f"proxy shutdown: {error!r}")
     for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):

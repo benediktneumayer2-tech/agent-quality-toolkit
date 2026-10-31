@@ -17,7 +17,9 @@ The ``Egress`` add-on attributes each connection to the box process that opened 
 stream through (hashing, counting and, in full mode, spooling them as they pass), and writes one
 ``egress.request`` record per request, WebSocket or TCP connection. This stage only observes:
 nothing is held or changed, with one exception that is the box's boundary, not a policy: the
-proxy never connects to the host's own loopback addresses for the box.
+proxy never connects to the host itself for the box (its loopback and its interface addresses), except
+to configured local endpoints. Each upstream connection first gets an ``opened`` record, written
+before anything is sent on it.
 """
 
 from __future__ import annotations
@@ -46,8 +48,9 @@ from .store import decode_body
 PLACEHOLDER = "no-destination.aqt-egress.invalid"
 CA_BASENAME = "mitmproxy"
 HEAD_BYTES = 64 * 1024
-TLS_PINNING_HINTS = ("certificate", "unknown ca", "trust")
-LOOPBACK_REFUSED = "aqt-egress: the host's own loopback is outside the box"
+OUTSIDE_REFUSED = {"host-loopback": "aqt-egress: the host's own loopback is outside the box",
+                   "host-local": "aqt-egress: this host's own addresses are outside the box"}
+LOOPBACK_REFUSED = OUTSIDE_REFUSED["host-loopback"]
 logger = logging.getLogger("aqt_egress")
 
 
@@ -99,7 +102,9 @@ async def serve_listeners(master: Master, addon: "Egress", sockets: dict) -> lis
     def via(name, handle):
         async def accept(reader, writer):
             peer = writer.get_extra_info("peername")
-            addon.via_by_peer[(normal_ip(peer[0]), peer[1])] = name
+            key = (normal_ip(peer[0]), peer[1])
+            addon.via_by_peer[key] = name
+            addon.io_by_peer[key] = _count(reader, writer)
             await handle(reader, writer)
         return accept
 
@@ -122,6 +127,25 @@ async def serve_listeners(master: Master, addon: "Egress", sockets: dict) -> lis
             handlers[name] = fixed(addon.local_by_port[port], lazy=False)
     return [await asyncio.start_server(via("local" if name.startswith("local") else name, handle), sock=sockets[name])
             for name, handle in handlers.items() if name in sockets]
+
+
+def _count(reader, writer) -> dict:
+    """Count the bytes between the box and the proxy on one connection (also when TLS passes through
+    unread). The stream objects stay what they are; only their read and write are wrapped."""
+    counts = {"up": 0, "down": 0}
+    read, write = reader.read, writer.write
+
+    async def counted_read(n=-1):
+        data = await read(n)
+        counts["up"] += len(data)
+        return data
+
+    def counted_write(data):
+        counts["down"] += len(data)
+        return write(data)
+
+    reader.read, writer.write = counted_read, counted_write
+    return counts
 
 
 # -- body taps -----------------------------------------------------------------------------------
@@ -227,10 +251,71 @@ def _clean(value):
 
 
 # -- the add-on ----------------------------------------------------------------------------------
+TLS_ALERTS = ("unknown ca", "bad certificate", "certificate unknown")   # a client's explicit rejection of the CA
+HOOK_ERROR = "aqt-egress could not record this exchange fully"
+
+
+def host_addresses() -> set[str]:
+    """Every address of this host's interfaces (LAN, VPN, bridges ...): ``ip -j addr`` from a system
+    folder, else /proc/net/if_inet6 plus the IPv4 address of each interface."""
+    from .netns import system_tool
+    found: set[str] = set()
+    ip = system_tool("ip")
+    if ip:
+        try:
+            import json as json_
+            import subprocess
+            for link in json_.loads(subprocess.run([ip, "-j", "addr", "show"], capture_output=True, text=True,
+                                                   timeout=10).stdout or "[]"):
+                for entry in link.get("addr_info", []):
+                    if entry.get("local"):
+                        found.add(normal_ip(entry["local"]))
+        except (OSError, ValueError, subprocess.SubprocessError):
+            pass
+    if not found:
+        import fcntl
+        import struct
+        try:
+            for line in Path("/proc/net/if_inet6").read_text().splitlines():
+                raw = line.split()[0]
+                found.add(normal_ip(str(ipaddress.IPv6Address(bytes.fromhex(raw)))))
+        except (OSError, ValueError, IndexError):
+            pass
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            for _index, name in socket.if_nameindex():
+                try:
+                    raw = fcntl.ioctl(probe.fileno(), 0x8915, struct.pack("256s", name.encode()[:15]))  # SIOCGIFADDR
+                    found.add(socket.inet_ntoa(raw[20:24]))
+                except OSError:
+                    continue
+    return found
+
+
+def _guarded(name: str, emits: bool):
+    """A hook that fails is counted (``hook_errors`` in the ended record) and, where it was to write the
+    record, still leaves a minimal one: a failing hook must not let traffic pass unrecorded."""
+    def wrap(method):
+        if asyncio.iscoroutinefunction(method):
+            async def hook(self, *args):
+                try:
+                    return await method(self, *args)
+                except Exception as error:  # noqa: BLE001
+                    self._hook_failed(name, error, args, emits)
+        else:
+            def hook(self, *args):
+                try:
+                    return method(self, *args)
+                except Exception as error:  # noqa: BLE001
+                    self._hook_failed(name, error, args, emits)
+        hook.__name__ = method.__name__
+        return hook
+    return wrap
+
+
 class Egress:
     def __init__(self, *, session: str, session_record: str | None, writer, settings, key: bytes,
                  attribute=None, lookups=None, store=None, test_hosts: dict | None = None,
-                 allow_loopback: bool = False):
+                 allow_loopback: bool = False, own_addresses: set[str] | None = None):
         local = list(getattr(settings, "local_endpoints", []))
         self.local = set(local)                       # (ip, port) on the host the box may reach
         self.local_by_port = {port: (ip, port) for ip, port in local}
@@ -239,30 +324,76 @@ class Egress:
         self.writer = writer
         self.settings = settings
         self.key = key
-        self.attribute = attribute or (lambda kind, peer: unattributed("not in a box"))
+        self.attribute = attribute or (lambda kind, peer, remote=None: unattributed("not in a box"))
         self.lookups = lookups
         self.store = store                            # BodyStore in full mode, else None
         self.test_hosts = test_hosts or {}            # tests only: name[:port] -> host[:port]
         self.allow_loopback = allow_loopback or bool(self.test_hosts)   # tests only: a local test server
+        self.own_addresses = set(own_addresses or ())  # this host's interface addresses (refused like loopback)
         self.asked: dict[str, tuple] = {}             # server connection id -> destination before a test mapping
+        self.opened: dict[str, str] = {}              # server connection id -> its "opened" record
         self.via_by_peer: dict[tuple, str] = {}
+        self.io_by_peer: dict[tuple, dict] = {}
         self.conns: dict[str, dict] = {}
-        self.passthrough = {host: "configured" for host in settings.passthrough}
+        self.passthrough_hosts = set(settings.passthrough)                  # configured, by name
+        self.learned: dict[tuple, str] = {}           # (server name, destination) -> reason
         self.seq = 0
-        self.counts = {"requests": 0, "bytes_up": 0, "bytes_down": 0, "refused": 0}
+        self.counts = {"requests": 0, "opened": 0, "bytes_up": 0, "bytes_down": 0, "refused": 0,
+                       "store_errors": 0, "hook_errors": 0}
+
+    # -- boundaries ---------------------------------------------------------------------------
+    def _outside(self, address: str, port: int) -> str | None:
+        """Why the box may not reach this address of the host itself, or None."""
+        if self.allow_loopback or (normal_ip(address), port) in self.local:
+            return None
+        if _loopback(address):
+            return "host-loopback"
+        if normal_ip(address) in self.own_addresses:
+            return "host-local"
+        return None
+
+    def _hook_failed(self, name: str, error: Exception, args, emits: bool) -> None:
+        self.counts["hook_errors"] += 1
+        logger.error("hook %s failed: %r", name, error, exc_info=error)
+        target = args[0] if args else None
+        if not emits or target is None:
+            return
+        flow_recorded = getattr(target, "metadata", {}).get("aqt.recorded") if hasattr(target, "metadata") else None
+        if flow_recorded:
+            return
+        try:
+            if hasattr(target, "metadata"):
+                target.metadata["aqt.recorded"] = True
+            client = getattr(target, "client_conn", None) or target
+            info = self.conns.get(getattr(client, "id", None))
+            if info is not None:
+                info["recorded"] = True
+            server = getattr(target, "server_conn", None) or (info or {}).get("server")
+            host, port = self._address(server, getattr(target, "request", None))
+            data = self._base(info, host, port)
+            data["error"] = f"{HOOK_ERROR}: {type(error).__name__}"
+            self.counts["requests"] += 1
+            self.writer.emit("egress.request", "observed", _clean(data),
+                             subject={"kind": "egress.destination", "ref": f"{host}:{port}"}, links=self._links())
+        except Exception as again:  # noqa: BLE001 - the error is counted already
+            logger.error("minimal record failed: %r", again)
 
     # -- connections -------------------------------------------------------------------------
+    @_guarded("client_connected", emits=False)
     def client_connected(self, client):
         peer = (normal_ip(client.peername[0]), client.peername[1])
         via = self.via_by_peer.pop(peer, "proxy")
-        self.conns[client.id] = {"via": via, "process": self.attribute("tcp", peer), "recorded": False,
-                                 "tls": None}
+        remote = (normal_ip(client.sockname[0]), client.sockname[1]) if client.sockname else None
+        self.conns[client.id] = {"via": via, "process": self.attribute("tcp", peer, remote), "recorded": False,
+                                 "tls": None, "io": self.io_by_peer.pop(peer, None)}
 
+    @_guarded("client_disconnected", emits=True)
     def client_disconnected(self, client):
         info = self.conns.pop(client.id, None)
         if info and not info["recorded"]:
             self._emit_connection(client, None, info, error=client.error)
 
+    @_guarded("tls_clienthello", emits=False)
     def tls_clienthello(self, data):
         info = self.conns.get(data.context.client.id)
         sni = (data.client_hello.sni or "").lower().rstrip(".") or None
@@ -271,23 +402,30 @@ class Egress:
             server.address = (sni, server.address[1])
         if info is not None:
             info["server"] = server
-        host = sni or (server.address[0] if server.address else None)
-        reason = self.passthrough.get(host or "")
+        reason = "configured" if sni in self.passthrough_hosts else self.learned.get((sni, server.address))
         if info is not None:
             info["tls"] = {"mode": "passthrough", "reason": reason} if reason else {"mode": "intercepted"}
         if reason:
             data.ignore_connection = True
 
+    @_guarded("tls_failed_client", emits=True)
     def tls_failed_client(self, data):
         info = self.conns.get(data.context.client.id)
         error = data.conn.error or "TLS handshake with the client failed"
-        host = data.conn.sni
-        if host and any(hint in error.lower() for hint in TLS_PINNING_HINTS):
-            self.passthrough.setdefault(host.lower(), "client-rejected-certificate")
+        sni, server = data.conn.sni, data.context.server
         if info is not None:
             info["tls"] = {"mode": "intercepted", "client_failed": True}
-            self._emit_connection(data.context.client, data.context.server, info, error=error)
+        # only an explicit alert from the client counts, and only for this name at this destination
+        if sni and server.address and any(alert in error.lower() for alert in TLS_ALERTS):
+            key = (sni.lower(), server.address)
+            if key not in self.learned:
+                self.learned[key] = "client-rejected-certificate"
+                if info is not None:
+                    info["tls"]["passthrough_learned"] = True
+        if info is not None:
+            self._emit_connection(data.context.client, server, info, error=error)
 
+    @_guarded("server_connect", emits=False)
     async def server_connect(self, data):
         server = data.server
         host, port = server.address[0], server.address[1]
@@ -318,28 +456,48 @@ class Egress:
                 server.error = f"cannot resolve {host}: {error}"
                 return
             addresses = [item[4][0] for item in found]
-        if not self.allow_loopback and any(_loopback(address) for address in addresses):
-            server.error = LOOPBACK_REFUSED
+        reasons = [reason for reason in (self._outside(address, port) for address in addresses) if reason]
+        if reasons:
+            server.error = OUTSIDE_REFUSED[reasons[0]]
             if info is not None:
-                info["refused"] = "host-loopback"
+                info["refused"] = reasons[0]
 
-    def server_connected(self, data):
-        """A name that resolved differently a moment later (DNS rebinding) must not reach the host's
-        loopback either: close such a connection before anything is sent on it."""
+    @_guarded("server_connected", emits=False)
+    async def server_connected(self, data):
+        """Before anything is sent upstream: a name that now resolves to the host itself (DNS rebinding)
+        is closed; otherwise an ``opened`` record with the destination is written first, so that a proxy
+        that dies or hangs mid-exchange still leaves the destination on record."""
         peer = data.server.peername
-        if self.allow_loopback or not peer or not _loopback(peer[0]) or (normal_ip(peer[0]), peer[1]) in self.local:
-            return
         info = self.conns.get(data.client.id)
-        if info is not None:
-            info["refused"] = "host-loopback"
-            self._emit_connection(data.client, data.server, info, error=LOOPBACK_REFUSED)
-        handler = ctx.master.addons.get("proxyserver").connections.get(data.client.id)
-        for connection in (data.server, data.client):       # nothing is sent; the client sees a reset
-            transport = handler.transports.get(connection) if handler else None
-            if transport is not None and transport.writer is not None:
-                transport.writer.close()
+        reason = self._outside(peer[0], peer[1]) if peer else None
+        if reason:
+            if info is not None:
+                info["refused"] = reason
+                self._emit_connection(data.client, data.server, info, error=OUTSIDE_REFUSED[reason])
+            handler = ctx.master.addons.get("proxyserver").connections.get(data.client.id)
+            for connection in (data.server, data.client):       # nothing is sent; the client sees a reset
+                transport = handler.transports.get(connection) if handler else None
+                if transport is not None and transport.writer is not None:
+                    transport.writer.close()
+            return
+        host, port = self._address(data.server, None)
+        record_data = {
+            "session": self.session, "mode": "observe", "decision": "allowed",
+            "process": info["process"] if info else unattributed("connection not seen from its start"),
+            "destination": {"host": host, "port": port, "ip": normal_ip(peer[0]) if peer else None,
+                            "sni": data.server.sni, "via": info["via"] if info else None},
+            "timing": {"start": _iso(data.server.timestamp_start)},
+        }
+        if self._llm(host, info) or self._llm(data.client.sni, info):
+            record_data["process"] = _without_argv(record_data["process"])
+        record = self.writer.record("egress.request", "opened", _clean(record_data), links=self._links(),
+                                    subject={"kind": "egress.destination", "ref": f"{host}:{port}"})
+        self.opened[data.server.id] = record["id"]
+        self.counts["opened"] += 1
+        await asyncio.get_running_loop().run_in_executor(None, self.writer.append_now, record)
 
     # -- HTTP --------------------------------------------------------------------------------
+    @_guarded("requestheaders", emits=False)
     def requestheaders(self, flow):
         info = self.conns.get(flow.client_conn.id)
         if info and info["via"] == "direct80" and flow.request.host == PLACEHOLDER:
@@ -348,7 +506,7 @@ class Egress:
                 name, _, port = host.rpartition(":") if host.count(":") == 1 else (host, "", "")
                 flow.request.host = (name or host).lower()
                 flow.request.port = int(port) if port.isdigit() else 80
-        provider = self._llm(flow.request.pretty_host, info)
+        provider = self._llm(flow.request.host, info) or self._llm(flow.request.pretty_host, info)
         tap = Tap(self.store, keep=llm_api.KEEP_BYTES if provider else HEAD_BYTES)
         flow.metadata["aqt.llm"] = provider
         flow.metadata["aqt.request"] = tap
@@ -361,20 +519,25 @@ class Egress:
             return "local"
         return llm_api.provider(host, self.settings.llm_hosts)
 
+    @_guarded("responseheaders", emits=False)
     def responseheaders(self, flow):
         tap = Tap(self.store)
         flow.metadata["aqt.response"] = tap
         flow.response.stream = tap
 
+    @_guarded("response", emits=True)
     def response(self, flow):
-        if flow.response.status_code == 101:      # WebSocket: recorded at its end, with its traffic
-            flow.metadata["aqt.ws"] = {"up": 0, "down": 0, "messages": 0}
+        upgrade = flow.request.headers.get("upgrade", "")
+        if flow.response.status_code == 101 and "websocket" in upgrade.lower():
+            flow.metadata["aqt.ws"] = {"up": 0, "down": 0, "messages": 0}   # recorded at its end, with its traffic
             return
-        self._emit_http(flow)
+        self._emit_http(flow, protocol="http-upgrade" if flow.response.status_code == 101 else None)
 
+    @_guarded("error", emits=True)
     def error(self, flow):
         self._emit_http(flow, error=flow.error.msg if flow.error else "error")
 
+    @_guarded("websocket_message", emits=False)
     def websocket_message(self, flow):
         counts = flow.metadata.setdefault("aqt.ws", {"up": 0, "down": 0, "messages": 0})
         message = flow.websocket.messages[-1]
@@ -382,22 +545,27 @@ class Egress:
         counts["messages"] += 1
         flow.websocket.messages.clear()
 
+    @_guarded("websocket_end", emits=True)
     def websocket_end(self, flow):
         self._emit_http(flow, protocol="websocket")
 
     # -- TCP ---------------------------------------------------------------------------------
+    @_guarded("tcp_start", emits=False)
     def tcp_start(self, flow):
         flow.metadata["aqt.up"], flow.metadata["aqt.down"] = Tap(self.store), Tap(self.store)
         flow.metadata["aqt.start"] = time.time()
 
+    @_guarded("tcp_message", emits=False)
     def tcp_message(self, flow):
         message = flow.messages[-1]
         flow.metadata["aqt.up" if message.from_client else "aqt.down"](message.content)
         flow.messages.clear()
 
+    @_guarded("tcp_end", emits=True)
     def tcp_end(self, flow):
         self._emit_tcp(flow)
 
+    @_guarded("tcp_error", emits=True)
     def tcp_error(self, flow):
         self._emit_tcp(flow, error=flow.error.msg if flow.error else "error")
 
@@ -417,10 +585,25 @@ class Egress:
                              subject={"kind": "egress.name", "ref": entry["name"]}, links=self._links())
 
     # -- records -----------------------------------------------------------------------------
-    def _links(self):
-        return [{"rel": "session", "ref": self.session_record}] if self.session_record else None
+    def _links(self, server=None):
+        links = [{"rel": "session", "ref": self.session_record}] if self.session_record else []
+        opened = self.opened.get(server.id) if server is not None else None
+        if opened:
+            links.append({"rel": "opened", "ref": opened})
+        return links or None
 
-    def _base(self, info, host, port, *, ip=None, sni=None) -> dict:
+    def _address(self, server, request) -> tuple:
+        """Where the proxy connected (or was to connect): the name or address it used, not what the
+        client claims in Host or SNI. Under a test mapping, the destination before the mapping."""
+        if server is not None and server.id in self.asked:
+            return self.asked[server.id]
+        if server is not None and server.address and server.address[0] != PLACEHOLDER:
+            return server.address[0], server.address[1]
+        if request is not None:
+            return request.host, request.port
+        return None, None
+
+    def _base(self, info, host, port, *, ip=None, sni=None, claimed=None) -> dict:
         self.seq += 1
         refused = info.get("refused") if info else None
         if refused:
@@ -432,21 +615,29 @@ class Egress:
             "destination": {"host": host or "", "port": port or 0, "ip": normal_ip(ip) if ip else None,
                             "sni": sni, "via": info["via"] if info else None},
         }
+        if claimed and claimed.lower().rstrip(".") != (host or "").lower():
+            data["destination"]["host_header"] = claimed       # what the client claimed, if it differs
         if refused:
             data["reason_code"] = refused
         if self.lookups is not None and host:
-            claimed = self.lookups.claim(host, data["process"])
-            if claimed:
+            claimed_lookups = self.lookups.claim(host, data["process"])
+            if claimed_lookups:
                 data["lookups"] = [{"name": entry["name"], "types": entry["types"], "count": entry["count"]}
-                                   for entry in claimed]
+                                   for entry in claimed_lookups]
         return data
 
-    def _submit(self, data: dict, host, port, store_work=None) -> None:
+    def _submit(self, data: dict, host, port, store_work=None, server=None) -> None:
+        links = self._links(server)
+
         def build():
             if store_work is not None:
-                store_work(data)
+                try:
+                    store_work(data)
+                except Exception as error:  # noqa: BLE001 - the record stays, with the error
+                    self.counts["store_errors"] += 1
+                    data["store_error"] = f"{type(error).__name__}: {error}"[:300]
             return "egress.request", "observed", _clean(data), {"kind": "egress.destination",
-                                                                "ref": f"{host}:{port}"}, self._links()
+                                                                "ref": f"{host}:{port}"}, links
         self.writer.submit(build)
 
     def _tls(self, info, client) -> dict:
@@ -462,21 +653,25 @@ class Egress:
         if info is not None:
             info["recorded"] = True
         request, response, server = flow.request, flow.response, flow.server_conn
-        asked = self.asked.get(server.id) if server is not None else None
-        host, port = request.pretty_host, asked[1] if asked else request.port
+        host, port = self._address(server, request)
         tls = server is not None and server.tls or flow.client_conn.tls_established
+        claimed = request.host_header.rsplit(":", 1)[0] if request.host_header and ":" in request.host_header \
+            and not request.host_header.endswith("]") else request.host_header
         data = self._base(info, host, port, ip=server.peername[0] if server and server.peername else None,
-                          sni=((server.sni if server else None) or flow.client_conn.sni) if tls else None)
+                          sni=((server.sni if server else None) or flow.client_conn.sni) if tls else None,
+                          claimed=claimed)
         path, _, query = request.path.partition("?")
         req_tap: Tap | None = flow.metadata.get("aqt.request")
         resp_tap: Tap | None = flow.metadata.get("aqt.response")
         names, credentials = headers_summary(request.headers.items(multi=True), self.key)
-        provider = flow.metadata.get("aqt.llm") or self._llm(host, info)
+        provider = flow.metadata.get("aqt.llm") or self._llm(host, info) or self._llm(claimed, info)
         chars = 0 if provider else self.settings.excerpt_chars      # LLM traffic: structure, never text
         data.update(protocol=protocol or request.http_version, tls=self._tls(info, flow.client_conn),
                     method=request.method, path=mask_text(path)[:2048],
                     query_sha256=("sha256:" + hashlib.sha256(query.encode("utf-8", "surrogateescape")).hexdigest())
                     if query else None)
+        if protocol == "http-upgrade":
+            data["upgrade"] = request.headers.get("upgrade", "")[:100]
         req_encoding = request.headers.get("content-encoding")
         data["request"] = {"headers": names, "credentials": credentials or None,
                            "content_type": request.headers.get("content-type"),
@@ -519,23 +714,24 @@ class Egress:
 
             def store_work(data, store=self.store):
                 refs = {"headers": store.put_headers(req_fields, resp_fields)}
+                data["store"] = refs
                 if req_raw:
                     refs["request_body"] = store.put_body(req_raw, req_encoding)
                 if resp_raw:
                     refs["response_body"] = store.put_body(resp_raw, response.headers.get("content-encoding"))
-                data["store"] = refs
-        self._submit(data, host, port, store_work)
+        self._submit(data, host, port, store_work, server)
 
     def _emit_tcp(self, flow, *, error: str | None = None) -> None:
         info = self.conns.get(flow.client_conn.id)
         if info is not None:
             info["recorded"] = True
         server = flow.server_conn
-        host, port = self.asked.get(server.id) or (server.address or (None, None))[:2]
-        data = self._base(info, host, port, ip=server.peername[0] if server.peername else None, sni=server.sni)
+        host, port = self._address(server, None)
+        data = self._base(info, host, port, ip=server.peername[0] if server.peername else None, sni=server.sni,
+                          claimed=flow.client_conn.sni)
         up, down = flow.metadata.get("aqt.up"), flow.metadata.get("aqt.down")
         start = flow.metadata.get("aqt.start")
-        provider = self._llm(host, info)
+        provider = self._llm(host, info) or self._llm(flow.client_conn.sni, info)
         chars = 0 if provider else self.settings.excerpt_chars
         if provider:
             data["process"] = _without_argv(data["process"])
@@ -557,24 +753,31 @@ class Egress:
             def store_work(data, store=self.store):
                 data["store"] = {key: store.put_body(raw, None) for key, raw in
                                  (("request_body", up_raw), ("response_body", down_raw)) if raw}
-        self._submit(data, host, port, store_work)
+        self._submit(data, host, port, store_work, server)
 
     def _emit_connection(self, client, server, info, *, error: str | None) -> None:
-        """A connection that carried no request we saw: TLS passed through or failed, refused, or closed early."""
+        """A connection that carried no request we saw: TLS passed through or failed, refused, or closed
+        early. Its sizes are the bytes that passed between the box and the proxy on this connection."""
         info["recorded"] = True
         server = server or info.get("server")
-        address = (self.asked.get(server.id) if server is not None else None) or \
-            (server.address if server is not None and server.address else (None, None))
-        host = client.sni or (address[0] if address[0] != PLACEHOLDER else None)
-        port = address[1] or (client.sockname[1] if client.sockname else None)
+        host, port = self._address(server, None)
+        if host is None:
+            port = client.sockname[1] if client.sockname else None
         data = self._base(info, host, port,
-                          ip=server.peername[0] if server is not None and server.peername else None, sni=client.sni)
+                          ip=server.peername[0] if server is not None and server.peername else None, sni=client.sni,
+                          claimed=client.sni)
+        io = info.get("io") or {}
         data.update(protocol="tls" if info.get("tls") else "tcp", tls=self._tls(info, client),
+                    request={"bytes": io.get("up", 0)}, response={"bytes": io.get("down", 0)},
                     timing={"start": _iso(client.timestamp_start),
                             "total_ms": _ms(client.timestamp_start, client.timestamp_end or time.time())})
+        if self._llm(host, info) or self._llm(client.sni, info):
+            data["process"] = _without_argv(data["process"])
         if error:
             data["error"] = mask_text(str(error))[:500]
         elif data["tls"].get("mode") != "passthrough":
             data["error"] = "closed before a request"
         self.counts["requests"] += 1
-        self._submit(data, host, port)
+        self.counts["bytes_up"] += io.get("up", 0)
+        self.counts["bytes_down"] += io.get("down", 0)
+        self._submit(data, host, port, None, server)

@@ -27,7 +27,7 @@ aqt egress status                          # box support, CA, last session
 
 `aqt egress …` and `aqt-egress …` are the same command. With the umbrella package: `agent-quality-toolkit[egress]`.
 
-Records go where all AQT records go (`aqt_evidence.open_sink()`): to the aqt-trail writer when it runs, otherwise to its spool or the fallback file. `aqt-trail verify` checks them like any other record.
+Records go where all AQT records go (`aqt_evidence.open_sink()`): to the aqt-trail writer when it runs, otherwise to the fallback file. While a trail's writer does not answer, they wait in aqt-egress's own spool (hidden in the box, never the shared spool the box can write) and are drained into the trail at the next session or with `aqt egress drain`. `aqt-trail verify` checks them like any other record.
 
 ## How it works
 
@@ -36,14 +36,15 @@ Records go where all AQT records go (`aqt_evidence.open_sink()`): to the aqt-tra
 3. **What the agent sees.** `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` (and the lower-case forms) point at `127.0.0.1:3128` inside the box. A private CA, created once, is trusted through `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, `GIT_SSL_CAINFO`, `PIP_CERT`, `NODE_EXTRA_CA_CERTS` and a combined system bundle. Its key is not visible inside the box.
 4. **Name lookups.** The box's resolver answers every name with the listener's address and records it. Names are resolved upstream only by the proxy. A client that ignores the proxy variables still reaches ports 80 and 443 this way; the proxy takes the destination from the TLS server name or the Host header.
 5. **Everything else.** Where nftables works in the box's namespace (verified on Ubuntu, kernel 7.0), every other TCP connection is redirected to the proxy too (original destination from the kernel), UDP DNS queries to any server are answered by the box resolver, and all other traffic to outside addresses is dropped. Without nftables those connections fail. See [docs/box.md](docs/box.md).
-6. **Attribution.** For each connection the proxy finds the client socket in the box's `/proc/net/tcp` and the box process holding it, then walks the parents up to the command you started. `chain_status` (`complete`, `partial`, `unavailable`) says how far that evidence goes, as in aqt-trail.
+6. **Attribution.** For each connection the proxy finds the client socket in the box's `/proc/net/tcp` by both of its ends, and the box process holding it, then walks the parents up to the command you started. `chain_status` (`complete`, `partial`, `shared`, `unavailable`) says how far that evidence goes, as in aqt-trail; `shared` lists every process that holds the socket. Pids, start times and the executable path come from the kernel; command names and arguments are what a process says about itself.
 7. **Streaming.** Bodies stream through: hashed, counted and (in full mode) spooled as they pass. A streamed LLM response reaches the agent chunk by chunk.
 
 **Files stay as they are**, so the agent keeps its configuration and your project. The exceptions:
 - `/run` is empty: the host's service sockets (D-Bus, systemd, systemd-resolved, docker, libvirt, your runtime folder) are not reachable; the trail writer's socket is put back read-only.
   Side effect: keyrings reached over the session D-Bus (`gh`, git's libsecret credential helper, other secret-service clients) and aqt-sensei's bridge sockets do not work in the box; use file-based credentials there.
 - Hidden: the egress state (CA key, body store, fingerprint key), the quarantine state, the X11 and tmux socket folders in `/tmp`.
-- Read-only: the AQT configuration and state folders (the spool folder stays writable).
+- Read-only: the AQT configuration and state folders (the spool folder stays writable), the cgroup files (the proxy runs in your cgroups too: the box cannot freeze or kill it) and the folders aqt-egress runs from (its Python, packages and sources, so the box cannot change the next session's recorder; with an editable checkout this includes the aqt-egress and aqt-spec source folders).
+- The programs that build the box (bwrap, nft, ip) are taken only from root-owned system folders, never from `PATH`; the session record holds their paths and hashes and the firewall table as the kernel reports it.
 - With `--private-tmp`: a fresh, empty `/tmp` (the project, the home folder and the AQT folders are put back where they live under `/tmp`). This also closes other programs' Unix sockets there.
 - `AQT_AGENT_SESSION` and `AQT_EGRESS_SESSION` name the egress session, so records from agent hooks inside the box can be matched to it (and AQT's human checks see an agent).
 
@@ -51,8 +52,8 @@ Records go where all AQT records go (`aqt_evidence.open_sink()`): to the aqt-tra
 
 | Type | Action | What it holds |
 |---|---|---|
-| `egress.session` | `started`, `ended` | session ID, command (masked), project and its `require`, mode `observe`, store, excerpt length, retention, CA fingerprint, box facts (bwrap version, kernel, network setup, hidden and read-only folders), policy version `none`; at the end the exit code, counts and duration |
-| `egress.request` | `observed` | one per HTTP request, WebSocket or TCP connection: process chain, destination (`host` as asked, `ip`, `port`, `sni`, `via` = `proxy`, `redirect`, `direct80`, `direct443`, `local`), protocol, TLS mode (`intercepted`, `passthrough` with the reason, `none`), method, path (masked), query as a hash, header names, credential headers as fingerprints, sizes and body hashes, status, timing, masked excerpts (none for LLM destinations, which get `llm`: provider, `model`, messages, roles, tools), the lookups that led to it, `mode: observe`, `decision: allowed` (or `refused` with `reason_code: host-loopback`, see below), and in full mode the body-store references |
+| `egress.session` | `started`, `ended` | session ID, command (masked), project and its `require`, mode `observe`, store, excerpt length, retention, CA fingerprint, box facts (bwrap version, kernel, network setup, hidden and read-only folders), policy version `none`; test options if any were in effect; at the end the exit code, duration, counts (requests, connections opened, bytes, refused, store and hook errors, lookups) and where the records went (trail, spooled, file, failed) |
+| `egress.request` | `opened`, `observed` | `opened` when an upstream connection opens, written before anything is sent on it; then `observed`, one per HTTP request, WebSocket or TCP connection (linked to its `opened`): process chain, destination (`host` and `port` where the proxy connected, `host_header` when the client claimed another host, `ip`, `port`, `sni`, `via` = `proxy`, `redirect`, `direct80`, `direct443`, `local`), protocol, TLS mode (`intercepted`, `passthrough` with the reason, `none`), method, path (masked), query as a hash, header names, credential headers as fingerprints, sizes and body hashes, status, timing, masked excerpts (none for LLM destinations, which get `llm`: provider, `model`, messages, roles, tools), the lookups that led to it, `mode: observe`, `decision: allowed` (or `refused` with `reason_code` `host-loopback` or `host-local`, see below), `store_error` if the body store failed, and in full mode the body-store references |
 | `egress.lookup` | `observed` | names the box resolver answered without a request following: name, query types, count, process |
 | `egress.pruned` | `pruned` | what `aqt egress prune` deleted: count, bytes, retention, cutoff |
 
@@ -80,14 +81,15 @@ local_endpoints = []     # inference servers on this host the box may reach, e.g
 
 A project can commit `.aqt/egress.toml` with `require = true`. The session record carries it; a later `aqt project status` check will warn about agent sessions that ran outside the box.
 
-A client that rejects the private CA (certificate pinning) fails once; the host is then passed through unread for the rest of the session and recorded as `passthrough` (`client-rejected-certificate`). List such hosts under `passthrough` to pass them through from the start.
+A client that rejects the private CA with an explicit TLS alert (`unknown ca`, `bad certificate`, `certificate unknown`: certificate pinning) fails once; that name at that destination is then passed through unread for the rest of the session, recorded as `passthrough` (`client-rejected-certificate`) with the bytes in each direction, and the failed attempt's record says `passthrough_learned`. A handshake that just breaks off changes nothing. List hosts under `passthrough` to pass them through from the start.
 
 ## Threat model and limits
 
 What it gives you:
 - Every connection that leaves the box goes through the proxy and is recorded with the sending process; direct connections to IP addresses on any port and DNS queries to outside resolvers are caught as well (where nftables works).
 - The box cannot create user namespaces, change its firewall, see or signal the proxy, or read the CA key and the body store.
-- The proxy never connects to the host's own loopback addresses for the box (such requests are refused and recorded): the box's `localhost` is its own.
+- The proxy never connects to the host itself for the box: neither its loopback nor any address of its interfaces (LAN, VPN, bridges), except configured local endpoints. Such requests are refused and recorded (`host-loopback`, `host-local`); the box's `localhost` is its own.
+- A record exists before data leaves: each upstream connection is recorded as `opened` before anything is sent on it, so a proxy that dies mid-exchange still leaves the destination; a failing hook is counted and leaves a minimal record. `aqt egress report` counts only records the trail writer saw coming from the session's own proxy process and lists others as unverified.
 
 What it does **not** do:
 - **Block anything.** This stage observes. Holding what the task does not explain is a later stage.
@@ -97,6 +99,7 @@ What it does **not** do:
 - **Contain what is not network.** Files stay writable: something in the box can leave a script that runs later outside it (a shell profile, a git hook). Unix sockets outside `/run` and the hidden folders (for example an editor's IPC socket in `/tmp`, an agent socket in your home) stay reachable and may act outside the box; `--private-tmp` closes those in `/tmp`. `--die-with-parent` ends the box with the proxy, but it does not undo what was written.
 - **Watch agents that are not in the box.** It protects only what runs inside `aqt egress run`.
 - **Attribute every byte.** Attribution is read from `/proc` when the connection arrives; a process that exits at once or hands its socket on can leave the chain `partial` or `unavailable`.
+- **Survive a killed launcher before start.** If `aqt egress run` is killed before the command starts, the command may still start, without any network.
 
 ## Regulatory status
 

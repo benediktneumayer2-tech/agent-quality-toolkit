@@ -10,6 +10,8 @@
         delete stored bodies (full mode) older than the retention period; recorded
   aqt egress status [--json]
         installed, CA, box support, last session
+  aqt egress drain
+        move records waiting in aqt-egress's own spool into the trail (also done at each session)
 
 Settings: $XDG_CONFIG_HOME/aqt/egress.toml (store, retention_days, excerpt_chars, passthrough, llm_hosts,
 local_endpoints).
@@ -79,6 +81,16 @@ def cmd_prune(args) -> int:
     return 1 if writer.failed else 0
 
 
+def cmd_drain(args) -> int:
+    from .records import drain_spool
+    result = drain_spool()
+    if result.get("error"):
+        print(f"aqt-egress: {result.get('waiting', 0)} record(s) still waiting: {result['error']}", file=sys.stderr)
+        return 1
+    print(f"drained {result['drained']} record(s) into the trail")
+    return 0
+
+
 def status() -> dict:
     """What ``aqt status`` shows: version, CA, box support, last session."""
     from .box import available
@@ -110,7 +122,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="aqt-egress", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--version", action="version", version=f"aqt-egress {__version__}")
-    sub = parser.add_subparsers(dest="command_name", required=True, metavar="{run,report,prune,status}")
+    sub = parser.add_subparsers(dest="command_name", required=True, metavar="{run,report,prune,status,drain}")
     p = sub.add_parser("run", help="run a command in the box; every outbound request is recorded")
     p.add_argument("--project", help="the project folder (default: the current folder)")
     p.add_argument("--store", choices=("excerpt", "full"), help="for this session (default from egress.toml)")
@@ -131,6 +143,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--retention-days", help="days (7 or more) or 'forever' (default from egress.toml)")
     p.add_argument("--dry-run", action="store_true", help="only count what would be removed")
     p.set_defaults(func=cmd_prune)
+    p = sub.add_parser("drain", help="move records from aqt-egress's own spool into the trail")
+    p.set_defaults(func=cmd_drain)
     p = sub.add_parser("status", help="installed, CA, box support, last session")
     p.add_argument("--json", action="store_true", help="machine-readable output")
     p.set_defaults(func=cmd_status)

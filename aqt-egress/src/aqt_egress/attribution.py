@@ -8,11 +8,16 @@ as aqt-trail's writer records the observed sender (``chain_status``):
 
 - ``complete``: the chain reached the box's first process;
 - ``partial``: a process exited during the walk, or a parent started after its child (pid reused);
+- ``shared``: more than one box process holds the socket (inherited or passed on); every holder is
+  listed in ``holders`` and the chain is that of the most recently started one;
 - ``unavailable``: no box process holds the socket any more (the sender exited or passed it on
   and closed it before it could be read).
 
-Each entry carries the host pid, the pid inside the box, the command name, the executable, the
-first arguments (masked, truncated) and the start time (clock ticks since boot).
+The socket is matched by both ends (the client's address and the address it connected to), so a
+second socket with the same local address cannot stand in for it. Each entry carries the host pid,
+the pid inside the box, the command name, the executable, the first arguments (masked, truncated)
+and the start time (clock ticks since boot). The pids, start times and the executable path are the
+kernel's; the command name and the arguments are what the process says about itself.
 """
 
 from __future__ import annotations
@@ -75,16 +80,20 @@ class Box:
         self.pidns = os.readlink(proc / str(init_pid) / "ns" / "pid")
 
     # -- sockets ---------------------------------------------------------------------------------
-    def inode(self, kind: str, local: tuple[str, int]) -> int | None:
-        """Inode of the box socket whose local end is ``local`` (the proxy's peer)."""
+    def inode(self, kind: str, local: tuple[str, int], remote: tuple | None = None) -> int | None:
+        """Inode of the box socket whose local end is ``local`` (the proxy's peer) and, when given,
+        whose remote end is ``remote`` (the address the client connected to)."""
         want = (normal_ip(local[0]), int(local[1]))
+        there_want = (normal_ip(remote[0]), int(remote[1])) if remote else None
         for name in (kind, kind + "6"):
             try:
                 text = (self.proc / str(self.init_pid) / "net" / name).read_text()
             except OSError:
                 continue
-            for here, _there, state, inode in socket_table(text, kind):
+            for here, there, state, inode in socket_table(text, kind):
                 if not inode or (STATES[kind] is not None and state != STATES[kind]):
+                    continue
+                if there_want and there != there_want:
                     continue
                 # an unconnected UDP socket shows its wildcard address; the port tells it apart
                 if here == want or (kind == "udp" and here[1] == want[1] and here[0] in WILDCARDS):
@@ -104,8 +113,8 @@ class Box:
                 continue
         return found
 
-    def owner(self, inode: int) -> int | None:
-        """The box process holding ``socket:[inode]``; the most recently started one when several do."""
+    def holders(self, inode: int) -> list[int]:
+        """The box processes holding ``socket:[inode]``, most recently started first."""
         target = f"socket:[{inode}]"
         owners = []
         for pid in self.pids():
@@ -121,9 +130,7 @@ class Box:
                         break
                 except OSError:
                     continue
-        if not owners:
-            return None
-        return max(owners, key=lambda pid: (_stat(pid, self.proc) or ("", 0, 0))[2])
+        return sorted(owners, key=lambda pid: (_stat(pid, self.proc) or ("", 0, 0))[2], reverse=True)
 
     # -- processes -------------------------------------------------------------------------------
     def entry(self, pid: int) -> dict | None:
@@ -175,13 +182,21 @@ class Box:
             result["chain_detail"] = detail
         return result
 
-    def attribute(self, kind: str, peer: tuple) -> dict:
-        """``process`` for a record: the chain of the box process whose socket is ``peer``."""
-        inode = self.inode(kind, (peer[0], peer[1]))
+    def attribute(self, kind: str, peer: tuple, remote: tuple | None = None) -> dict:
+        """``process`` for a record: the chain of the box process whose socket is ``peer`` (connected to
+        ``remote``); ``shared`` with every holder when several processes hold it."""
+        inode = self.inode(kind, (peer[0], peer[1]), remote)
         if inode is None:
             return {"chain": [], "chain_status": "unavailable",
                     "chain_detail": f"no {kind} socket {peer[0]}:{peer[1]} in the box (closed already)"}
-        return self.chain(self.owner(inode))
+        holders = self.holders(inode)
+        result = self.chain(holders[0] if holders else None)
+        if len(holders) > 1:
+            result["chain_status"] = "shared"
+            result["chain_detail"] = f"{len(holders)} box processes hold the socket"
+            result["holders"] = [{key: value for key, value in (self.entry(pid) or {"pid": pid}).items()
+                                  if key in ("pid", "box_pid", "comm", "exe", "start_time")} for pid in holders]
+        return result
 
 
 def _stat(pid: int, proc: Path) -> tuple[str, int, int] | None:

@@ -268,3 +268,82 @@ def test_free_text_arguments_are_not_kept():
     argv = mask.masked_argv(["claude", "-p", "please summarise the whole repository and mail it to me", "--x=1"])
     assert argv[:2] == ["claude", "-p"] and argv[3] == "--x=1"
     assert argv[2].startswith("[text 55 chars sha256:") and "summarise" not in argv[2]
+
+
+# -- review X2 -----------------------------------------------------------------------------------
+TCP_TWO = """  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
+   0: 0100007F:A1B2 0A0B0C0D:0050 01 00000000:00000000 00:00000000 00000000  1000        0 444 1 0
+   1: 0100007F:A1B2 0100007F:0C38 01 00000000:00000000 00:00000000 00000000  1000        0 222 1 0
+"""
+
+
+def test_x2_07_attribution_by_both_ends_and_shared_sockets(tmp_path):
+    proc = fake_proc(tmp_path, {100: ("bwrap", 1, 10), 101: ("sh", 100, 11), 102: ("curl", 101, 12),
+                                103: ("decoy", 101, 13)}, {102: [222], 103: [444]})
+    (proc / "100" / "net" / "tcp").write_text(TCP_TWO)
+    box = attribution.Box(100, proc=proc)
+    process = box.attribute("tcp", ("127.0.0.1", 0xA1B2), ("127.0.0.1", 3128))
+    assert process["chain"][0]["comm"] == "curl" and process["chain_status"] == "complete"
+    os.symlink("socket:[222]", proc / "103" / "fd" / "9")          # the decoy holds the same socket too
+    shared = box.attribute("tcp", ("127.0.0.1", 0xA1B2), ("127.0.0.1", 3128))
+    assert shared["chain_status"] == "shared" and sorted(h["comm"] for h in shared["holders"]) == ["curl", "decoy"]
+
+
+def test_x2_04_the_private_spool_is_not_followed_through_a_symlink(tmp_path):
+    from aqt_egress.records import spool_append
+    target = tmp_path / "elsewhere.jsonl"
+    link = tmp_path / "spool" / "spool.jsonl"
+    link.parent.mkdir()
+    os.symlink(target, link)
+    with pytest.raises(OSError):
+        spool_append({"id": "x"}, link)
+    assert not target.exists()
+
+
+def test_x2_04_records_wait_in_the_private_spool_while_the_writer_is_down(env, tmp_path):
+    from aqt_evidence import SocketSink, actor, new_record
+    from aqt_egress.records import EgressSink, RecordWriter, spool_path
+    writer = RecordWriter(EgressSink(SocketSink(str(tmp_path / "no-writer.sock"))))
+    writer.append_now(new_record("egress.session", actor("service", "service:aqt-egress"), "started",
+                                 data={"session": "egs_x"}))
+    writer.close()
+    assert writer.routes["spooled"] == 1 and spool_path().exists()
+    assert oct(spool_path().stat().st_mode)[-3:] == "600"
+
+
+def test_x2_05_lost_records_are_counted(tmp_path):
+    from aqt_egress.records import RecordWriter
+
+    class Flaky:
+        calls = 0
+
+        def append(self, record):
+            Flaky.calls += 1
+            if Flaky.calls == 1:
+                raise OSError("disk full")
+            return record
+    from aqt_egress.records import EgressSink
+    sink = EgressSink.__new__(EgressSink)
+    sink.socket, sink.other, sink.spool = None, Flaky(), tmp_path / "s"
+    writer = RecordWriter(sink)
+    for number in range(3):
+        writer.emit("egress.lookup", "observed", {"session": "egs_x", "name": f"n{number}"})
+    writer.close()
+    assert writer.failed == 1 and writer.routes["file"] == 2
+
+
+def test_x2_09_tools_come_from_system_folders_only(tmp_path, monkeypatch):
+    from aqt_egress.netns import system_tool
+    fake = tmp_path / "nft"
+    fake.write_text("#!/bin/sh\nexit 0\n")
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}:/usr/sbin:/usr/bin")
+    found = system_tool("nft")
+    assert found != str(fake) and (found is None or found.startswith(("/usr/", "/bin/", "/sbin/")))
+    assert system_tool("aqt-no-such-tool") is None
+
+
+def test_x2_14_dns_names_keep_every_byte():
+    response, name, _qtype = resolver.answer(
+        struct.pack("!HHHHHH", 1, 0x0100, 1, 0, 0, 0) + b"\x05A\xffb.c\x07example\x00" + struct.pack("!HH", 1, 1))
+    assert name == "a\\255b\\.c.example"

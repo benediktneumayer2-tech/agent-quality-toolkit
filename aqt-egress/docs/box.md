@@ -61,6 +61,19 @@ Python `urllib` and Node `fetch` (Node 22 honours the proxy variables with `NODE
 - **No bubblewrap or no user namespaces:** `aqt egress run` refuses to start; `aqt egress status` and the `egress`
   line of `aqt status` say why.
 
+## After the review (X2)
+
+- **Killing a box before release.** bwrap's first process outlives the outer bwrap while it waits on the block
+  pipe (its parent-death signal is set only later), and the end of the pipe starts the command. A setup failure
+  therefore kills that process by its pid first, then bwrap, then closes the pipe (`test_x2_13`). If the launcher
+  itself is killed before release, the command can still start, without any network.
+- **cgroups.** `/sys/fs/cgroup` is bound read-only: the box shares the user's cgroups with the proxy and could
+  otherwise freeze or kill it.
+- **Tools and code.** bwrap, nft and ip come only from root-owned system folders; the interpreter, the packages
+  and (for editable installs) the sources aqt-egress runs from are read-only in the box.
+- **Host addresses.** Besides loopback, every address of the host's interfaces (from `ip -j addr`, refreshed every
+  10 seconds) is refused, unless it is a configured local endpoint.
+
 ## Side effects of the empty `/run`
 
 Keyrings reached over the session D-Bus (`gh`, git's libsecret credential helper, other secret-service clients)

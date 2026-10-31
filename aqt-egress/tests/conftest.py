@@ -100,6 +100,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length)
+        if self.path.startswith("/slow"):
+            time.sleep(1.0)
+        if self.path.startswith("/upgrade"):        # a non-WebSocket upgrade, then an echo
+            self.send_response(101)
+            self.send_header("Upgrade", "x-test")
+            self.send_header("Connection", "Upgrade")
+            self.end_headers()
+            self.wfile.flush()
+            data = self.connection.recv(100)
+            self.connection.sendall(b"echo:" + data)
+            self.close_connection = True
+            return
         self._send(json.dumps({"received": len(body)}).encode(), content_type="application/json")
 
 
@@ -142,7 +154,8 @@ def upstream(tmp_path):
 class InProcessProxy:
     """mitmproxy with the Egress add-on on a 127.0.0.1:0 listener, in a background thread."""
 
-    def __init__(self, tmp: Path, upstream: Upstream, *, settings, test_hosts: dict, allow_loopback=False):
+    def __init__(self, tmp: Path, upstream: Upstream, *, settings, test_hosts: dict, allow_loopback=False,
+                 own_addresses=None):
         from aqt_egress.mask import load_key
         from aqt_egress.proxy import Egress, ensure_ca
         from aqt_egress.records import RecordWriter
@@ -159,9 +172,9 @@ class InProcessProxy:
         self.lookups = Lookups()
         self.addon = Egress(session="egs_test", session_record=None, writer=self.writer, settings=settings,
                             key=load_key(tmp / "key"), lookups=self.lookups, store=self.store,
-                            attribute=lambda kind, peer: {"chain": [{"pid": 1, "comm": "test-client"}],
+                            attribute=lambda kind, peer, remote=None: {"chain": [{"pid": 1, "comm": "test-client"}],
                                                           "chain_status": "complete"},
-                            test_hosts=test_hosts, allow_loopback=allow_loopback)
+                            test_hosts=test_hosts, allow_loopback=allow_loopback, own_addresses=own_addresses)
         self.upstream_ca = upstream.ca
         self.sock = socket.socket()
         self.sock.bind(("127.0.0.1", 0))
@@ -229,5 +242,5 @@ def make_proxy(tmp_path, upstream, env):
         proxy.close()
 
 
-def requests_of(records):
-    return [record for record in records if record["type"] == "egress.request"]
+def requests_of(records, action="observed"):
+    return [record for record in records if record["type"] == "egress.request" and record["action"] == action]

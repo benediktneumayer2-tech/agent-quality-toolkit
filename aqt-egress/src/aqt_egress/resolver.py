@@ -23,6 +23,21 @@ TTL = 1
 UNCLAIMED_S = 30.0
 
 
+def _label(raw: bytes) -> str:
+    """A label in presentation form (RFC 4343): letters in lower case, ``.`` and ``\\`` escaped, every
+    other byte outside printable ASCII as ``\\DDD``, so the recorded name keeps every byte."""
+    out = []
+    for byte in raw:
+        char = chr(byte)
+        if char in ".\\":
+            out.append("\\" + char)
+        elif 0x21 <= byte <= 0x7E:
+            out.append(char.lower())
+        else:
+            out.append(f"\\{byte:03d}")
+    return "".join(out)
+
+
 def parse_query(packet: bytes) -> tuple[int, int, str, int, int] | None:
     """(id, flags, name, qtype, end of the question) of a standard query, or None."""
     if len(packet) < 12:
@@ -40,12 +55,12 @@ def parse_query(packet: bytes) -> tuple[int, int, str, int, int] | None:
             break
         if length & 0xC0 or offset + length > len(packet):
             return None
-        labels.append(packet[offset:offset + length].decode("ascii", "replace"))
+        labels.append(_label(packet[offset:offset + length]))
         offset += length
     if offset + 4 > len(packet):
         return None
     qtype, _qclass = struct.unpack("!HH", packet[offset:offset + 4])
-    return ident, flags, ".".join(labels).lower(), qtype, offset + 4
+    return ident, flags, ".".join(labels), qtype, offset + 4
 
 
 def answer(packet: bytes) -> tuple[bytes, str, int] | None:

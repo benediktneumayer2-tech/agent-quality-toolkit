@@ -42,7 +42,7 @@ def tcp(host, port, payload, tls=False):
     except OSError as error:
         return f"failed:{error.strerror or error}"
 print("ip443=" + tcp("203.0.113.10", 443, b"GET /ip443 HTTP/1.1\r\nHost: 203.0.113.10\r\nConnection: close\r\n\r\n", True))
-print("ip8080=" + tcp("203.0.113.10", 8080, b"GET /ip8080 HTTP/1.1\r\nHost: 203.0.113.10:8080\r\nConnection: close\r\n\r\n"))
+print("ip8080=" + tcp("203.0.113.10", 8080, b"GET /ip8080 HTTP/1.1\r\nHost: spoofed.example\r\nConnection: close\r\n\r\n"))
 q = struct.pack("!HHHHHH", 7, 0x0100, 1, 0, 0, 0) + b"\x0bsecret-data\x07example\x03com\x00" + struct.pack("!HH", 16, 1)
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.settimeout(3)
 try:
@@ -75,6 +75,12 @@ for sock in /run/docker.sock /var/run/docker.sock /run/dbus/system_bus_socket /r
     test -S "$sock" && found="$found $sock"
 done
 say host_sockets "${found:-none}"
+cg=$(cut -d: -f3 /proc/self/cgroup | head -1)
+{ test -w "/sys/fs/cgroup$cg/cgroup.kill" || test -w "/sys/fs/cgroup$cg/cgroup.freeze" \
+  || test -w "/sys/fs/cgroup$(dirname "$cg")/cgroup.procs"; } && say cgroup writable || say cgroup read-only
+writable=""
+for dir in $AQT_TEST_INSTALL; do test -w "$dir" && writable="$writable $dir"; done
+say install_writable "${writable:-none}"
 """
 
 
@@ -88,6 +94,8 @@ def run_box(env_dir: Path, upstream, *args, script: str = SCRIPT, project: Path 
                       "203.0.113.10:8080": f"127.0.0.1:{upstream.http_port}"},
             "upstream_ca": upstream.ca})
     environ["AQT_TEST_RUNNER_PID"] = str(os.getpid())
+    from aqt_egress.box import installation
+    environ["AQT_TEST_INSTALL"] = " ".join(installation())
     project = project or env_dir
     done = subprocess.run([sys.executable, "-m", "aqt_egress.cli", "run", "--project", str(project), *args, "--",
                            "sh", "-c", script], env=environ, capture_output=True, text=True, timeout=180)
@@ -123,7 +131,10 @@ def test_box_records_attribute_verify_and_hold_against_escapes(env, upstream, tr
     [ended] = [r for r in records if r["type"] == "egress.session" and r["action"] == "ended"]
     session = started["data"]["session"]
     redirect = started["data"]["box"]["network"]["redirect"]
-    requests = [r for r in records if r["type"] == "egress.request"]
+    from aqt_egress.netns import system_tool
+    if system_tool("nft") and system_tool("ip"):       # where the tools exist, the redirect must be on
+        assert redirect, started["data"]["box"]["network"]
+    requests = [r for r in records if r["type"] == "egress.request" and r["action"] == "observed"]
     by_path = {r["data"].get("path"): r for r in requests}
 
     # what was meant to work works, and each record names the program that sent it
@@ -146,7 +157,7 @@ def test_box_records_attribute_verify_and_hold_against_escapes(env, upstream, tr
         assert ip443["process"]["chain"][0]["comm"].startswith("python")
         ip8080 = by_path["/ip8080"]["data"]
         assert ip8080["destination"] == {**ip8080["destination"], "host": "203.0.113.10", "port": 8080,
-                                         "via": "redirect"}
+                                         "via": "redirect", "host_header": "spoofed.example"}   # X2-01
         assert results["ip8080"].startswith("HTTP/1."), results
         assert results["udpdns"] == "answered-by-box"
         [lookup] = [r["data"] for r in records if r["type"] == "egress.lookup"
@@ -162,6 +173,16 @@ def test_box_records_attribute_verify_and_hold_against_escapes(env, upstream, tr
     assert results["nft_flush"] == "refused" and results["trail_state"] == "read-only"
     assert results["env_proxy"] == "http://127.0.0.1:3128"
     assert results["host_sockets"] == "none"         # docker, D-Bus, systemd, resolved: /run is empty
+    assert results["cgroup"] == "read-only"            # X2-03: the box cannot freeze or kill the proxy
+    assert results["install_writable"] == "none"       # X2-09: the recorder's own code is read-only
+    tools = started["data"]["box"]["tools"]
+    assert tools["bwrap"]["path"].startswith(("/usr/", "/bin/")) and tools["bwrap"]["sha256"].startswith("sha256:")
+    assert started["data"]["test_options"] == ["hosts", "upstream_ca"]          # X2-10
+    assert "test options in effect" in done.stderr
+    if redirect:
+        assert "aqt_egress" in started["data"]["box"]["network"]["nft_table"]
+    opened = [r for r in records if r["type"] == "egress.request" and r["action"] == "opened"]
+    assert opened and all(r["data"]["destination"]["host"] for r in opened)   # X2-03
 
     # the trail with the egress records verifies
     verify = subprocess.run([sys.executable, "-m", "aqt_trail.cli", "verify"], capture_output=True, text=True,
@@ -208,7 +229,8 @@ def test_box_local_endpoint_loopback_boundary_private_tmp_and_session(env, upstr
     assert done.returncode == 0, done.stdout + done.stderr
     records = list(read_jsonl(Path(os.environ["XDG_STATE_HOME"]) / "aqt" / "evidence.jsonl"))
     [started] = [r["data"] for r in records if r["type"] == "egress.session" and r["action"] == "started"]
-    requests = {r["data"]["destination"]["port"]: r["data"] for r in records if r["type"] == "egress.request"}
+    requests = {r["data"]["destination"]["port"]: r["data"] for r in records if r["type"] == "egress.request"
+                and r["action"] == "observed"}
     # the configured local inference server: reached, recorded like any request, structure only
     assert results["local"] == "200"
     local = requests[upstream.http_port]
@@ -223,3 +245,52 @@ def test_box_local_endpoint_loopback_boundary_private_tmp_and_session(env, upstr
     # a fresh /tmp, and the agent session names the egress session
     assert results["marker"] == "hidden" and results["tmp"] == "writable" and started["box"]["tmp"] == "private"
     assert results["agent_session"] == started["session"]
+
+
+@pytest.mark.skipif(bool(NEEDS), reason=f"needs {', '.join(NEEDS)} in the box")
+def test_x2_04_records_wait_in_a_private_spool_and_are_drained(env, upstream):
+    subprocess.run([sys.executable, "-m", "aqt_trail.cli", "init"], check=True, capture_output=True, timeout=60)
+    done, results = run_box(env, upstream, script="curl -sS -o /dev/null https://upstream.test/spooled; "
+                            "test -e \"$XDG_STATE_HOME/aqt/egress/spool.jsonl\" && echo spool=visible || echo spool=hidden")
+    assert done.returncode == 0, done.stderr
+    assert results["spool"] == "hidden"
+    state = Path(os.environ["XDG_STATE_HOME"]) / "aqt"
+    private = list(read_jsonl(state / "egress" / "spool.jsonl"))
+    assert {r["type"] for r in private} >= {"egress.session", "egress.request"}
+    shared = state / "spool" / "spool.jsonl"
+    assert not shared.exists() or not any(r["type"].startswith("egress.") for r in read_jsonl(shared))
+    writer = subprocess.Popen([sys.executable, "-m", "aqt_trail.cli", "serve"], stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL)
+    try:
+        socket_path = Path(os.environ["XDG_RUNTIME_DIR"]) / "aqt" / "trail.sock"
+        deadline = time.monotonic() + 20
+        while not socket_path.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        drained = subprocess.run([sys.executable, "-m", "aqt_egress.cli", "drain"], capture_output=True, text=True,
+                                 timeout=60)
+        assert drained.returncode == 0 and f"drained {len(private)}" in drained.stdout, drained.stdout + drained.stderr
+        trail = [r for r in read_jsonl(state / "trail" / "trail.jsonl") if r["type"].startswith("egress.")]
+        assert {r["id"] for r in trail} == {r["id"] for r in private}
+        verify = subprocess.run([sys.executable, "-m", "aqt_trail.cli", "verify"], capture_output=True, text=True,
+                                timeout=60)
+        assert verify.returncode == 0, verify.stdout + verify.stderr
+    finally:
+        writer.terminate()
+        writer.wait(10)
+
+
+@pytest.mark.skipif(bool(NEEDS), reason=f"needs {', '.join(NEEDS)} in the box")
+def test_x2_13_a_failure_before_release_ends_the_box(env, monkeypatch):
+    from aqt_egress import run as run_module
+    from aqt_egress.settings import Settings
+    marker = env / "started.marker"
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("records unavailable")
+    monkeypatch.setattr(run_module, "RecordWriter", broken)
+    with pytest.raises(RuntimeError, match="records unavailable"):
+        run_module.run(["sh", "-c", f"touch {marker}"], project=env, settings=Settings())
+    time.sleep(0.5)
+    assert not marker.exists()
+    left = subprocess.run(["pgrep", "-f", str(marker)], capture_output=True, text=True)
+    assert left.stdout.strip() == ""

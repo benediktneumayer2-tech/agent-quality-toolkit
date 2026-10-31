@@ -26,17 +26,19 @@ credential helper, secret-service clients) and aqt-sensei's bridge sockets are n
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import platform
-import shutil
+import signal
 import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
 from aqt_evidence import spool_file, state_dir
 
-from .netns import PROXY_PORT
+from .netns import PROXY_PORT, system_tool
 from .settings import config_home, egress_state
 
 BOX_DIR = "/run/aqt-egress"
@@ -49,7 +51,31 @@ class BoxUnavailable(RuntimeError):
 
 
 def bwrap_path() -> str | None:
-    return shutil.which("bwrap")
+    """bwrap from a root-owned system folder only (``netns.system_tool``), never from PATH."""
+    return system_tool("bwrap")
+
+
+def tool_facts() -> dict:
+    """Path and SHA-256 of the programs that build the box, for the session record."""
+    facts = {}
+    for name in ("bwrap", "nft", "ip"):
+        path = system_tool(name)
+        if path:
+            facts[name] = {"path": path, "sha256": "sha256:" + hashlib.sha256(Path(path).read_bytes()).hexdigest()}
+    return facts
+
+
+def installation() -> list[str]:
+    """The folders aqt-egress runs from (its interpreter, packages and sources), read-only in the box:
+    otherwise the box could change the code of the next session's launcher or helper."""
+    import aqt_egress
+    import aqt_evidence
+    import mitmproxy
+    folders = {Path(sys.prefix).resolve(), Path(sys.base_prefix).resolve()}
+    folders |= {Path(module.__file__).resolve().parent for module in (aqt_egress, aqt_evidence, mitmproxy)}
+    ordered = sorted(folders, key=lambda path: len(path.parts))
+    kept = [path for index, path in enumerate(ordered) if not any(path.is_relative_to(other) for other in ordered[:index])]
+    return [str(path) for path in kept if path != Path("/")]
 
 
 def available() -> tuple[bool, str]:
@@ -143,10 +169,13 @@ def bwrap_argv(command: list[str], *, project: Path, public: dict[str, Path], in
     """The bwrap command line and the facts about it (for the session record)."""
     bwrap = bwrap_path()
     if not bwrap:
-        raise BoxUnavailable("bubblewrap (bwrap) is not installed")
+        raise BoxUnavailable("bubblewrap (bwrap) is not installed in a system folder (/usr/bin, /bin)")
     argv = [bwrap, "--die-with-parent", "--unshare-user", "--unshare-net", "--unshare-pid", "--unshare-ipc",
             "--disable-userns", "--bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/run"]
     hidden, read_only = [], []
+    if Path("/sys/fs/cgroup").is_dir():          # the user's cgroups hold the proxy too: no freezing or killing it
+        argv += ["--ro-bind", "/sys/fs/cgroup", "/sys/fs/cgroup"]
+        read_only.append("/sys/fs/cgroup")
     if private_tmp:
         argv += ["--tmpfs", "/tmp"]
         for folder in (project, Path.home(), config_home().parent, state_dir().parent):
@@ -166,6 +195,9 @@ def bwrap_argv(command: list[str], *, project: Path, public: dict[str, Path], in
         if folder.is_dir():
             argv += ["--ro-bind", str(folder), str(folder)]
             read_only.append(str(folder))
+    for folder in installation():
+        argv += ["--ro-bind", folder, folder]
+        read_only.append(folder)
     spool = spool_file().parent
     if spool.is_relative_to(state_dir()) and state_dir().is_dir():
         spool.mkdir(parents=True, exist_ok=True)
@@ -180,7 +212,8 @@ def bwrap_argv(command: list[str], *, project: Path, public: dict[str, Path], in
     if new_session:
         argv.append("--new-session")
     argv += ["--chdir", str(project), "--info-fd", str(info_fd), "--block-fd", str(block_fd), "--", *command]
-    facts = {"bwrap": bwrap_version(), "kernel": platform.release(), "hidden": hidden, "read_only": read_only,
+    facts = {"bwrap": bwrap_version(), "tools": tool_facts(), "kernel": platform.release(), "hidden": hidden,
+             "read_only": read_only,
              "run": "empty tmpfs", "tmp": "private" if private_tmp else "shared", "new_session": new_session}
     return argv, facts
 
@@ -230,8 +263,17 @@ class BoxProcess:
         self._block = None
 
     def kill(self) -> None:
+        # The box's first process outlives the outer bwrap while it waits on the block pipe (its
+        # parent-death signal is set only afterwards), and the pipe's end would start the command:
+        # kill it by its pid first, then bwrap, and only then close the pipe.
+        init_pid = getattr(self, "init_pid", None)
+        if init_pid:
+            try:
+                os.kill(init_pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
         if self.process.poll() is None:
-            self.process.kill()           # before the block pipe closes: its end would start the command
+            self.process.kill()
         self.process.wait()
         if self._block is not None:
             os.close(self._block)

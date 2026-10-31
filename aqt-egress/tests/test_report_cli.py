@@ -59,8 +59,8 @@ def test_report_groups_sessions_destinations_processes():
     assert second["lookups"] == [{"name": "leak.example", "types": ["TXT"], "count": 3, "process": "dig"}]
     text = render(report)
     assert "collector.example:443" in text and "NEW" in text and "leak.example  TXT  3x  dig" in text
-    assert "running" not in text.split("session egs_a")[1].splitlines()[0]
-    assert "-> running" in text.split("session egs_b")[1].splitlines()[0]
+    assert "no end" not in text.split("session egs_a")[1].splitlines()[0]
+    assert "-> no end" in text.split("session egs_b")[1].splitlines()[0]
 
 
 def test_report_filters():
@@ -105,3 +105,16 @@ def test_status_and_usage(env, capsys):
     assert value["ca"] is False and value["last_session"] is None and "box_detail" in value
     assert cli.main(["run"]) == 2 and "no command" in capsys.readouterr().err
     assert cli.main(["nonsense"]) == 2
+
+
+def test_x2_11_records_from_another_sender_are_unverified():
+    records = sample()
+    for record in records:
+        record["observed"] = {"pid": 4242, "via": "socket"}
+    forged = request("egs_b", "forged.example", 443, "2026-10-31T10:00:04.000000Z")
+    forged["observed"] = {"pid": 777, "via": "socket"}           # sent from inside the box
+    report = build(records + [forged])
+    second = report["sessions"][1]
+    assert [d["host"] for d in second["destinations"]] == ["api.example", "collector.example"]
+    assert second["unverified"] == [{"id": forged["id"], "type": "egress.request", "sender_pid": 777}]
+    assert "not from this session's proxy process" in render(report)

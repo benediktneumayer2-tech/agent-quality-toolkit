@@ -25,7 +25,6 @@ from __future__ import annotations
 import fcntl
 import json
 import os
-import shutil
 import socket
 import struct
 import subprocess
@@ -58,9 +57,26 @@ RULES = f"""table inet aqt_egress {{
 
 
 
-def _tool(name: str) -> str | None:
-    return shutil.which(name) or next((path for path in (f"/usr/sbin/{name}", f"/sbin/{name}")
-                                       if os.access(path, os.X_OK)), None)
+SYSTEM_DIRS = ("/usr/bin", "/usr/sbin", "/bin", "/sbin")
+
+
+def system_tool(name: str) -> str | None:
+    """``name`` from a system folder only, never from PATH: the file and its folder must belong to root
+    and be writable by nobody else (the box shares the user's files, so a tool in a folder the user can
+    write could have been replaced by an earlier session)."""
+    for folder in SYSTEM_DIRS:
+        path = os.path.join(folder, name)
+        try:
+            info, parent = os.stat(path), os.stat(os.path.realpath(os.path.dirname(os.path.realpath(path))))
+            real = os.stat(os.path.realpath(path))
+        except OSError:
+            continue
+        if all(item.st_uid == 0 and not item.st_mode & 0o022 for item in (info, real, parent)) \
+                and os.access(path, os.X_OK):
+            return path
+    return None
+
+
 
 
 def _run(argv: list[str], text: str | None = None) -> str | None:
@@ -117,16 +133,21 @@ def _udp(port: int, *, ipv6: bool) -> socket.socket:
     return sock
 
 
-def setup(local_ports: list[int] = ()) -> tuple[dict, dict[str, socket.socket]]:
+def setup(local_ports: list[int] = (), tools: tuple = (None, None)) -> tuple[dict, dict[str, socket.socket]]:
     facts: dict = {"loopback": _lo_up()}
     ipv6 = facts["ipv6"] = _ipv6()
-    nft, ip = _tool("nft"), _tool("ip")
+    nft, ip = tools
     if not nft or not ip:
         facts["redirect"] = False
         facts["redirect_error"] = "nft and ip (iproute2) are needed for the redirect; not found"
     else:
         error = _run([nft, "-f", "-"], RULES)
         if error is None:
+            try:   # what the kernel holds now, as evidence (not what was meant to be loaded)
+                facts["nft_table"] = subprocess.run([nft, "list", "table", "inet", "aqt_egress"], capture_output=True,
+                                                    text=True, timeout=10).stdout.strip()
+            except (OSError, subprocess.TimeoutExpired):
+                pass
             for argv in ([ip, "addr", "add", f"{BOX_ADDRESS}/32", "dev", "lo"],
                          [ip, "route", "add", "default", "dev", "lo", "src", BOX_ADDRESS],
                          *([[ip, "-6", "route", "add", "default", "dev", "lo"]] if ipv6 else [])):
@@ -158,10 +179,12 @@ def setup(local_ports: list[int] = ()) -> tuple[dict, dict[str, socket.socket]]:
 def main(argv: list[str]) -> int:
     userns, netns, channel, *ports = (int(value) for value in argv)
     chan = socket.socket(fileno=channel)
+    # found before joining: in the box's user namespace root's files belong to nobody
+    tools = (system_tool("nft"), system_tool("ip"))
     try:
         os.setns(userns, os.CLONE_NEWUSER)
         os.setns(netns, os.CLONE_NEWNET)
-        facts, sockets = setup(ports)
+        facts, sockets = setup(ports, tools)
     except Exception as error:  # noqa: BLE001 - reported to the launcher
         chan.sendall(json.dumps({"error": f"{type(error).__name__}: {error}"}).encode())
         return 1

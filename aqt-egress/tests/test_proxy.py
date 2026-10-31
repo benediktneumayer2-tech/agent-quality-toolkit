@@ -223,3 +223,129 @@ def test_other_destinations_keep_a_masked_excerpt_of_280_by_default(make_proxy):
     proxy.opener().open(Request("http://plain.test/upload", data=b"z" * 1000)).read()
     [record] = requests_of(proxy.records())
     assert record["data"]["request"]["excerpt"] == "z" * 280 and "llm" not in record["data"]
+
+
+# -- review X2 -----------------------------------------------------------------------------------
+Request = __import__("urllib.request").request.Request
+
+
+def test_x2_01_destination_is_where_the_proxy_connected_not_the_host_header(make_proxy):
+    proxy = make_proxy()
+    proxy.opener().open(Request("http://plain.test/claimed", headers={"Host": "other.example"})).read()
+    [record] = requests_of(proxy.records())
+    assert record["data"]["destination"]["host"] == "plain.test"
+    assert record["data"]["destination"]["host_header"] == "other.example"
+    assert record["subject"]["ref"] == "plain.test:80"
+
+
+def _connect(proxy, target: str) -> socket.socket:
+    client = socket.create_connection(("127.0.0.1", proxy.port), timeout=10)
+    client.sendall(f"CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n".encode())
+    assert client.recv(200).startswith(b"HTTP/1.1 200")
+    return client
+
+
+def test_x2_02_passthrough_only_after_an_explicit_alert_keyed_on_name_and_destination(make_proxy, upstream):
+    import ssl
+    proxy = make_proxy()
+    # a client that just closes during the handshake teaches nothing
+    client = _connect(proxy, "upstream.test:443")
+    client.sendall(b"\x16\x03\x01\x02\x00\x01\x00\x01\xfc\x03\x03")
+    client.close()
+    time.sleep(0.5)
+    assert proxy.addon.learned == {}
+    # a client that rejects the proxy's CA (alert unknown_ca) makes this name at this destination pass through
+    strict = ssl.create_default_context(cafile=upstream.ca)          # trusts the upstream, not the proxy
+    with pytest.raises(ssl.SSLError):
+        strict.wrap_socket(_connect(proxy, "upstream.test:443"), server_hostname="upstream.test")
+    time.sleep(0.5)
+    assert list(proxy.addon.learned.values()) == ["client-rejected-certificate"]
+    tls = strict.wrap_socket(_connect(proxy, "upstream.test:443"), server_hostname="upstream.test")
+    payload = b"GET /through HTTP/1.1\r\nHost: upstream.test\r\nConnection: close\r\n\r\n"
+    tls.sendall(payload)
+    answer = tls.recv(200)
+    tls.close()
+    assert answer.startswith(b"HTTP/1.0 200") or answer.startswith(b"HTTP/1.1 200")
+    records = requests_of(proxy.records(settle=0.8))
+    learned = [r["data"] for r in records if r["data"]["tls"].get("passthrough_learned")]
+    passed = [r["data"] for r in records if r["data"]["tls"]["mode"] == "passthrough"]
+    assert len(learned) == 1 and len(passed) == 1
+    assert passed[0]["tls"]["reason"] == "client-rejected-certificate"
+    assert passed[0]["destination"]["host"] == "upstream.test" and passed[0]["destination"]["port"] == 443
+    assert passed[0]["request"]["bytes"] >= len(payload) and passed[0]["response"]["bytes"] > 0
+
+
+def test_x2_03_an_opened_record_exists_before_the_answer(make_proxy):
+    import threading
+    proxy = make_proxy()
+    done = threading.Thread(target=lambda: proxy.opener().open(Request("http://plain.test/slow", data=b"x")).read())
+    done.start()
+    time.sleep(0.5)                                  # the upstream is still sleeping
+    opened = requests_of(list(__import__("aqt_evidence").read_jsonl(proxy.records_path)), "opened")
+    assert opened and opened[0]["data"]["destination"]["host"] == "plain.test"
+    assert opened[0]["data"]["process"]["chain"][0]["comm"] == "test-client"
+    done.join(10)
+    [final] = requests_of(proxy.records())
+    assert {"rel": "opened", "ref": opened[0]["id"]} in final["links"]
+
+
+def test_x2_05_a_store_error_keeps_the_record(make_proxy, monkeypatch):
+    proxy = make_proxy(settings=Settings(store="full"))
+
+    def broken(*args, **kwargs):
+        raise OSError(28, "No space left on device")
+    monkeypatch.setattr(proxy.store, "put_body", broken)
+    proxy.opener().open(Request("http://plain.test/full", data=b"body")).read()
+    [record] = requests_of(proxy.records())
+    assert "No space left" in record["data"]["store_error"] and proxy.addon.counts["store_errors"] == 1
+
+
+def test_x2_06_the_hosts_own_addresses_are_refused(make_proxy):
+    from aqt_egress.proxy import host_addresses
+    own = sorted(address for address in host_addresses() if not address.startswith(("127.", "::1")))
+    if not own:
+        pytest.skip("this host has no address besides loopback")
+    proxy = make_proxy(test_hosts={}, own_addresses=set(own))
+    target = f"[{own[0]}]" if ":" in own[0] else own[0]
+    with pytest.raises(urllib.error.HTTPError) as caught:
+        proxy.opener().open(f"http://{target}:9/", timeout=10)
+    assert caught.value.code == 502
+    [record] = requests_of(proxy.records())
+    assert record["data"]["decision"] == "refused" and record["data"]["reason_code"] == "host-local"
+    assert not requests_of(proxy.records(settle=0), "opened")      # no connection was made
+
+
+def test_x2_08_a_non_websocket_upgrade_records_its_request(make_proxy):
+    proxy = make_proxy()
+    client = socket.create_connection(("127.0.0.1", proxy.port), timeout=10)
+    client.sendall(b"POST http://plain.test/upgrade HTTP/1.1\r\nHost: plain.test\r\nUpgrade: x-test\r\n"
+                   b"Connection: Upgrade\r\nContent-Length: 5\r\n\r\nhello")
+    assert client.recv(200).startswith(b"HTTP/1.1 101")
+    client.sendall(b"ping")
+    assert client.recv(100) == b"echo:ping"
+    client.close()
+    records = requests_of(proxy.records(settle=0.8))
+    [upgrade] = [r["data"] for r in records if r["data"].get("protocol") == "http-upgrade"]
+    assert upgrade["path"] == "/upgrade" and upgrade["request"]["bytes"] == 5 and upgrade["upgrade"] == "x-test"
+    assert [r["data"] for r in records if r["data"]["protocol"] == "tcp"]
+
+
+def test_x2_12_a_failing_hook_still_leaves_a_record(make_proxy, monkeypatch):
+    from aqt_egress import llm as llm_module
+    proxy = make_proxy()
+    real, calls = llm_module.provider, []
+
+    def flaky(*args):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("boom")
+        return real(*args)
+    monkeypatch.setattr(llm_module, "provider", flaky)
+    proxy.opener().open("http://plain.test/flaky").read()
+    monkeypatch.setattr(proxy.addon, "_emit_http", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("emit")))
+    proxy.opener().open("http://plain.test/minimal").read()
+    records = requests_of(proxy.records())
+    assert len(records) == 2 and proxy.addon.counts["hook_errors"] == 2
+    assert records[0]["data"]["path"] == "/flaky"
+    assert records[1]["data"]["error"].startswith("aqt-egress could not record this exchange fully")
+    assert records[1]["data"]["destination"]["host"] == "plain.test"

@@ -27,3 +27,12 @@ First slice of the outbound checkpoint: observe and record (nothing is blocked).
 - `local_endpoints` / `--local-endpoint HOST:PORT`: an inference server on the host's loopback the box may reach
   (a listener on the box's own loopback, forwarded and recorded).
 - `--private-tmp`: a fresh `/tmp` in the box. `AQT_AGENT_SESSION` names the egress session inside the box.
+- Review fixes (X2): destinations are where the proxy connected (`host_header` keeps a differing claim; the report
+  groups by the real destination); TLS pass-through is learned only from an explicit client alert, keyed on name
+  and destination, and pass-through connections carry their byte counts; an `opened` record is written before
+  data flows upstream; cgroup files and aqt-egress's own installation are read-only in the box; bwrap, nft and ip
+  come from root-owned system folders (paths and hashes recorded); records wait in a private spool (`aqt egress
+  drain`), the `ended` record counts lost records, store and hook errors; a body-store error keeps the record;
+  the host's interface addresses are refused like loopback (`host-local`); attribution matches both socket ends
+  and reports `shared` holders; non-WebSocket upgrades are recorded; test options are recorded; the report skips
+  records from other senders; a setup failure kills the box before its command starts; DNS names keep every byte.

@@ -1,4 +1,10 @@
-"""``aqt egress report``: who talked to whom, per session, destination and process."""
+"""``aqt egress report``: who talked to whom, per session, destination and process.
+
+Destinations are where the proxy connected; a different Host header or TLS server name the client
+claimed is counted as ``claimed_other``. Only records the trail writer observed coming from the
+session's own proxy process count: an ``egress.*`` record of a session sent by another process (for
+example from inside the box, through the trail socket) is listed as ``unverified`` and left out.
+"""
 
 from __future__ import annotations
 
@@ -34,11 +40,33 @@ def chain_text(process: dict | None) -> str:
     return " < ".join(entry.get("comm", "?") for entry in chain)
 
 
+def _sender(record: dict):
+    return (record.get("observed") or {}).get("pid")
+
+
 def build(records, *, session: str | None = None, since: str | None = None) -> dict:
     records = [record for record in records if record.get("type") in TYPES]
+    launchers = {record["data"].get("session"): _sender(record) for record in records
+                 if record["type"] == "egress.session" and record.get("action") == "started"
+                 and isinstance(record.get("data"), dict)}
+    unverified: dict[str, list] = {}
+    kept = []
+    for record in records:
+        sid = (record.get("data") or {}).get("session")
+        launcher, sender = launchers.get(sid), _sender(record)
+        if (launcher and sender and sender != launcher) or record.get("actor", {}).get("id") != "service:aqt-egress":
+            unverified.setdefault(sid, []).append({"id": record.get("id"), "type": record.get("type"),
+                                                   "sender_pid": sender})
+        else:
+            kept.append(record)
+    records = kept
+    opened = {record["id"]: record for record in records
+              if record["type"] == "egress.request" and record.get("action") == "opened"}
+    completed = {link.get("ref") for record in records if record.get("action") == "observed"
+                 for link in record.get("links") or [] if link.get("rel") == "opened"}
     first_seen: dict[str, str] = {}
     for record in records:
-        if record["type"] == "egress.request":
+        if record["type"] == "egress.request" and record.get("action") != "opened":
             dest = record.get("data", {}).get("destination", {})
             key = f"{dest.get('host')}:{dest.get('port')}"
             if key not in first_seen or record["time"] < first_seen[key]:
@@ -46,7 +74,8 @@ def build(records, *, session: str | None = None, since: str | None = None) -> d
     sessions: dict[str, dict] = {}
 
     def entry(sid: str) -> dict:
-        return sessions.setdefault(sid, {"session": sid, "requests": 0, "destinations": {}, "lookups": []})
+        return sessions.setdefault(sid, {"session": sid, "requests": 0, "destinations": {}, "lookups": [],
+                                         "unverified": unverified.get(sid, []), "unfinished": 0})
 
     for record in records:
         data = record.get("data", {})
@@ -60,6 +89,8 @@ def build(records, *, session: str | None = None, since: str | None = None) -> d
                             project=(data.get("project") or {}).get("path"))
             elif record.get("action") == "ended":
                 item.update(ended=record["time"], exit_code=data.get("exit_code"))
+        elif record["type"] == "egress.request" and record.get("action") == "opened":
+            item["unfinished"] += 0 if record["id"] in completed else 1
         elif record["type"] == "egress.lookup":
             item["lookups"].append({"name": data.get("name"), "types": data.get("types", []),
                                     "count": data.get("count", 1), "process": chain_text(data.get("process"))})
@@ -70,7 +101,8 @@ def build(records, *, session: str | None = None, since: str | None = None) -> d
             target = item["destinations"].setdefault(key, {
                 "host": dest.get("host"), "port": dest.get("port"), "requests": 0, "methods": {}, "bytes_up": 0,
                 "bytes_down": 0, "processes": {}, "statuses": {}, "errors": 0, "refused": 0, "via": [],
-                "first_time": record["time"]})
+                "claimed_other": 0, "first_time": record["time"]})
+            target["claimed_other"] += 1 if dest.get("host_header") else 0
             target["requests"] += 1
             method = data.get("method") or data.get("protocol") or "?"
             target["methods"][method] = target["methods"].get(method, 0) + 1
@@ -119,19 +151,28 @@ def render(report: dict) -> str:
     lines = []
     for item in report["sessions"]:
         command = " ".join(item.get("command") or ["?"])
-        when = f"{(item.get('started') or '?')[:19]} -> {(item.get('ended') or 'running')[:19]}"
+        when = f"{(item.get('started') or '?')[:19]} -> {(item.get('ended') or 'no end')[:19]}"
         lines.append(f"session {item['session']}  {when}  exit {item.get('exit_code', '-')}  "
                      f"{item['requests']} request(s)  store {item.get('store', '?')}")
         lines.append(f"  command: {command}")
         for dest in item["destinations"]:
             methods = " ".join(f"{name}x{count}" for name, count in sorted(dest["methods"].items()))
             flags = [flag for flag, on in (("NEW", dest["new"]), (f"{dest['errors']} error(s)", dest["errors"]),
-                                          (f"{dest['refused']} refused", dest["refused"])) if on]
+                                          (f"{dest['refused']} refused", dest["refused"]),
+                                          (f"{dest['claimed_other']} claimed another host", dest["claimed_other"]))
+                     if on]
             lines.append(f"  {dest['host']}:{dest['port']}  {dest['requests']} req  {methods}  "
                          f"up {_size(dest['bytes_up'])} / down {_size(dest['bytes_down'])}"
                          + (f"  [{', '.join(flags)}]" if flags else ""))
             for chain, count in sorted(dest["processes"].items(), key=lambda pair: -pair[1]):
                 lines.append(f"      {count}x  {chain}")
+        if item.get("started") and not item.get("ended"):
+            lines.append("  no end record: still running, or the proxy stopped before it could write one")
+        if item["unfinished"]:
+            lines.append(f"  {item['unfinished']} connection(s) opened without a completing record")
+        if item["unverified"]:
+            lines.append(f"  {len(item['unverified'])} record(s) not from this session's proxy process, left out: "
+                         + ", ".join(entry["id"] or "?" for entry in item["unverified"][:5]))
         if item["lookups"]:
             lines.append("  name lookups without a request:")
             for lookup in item["lookups"]:
