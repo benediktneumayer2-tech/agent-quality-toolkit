@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `TrailCheck(..., types=...)`: the record types it looks up in the trail log (default unchanged: receipts and
+  reviews), so another tool can confirm, for example, a `change.finish` record before it is signed.
 - Message codes on the gate reason details and the trail trust texts (`change.gate.*`, `change.trust.*`; English
   unchanged). The gate JSON (`gate`, `report --json` / `--gate-file`) adds `detail_code` and `detail_args`
   beside a coded `detail`; finish records keep their shape.

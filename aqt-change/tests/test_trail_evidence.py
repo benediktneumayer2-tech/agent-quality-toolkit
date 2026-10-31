@@ -650,3 +650,20 @@ def test_settings_set_by_a_commit_during_the_plan_count_after_it_is_reverted(led
     result = gate(Ledger.open(project), P)
     assert result["policy"]["require_signed_approval"] and "approval_unsigned" in reasons(result)
     assert "project_settings_changed" in reasons(result)
+
+
+def test_trail_check_confirms_other_record_types_on_request(ledger, project, trail):
+    """``types`` makes TrailCheck look up other records, e.g. a change.finish record before it is signed;
+    by default it checks receipts and reviews only, as before."""
+    plans.begin(ledger, P)
+    edit(project / P, "- [ ] [T01]", "- [x] [T01]")
+    edit(project / P, "- [ ] [T02]", "- [x] [T02]")
+    receipts.run(ledger, [], plan_path=P, item="V01", echo=False)
+    finish(ledger, P, key="k1", summary="done", waivers={"V02": "no screen"}, ack_warnings="tasks later")
+    record = next(ledger.records("change.finish", "s01"))
+    assert TrailCheck([record], types=("change.finish",)).status(record) == "ok"
+    assert TrailCheck([record]).status(record) == "absent"                      # not looked up by default
+    fake = forge(ledger, record, commit="0" * 40)
+    assert TrailCheck([fake], types=("change.finish",)).status(fake) == "absent"
+    altered = dict(record, reason="edited in the mirror")
+    assert TrailCheck([altered], types=("change.finish",)).status(altered) == "mismatch"

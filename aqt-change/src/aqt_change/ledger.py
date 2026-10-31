@@ -97,10 +97,13 @@ class TrailCheck:
     log counts only when ``keys/*.pub`` next to it holds a pinned key (its key id is a hash of the key, so
     the file's place does not matter); a copy then confirms a record only with a valid signature by that
     key, else the status is ``unsigned`` (NO-GO).
+
+    ``types``: the record types looked up in the log (default: receipts and reviews, as the gate checks
+    them); for example ``("change.finish",)`` to confirm a finish record before it is signed.
     """
 
     def __init__(self, records: Iterable[dict], environ: dict | None = None, required: bool = False,
-                 keys: Iterable[str] | None = None):
+                 keys: Iterable[str] | None = None, types: Iterable[str] = CHECKED_TYPES):
         records = list(records)
         found_in_use, self.logs = trail_logs(environ)
         self.pinned = None if keys is None else sorted(set(keys))
@@ -110,7 +113,9 @@ class TrailCheck:
         self.readable: list[Path] = []
         self.found: dict[str, list[tuple[str, str | None, bool]]] = {}
         if self.in_use:
-            wanted = {r["id"] for r in records if r.get("type") in CHECKED_TYPES and isinstance(r.get("id"), str)}
+            types = tuple(types)
+            wanted = {r["id"] for r in records if isinstance(r, dict) and r.get("type") in types
+                      and isinstance(r.get("id"), str)}
             for path in self.logs:
                 public = self._pinned_keys(path)
                 if public is not None and not public:
