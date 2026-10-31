@@ -19,7 +19,7 @@ import time
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
-from aqt_evidence import SinkError, bytes_hash, content_hash, subject as make_subject
+from aqt_evidence import SinkError, Text, bytes_hash, content_hash, subject as make_subject
 
 from .errors import AlreadyClaimed, Conflict, NotFound, Refused, UsageError
 from .registry import parse_time
@@ -169,21 +169,24 @@ class Actions:
         counted, expired = self.valid_approvals(row) if row["status"] in ("prepared", "approved") else ([], [])
         needed = self.so.settings.action_policy.min_signatures
         if self.verified_body(row) is None and status in ("prepared", "approved"):
-            status, detail = "prepared", "the stored action no longer matches its hash; it cannot be approved or run"
+            status, detail = "prepared", Text("signoff.action.altered", "the stored action no longer matches its "
+                                              "hash; it cannot be approved or run")
         elif status == "approved" and len(counted) < needed:
-            status, detail = ("expired", "approval expired") if expired else ("prepared", "approval no longer valid")
+            status, detail = ("expired", Text("signoff.action.approval_expired", "approval expired")) if expired \
+                else ("prepared", Text("signoff.action.approval_invalid", "approval no longer valid"))
         elif status == "prepared" and row["approvals"]:
-            detail = f"{len(counted)} of {needed} approval(s)"
+            detail = Text("signoff.action.approvals", "{n} of {needed} approval(s)", n=len(counted), needed=needed)
         elif status == "claimed":
             age_ms = int((self.so.clock() - parse_time(row["claimed_at"])).total_seconds() * 1000)
             if age_ms > self.so.settings.claim_grace:
-                status, detail = "unknown", "claimed, no outcome reported"
+                status, detail = "unknown", Text("signoff.action.no_outcome", "claimed, no outcome reported")
             else:
-                detail = "running or interrupted; within the grace period"
+                detail = Text("signoff.action.running", "running or interrupted; within the grace period")
         elif row.get("outcome"):
             detail = row["outcome"].get("basis", "")
             if row["outcome"].get("resolution"):
-                detail = f"resolved by {row['outcome'].get('resolved_by')}: {row['outcome']['resolution']}"
+                detail = Text("signoff.action.resolved", "resolved by {signer}: {resolution}",
+                              signer=row["outcome"].get("resolved_by"), resolution=row["outcome"]["resolution"])
         return {"id": row["id"], "version": row["version"], "status": status, "detail": detail,
                 "action_sha256": row["action_sha256"], "spec": row["spec"], "preparer": row["preparer"],
                 "approvals": [{"signer": s.signer_id, "role": s.role, "signed_at": s.signed_at,
@@ -254,23 +257,26 @@ class Actions:
     # ---- human decisions -----------------------------------------------------------------------
     def _decision_checks(self, row: dict, expected_hash: str, signer, who: dict, attempted: str) -> None:
         if expected_hash != row["action_sha256"]:
-            raise Conflict("the hash does not match the current action; run 'show' and review it again",
-                           code="hash_mismatch")
+            raise Conflict(Text("signoff.error.hash_mismatch", "the hash does not match the current action; run "
+                                "'show' and review it again"), code="hash_mismatch")
         body = self.verified_body(row)
         if body is None:
-            raise Conflict("the stored action no longer matches its hash (the index was altered); prepare it again",
-                           code="action_altered")
+            raise Conflict(Text("signoff.error.action_altered", "the stored action no longer matches its hash (the "
+                                "index was altered); prepare it again"), code="action_altered")
         status = self.view(row)["status"]
         if status not in ("prepared", "approved", "expired"):
-            raise Conflict(f"{row['id']} is {status}; no decision possible", code="not_open")
+            raise Conflict(Text("signoff.error.not_open", "{action} is {status}; no decision possible",
+                                action=row["id"], status=status), code="not_open")
         policy = self.so.settings.action_policy
         subject = make_subject("action", row["id"], sha256=row["action_sha256"])
         if policy.distinct_from_author and signer.id in self.authors(body, row):
-            raise self.so.refuse(attempted, who, "self_approval",
-                                 f"{signer.id} prepared this action and may not decide on it", subject=subject)
+            raise self.so.refuse(attempted, who, "self_approval", Text(
+                "signoff.refused.preparer", "{signer} prepared this action and may not decide on it",
+                signer=signer.id), subject=subject)
         if policy.roles and signer.role not in policy.roles:
-            raise self.so.refuse(attempted, who, "role_not_allowed",
-                                 f"role {signer.role!r} may not approve actions", subject=subject)
+            raise self.so.refuse(attempted, who, "role_not_allowed", Text(
+                "signoff.refused.role_actions", "role {role} may not approve actions", role=repr(signer.role)),
+                subject=subject)
 
     def approve(self, action_id: str, expected_hash: str, reason: str, *, signer_id: str | None = None,
                 valid_for_ms: int | None = None) -> dict:
@@ -279,11 +285,12 @@ class Actions:
         who = self.so.signer_actor(signer)
         self.so.require_human("approve", who)
         if not reason or not reason.strip():
-            raise UsageError("an approval needs a reason")
+            raise UsageError(Text("signoff.error.approval_reason", "an approval needs a reason"))
         self._decision_checks(row, expected_hash, signer, who, "approve")
         counted, _ = self.valid_approvals(row)
         if any(s.signer_id == signer.id for s in counted):
-            raise Conflict(f"{signer.id} has already approved this version", code="already_approved")
+            raise Conflict(Text("signoff.error.already_approved", "{signer} has already approved this version",
+                                signer=signer.id), code="already_approved")
         expires_at = None
         if valid_for_ms:
             from .core import format_time
@@ -302,7 +309,8 @@ class Actions:
         with self.so.store.transaction() as db:
             current = self.so.store.action(action_id)
             if current["action_sha256"] != row["action_sha256"]:
-                raise Conflict("the action changed while approving", code="hash_mismatch")
+                raise Conflict(Text("signoff.error.changed_while_approving", "the action changed while approving"),
+                               code="hash_mismatch")
             approvals = [*current["approvals"], stored]
             db.execute("UPDATE actions SET approvals=?, updated_at=? WHERE id=?",
                        (encode(approvals), self.so.now(), action_id))
@@ -317,7 +325,7 @@ class Actions:
         who = self.so.signer_actor(signer)
         self.so.require_human("reject", who)
         if not reason or not reason.strip():
-            raise UsageError("a rejection needs a reason")
+            raise UsageError(Text("signoff.error.rejection_reason", "a rejection needs a reason"))
         self._decision_checks(row, expected_hash, signer, who, "reject")
         key = self.so.unlock(signer, f"reject action {action_id}")
         record = self.so.signed_record(
@@ -343,9 +351,9 @@ class Actions:
             raise Conflict("the hash does not match the approved action", code="hash_mismatch")
         body = self.verified_body(row)
         if body is None:
-            raise self.so.refuse("claim", who, "action_altered",
-                                 f"{action_id}: the stored action does not match its approved hash; it is not run",
-                                 subject=subject)
+            raise self.so.refuse("claim", who, "action_altered", Text(
+                "signoff.refused.action_altered", "{action}: the stored action does not match its approved hash; it "
+                "is not run", action=action_id), subject=subject)
         view = self.view(row)
         if row["status"] in ("claimed", "succeeded", "failed", "unknown"):
             raise AlreadyClaimed(f"{action_id} was already claimed ({view['status']}); it is never run twice",
@@ -357,17 +365,20 @@ class Actions:
                                                                    "status": "claimed", "record": earlier.get("id")})
         counted, expired = self.valid_approvals(row)
         if len(counted) < self.so.settings.action_policy.min_signatures:
-            why = "approval expired" if expired else "no valid approval for this exact action"
-            raise self.so.refuse("claim", who, "not_approved", f"{action_id}: {why}", subject=subject)
+            why = Text("signoff.action.approval_expired", "approval expired") if expired else \
+                Text("signoff.refused.why_no_approval", "no valid approval for this exact action")
+            raise self.so.refuse("claim", who, "not_approved", Text(
+                "signoff.refused.not_approved", "{action}: {why}", action=action_id, why=why), subject=subject)
         payload_checked = False
         if body.get("payload_sha256") and payload is None:
-            raise self.so.refuse("claim", who, "payload_required",
-                                 "this action binds a payload by hash; present the payload to claim it",
-                                 subject=subject)
+            raise self.so.refuse("claim", who, "payload_required", Text(
+                "signoff.refused.payload_required", "this action binds a payload by hash; present the payload to "
+                "claim it"), subject=subject)
         if payload is not None:
             if body.get("payload_sha256") != bytes_hash(payload):
-                raise self.so.refuse("claim", who, "payload_mismatch",
-                                     "the presented payload differs from the approved payload hash", subject=subject)
+                raise self.so.refuse("claim", who, "payload_mismatch", Text(
+                    "signoff.refused.payload_mismatch", "the presented payload differs from the approved payload "
+                    "hash"), subject=subject)
             payload_checked = True
         claim_id, now = "clm_" + secrets.token_hex(8), self.so.now()
         with self.so.store.transaction() as db:
@@ -476,9 +487,9 @@ class Actions:
         view = self.view(row)
         subject = make_subject("action", action_id, sha256=row["action_sha256"])
         if view["status"] == "claimed":
-            raise self.so.refuse("resolve", who, "claim_in_progress",
-                                 "this action may still be running; wait for the grace period, then check the "
-                                 "external state", subject=subject)
+            raise self.so.refuse("resolve", who, "claim_in_progress", Text(
+                "signoff.refused.claim_in_progress", "this action may still be running; wait for the grace period, "
+                "then check the external state"), subject=subject)
         if view["status"] != "unknown":
             raise Conflict(f"{action_id} is {view['status']}; only an unknown outcome can be resolved",
                            code="not_unknown")

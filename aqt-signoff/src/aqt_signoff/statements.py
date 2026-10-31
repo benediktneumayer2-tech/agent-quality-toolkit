@@ -25,7 +25,7 @@ from __future__ import annotations
 import secrets
 from dataclasses import asdict, dataclass, field
 
-from aqt_evidence import MEANINGS, Signer, content_hash, sign_statement, verify_statement
+from aqt_evidence import MEANINGS, Signer, Text, content_hash, sign_statement, text_join, verify_statement
 
 from .registry import Registry, SignerEntry, parse_time
 
@@ -109,7 +109,7 @@ def check_block(block, registry: Registry, *, record: dict | None = None) -> Sig
     rtype = record.get("type") if isinstance(record, dict) else None
     status = SignatureStatus(rid, rtype, "valid")
     if not isinstance(block, dict) or not isinstance(block.get("statement"), dict):
-        status.worsen("invalid", "no signed statement")
+        status.worsen("invalid", Text("signoff.signature.no_statement", "no signed statement"))
         return status
     st = block["statement"]
     signer = st.get("signer") if isinstance(st.get("signer"), dict) else {}
@@ -121,55 +121,62 @@ def check_block(block, registry: Registry, *, record: dict | None = None) -> Sig
     status.statement_sha256 = statement_digest(st)
     problems = []
     if st.get("aqt_signature") != STATEMENT_VERSION:
-        problems.append("unsupported statement version")
+        problems.append(Text("signoff.signature.version", "unsupported statement version"))
     if block.get("alg") != "ed25519":
-        problems.append("alg must be ed25519")
+        problems.append(Text("signoff.signature.alg", "alg must be ed25519"))
     if st.get("key") != block.get("key"):
-        problems.append("statement key differs from the signing key")
+        problems.append(Text("signoff.signature.key_differs", "statement key differs from the signing key"))
     if st.get("meaning") not in MEANINGS:
-        problems.append("meaning is not a known meaning")
+        problems.append(Text("signoff.signature.meaning_unknown", "meaning is not a known meaning"))
     if not isinstance(st.get("reason"), str) or not st["reason"].strip():
-        problems.append("reason missing")
+        problems.append(Text("signoff.signature.reason_missing", "reason missing"))
     if not _is_hash(subject.get("sha256")) or not subject.get("kind") or not subject.get("ref"):
-        problems.append("subject needs kind, ref and sha256")
+        problems.append(Text("signoff.signature.subject", "subject needs kind, ref and sha256"))
     try:
         signed_at = parse_time(st.get("signed_at", ""))
     except (TypeError, ValueError):
-        problems.append("signed_at is not a timestamp")
+        problems.append(Text("signoff.signature.signed_at", "signed_at is not a timestamp"))
         signed_at = None
     if record is not None:
         if st.get("record_type") != rtype:
-            problems.append(f"statement record_type {st.get('record_type')!r} does not match record type {rtype!r}")
+            problems.append(Text("signoff.signature.record_type", "statement record_type {signed} does not match "
+                                 "record type {stored}", signed=repr(st.get("record_type")), stored=repr(rtype)))
         if "meaning" in record and record["meaning"] != st.get("meaning"):
-            problems.append("record meaning differs from the signed meaning")
+            problems.append(Text("signoff.signature.meaning_differs", "record meaning differs from the signed meaning"))
     if problems:
-        status.worsen("invalid", "; ".join(problems))
+        status.worsen("invalid", text_join("; ", problems))
         return status
     found = registry.find_key(block.get("key", ""))
     if found is None:
-        status.worsen("unknown-signer", "key is not in the signer registry")
+        status.worsen("unknown-signer", Text("signoff.signature.key_unknown", "key is not in the signer registry"))
         return status
     entry, key = found
     if entry.id != signer.get("id"):
-        status.worsen("invalid", f"key belongs to {entry.id}, statement names {signer.get('id')}")
+        status.worsen("invalid", Text("signoff.signature.key_other_owner", "key belongs to {owner}, statement names "
+                                      "{signer}", owner=entry.id, signer=signer.get("id")))
         return status
     if not verify_statement(block, {key.key_id: key.public_key()}):
-        status.worsen("invalid", "signature does not verify (statement altered or wrong key)")
+        status.worsen("invalid", Text("signoff.signature.not_verified",
+                                      "signature does not verify (statement altered or wrong key)"))
         return status
     enrolled_at, revoked_at = key.enrolled_at, key.revoked_at
     evidence = registry.key_evidence(key.key_id, entry.id) if registry.reconciled else None
     role = entry.role
     if registry.reconciled:
         if evidence is None or not evidence.counts:
-            why = "; ".join(evidence.problems) if evidence else "no enrolment evidence"
-            status.worsen("unknown-signer", f"registry key not backed by its enrolment record: {why}")
+            why = "; ".join(evidence.problems) if evidence else Text("signoff.signature.no_evidence",
+                                                                     "no enrolment evidence")
+            status.worsen("unknown-signer", Text("signoff.signature.not_backed", "registry key not backed by its "
+                                                 "enrolment record: {why}", why=why))
             return status
         enrolled_at, revoked_at = evidence.enrolled_at, evidence.revoked_at
         role = registry.role_at(entry.id, signed_at)      # the role in effect when it was signed
     if (entry.name, role) != (signer.get("name"), signer.get("role")):
-        status.detail = (f"signed as {signer.get('role')!r}, but the enrolled role at that time was {role!r}"
+        status.detail = (Text("signoff.signature.role_differs", "signed as {signed}, but the enrolled role at that "
+                              "time was {enrolled}", signed=repr(signer.get("role")), enrolled=repr(role))
                          if role != signer.get("role") else
-                         "registry name differs from the signed name; the signed values are shown")
+                         Text("signoff.signature.name_differs",
+                              "registry name differs from the signed name; the signed values are shown"))
     if role is not None and role == signer.get("role"):
         status.authorized_role = role
     data = record.get("data") if isinstance(record, dict) and isinstance(record.get("data"), dict) else {}
@@ -177,11 +184,13 @@ def check_block(block, registry: Registry, *, record: dict | None = None) -> Sig
             and "imported" not in data:
         return status      # the key's own enrolment or revocation: signed just before it is stored
     if signed_at < parse_time(enrolled_at):
-        status.worsen("unknown-signer", "signed before the key was enrolled")
+        status.worsen("unknown-signer", Text("signoff.signature.before_enrolment",
+                                             "signed before the key was enrolled"))
     elif revoked_at and signed_at >= parse_time(revoked_at):
         stopped = evidence is not None and evidence.stopped_at == revoked_at
-        status.worsen("revoked", f"the key stopped counting at {revoked_at}: conflicting enrolment records" if stopped
-                      else f"key revoked at {revoked_at}")
+        status.worsen("revoked", Text("signoff.signature.stopped", "the key stopped counting at {time}: conflicting "
+                                      "enrolment records", time=revoked_at) if stopped
+                      else Text("signoff.signature.revoked", "key revoked at {time}", time=revoked_at))
     return status
 
 

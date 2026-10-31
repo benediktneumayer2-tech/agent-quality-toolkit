@@ -34,7 +34,7 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-from aqt_evidence import (HumanCheckError, actor, canonical_json, content_hash, generate_key, load_public_key,
+from aqt_evidence import (HumanCheckError, Text, actor, canonical_json, content_hash, generate_key, load_public_key,
                           load_signer, require_human, subject, utc_now)
 
 from . import records
@@ -276,8 +276,9 @@ class Decider:
         candidates = self.config.responsible or list(self.registry)
         if signer_id is None:
             if len(candidates) != 1:
-                raise DecisionError("say who decides with --as SIGNER_ID "
-                                    f"(registered: {', '.join(candidates) or 'none; run aqt-quarantine init'})", 2)
+                raise DecisionError(Text("quarantine.error.who", "say who decides with --as SIGNER_ID (registered: "
+                                         "{registered})", registered=", ".join(candidates) or Text(
+                                             "quarantine.error.none_registered", "none; run aqt-quarantine init")), 2)
             signer_id = candidates[0]
         entry = self.registry.get(signer_id, {})
         return {"id": signer_id, "name": entry.get("name", ""), "role": entry.get("role", "")}
@@ -295,37 +296,40 @@ class Decider:
             self.human_check()
         except HumanCheckError as error:
             context = error.context
+            message = error.args[0] if error.args and isinstance(error.args[0], str) else str(error)
             return self._refuse(who, attempted, "agent_context" if context.is_agent else "no_tty",
-                                list(context.markers), str(error), {**extra, "process_chain": context.process_chain[:12]})
+                                list(context.markers), message, {**extra, "process_chain": context.process_chain[:12]})
         if self.config.responsible and who["id"] not in self.config.responsible:
-            return self._refuse(who, attempted, "not_responsible", [], f"{who['id']} is not a responsible person",
-                                extra)
+            return self._refuse(who, attempted, "not_responsible", [], Text(
+                "quarantine.refused.not_responsible", "{signer} is not a responsible person", signer=who["id"]), extra)
         return None
 
     def _sign(self, who: dict, attempted: str, extra: dict, **statement) -> tuple[dict | None, Outcome | None]:
         key_path = self.config.keys_dir / f"{slug(who['id'])}.key"
         if not key_path.exists():
             if self.config.require_signed_decisions:
-                return None, self._refuse(who, attempted, "no_key", [], f"no signing key at {key_path}; "
-                                          "run aqt-quarantine init (or aqt-signoff init)", extra)
+                return None, self._refuse(who, attempted, "no_key", [], Text(
+                    "quarantine.refused.no_key", "no signing key at {path}; run aqt-quarantine init (or aqt-signoff "
+                    "init)", path=key_path), extra)
             return None, None
         try:
             signer = load_signer(key_path, passphrase=self.passphrase(f"Passphrase for {who['id']}: ").encode())
         except (ValueError, TypeError) as error:
-            return None, self._refuse(who, attempted, "auth_failed", [], f"key could not be unlocked: {error}", extra)
+            return None, self._refuse(who, attempted, "auth_failed", [], Text(
+                "quarantine.refused.auth_failed", "key could not be unlocked: {error}", error=str(error)), extra)
         key = _registered_key(self.registry, who["id"], signer.key_id)
         if key is None or key.get("revoked_at"):
-            return None, self._refuse(who, attempted, "unknown_key", [],
-                                      f"key {signer.key_id} is not an active key of {who['id']} in {self.config.registry}",
-                                      extra)
+            return None, self._refuse(who, attempted, "unknown_key", [], Text(
+                "quarantine.refused.unknown_key", "key {key} is not an active key of {signer} in {registry}",
+                key=signer.key_id, signer=who["id"], registry=self.config.registry), extra)
         view = self.enrolment()
         evidence = view.get((who["id"], signer.key_id)) if view is not None else None
         if view is not None and not (evidence and evidence["counts"] and not evidence["revoked_at"]):
             why = (evidence or {}).get("why") or self.enrolment_note
-            return None, self._refuse(who, attempted, "unenrolled_key", [],
-                                      f"key {signer.key_id} of {who['id']} does not count by its enrolment records "
-                                      f"({why}); run 'aqt-signoff signers check' (a key made by aqt-quarantine init "
-                                      f"is recorded with 'aqt-signoff rekey --signer {who['id']}')", extra)
+            return None, self._refuse(who, attempted, "unenrolled_key", [], Text(
+                "quarantine.refused.unenrolled_key", "key {key} of {signer} does not count by its enrolment records "
+                "({why}); run 'aqt-signoff signers check' (a key made by aqt-quarantine init is recorded with "
+                "'aqt-signoff rekey --signer {signer}')", key=signer.key_id, signer=who["id"], why=why), extra)
         return sign_statement(signer, person=who, tz=self.config.tz, **statement), None
 
     def _case(self, case_id: str) -> Case:
@@ -335,7 +339,7 @@ class Decider:
         except StoreError as error:
             raise DecisionError(str(error), 2) from error
         if case is None:
-            raise DecisionError(f"no case {case_id}")
+            raise DecisionError(Text("quarantine.error.no_case", "no case {case}", case=case_id))
         return case
 
     def case_content(self, case_id: str) -> CaseContent:
@@ -351,9 +355,9 @@ class Decider:
         except (StoreError, OSError) as error:
             return CaseContent(case.case_id, expected, None, str(error))
         if not expected or text_hash(text) != expected:
-            return CaseContent(case.case_id, expected, None,
-                               f"the stored original of case {case.case_id} does not match its recorded content hash "
-                               f"{expected} (it changed after the scan)")
+            return CaseContent(case.case_id, expected, None, Text(
+                "quarantine.error.original_changed", "the stored original of case {case} does not match its recorded "
+                "content hash {sha256} (it changed after the scan)", case=case.case_id, sha256=expected))
         return CaseContent(case.case_id, expected, text)
 
     def _decide_case(self, kind: str, action: str, meaning: str, case_id: str, reason: str, signer_id: str | None,
@@ -370,19 +374,22 @@ class Decider:
             return blocked
         case = self._case(case_id)
         if expected_sha256 is not None and case.data.get("content_sha256") != expected_sha256:
-            raise DecisionError(f"the content of case {case_id} is not the one shown; nothing was signed. "
-                                "Reload the case.")
+            raise DecisionError(Text("quarantine.error.not_shown", "the content of case {case} is not the one shown; "
+                                     "nothing was signed. Reload the case.", case=case_id))
         if kind == "quarantine.released":
             if case.state == "released":
-                raise DecisionError(f"case {case_id} is already released")
+                raise DecisionError(Text("quarantine.error.released", "case {case} is already released", case=case_id))
             if case.state == "threat" and not extra_data.get("overrule_threat"):
-                raise DecisionError(f"case {case_id} was declared a threat; add --overrule-threat to release it anyway")
+                raise DecisionError(Text("quarantine.error.threat", "case {case} was declared a threat; add "
+                                         "--overrule-threat to release it anyway", case=case_id))
             content = self._content(case)        # you release what can be shown: the original as recorded
             if content.text is None:
-                raise DecisionError(f"{content.error}; nothing was signed")
+                raise DecisionError(Text("quarantine.error.not_signed", "{error}; nothing was signed",
+                                         error=content.error))
             extra_data = {"kind": "deliver" if case.band == "hold" else "confirm_harmless", **extra_data}
         elif case.state == "threat":
-            raise DecisionError(f"case {case_id} is already declared a threat")
+            raise DecisionError(Text("quarantine.error.already_threat", "case {case} is already declared a threat",
+                                     case=case_id))
         else:
             extra_data = {"reached_model": case.reached_model, **extra_data}
         base = {key: case.data[key] for key in ("band", "score_ppm", "source", "content_sha256") if key in case.data}
@@ -401,7 +408,11 @@ class Decider:
                                   subject_=records.case_subject(case_id, case.data["content_sha256"]), data=data,
                                   links=[{"rel": "case", "ref": case.opened["id"]}], tz=self.config.tz)
         self.store.write(record)
-        return Outcome(True, record, f"{attempted}: case {case_id} recorded as {record['id']}")
+        message = Text("quarantine.outcome.released", "release: case {case} recorded as {record}", case=case_id,
+                       record=record["id"]) if attempted == "release" else \
+            Text("quarantine.outcome.threat", "declare-threat: case {case} recorded as {record}", case=case_id,
+                 record=record["id"])
+        return Outcome(True, record, message)
 
     def release(self, case_id: str, reason: str, *, signer_id: str | None = None,
                 overrule_threat: bool = False, expected_sha256: str | None = None) -> Outcome:
@@ -422,14 +433,14 @@ class Decider:
         reason = _reason(reason)
         domain = domain.strip().lower().rstrip(".")
         if not _DOMAIN.match(domain):
-            raise DecisionError(f"not a domain name: {domain!r}", 2)
+            raise DecisionError(Text("quarantine.error.domain", "not a domain name: {domain}", domain=repr(domain)), 2)
         if not revoke:
             try:
                 until = date.fromisoformat(expires or "")
             except ValueError as error:
-                raise DecisionError("--expires YYYY-MM-DD is required", 2) from error
+                raise DecisionError(Text("quarantine.error.expires", "--expires YYYY-MM-DD is required"), 2) from error
             if until < (today or date.today()):
-                raise DecisionError("--expires must not be in the past", 2)
+                raise DecisionError(Text("quarantine.error.expires_past", "--expires must not be in the past"), 2)
         who = self.person(signer_id)
         attempted = "trust-source"
         blocked = self._guard(who, attempted, {"domain": domain})
@@ -454,13 +465,17 @@ class Decider:
                                   subject_=subject("source", f"domain:{domain}", sha256=content_hash(decision)),
                                   data=data, links=None, tz=self.config.tz)
         self.store.write(record)
-        return Outcome(True, record, f"{action} source {domain} recorded as {record['id']}")
+        message = Text("quarantine.outcome.trusted", "trust source {domain} recorded as {record}", domain=domain,
+                       record=record["id"]) if action == "trust" else \
+            Text("quarantine.outcome.revoked", "revoke source {domain} recorded as {record}", domain=domain,
+                 record=record["id"])
+        return Outcome(True, record, message)
 
 
 def _reason(reason: str | None) -> str:
     reason = (reason or "").strip()
     if not reason:
-        raise DecisionError("--reason is required and must not be empty", 2)
+        raise DecisionError(Text("quarantine.error.reason", "--reason is required and must not be empty"), 2)
     return reason
 
 

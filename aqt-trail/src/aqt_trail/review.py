@@ -27,8 +27,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from aqt_evidence import (Signer, actor, bytes_hash, content_hash, new_record, record_hash, subject, utc_now,
-                          verify_chain)
+from aqt_evidence import (Signer, Text, actor, bytes_hash, coded, content_hash, new_record, record_hash, subject,
+                          utc_now, verify_chain)
 
 from . import tsa
 from .config import DEFAULTS
@@ -227,14 +227,16 @@ def q_self_approval(scope, everything, params):
         authors += [r for r in by_subject.get(ref, []) if _seq(r) < _seq(record) and r.get("meaning") not in APPROVALS]
         same = [r for r in authors if _aid(r) == approver]
         if same:
-            findings.append(_finding("self_approval", "major", [record, *same[:5]],
-                                     f"{approver} gave '{record['meaning']}' to work they also performed"))
+            findings.append(_finding("self_approval", "major", [record, *same[:5]], Text(
+                "trail.finding.self_approval", "{approver} gave '{meaning}' to work they also performed",
+                approver=approver, meaning=record["meaning"])))
     return findings
 
 
 def q_missing_reason(scope, everything, params):
     hits = [r for r in scope if _actor(r).get("kind") == "human" and _is_decision(r) and not r.get("reason")]
-    return [_finding("missing_reason", "major", hits, "human decisions without a recorded reason")] if hits else []
+    return [_finding("missing_reason", "major", hits, Text("trail.finding.missing_reason",
+                                                           "human decisions without a recorded reason"))] if hits else []
 
 
 def q_attribution_mismatch(scope, everything, params):
@@ -248,27 +250,29 @@ def q_attribution_mismatch(scope, everything, params):
         if state == "agent":
             seen = drainer or observed
             chain = seen.get("process_chain") if isinstance(seen.get("process_chain"), list) else []
-            how = "pushed through the spool by a drain request from inside" if drainer else "sent from inside"
-            findings.append(_finding("attribution_mismatch", "major", [record],
-                                     f"claims human {_aid(record)} but was {how} "
-                                     f"{seen['harness']} ({' <- '.join(str(c) for c in chain[:6])})"))
+            args = {"human": _aid(record), "harness": seen["harness"], "chain": " <- ".join(str(c) for c in chain[:6])}
+            findings.append(_finding("attribution_mismatch", "major", [record], Text(
+                "trail.finding.agent_drained", "claims human {human} but was pushed through the spool by a drain "
+                "request from inside {harness} ({chain})", **args) if drainer else Text(
+                "trail.finding.agent_sent", "claims human {human} but was sent from inside {harness} ({chain})",
+                **args)))
         elif state == "unconfirmed":
             unconfirmed.append(record)
         elif state == "legacy":
             legacy.append(record)
         elif _actor(record).get("kind") == "agent" and not observed.get("harness") \
                 and record.get("type") != "trail.import":
-            findings.append(_finding("attribution_mismatch", "minor", [record],
-                                     "claims an agent session but no agent harness was observed"))
+            findings.append(_finding("attribution_mismatch", "minor", [record], Text(
+                "trail.finding.no_harness", "claims an agent session but no agent harness was observed")))
     if unconfirmed:
-        findings.append(_finding("attribution_mismatch", "minor", unconfirmed,
-                                 f"{len(unconfirmed)} record(s) claim a human, but the sender's (or, for drained "
-                                 "records, the drainer's) process chain was incomplete or unreadable "
-                                 "(observed.chain_status): not confirmed as human"))
+        findings.append(_finding("attribution_mismatch", "minor", unconfirmed, Text(
+            "trail.finding.unconfirmed", "{n} record(s) claim a human, but the sender's (or, for drained records, the "
+            "drainer's) process chain was incomplete or unreadable (observed.chain_status): not confirmed as human",
+            n=len(unconfirmed))))
     if legacy:
-        findings.append(_finding("attribution_mismatch", "info", legacy,
-                                 f"{len(legacy)} record(s) claim a human and were written before "
-                                 "observed.chain_status existed: only the absence of agent markers speaks for a human"))
+        findings.append(_finding("attribution_mismatch", "info", legacy, Text(
+            "trail.finding.legacy", "{n} record(s) claim a human and were written before observed.chain_status "
+            "existed: only the absence of agent markers speaks for a human", n=len(legacy))))
     return findings
 
 
@@ -277,37 +281,43 @@ def q_gaps(scope, everything, params):
     for record in scope:
         if record.get("type") == "trail.gap":
             data, drainer = _data(record), _observed(record)
+            args = {"n": data.get("count"), "first": data.get("first_time"), "last": data.get("last_time")}
             if drainer.get("via") == "socket":    # pushed with the drain op: the drainer was observed
-                who = drainer.get("harness") or "a process without an agent harness"
-                chain = drainer.get("chain_status") or "not recorded"
-                how = (f"pushed by a drain request from {who} (pid {drainer.get('pid')}, chain {chain}); "
-                       "the drainer was observed, the senders were not")
+                who = drainer.get("harness") or Text("trail.finding.no_harness_process",
+                                                     "a process without an agent harness")
+                chain = drainer.get("chain_status") or Text("trail.finding.not_recorded", "not recorded")
+                explanation = Text("trail.finding.gap_drained", "{n} record(s) spooled between {first} and {last}; "
+                                   "pushed by a drain request from {who} (pid {pid}, chain {chain}); the drainer was "
+                                   "observed, the senders were not", who=who, pid=drainer.get("pid"), chain=chain,
+                                   **args)
             else:
-                how = "their senders were not observed"
-            findings.append(_finding("gaps", "major", [record],
-                                     f"{data.get('count')} record(s) spooled between {data.get('first_time')} and "
-                                     f"{data.get('last_time')}; {how}"))
+                explanation = Text("trail.finding.gap", "{n} record(s) spooled between {first} and {last}; their "
+                                   "senders were not observed", **args)
+            findings.append(_finding("gaps", "major", [record], explanation))
         elif record.get("action") == "log.repaired":
-            findings.append(_finding("gaps", "minor", [record], "an incomplete last line was removed at start"))
+            findings.append(_finding("gaps", "minor", [record], Text("trail.finding.log_repaired",
+                                                                     "an incomplete last line was removed at start")))
     spooled = [r for r in scope if _observed(r).get("via") == "spool"]
     drained = [r for r in spooled if _drainer(r) is not None]
     if drained:
-        findings.append(_finding("gaps", "minor", drained, "records delivered through the spool by a drain request "
-                                                           "(the drainer was observed, the sender was not)"))
+        findings.append(_finding("gaps", "minor", drained, Text(
+            "trail.finding.spool_drained", "records delivered through the spool by a drain request (the drainer was "
+            "observed, the sender was not)")))
     if len(drained) < len(spooled):
-        findings.append(_finding("gaps", "minor", [r for r in spooled if _drainer(r) is None],
-                                 "records delivered through the spool (claimed, not observed)"))
+        findings.append(_finding("gaps", "minor", [r for r in spooled if _drainer(r) is None], Text(
+            "trail.finding.spooled", "records delivered through the spool (claimed, not observed)")))
     starts = [r for r in everything if r.get("type") == "trail.event" and r.get("action") in ("service.start", "service.stop")]
     in_scope = {r.get("id") for r in scope}
     for previous, current in zip(starts, starts[1:]):
         if current.get("id") not in in_scope or current.get("action") != "service.start":
             continue
         if previous.get("action") == "service.start":
-            findings.append(_finding("gaps", "minor", [previous, current],
-                                     "the writer stopped without a stop record (crash or kill)"))
+            findings.append(_finding("gaps", "minor", [previous, current], Text(
+                "trail.finding.no_stop_record", "the writer stopped without a stop record (crash or kill)")))
         else:
-            findings.append(_finding("gaps", "info", [previous, current],
-                                     f"writer downtime from {previous.get('time')} to {current.get('time')}"))
+            findings.append(_finding("gaps", "info", [previous, current], Text(
+                "trail.finding.downtime", "writer downtime from {start} to {end}", start=previous.get("time"),
+                end=current.get("time"))))
     return findings
 
 
@@ -323,8 +333,9 @@ def q_out_of_hours(scope, everything, params):
         local = moment.astimezone(zone) if moment else None
         if local and (local.isoweekday() not in days or not start <= local.time() <= end):
             hits.append(record)
-    return [_finding("out_of_hours", "minor", hits, f"human actions outside {params.get('work_start')}–"
-                     f"{params.get('work_end')} on workdays ({params.get('timezone', 'UTC')})")] if hits else []
+    return [_finding("out_of_hours", "minor", hits, Text(
+        "trail.finding.out_of_hours", "human actions outside {start}–{end} on workdays ({zone})",
+        start=params.get("work_start"), end=params.get("work_end"), zone=params.get("timezone", "UTC")))] if hits else []
 
 
 def q_repeated_failures(scope, everything, params):
@@ -340,15 +351,17 @@ def q_repeated_failures(scope, everything, params):
         for index in range(len(items) - limit + 1):
             first, last = _time(items[index].get("time")), _time(items[index + limit - 1].get("time"))
             if first and last and last - first <= window:
-                findings.append(_finding("repeated_failures", "major", items,
-                                         f"{len(items)} failed or refused '{what}' attempts by {who}"))
+                findings.append(_finding("repeated_failures", "major", items, Text(
+                    "trail.finding.repeated_failures", "{n} failed or refused '{what}' attempts by {who}",
+                    n=len(items), what=what, who=who)))
                 break
     return findings
 
 
 def q_time_anomalies(scope, everything, params):
     skew = int(params.get("skew_ms", 5000))
-    findings = [_finding("time_anomalies", "major", [r], f"writer clock jump ({_data(r).get('direction')})")
+    findings = [_finding("time_anomalies", "major", [r], Text("trail.finding.clock_jump", "writer clock jump "
+                                                              "({direction})", direction=_data(r).get("direction")))
                 for r in scope if r.get("action") == "clock.jump"]
     skewed = []
     for record in scope:
@@ -357,12 +370,14 @@ def q_time_anomalies(scope, everything, params):
         if observed.get("via") == "socket" and client and service and abs((service - client).total_seconds()) * 1000 > skew:
             skewed.append(record)
     if skewed:
-        findings.append(_finding("time_anomalies", "minor", skewed, f"client time differs from writer time by more than {skew} ms"))
+        findings.append(_finding("time_anomalies", "minor", skewed, Text(
+            "trail.finding.skew", "client time differs from writer time by more than {ms} ms", ms=skew)))
     previous = None
     for record in scope:
         moment = str(record.get("time", ""))
         if previous is not None and moment < previous:
-            findings.append(_finding("time_anomalies", "major", [record], "writer time went backwards"))
+            findings.append(_finding("time_anomalies", "major", [record], Text("trail.finding.time_backwards",
+                                                                               "writer time went backwards")))
         previous = moment
     return findings
 
@@ -380,14 +395,16 @@ def q_actor_changes(scope, everything, params):
         actors = {_aid(r) for r in items}
         first, last = _time(items[0].get("time")), _time(items[-1].get("time"))
         if len(actors) > 1 and first and last and last - first <= window:
-            findings.append(_finding("actor_changes", "info", items,
-                                     f"{ref} was acted on by {len(actors)} actors: {', '.join(sorted(actors))}"))
+            findings.append(_finding("actor_changes", "info", items, Text(
+                "trail.finding.actor_changes", "{ref} was acted on by {n} actors: {actors}", ref=ref, n=len(actors),
+                actors=", ".join(sorted(actors)))))
     return findings
 
 
 def q_invalidated_signatures(scope, everything, params):
     hits = [r for r in scope if r.get("type") == "signoff.invalidation"]
-    return [_finding("invalidated_signatures", "major", hits, "signatures were invalidated")] if hits else []
+    return [_finding("invalidated_signatures", "major", hits, Text("trail.finding.invalidated",
+                                                                   "signatures were invalidated"))] if hits else []
 
 
 def q_unanchored_head(scope, everything, params):
@@ -411,11 +428,12 @@ def q_unanchored_head(scope, everything, params):
     newest = _time(after[-1].get("time"))
     age = newest - since if since and newest else timedelta(0)
     if last is None or age > timedelta(hours=int(params.get("unanchored_hours", 24))):
-        what = "no RFC 3161 anchor" if last is None else f"last RFC 3161 anchor {last.get('time')}"
+        what = Text("trail.finding.no_anchor", "no RFC 3161 anchor") if last is None else \
+            Text("trail.finding.last_anchor", "last RFC 3161 anchor {time}", time=last.get("time"))
         if tests and not test_tsa:
-            what += f"; {tests} TEST ONLY anchor(s) not counted"
-        return [_finding("unanchored_head", "minor", after[-1:],
-                         f"{len(after)} record(s) not covered by an anchor ({what})")]
+            what = Text("trail.finding.test_anchors", "{what}; {n} TEST ONLY anchor(s) not counted", what=what, n=tests)
+        return [_finding("unanchored_head", "minor", after[-1:], Text(
+            "trail.finding.unanchored", "{n} record(s) not covered by an anchor ({what})", n=len(after), what=what))]
     return []
 
 
@@ -470,7 +488,7 @@ def _evaluate(records: list[dict], profile: dict, *, since: str | None, until: s
     """Scope, profile, actors and findings: a pure function of the trail up to the end of the scope."""
     scope = [r for r in records if in_period(r, since, until)]
     if not scope:
-        raise ValueError("no records in the selected period")
+        raise ValueError(Text("trail.review.empty_period", "no records in the selected period"))
     last = scope[-1]
     everything = [r for r in records if _seq(r) <= _seq(last)]   # the trail as it was at the end of the scope
     findings = []
@@ -489,8 +507,9 @@ def _evaluate(records: list[dict], profile: dict, *, since: str | None, until: s
 def run_review(records: list[dict], profile: dict, *, log_id: str, since: str | None = None,
                until: str | None = None, trail: str | None = None) -> dict:
     result = _evaluate(records, profile, since=since, until=until)
+    codes = {finding["id"]: coded(finding["explanation"]) for finding in result["findings"]}
     return {"aqt_worksheet": "0.1", "id": f"rv_{os.urandom(6).hex()}", "log_id": log_id, "trail": trail,
-            "generated_at": utc_now(), **result}
+            "generated_at": utc_now(), **result, "finding_codes": {k: v for k, v in codes.items() if v}}
 
 
 def worksheet_digest(sheet: dict) -> str:
@@ -542,8 +561,17 @@ def review_body(data: dict) -> dict:
 
 
 def _mismatch(what: str) -> ReviewRefused:
-    return ReviewRefused("worksheet_mismatch", f"the worksheet's {what} differ(s) from the trail; it was changed or "
-                                               "made by another version. Run 'aqt-trail review run' again")
+    return ReviewRefused("worksheet_mismatch", Text(
+        "trail.refused.worksheet_mismatch", "the worksheet's {what} differ(s) from the trail; it was changed or made "
+        "by another version. Run 'aqt-trail review run' again", what=what))
+
+
+PART = {"structure": Text("trail.refused.part_structure", "structure"), "id": Text("trail.refused.part_id", "id"),
+        "profile": Text("trail.refused.part_profile", "profile"),
+        "profile_hash": Text("trail.refused.part_profile_hash", "profile hash"),
+        "scope": Text("trail.refused.part_scope", "scope"),
+        "actors_reviewed": Text("trail.refused.part_actors", "actors in scope"),
+        "findings": Text("trail.refused.part_findings", "findings")}
 
 
 def check_worksheet(sheet: dict, records: list[dict], *, log_id: str | None = None, keys: dict | None = None,
@@ -555,48 +583,54 @@ def check_worksheet(sheet: dict, records: list[dict], *, log_id: str | None = No
     to there (``trail_broken``; with ``keys`` also the service signatures), or its scope, profile, actors or
     findings differ from what the trail gives (``worksheet_mismatch``)."""
     if not isinstance(sheet, dict) or not isinstance(sheet.get("scope"), dict) or not isinstance(sheet.get("profile"), dict):
-        raise _mismatch("structure")
+        raise _mismatch(PART["structure"])
     if expected_sha256 is not None and worksheet_digest(sheet) != expected_sha256:
-        raise ReviewRefused("worksheet_changed", "the worksheet differs from the one shown; nothing was signed. "
-                                                 "Reload the review")
+        raise ReviewRefused("worksheet_changed", Text("trail.refused.worksheet_changed", "the worksheet differs from "
+                                                      "the one shown; nothing was signed. Reload the review"))
     if not isinstance(sheet.get("id"), str) or not _WORKSHEET_ID.match(sheet["id"]):
-        raise _mismatch("id")
+        raise _mismatch(PART["id"])
     if log_id is not None and sheet.get("log_id") != log_id:
-        raise ReviewRefused("worksheet_mismatch", f"the worksheet is for log {sheet.get('log_id')!r}, not {log_id!r}")
+        raise ReviewRefused("worksheet_mismatch", Text("trail.refused.other_log", "the worksheet is for log {sheet}, "
+                                                       "not {log}", sheet=repr(sheet.get("log_id")), log=repr(log_id)))
     scope, profile = sheet["scope"], sheet["profile"]
     to_seq = scope.get("to_seq")
     current = next((r for r in records if _seq(r) == to_seq), None) if type(to_seq) is int else None
     if current is None or record_hash(current) != scope.get("head"):
-        raise ReviewRefused("stale_worksheet", "the trail at the end of the scope differs from the worksheet")
+        raise ReviewRefused("stale_worksheet", Text("trail.refused.stale_worksheet",
+                                                    "the trail at the end of the scope differs from the worksheet"))
     upto = [r for r in records if 0 <= _seq(r) <= to_seq]
     try:
         chain = verify_chain(upto, keys=keys or None, require_signature=bool(keys))
     except (TypeError, AttributeError, ValueError) as error:
-        raise ReviewRefused("trail_broken", f"the trail is malformed up to seq {to_seq} ({error}); "
-                                            "run 'aqt-trail verify'") from error
+        raise ReviewRefused("trail_broken", Text("trail.refused.trail_malformed", "the trail is malformed up to seq "
+                                                 "{seq} ({error}); run 'aqt-trail verify'", seq=to_seq,
+                                                 error=str(error))) from error
     if not chain.ok or chain.count != to_seq + 1:
-        reason = chain.summary() if not chain.ok else "records are missing"
-        raise ReviewRefused("trail_broken", f"the trail does not verify up to seq {to_seq} ({reason}); "
-                                            "run 'aqt-trail verify'")
+        reason = chain.summary() if not chain.ok else Text("trail.refused.records_missing", "records are missing")
+        raise ReviewRefused("trail_broken", Text("trail.refused.trail_broken", "the trail does not verify up to seq "
+                                                 "{seq} ({reason}); run 'aqt-trail verify'", seq=to_seq,
+                                                 reason=reason))
     queries = profile.get("queries")
     if queries is None and profile.get("name") == "default":
         queries = list(QUERIES)                     # worksheets written before the queries were listed
     params = profile.get("params")
     if not isinstance(queries, list) or any(q not in QUERY_FUNCTIONS for q in queries) or not isinstance(params, dict) \
             or not isinstance(profile.get("name"), str):
-        raise _mismatch("profile")
+        raise _mismatch(PART["profile"])
     if profile["name"] == "default" and queries != list(QUERIES):
-        raise _mismatch("profile (a profile named 'default' runs every query)")
+        raise _mismatch(Text("trail.refused.part_default_profile",
+                             "profile (a profile named 'default' runs every query)"))
     if _profile_entry(profile["name"], queries, params)["sha256"] != profile.get("sha256"):
-        raise _mismatch("profile hash")
+        raise _mismatch(PART["profile_hash"])
     try:
         fresh = _evaluate(upto, {"name": profile["name"], "queries": queries, "params": params},
                           since=scope.get("since"), until=scope.get("until"))
     except (ValueError, TypeError, KeyError) as error:
-        raise _mismatch(f"scope or profile ({error})") from error
-    for key, label in (("scope", "scope"), ("actors_reviewed", "actors in scope"), ("findings", "findings")):
+        raise _mismatch(Text("trail.refused.part_scope_profile", "scope or profile ({error})",
+                             error=str(error))) from error
+    for key in ("scope", "actors_reviewed", "findings"):
         if fresh[key] != sheet.get(key):
-            raise _mismatch(label)
+            raise _mismatch(PART[key])
     return {"aqt_worksheet": sheet.get("aqt_worksheet"), "id": sheet["id"], "log_id": sheet.get("log_id"), **fresh}
 
 
@@ -612,41 +646,50 @@ def build_review(sheet: dict, records: list[dict], *, reviewer_id: str, signer: 
     registered and sign with one of their active keys, backed by its enrolment record in ``records``
     (``check_enrolment``); a key registered to someone else is always refused."""
     if not reviewer_id.startswith("human:"):
-        raise ReviewRefused("not_human", "a review is signed by a human identity (human:<id>)")
+        raise ReviewRefused("not_human", Text("trail.refused.not_human",
+                                              "a review is signed by a human identity (human:<id>)"))
     fresh = check_worksheet(sheet, records, log_id=log_id, keys=keys, expected_sha256=expected_sha256)
     if reviewer_id in fresh["actors_reviewed"]:
-        raise ReviewRefused("not_independent", f"{reviewer_id} is an actor in the reviewed scope")
+        raise ReviewRefused("not_independent", Text("trail.refused.not_independent", "{reviewer} is an actor in the "
+                                                    "reviewed scope", reviewer=reviewer_id))
     if registry:
         registry = check_enrolment(registry, records)
     others = sorted({owner.id for owner, _key in key_owners(registry, signer.key_id) if owner.id != reviewer_id})
     if others:
-        raise ReviewRefused("key_mismatch", f"key {signer.key_id} is registered to {', '.join(others)}, "
-                                            f"not to {reviewer_id}")
+        raise ReviewRefused("key_mismatch", Text("trail.refused.key_mismatch", "key {key} is registered to {others}, "
+                                                 "not to {reviewer}", key=signer.key_id, others=", ".join(others),
+                                                 reviewer=reviewer_id))
     info = registry.get(reviewer_id)
     if info is not None:
         entry = info.keys.get(signer.key_id)
         if entry is not None and entry.backed is False:
-            raise ReviewRefused("unenrolled_key", f"key {signer.key_id} of {reviewer_id} is in signers.json but not "
-                                                  f"backed by its enrolment record in the trail ({entry.evidence}); "
-                                                  f"run 'aqt-signoff signers check' (a key made by another tool is "
-                                                  f"recorded by 'aqt-signoff rekey --signer {reviewer_id}')")
+            raise ReviewRefused("unenrolled_key", Text(
+                "trail.refused.unenrolled_key", "key {key} of {reviewer} is in signers.json but not backed by its "
+                "enrolment record in the trail ({evidence}); run 'aqt-signoff signers check' (a key made by another "
+                "tool is recorded by 'aqt-signoff rekey --signer {reviewer}')", key=signer.key_id,
+                reviewer=reviewer_id, evidence=entry.evidence))
         if signer.key_id in info.revoked_keys:
-            raise ReviewRefused("revoked_key", f"key {signer.key_id} of {reviewer_id} is revoked")
+            raise ReviewRefused("revoked_key", Text("trail.refused.revoked_key", "key {key} of {reviewer} is revoked",
+                                                    key=signer.key_id, reviewer=reviewer_id))
         if signer.key_id not in info.active_keys:
-            raise ReviewRefused("unknown_key", f"key {signer.key_id} is not registered for {reviewer_id}")
+            raise ReviewRefused("unknown_key", Text("trail.refused.unknown_key", "key {key} is not registered for "
+                                                    "{reviewer}", key=signer.key_id, reviewer=reviewer_id))
         name, role = name or info.name, role or info.role
     elif registry:
-        raise ReviewRefused("unknown_signer", f"{reviewer_id} is not in the signer registry; enrol the reviewer "
-                                              "with aqt-signoff first")
+        raise ReviewRefused("unknown_signer", Text("trail.refused.unknown_signer", "{reviewer} is not in the signer "
+                                                   "registry; enrol the reviewer with aqt-signoff first",
+                                                   reviewer=reviewer_id))
     scope = fresh["scope"]
     findings = []
     for finding in fresh["findings"]:
         disposition = dispositions.get(finding["id"], dispositions.get("all"))
         if disposition not in DISPOSITIONS:
-            raise ValueError(f"finding {finding['id']} needs a disposition ({' | '.join(DISPOSITIONS)})")
+            raise ValueError(Text("trail.review.disposition_missing", "finding {id} needs a disposition ({choices})",
+                                  id=finding["id"], choices=" | ".join(DISPOSITIONS)))
         note = notes.get(finding["id"])
         if disposition != "ok" and not note:
-            raise ValueError(f"finding {finding['id']}: '{disposition}' needs a --note")
+            raise ValueError(Text("trail.review.note_missing", "finding {id}: '{disposition}' needs a --note",
+                                  id=finding["id"], disposition=disposition))
         findings.append({"id": finding["id"], "query": finding["query"], "severity": finding["severity"],
                          "record_ids": finding["record_ids"], "disposition": disposition,
                          **({"note": note} if note else {})})

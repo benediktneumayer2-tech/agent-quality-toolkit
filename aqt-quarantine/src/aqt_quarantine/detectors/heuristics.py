@@ -88,7 +88,15 @@ GROUPS: dict[str, tuple[float, int, str, list[str]]] = {
     ]),
 }
 HIDDEN_REASON = "hides text from human readers"
+HIDDEN_TAGS = HIDDEN_REASON + " (Unicode tag characters)"
+HIDDEN_INVISIBLE = HIDDEN_REASON + " ({n} zero-width or bidi characters)"
+HIDDEN_MARKUP = HIDDEN_REASON + " (HTML comment or CSS-hidden element)"
 ENCODED_REASON = "carries an encoded payload with instructions"
+# Message codes of the reasons, for aqt-ui's catalogue (plain strings: this module imports nothing heavy). Records
+# keep only the English reason; a reader finds the code by the span's label and, for "hidden", by the text.
+REASON_CODES = {**{f"quarantine.detector.{group}": spec[2] for group, spec in GROUPS.items()},
+                "quarantine.detector.hidden_tags": HIDDEN_TAGS, "quarantine.detector.hidden_invisible": HIDDEN_INVISIBLE,
+                "quarantine.detector.hidden_markup": HIDDEN_MARKUP, "quarantine.detector.encoded": ENCODED_REASON}
 W_TAG_CHARS = 0.50          # any Unicode tag characters (invisible ASCII)
 W_INVISIBLE = 0.30          # three or more zero-width / bidi characters
 W_HIDDEN_MARKUP = 0.20      # HTML comment or CSS-hidden element containing words
@@ -201,16 +209,16 @@ class HeuristicsDetector:
                 add(start, end, group, reason)
         if norm.tags:
             survive *= 1 - W_TAG_CHARS
-            add(norm.tags[0], norm.tags[-1] + 1, "hidden", HIDDEN_REASON + " (Unicode tag characters)", mapped=True)
+            add(norm.tags[0], norm.tags[-1] + 1, "hidden", HIDDEN_TAGS, mapped=True)
         if len(norm.invisible) >= 3:
             survive *= 1 - W_INVISIBLE
-            add(norm.invisible[0], norm.invisible[0] + 1, "hidden",
-                f"{HIDDEN_REASON} ({len(norm.invisible)} zero-width or bidi characters)", mapped=True)
+            add(norm.invisible[0], norm.invisible[0] + 1, "hidden", HIDDEN_INVISIBLE.format(n=len(norm.invisible)),
+                mapped=True)
         markup = [m.span() for rx in _HIDDEN_MARKUP for m in rx.finditer(norm.text)]
         if markup:
             survive *= 1 - W_HIDDEN_MARKUP
             for start, end in markup[:5]:
-                add(start, end, "hidden", HIDDEN_REASON + " (HTML comment or CSS-hidden element)")
+                add(start, end, "hidden", HIDDEN_MARKUP)
         encoded = 0
         for start, end, decoded in _decoded_blobs(norm.text):
             if _group_hits(decoded):

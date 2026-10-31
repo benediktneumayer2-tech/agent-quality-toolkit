@@ -14,7 +14,7 @@ from decimal import Decimal, InvalidOperation
 from importlib import resources
 from pathlib import Path
 
-from aqt_evidence import bytes_hash
+from aqt_evidence import Text, bytes_hash
 
 BANDS = ("hold", "warn")  # evaluated in this order
 
@@ -55,40 +55,45 @@ class Thresholds:
 
 def _ppm(value, where: str) -> int:
     if isinstance(value, bool):
-        raise ThresholdsError(f"{where}: threshold must be a number")
+        raise ThresholdsError(Text("quarantine.thresholds.not_number", "{where}: threshold must be a number",
+                                   where=where))
     if isinstance(value, int):
         return value
     try:
         return int(Decimal(str(value)).to_integral_value(rounding="ROUND_FLOOR"))
     except (InvalidOperation, ValueError) as error:
-        raise ThresholdsError(f"{where}: threshold {value!r} is not a number") from error
+        raise ThresholdsError(Text("quarantine.thresholds.bad_number", "{where}: threshold {value} is not a number",
+                                   where=where, value=repr(value))) from error
 
 
 def parse(data: bytes, path: str) -> Thresholds:
     try:
         doc = json.loads(data)
     except ValueError as error:
-        raise ThresholdsError(f"{path}: not valid JSON") from error
+        raise ThresholdsError(Text("quarantine.thresholds.not_json", "{path}: not valid JSON", path=path)) from error
     if not isinstance(doc, dict) or doc.get("aqt_thresholds") != "0.1":
-        raise ThresholdsError(f"{path}: expected aqt_thresholds 0.1")
+        raise ThresholdsError(Text("quarantine.thresholds.version", "{path}: expected aqt_thresholds 0.1", path=path))
     bands: dict[str, BandRule] = {}
     for entry in doc.get("bands") or []:
         name = entry.get("name") if isinstance(entry, dict) else None
         if name not in BANDS:
-            raise ThresholdsError(f"{path}: band name must be warn or hold, got {name!r}")
+            raise ThresholdsError(Text("quarantine.thresholds.band_name", "{path}: band name must be warn or hold, "
+                                       "got {name}", path=path, name=repr(name)))
         rule = entry.get("rule", "any")
         if rule == "any":
             at_least = 1
         elif isinstance(rule, dict) and isinstance(rule.get("at_least"), int) and rule["at_least"] >= 1:
             at_least = rule["at_least"]
         else:
-            raise ThresholdsError(f"{path}: rule must be 'any' or {{'at_least': k}}")
+            raise ThresholdsError(Text("quarantine.thresholds.rule", "{path}: rule must be 'any' or {form}", path=path,
+                                       form="{'at_least': k}"))
         limits = entry.get("thresholds")
         if not isinstance(limits, dict) or not limits:
-            raise ThresholdsError(f"{path}: band {name} needs thresholds")
+            raise ThresholdsError(Text("quarantine.thresholds.band_empty", "{path}: band {name} needs thresholds",
+                                       path=path, name=name))
         bands[name] = BandRule(name, at_least, {k: _ppm(v, f"{path} {name}.{k}") for k, v in limits.items()})
     if not bands:
-        raise ThresholdsError(f"{path}: no bands")
+        raise ThresholdsError(Text("quarantine.thresholds.no_bands", "{path}: no bands", path=path))
     calibration = doc.get("calibration") or {}
     run = doc.get("run")
     calibrated = bool(run) and isinstance(calibration.get("n"), int) and calibration["n"] > 0
@@ -104,5 +109,6 @@ def load(path: str | None = None) -> Thresholds:
     try:
         data = Path(path).expanduser().read_bytes()
     except OSError as error:
-        raise ThresholdsError(f"cannot read thresholds file {path}: {error}") from error
+        raise ThresholdsError(Text("quarantine.thresholds.unreadable", "cannot read thresholds file {path}: {error}",
+                                   path=path, error=str(error))) from error
     return parse(data, str(path))

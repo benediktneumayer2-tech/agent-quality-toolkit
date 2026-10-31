@@ -8,13 +8,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from aqt_evidence import Text, coded
+
 from . import antigaming
 from .config import INDEPENDENCE
 from .config import PROJECT_FILE
 from .ledger import TRAIL_REQUIRED, TRUST_NOGO, TRUST_TEXT, Ledger
 from .plan import Plan
 from .plans import STATES_OK, read_plan, require_valid, status
-from .receipts import HIDDEN_FIX, Freshness, evaluate, hidden_text, run, trust_blocks, trust_note, utc_stamp
+from .receipts import (HIDDEN_FIX, Freshness, evaluate, hidden_text, listing, run, trust_blocks, trust_note,
+                       utc_stamp)
 from .scope import compare
 
 RANK = {name: index for index, name in enumerate(("none", *INDEPENDENCE))}
@@ -64,8 +67,7 @@ def policy_for(ledger: Ledger, plan: Plan) -> dict:
 
 def left_out_text(left: list[dict], limit: int = 20) -> str:
     """``Git.left_out()`` as one line."""
-    text = ", ".join(f"{entry['path']} ({entry['state']})" for entry in left[:limit])
-    return text + (f" and {len(left) - limit} more" if len(left) > limit else "")
+    return listing([f"{entry['path']} ({entry['state']})" for entry in left], limit)
 
 
 def left_out(ledger: Ledger, rel: str, plan: Plan, snapshot: dict | None, committed: set[str]) -> list[dict]:
@@ -108,9 +110,10 @@ def evaluate_gate(ledger: Ledger, rel: str, plan: Plan, *, sources: list[Path] |
                 nogo.append({"code": f"receipt_{entry['state']}", "item": item_id})
             continue
         for receipt_id in entry.get("modified", []):
-            manual.append({"code": "command_modified_worktree", "item": item_id, "detail": f"{receipt_id}: "
-                           "the working tree changed while the command ran, so the receipt does not show what "
-                           "the tree it names does; run the check again on an unchanged tree"})
+            manual.append({"code": "command_modified_worktree", "item": item_id, "detail": Text(
+                "change.gate.command_modified_worktree", "{receipt}: the working tree changed while the command "
+                "ran, so the receipt does not show what the tree it names does; run the check again on an unchanged "
+                "tree", receipt=receipt_id)})
         if entry["manual"]:
             receipts.append(entry["receipt"])
             if entry.get("attested_by") != "human":
@@ -121,55 +124,67 @@ def evaluate_gate(ledger: Ledger, rel: str, plan: Plan, *, sources: list[Path] |
         manual.append({"code": "waiver_present", "item": item_id})
     scope = compare(ledger, rel, plan, freshness, sources)
     if scope["result"] == "scope_undeclared":
-        manual.append({"code": "scope_undeclared", "detail": "the plan declares no aqt.paths"})
+        manual.append({"code": "scope_undeclared",
+                       "detail": Text("change.gate.scope_undeclared", "the plan declares no aqt.paths")})
     elif scope["result"] == "no_base":
-        manual.append({"code": "scope_unverifiable", "detail": "no Git base commit to compare against"})
+        manual.append({"code": "scope_unverifiable",
+                       "detail": Text("change.gate.scope_unverifiable", "no Git base commit to compare against")})
     if scope["unapproved"]:
         nogo.append({"code": "unapproved_change", "detail": ", ".join(scope["unapproved"][:20])})
     if scope["allowed_by_user_config"]:
-        manual.append({"code": "allowed_by_user_config", "detail": "outside the plan's paths, allowed only by "
-                       "always_allowed_paths in the user configuration (not in " + PROJECT_FILE + "): "
-                       + ", ".join(scope["allowed_by_user_config"][:20])})
+        manual.append({"code": "allowed_by_user_config", "detail": Text(
+            "change.gate.allowed_by_user_config", "outside the plan's paths, allowed only by always_allowed_paths in "
+            "the user configuration (not in {file}): {paths}", file=PROJECT_FILE,
+            paths=", ".join(scope["allowed_by_user_config"][:20]))})
     if scope.get("settings_changed"):
-        manual.append({"code": "project_settings_changed", "detail": f"the change edits {PROJECT_FILE} "
-                       "(aqt-change project settings such as require_trail); a human checks it"})
+        manual.append({"code": "project_settings_changed", "detail": Text(
+            "change.gate.project_settings_changed", "the change edits {file} (aqt-change project settings such as "
+            "require_trail); a human checks it", file=PROJECT_FILE)})
     hidden = freshness.hidden()
     sparse = [h for h in hidden if h["state"] == "sparse"]
     hidden = [h for h in hidden if h["state"] != "sparse"]
     if hidden:
-        nogo.append({"code": "hidden_worktree_change", "detail": "Git does not show working-tree changes of "
-                     f"tracked files, so a commit would leave them out ({HIDDEN_FIX}): " + hidden_text(hidden)})
+        nogo.append({"code": "hidden_worktree_change", "detail": Text(
+            "change.gate.hidden_worktree_change", "Git does not show working-tree changes of tracked files, so a "
+            "commit would leave them out ({fix}): {files}", fix=HIDDEN_FIX, files=hidden_text(hidden))})
     if sparse:
-        manual.append({"code": "sparse_checkout", "detail": f"{len(sparse)} tracked file(s) outside the sparse "
-                       "checkout were not in the working tree when the receipts ran"})
+        manual.append({"code": "sparse_checkout", "detail": Text(
+            "change.gate.sparse_checkout", "{n} tracked file(s) outside the sparse checkout were not in the working "
+            "tree when the receipts ran", n=len(sparse))})
     local = ledger.git.local_ignored() if ledger.git else []
     if local:
-        manual.append({"code": "locally_ignored_files", "detail": "untracked files that only .git/info/exclude, "
-                       "core.excludesFile or an untracked .gitignore ignore (a clean checkout lacks them, and a test "
-                       "run may load them): "
-                       + ", ".join(local[:20]) + (f" and {len(local) - 20} more" if len(local) > 20 else "")})
+        manual.append({"code": "locally_ignored_files", "detail": Text(
+            "change.gate.locally_ignored_files", "untracked files that only .git/info/exclude, core.excludesFile or "
+            "an untracked .gitignore ignore (a clean checkout lacks them, and a test run may load them): {files}",
+            files=listing(local))})
     if finish and not for_finish and not any(entry["state"] == "stale" for entry in items.values()):
         # the working tree is the tested tree (stale receipts are NO-GO anyway): HEAD must hold it
         left = left_out(ledger, rel, plan, freshness.snapshot, set())
         if left:
-            manual.append({"code": "tested_change_not_committed", "detail": "HEAD does not hold the tested "
-                           "working-tree content of " + left_out_text(left)})
+            manual.append({"code": "tested_change_not_committed", "detail": Text(
+                "change.gate.tested_change_not_committed", "HEAD does not hold the tested working-tree content of "
+                "{files}", files=left_out_text(left))})
     warnings = antigaming.scan(ledger.git, scope["base_commit"], {rel}) if ledger.git else []
     for warning in warnings:
         entry = {"code": "anti_gaming_warning", "detail": f"{warning['code']}: {warning.get('path', '')}"}
         (nogo if policy["warnings_block"] else manual).append(entry)
     approval = scope["approval"]
     if approval["state"] == "invalid":
-        manual.append({"code": "approval_invalid", "detail": "aqt-signoff rejected the approval signature"})
+        manual.append({"code": "approval_invalid", "detail": Text("change.gate.approval_invalid",
+                                                                  "aqt-signoff rejected the approval signature")})
     elif approval["state"] == "stale":
-        manual.append({"code": "approval_stale", "detail": "the plan changed semantically after approval"})
+        manual.append({"code": "approval_stale", "detail": Text("change.gate.approval_stale",
+                                                                "the plan changed semantically after approval")})
     elif policy["require_signed_approval"] and approval["state"] == "unverified":
-        manual.append({"code": "approval_unverified", "detail": "signature found; aqt-signoff not available to verify"})
+        manual.append({"code": "approval_unverified", "detail": Text(
+            "change.gate.approval_unverified", "signature found; aqt-signoff not available to verify")})
     elif policy["require_signed_approval"] and approval["state"] == "unsigned":
         manual.append({"code": "approval_unsigned"})
     every, unverified = counted_reviews(ledger, plan, freshness)
     for entry in unverified:
-        reason = {"code": "review_unverified", "detail": f"{entry['review']['id']} {TRUST_TEXT[entry['trust']]}"}
+        reason = {"code": "review_unverified", "detail": Text("change.gate.review_trust", "{review} {trust}",
+                                                              review=entry["review"]["id"],
+                                                              trust=TRUST_TEXT[entry["trust"]])}
         (nogo if entry["trust"] in TRUST_NOGO else manual).append(reason)
     reviews = fresh_reviews(ledger, plan, freshness, every)
     if every and every[-1]["data"]["verdict"] == "FAIL":
@@ -187,7 +202,8 @@ def evaluate_gate(ledger: Ledger, rel: str, plan: Plan, *, sources: list[Path] |
     if wanted != "none":
         best = max((RANK[r["data"]["independence"]] for r in reviews if r["data"]["verdict"] == "PASS"), default=0)
         if best < RANK[wanted]:
-            manual.append({"code": "review_independence_below_policy", "detail": f"needs {wanted}"})
+            manual.append({"code": "review_independence_below_policy",
+                           "detail": Text("change.gate.needs_independence", "needs {wanted}", wanted=wanted)})
     if not for_finish and not finish:
         nogo.append({"code": "not_finished"})
     decision = "NO-GO" if nogo else ("MANUAL_VERIFY_REQUIRED" if manual else "GO")
@@ -215,7 +231,17 @@ def gate(ledger: Ledger, plan_path: str, *, sources: list[Path] | None = None, r
 
 
 def public(result: dict) -> dict:
-    """The gate JSON without bulky helper sections."""
+    """The gate JSON without bulky helper sections. A reason whose ``detail`` carries a message code also gets
+    ``detail_code`` and ``detail_args`` (``aqt_evidence.coded``), so a reader of the JSON can show the detail in
+    another language; ``detail`` itself stays the English text."""
     keep = ("aqt_gate", "plan_id", "decision", "reasons", "approval", "receipts", "reviews", "waivers",
             "finish", "evaluated_at", "trail", "policy_sha256", "rerun")
-    return {key: result[key] for key in keep if key in result}
+    out = {key: result[key] for key in keep if key in result}
+    if "reasons" in out:
+        out["reasons"] = [_with_code(reason) for reason in out["reasons"]]
+    return out
+
+
+def _with_code(reason: dict) -> dict:
+    found = coded(reason.get("detail"))
+    return {**reason, "detail_code": found["code"], "detail_args": found["args"]} if found else reason

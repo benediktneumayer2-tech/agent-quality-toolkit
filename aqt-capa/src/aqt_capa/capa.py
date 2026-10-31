@@ -9,8 +9,9 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Callable
 
-from aqt_evidence import (AgentContext, HumanCheckError, SinkError, actor, bytes_hash, detect_agent_context,
-                          evidence_sources, iter_evidence, new_record, open_sink, record_content_hash, require_human, subject)
+from aqt_evidence import (AgentContext, HumanCheckError, SinkError, Text, actor, bytes_hash, detect_agent_context,
+                          evidence_sources, iter_evidence, new_record, open_sink, record_content_hash, require_human,
+                          subject, text_join)
 
 from . import sources
 from .config import Config
@@ -96,8 +97,8 @@ class Capa:
         claimed = self.human_actor()
         try:
             if claimed["kind"] != "human":
-                raise HumanCheckError(AgentContext(True, None, [f"actor:{claimed['id']}"]),
-                                      f"refused: {claimed['id']} is not a human actor")
+                raise HumanCheckError(AgentContext(True, None, [f"actor:{claimed['id']}"]), Text(
+                    "capa.refused.not_human", "refused: {actor} is not a human actor", actor=claimed["id"]))
             self.guard()
         except HumanCheckError as error:
             ctx = error.context
@@ -105,33 +106,35 @@ class Capa:
                 "attempted_action": attempted,
                 "reason_code": "agent-context" if ctx.is_agent else "no-tty",
                 "agent_markers": list(ctx.markers)}))
-            raise Refused(str(error)) from error
+            raise Refused(error.args[0] if error.args and isinstance(error.args[0], str) else str(error)) from error
         return claimed
 
     def write(self, record: dict) -> dict:
         try:
             stored = self.sink.append(record)
         except SinkError as error:
-            raise CapaError(f"evidence sink refused the record: {error}") from error
+            raise CapaError(Text("capa.error.sink_refused", "evidence sink refused the record: {error}",
+                                 error=str(error))) from error
         self.store.apply(stored)
         return stored
 
     def _dev(self, dev_id: str):
         row = self.store.deviation(dev_id)
         if row is None:
-            raise CapaError(f"unknown deviation {dev_id}")
+            raise CapaError(Text("capa.error.unknown_deviation", "unknown deviation {dev}", dev=dev_id))
         return row
 
     def _act(self, action_id: str):
         row = self.store.action(action_id)
         if row is None:
-            raise CapaError(f"unknown action {action_id}")
+            raise CapaError(Text("capa.error.unknown_action", "unknown action {action}", action=action_id))
         return row
 
     @staticmethod
     def _check_choice(value: str, choices, name: str) -> None:
         if value not in choices:
-            raise CapaError(f"{name} must be one of {', '.join(choices)}")
+            raise CapaError(Text("capa.error.choice", "{name} must be one of {choices}", name=name,
+                                 choices=", ".join(choices)))
 
     # ----------------------------------------------------------------- scan
     def scan(self) -> list[dict]:
@@ -153,9 +156,11 @@ class Capa:
     def _candidate(self, candidate_id: str) -> dict:
         row = self.store.candidate(candidate_id)
         if row is None:
-            raise CapaError(f"unknown candidate {candidate_id} (run scan first)")
+            raise CapaError(Text("capa.error.unknown_candidate", "unknown candidate {candidate} (run scan first)",
+                                 candidate=candidate_id))
         if row["status"] != "open":
-            raise Blocked(f"candidate {candidate_id} is already {row['status']}")
+            raise Blocked(Text("capa.blocked.candidate_decided", "candidate {candidate} is already {status}",
+                               candidate=candidate_id, status=row["status"]))
         cand = {k: row[k] for k in ("candidate_id", "key", "rule", "source_type", "source_ref", "time", "title",
                                     "severity", "category", "session") if row[k] is not None}
         return cand
@@ -189,7 +194,7 @@ class Capa:
         self._check_choice(severity, sources.SEVERITIES, "severity")
         self._check_choice(category, sources.CATEGORIES, "category")
         if not title.strip():
-            raise CapaError("title must not be empty")
+            raise CapaError(Text("capa.error.title_empty", "title must not be empty"))
         dev_id = f"DEV-{self.store.next_dev_num():04d}"
         opened = utc_now()
         probe = {"dev_id": dev_id, "title": title, "description": description, "category": category,
@@ -467,7 +472,8 @@ class Capa:
         appr = self.approval(act, records)
         result = {"action_id": action_id, "dev_id": act["dev_id"], "criterion": crit, "approval": appr["status"]}
         if not appr["approved"]:
-            return result | {"result": "pending", "reasons": [f"not approved ({appr['status']})"],
+            return result | {"result": "pending", "reasons": [Text("capa.effectiveness.not_approved",
+                                                                   "not approved ({status})", status=appr["status"])],
                              "counts": {}, "target_hash_ok": None}
         start = parse_time(appr["at"])
         match = crit.get("match") or {}
@@ -492,21 +498,26 @@ class Capa:
         reasons = []
         if len(recurrences) > int(crit.get("max", 0)):
             outcome = "not-effective"
-            reasons.append(f"{len(recurrences)} recurrence(s): {', '.join(recurrences)}")
+            reasons.append(Text("capa.effectiveness.recurrences", "{n} recurrence(s): {devs}", n=len(recurrences),
+                                devs=", ".join(recurrences)))
         else:
             if not target_ok:
-                reasons.append(f"{act['path']} changed since approval")
+                reasons.append(Text("capa.effectiveness.target_changed", "{path} changed since approval",
+                                    path=act["path"]))
             if undecided:
-                reasons.append(f"{len(undecided)} undecided matching candidate(s): {', '.join(undecided)}")
+                reasons.append(Text("capa.effectiveness.undecided", "{n} undecided matching candidate(s): {candidates}",
+                                    n=len(undecided), candidates=", ".join(undecided)))
             if gaps:
-                reasons.append(f"{len(gaps)} trail gap(s) in the window")
+                reasons.append(Text("capa.effectiveness.gaps", "{n} trail gap(s) in the window", n=len(gaps)))
             if window.get("sessions") and len(sessions) < window["sessions"]:
-                reasons.append(f"{len(sessions)}/{window['sessions']} agent sessions observed")
+                reasons.append(Text("capa.effectiveness.sessions", "{n}/{needed} agent sessions observed",
+                                    n=len(sessions), needed=window["sessions"]))
             if window.get("days") and days < window["days"]:
-                reasons.append(f"{days}/{window['days']} days elapsed")
+                reasons.append(Text("capa.effectiveness.days", "{n}/{needed} days elapsed", n=days,
+                                    needed=window["days"]))
             outcome = "pending" if reasons else "effective"
             if outcome == "effective":
-                reasons.append("no recurrence in a complete window")
+                reasons.append(Text("capa.effectiveness.effective", "no recurrence in a complete window"))
         return result | {"result": outcome, "reasons": reasons, "counts": counts, "start": fmt_time(start),
                          "window": window, "target_hash_ok": target_ok, "recurrences": recurrences,
                          "undecided": undecided}
@@ -559,27 +570,32 @@ class Capa:
         who = self.require_human("deviation.close")
         dev = self._dev(dev_id)
         if dev["state"] == "closed":
-            raise Blocked(f"{dev_id} is already closed")
+            raise Blocked(Text("capa.blocked.already_closed", "{dev} is already closed", dev=dev_id))
         if not self.store.one("SELECT 1 FROM investigations WHERE dev_id = ? AND status = 'recorded'", dev_id):
-            raise Blocked(f"{dev_id} has no recorded investigation")
+            raise Blocked(Text("capa.blocked.no_investigation", "{dev} has no recorded investigation", dev=dev_id))
         acts = self.store.q("SELECT * FROM actions WHERE dev_id = ? AND state != 'cancelled' ORDER BY seq", dev_id)
         if no_action:
             if dev["severity"] == "critical":
-                raise Blocked("a critical deviation needs a CAPA; --no-action is not allowed")
+                raise Blocked(Text("capa.blocked.critical", "a critical deviation needs a CAPA; --no-action is not "
+                                   "allowed"))
             if acts:
-                raise Blocked(f"{dev_id} has actions; close it on their effectiveness instead")
+                raise Blocked(Text("capa.blocked.has_actions", "{dev} has actions; close it on their effectiveness "
+                                   "instead", dev=dev_id))
             basis, summary = "no-action", []
         else:
             if not acts:
-                raise Blocked(f"{dev_id} has no actions; plan one, or use --no-action with a justification")
+                raise Blocked(Text("capa.blocked.no_actions", "{dev} has no actions; plan one, or use --no-action with "
+                                   "a justification", dev=dev_id))
             evals = self.effectiveness(dev_id, now=now)
             summary = [{"action_id": e["action_id"], "result": e["result"]} for e in evals]
             undecided = [e for e in evals if e["result"] == "pending"]
             if undecided:
-                raise Blocked("effectiveness still pending: " + "; ".join(
-                    f"{e['action_id']}: {', '.join(e['reasons'])}" for e in undecided))
+                raise Blocked(Text("capa.blocked.pending", "effectiveness still pending: {actions}", actions=text_join(
+                    "; ", [Text("capa.blocked.pending_action", "{action}: {reasons}", action=e["action_id"],
+                                reasons=text_join(", ", e["reasons"])) for e in undecided])))
             if evals[-1]["result"] != "effective":
-                raise Blocked(f"the latest action {evals[-1]['action_id']} is not effective; plan a further action")
+                raise Blocked(Text("capa.blocked.not_effective", "the latest action {action} is not effective; plan a "
+                                   "further action", action=evals[-1]["action_id"]))
             basis = "effective"
         return self.write(new_record("capa.closure", who, "closed", meaning="approved", reason=reason, tz=self.cfg.tz,
                                      subject=subject("deviation", dev_id),

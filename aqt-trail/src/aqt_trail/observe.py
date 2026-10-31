@@ -31,6 +31,7 @@ import socket
 import struct
 from pathlib import Path
 
+from aqt_evidence import Text
 from aqt_evidence.session import PROCESS_MARKERS
 
 MAX_DEPTH = 16
@@ -106,19 +107,23 @@ def processes(pid: int, *, proc: Path = Path("/proc"), limit: int = MAX_DEPTH) -
 def chain_status(chain: list[dict], sessions: list[int], end: str) -> tuple[str, str | None]:
     """(``complete`` | ``partial`` | ``unavailable``, why not complete) for a walk (see the module text)."""
     if not chain or chain[0].get("comm") == "?":
-        return "unavailable", "the sender's /proc entry could not be read (exited or hidden)"
+        return "unavailable", Text("trail.observe.unreadable",
+                                   "the sender's /proc entry could not be read (exited or hidden)")
     if end == "gone":
-        return "partial", f"process {chain[-1]['pid']} exited before it could be read"
+        return "partial", Text("trail.observe.exited", "process {pid} exited before it could be read",
+                               pid=chain[-1]["pid"])
     if end == "depth":
-        return "partial", f"more than {MAX_DEPTH} ancestors"
+        return "partial", Text("trail.observe.too_deep", "more than {n} ancestors", n=MAX_DEPTH)
     for child, parent in zip(chain, chain[1:]):
         if parent["start_time"] > child["start_time"]:
-            return "partial", f"parent {parent['pid']} started after its child {child['pid']} (pid reused)"
+            return "partial", Text("trail.observe.pid_reused", "parent {parent} started after its child {child} (pid "
+                                   "reused)", parent=parent["pid"], child=child["pid"])
     on_chain = {entry["pid"] for entry in chain}
     for entry, session in zip(chain, sessions):
         if session > 0 and session != entry["pid"] and session not in on_chain:
-            return "partial", (f"{entry['comm']} ({entry['pid']}) belongs to session {session}, whose leader is "
-                               "not among its ancestors (reparented after its parent exited)")
+            return "partial", Text("trail.observe.reparented", "{comm} ({pid}) belongs to session {session}, whose "
+                                   "leader is not among its ancestors (reparented after its parent exited)",
+                                   comm=entry["comm"], pid=entry["pid"], session=session)
     return "complete", None
 
 

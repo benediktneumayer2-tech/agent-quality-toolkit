@@ -16,6 +16,8 @@ from typing import Any
 
 from . import DetectorError, DetectorResult, Span
 
+MODEL_WINDOW = "highest-scoring model window"     # the span reason; message code quarantine.detector.model_window
+
 
 class OnnxDetector:
     def __init__(self, *, model_dir: str, name: str = "onnx", version: str | None = None,
@@ -67,7 +69,7 @@ class OnnxDetector:
             probability = exps[self.positive_index] / sum(exps)
             if probability > best:
                 best, best_span = probability, (offsets[start][0], offsets[end - 1][1])
-        spans = [Span(best_span[0], best_span[1], self.name, "highest-scoring model window")] \
+        spans = [Span(best_span[0], best_span[1], self.name, MODEL_WINDOW)] \
             if best_span[1] > best_span[0] else []
         return DetectorResult(int(round(best * 1_000_000)), spans)
 

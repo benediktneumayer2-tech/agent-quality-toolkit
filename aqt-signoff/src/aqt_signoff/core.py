@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
-from aqt_evidence import (MEANINGS, HumanCheckError, JsonlSink, SinkError, actor, bytes_hash, content_hash,
+from aqt_evidence import (MEANINGS, HumanCheckError, JsonlSink, SinkError, Text, actor, bytes_hash, content_hash,
                           evidence_sources, iter_evidence, new_record, open_sink, read_jsonl, record_content_hash,
                           require_human, sign_record, subject as make_subject)
 from aqt_evidence import detect_agent_context, generate_key, load_public_key
@@ -82,11 +82,13 @@ class VerifyReport:
 
     def summary(self) -> str:
         if any(s.status == "invalid" for s in self.signatures):
-            return "INVALID: at least one signature does not verify or is a replayed copy"
+            return Text("signoff.verify.invalid",
+                        "INVALID: at least one signature does not verify or is a replayed copy")
         if not any(s.valid for s in self.current):
-            return "UNSIGNED: no valid signature on the current content"
+            return Text("signoff.verify.unsigned", "UNSIGNED: no valid signature on the current content")
         unmet = [m for m in self.required if not self.policies[m].met]
-        return f"POLICY NOT MET: {', '.join(unmet)}" if unmet else "SIGNED: valid signature(s) on the current content"
+        return Text("signoff.verify.policy_not_met", "POLICY NOT MET: {meanings}", meanings=", ".join(unmet)) \
+            if unmet else Text("signoff.verify.signed", "SIGNED: valid signature(s) on the current content")
 
     def as_dict(self) -> dict:
         return {"ok": self.ok, "summary": self.summary(), "subject": self.subject,
@@ -94,6 +96,22 @@ class VerifyReport:
                 "policies": {m: p.as_dict() for m, p in self.policies.items()}, "required": self.required,
                 "recorded": self.recorded, "registry_problems": self.registry_problems,
                 "registry_warnings": self.registry_warnings}
+
+
+def policy_note(missing: int, others_than: list[str], roles) -> Text:
+    """Why a policy is not met: ``missing`` more valid signatures, from someone other than ``others_than`` (the
+    authors, when the policy wants a signer distinct from them), with one of ``roles``."""
+    authors, roles = ", ".join(others_than), " or ".join(roles or ())
+    if others_than and roles:
+        return Text("signoff.policy.needs_more_other_role", "needs {n} more valid signature(s) from someone other "
+                    "than {authors} with role {roles}", n=missing, authors=authors, roles=roles)
+    if others_than:
+        return Text("signoff.policy.needs_more_other", "needs {n} more valid signature(s) from someone other than "
+                    "{authors}", n=missing, authors=authors)
+    if roles:
+        return Text("signoff.policy.needs_more_role", "needs {n} more valid signature(s) with role {roles}",
+                    n=missing, roles=roles)
+    return Text("signoff.policy.needs_more", "needs {n} more valid signature(s)", n=missing)
 
 
 class Signoff:
@@ -374,7 +392,8 @@ class Signoff:
     def signer_entry(self, signer_id: str | None) -> SignerEntry:
         signer_id = signer_id or self.settings.signer
         if not signer_id:
-            raise UsageError("no signer given; pass --signer or set [signoff] signer in the config")
+            raise UsageError(Text("signoff.error.no_signer",
+                                  "no signer given; pass --signer or set [signoff] signer in the config"))
         return self.registry.get(signer_id)
 
     def refuse(self, attempted: str, who: dict, reason_code: str, message: str, markers=None,
@@ -393,7 +412,8 @@ class Signoff:
             require_human(environ=self.environ, chain=self.chain, require_tty=self.require_tty, stdin=self.stdin)
         except HumanCheckError as error:
             code = "agent_context" if error.context.is_agent else "no_tty"
-            raise self.refuse(attempted, who, code, str(error), error.context.markers) from None
+            message = error.args[0] if error.args and isinstance(error.args[0], str) else str(error)
+            raise self.refuse(attempted, who, code, message, error.context.markers) from None
 
     def unlock(self, signer: SignerEntry, purpose: str, *, adopt: bool = True, require_counting: bool = True):
         """The signer's key, unlocked with a freshly entered passphrase. A key that is in the registry
@@ -435,18 +455,20 @@ class Signoff:
         evidence = registry.key_evidence(key.key_id, signer.id)
         if evidence is not None and evidence.counts:
             if require_counting and evidence.revoked_at and parse_time(evidence.revoked_at) <= self.clock():
-                why = ("conflicting enrolment records (see 'aqt-signoff signers check')"
-                       if evidence.stopped_at == evidence.revoked_at else "a signoff.key.revoked record revokes it")
-                raise self.refuse("sign", self.signer_actor(signer), "registry_mismatch",
-                                  f"the key {key.key_id} of {signer.id} does not count from {evidence.revoked_at}: "
-                                  f"{why}; revoke it and enrol a new key ('aqt-signoff init --add-key')")
+                why = (Text("signoff.refused.why_conflicting", "conflicting enrolment records (see 'aqt-signoff "
+                            "signers check')") if evidence.stopped_at == evidence.revoked_at else
+                       Text("signoff.refused.why_revoked", "a signoff.key.revoked record revokes it"))
+                raise self.refuse("sign", self.signer_actor(signer), "registry_mismatch", Text(
+                    "signoff.refused.key_stopped", "the key {key} of {signer} does not count from {time}: {why}; "
+                    "revoke it and enrol a new key ('aqt-signoff init --add-key')", key=key.key_id, signer=signer.id,
+                    time=evidence.revoked_at, why=why))
             return None
         stored = None
         if evidence is not None and evidence.missing:
             if any(_data_of(r).get("key_id") == key.key_id for r in registry.pre_trail):
-                raise self.refuse("sign", self.signer_actor(signer), "import_needed",
-                                  f"the enrolment of {signer.id} is in a file written before the trail; a signer "
-                                  "imports those records once with 'aqt-signoff signers import'")
+                raise self.refuse("sign", self.signer_actor(signer), "import_needed", Text(
+                    "signoff.refused.import_needed", "the enrolment of {signer} is in a file written before the "
+                    "trail; a signer imports those records once with 'aqt-signoff signers import'", signer=signer.id))
             entry = next(k for k in signer.keys if k.key_id == key.key_id)
             stored = self.emit(self._enrolment_record(signer, key, entry, reason=reason,
                                                       **({"adopted": True} if adopted else {})), key)
@@ -456,14 +478,15 @@ class Signoff:
         if evidence is not None and evidence.pending:
             if not require_counting:
                 return stored
-            raise self.refuse("sign", self.signer_actor(signer), "enrolment_pending",
-                              f"the key {key.key_id} of {signer.id} does not count yet: its enrolment waits for an "
-                              f"approval by another enrolled signer ('aqt-signoff signers approve {signer.id} "
-                              f"--key {key.key_id}')")
-        why = "; ".join(evidence.problems) if evidence else "the key is not in the registry"
-        raise self.refuse("sign", self.signer_actor(signer), "registry_mismatch",
-                          f"the registry entry of {signer.id} does not match its enrolment record ({why}); "
-                          "run 'aqt-signoff signers check'")
+            raise self.refuse("sign", self.signer_actor(signer), "enrolment_pending", Text(
+                "signoff.refused.enrolment_pending", "the key {key} of {signer} does not count yet: its enrolment "
+                "waits for an approval by another enrolled signer ('aqt-signoff signers approve {signer} --key "
+                "{key}')", key=key.key_id, signer=signer.id))
+        why = "; ".join(evidence.problems) if evidence else Text("signoff.refused.why_not_in_registry",
+                                                                 "the key is not in the registry")
+        raise self.refuse("sign", self.signer_actor(signer), "registry_mismatch", Text(
+            "signoff.refused.registry_mismatch", "the registry entry of {signer} does not match its enrolment record "
+            "({why}); run 'aqt-signoff signers check'", signer=signer.id, why=why))
 
     def record_enrolment(self, signer_id: str, key, *, tool: str = "another tool") -> dict | None:
         """Record the self-signed enrolment of a registry key that ``tool`` just created with its holder's
@@ -622,7 +645,8 @@ class Signoff:
         key = self.unlock(approver, f"approve the enrolment of {signer_id} ({role})")
         mine = self.trust().key_evidence(key.key_id, approver.id)
         if mine is None or mine.revoked_at:
-            raise self.refuse("approve-enrolment", who, "no_active_key", f"the key of {approver.id} is revoked")
+            raise self.refuse("approve-enrolment", who, "no_active_key", Text(
+                "signoff.refused.no_active_key", "the key of {signer} is revoked", signer=approver.id))
         entry = KeyEntry(key_id, state.public_pem, state.time)
         record = self._approval_record(approver, key, state.request, signer_id, entry, role,
                                        reason or (f"Enrolment of {signer_id} as {role} approved"))
@@ -707,12 +731,13 @@ class Signoff:
         now = self.trust().key_evidence(key.key_id, importer.id)
         counted = self.trust().history.counted
         if counted and not (now and now.counts and not now.revoked_at):
-            raise self.refuse("import-enrolments", who, "importer_not_enrolled",
-                              f"keys already count in the trail; the import is made by one of their holders, not by "
-                              f"{importer.id}")
+            raise self.refuse("import-enrolments", who, "importer_not_enrolled", Text(
+                "signoff.refused.importer_not_holder", "keys already count in the trail; the import is made by one "
+                "of their holders, not by {signer}", signer=importer.id))
         if not counted and not (before and before.counts and not before.revoked_at):
-            raise self.refuse("import-enrolments", who, "importer_not_enrolled",
-                              f"the key of {importer.id} does not count in the records to import")
+            raise self.refuse("import-enrolments", who, "importer_not_enrolled", Text(
+                "signoff.refused.importer_not_enrolled", "the key of {signer} does not count in the records to import",
+                signer=importer.id))
         record = self.signed_record(
             ENROLLED, "enroll", signer=importer, key=key, meaning="approved", envelope_meaning=False,
             reason=reason or f"{len(records)} enrolment record(s) from before the trail imported",
@@ -799,27 +824,28 @@ class Signoff:
              authors: list[str] | tuple = (), links: list[dict] | None = None) -> dict:
         """Sign ``subject`` (``{kind, ref, sha256}``) with a meaning. Returns the stored record."""
         if meaning not in MEANINGS:
-            raise UsageError(f"meaning must be one of {', '.join(sorted(MEANINGS))}")
+            raise UsageError(Text("signoff.error.meaning", "meaning must be one of {meanings}",
+                                  meanings=", ".join(sorted(MEANINGS))))
         if not reason or not reason.strip():
-            raise UsageError("a signature needs a reason")
+            raise UsageError(Text("signoff.error.signature_reason", "a signature needs a reason"))
         if not subject.get("sha256"):
-            raise UsageError("the subject needs a sha256")
+            raise UsageError(Text("signoff.error.subject_hash", "the subject needs a sha256"))
         signer = self.signer_entry(signer_id)
         who = self.signer_actor(signer)
         self.require_human("sign", who)
         policy = self.settings.policy(meaning)
         if policy.roles and signer.role not in policy.roles:
-            raise self.refuse("sign", who, "role_not_allowed",
-                              f"role {signer.role!r} may not sign with meaning {meaning!r} "
-                              f"(allowed: {', '.join(policy.roles)})", subject=subject)
+            raise self.refuse("sign", who, "role_not_allowed", Text(
+                "signoff.refused.role_meaning", "role {role} may not sign with meaning {meaning} (allowed: {allowed})",
+                role=repr(signer.role), meaning=repr(meaning), allowed=", ".join(policy.roles)), subject=subject)
         records = self.records()
         statuses = self.signatures_for(subject["sha256"], records=records)
         all_authors = (set(authors) | {s.signer_id for s in statuses if s.valid and s.meaning == "authored"}
                        | self.record_authors(subject["sha256"], records))
         if policy.distinct_from_author and signer.id in all_authors:
-            raise self.refuse("sign", who, "self_approval",
-                              f"{signer.id} is an author of this content and may not sign it as {meaning!r}",
-                              subject=subject)
+            raise self.refuse("sign", who, "self_approval", Text(
+                "signoff.refused.author", "{signer} is an author of this content and may not sign it as {meaning}",
+                signer=signer.id, meaning=repr(meaning)), subject=subject)
         key = self.unlock(signer, f"sign as {meaning!r}")
         if subject.get("kind") == "record":
             links = [*(links or []), {"rel": "signs", "ref": subject["ref"]}]
@@ -903,13 +929,15 @@ class Signoff:
             digest = status.statement_sha256
             if digest and status.status != "invalid":
                 if digest in first:
-                    status.worsen("invalid", f"replayed copy of the statement signed in record "
-                                             f"{first[digest].record_id}; it counts once")
+                    status.worsen("invalid", Text("signoff.signature.replayed", "replayed copy of the statement "
+                                                  "signed in record {record}; it counts once",
+                                                  record=first[digest].record_id))
                 else:
                     first[digest] = status
             withdrawal = next((w for w in withdrawals.get(digest, []) if w.signer_id == status.signer_id), None)
             if withdrawal:
-                status.worsen("invalidated", f"withdrawn by the signer: {withdrawal.reason}")
+                status.worsen("invalidated", Text("signoff.signature.withdrawn", "withdrawn by the signer: {reason}",
+                                                  reason=withdrawal.reason))
             results.append(status)
         return results
 
@@ -931,11 +959,8 @@ class Signoff:
                               and not (policy.distinct_from_author and s.signer_id in all_authors)})
             note = ""
             if len(signers) < policy.min_signatures:
-                note = f"needs {policy.min_signatures - len(signers)} more valid signature(s)"
-                if policy.distinct_from_author and all_authors:
-                    note += f" from someone other than {', '.join(all_authors)}"
-                if policy.roles:
-                    note += f" with role {' or '.join(policy.roles)}"
+                note = policy_note(policy.min_signatures - len(signers),
+                                   all_authors if policy.distinct_from_author else [], policy.roles)
             results[meaning] = PolicyResult(meaning, len(signers) >= policy.min_signatures, len(signers), policy,
                                             all_authors, signers, note)
         return results
@@ -973,7 +998,8 @@ class Signoff:
                                     if not entry["confirmed_by"]]
         for status in statuses:
             if status.subject.get("sha256") != current["sha256"] and status.status != "invalid":
-                status.worsen("invalidated", f"content changed since signing (signed {status.subject.get('sha256')})")
+                status.worsen("invalidated", Text("signoff.signature.content_changed", "content changed since "
+                                                  "signing (signed {sha256})", sha256=status.subject.get("sha256")))
                 if record and status.record_id:
                     stored = self._record_invalidation(status, current, records)
                     if stored:

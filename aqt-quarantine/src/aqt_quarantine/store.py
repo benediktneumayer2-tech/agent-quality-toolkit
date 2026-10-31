@@ -22,7 +22,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Callable, Iterator
 
-from aqt_evidence import JsonlSink, SinkError, canonical_json, content_hash, open_sink
+from aqt_evidence import JsonlSink, SinkError, Text, canonical_json, content_hash, open_sink
 
 CASE_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 CASE_RE = re.compile(r"^Q[0-9A-HJKMNP-TV-Z]{6}$")
@@ -35,7 +35,8 @@ class StoreError(RuntimeError):
 def normalise_case_id(value: str) -> str:
     case_id = value.strip().upper()
     if not CASE_RE.match(case_id):
-        raise StoreError(f"not a case id: {value!r} (expected Q plus 6 characters)")
+        raise StoreError(Text("quarantine.error.case_id", "not a case id: {value} (expected Q plus 6 characters)",
+                              value=repr(value)))
     return case_id
 
 
@@ -327,7 +328,9 @@ class Store:
             if status == "valid" and isinstance(signature, dict) and isinstance(signature.get("statement"), dict):
                 key = content_hash(signature["statement"])
                 if key in first_seen:
-                    decision.honoured, decision.note = False, f"replay of the signed decision in {first_seen[key]}"
+                    decision.honoured, decision.note = False, Text(
+                        "quarantine.decision.replay", "replay of the signed decision in {record}",
+                        record=first_seen[key])
                 else:
                     first_seen[key] = record.get("id")
             if kind == "quarantine.source.trusted":
@@ -337,12 +340,16 @@ class Store:
             if case is None:
                 continue
             if decision.honoured and terms.get("case_id") != case.case_id:
-                decision.honoured, decision.note = False, f"the signed decision is for case {terms.get('case_id')}"
+                decision.honoured, decision.note = False, Text(
+                    "quarantine.decision.other_case", "the signed decision is for case {case}",
+                    case=terms.get("case_id"))
             if kind == "quarantine.released":
                 if decision.honoured and case.state == "threat" and not terms.get("overrule_threat"):
-                    decision.honoured, decision.note = False, "case was declared a threat; release needs --overrule-threat"
+                    decision.honoured, decision.note = False, Text(
+                        "quarantine.decision.threat", "case was declared a threat; release needs --overrule-threat")
                 if decision.honoured and terms.get("content_sha256") != case.data.get("content_sha256"):
-                    decision.honoured, decision.note = False, "released content hash does not match the case"
+                    decision.honoured, decision.note = False, Text(
+                        "quarantine.decision.content_hash", "released content hash does not match the case")
                 if decision.honoured:
                     case.state, case.released_by = "released", record
             elif decision.honoured:
@@ -355,7 +362,8 @@ class Store:
         domain = str(terms.get("domain", "")).lower()
         action = terms.get("action", record.get("action"))
         if decision.honoured and action == "trust" and not _is_date(terms.get("expires")):
-            decision.honoured, decision.note = False, "trust without a valid expiry date"
+            decision.honoured, decision.note = False, Text("quarantine.decision.no_expiry",
+                                                           "trust without a valid expiry date")
         if not decision.honoured:
             self.ignored_sources.append(decision)
         elif action == "revoke":

@@ -37,7 +37,7 @@ from typing import Protocol
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-from aqt_evidence import Signer, key_id as key_id_of, load_signer
+from aqt_evidence import Signer, Text, key_id as key_id_of, load_signer
 from aqt_evidence.crypto import upgrade_key
 
 from .enrolment import EnrolmentHistory, parse_time, revocations as revocations_of
@@ -163,7 +163,8 @@ class Registry:
         for signer in self.signers:
             if signer.id == signer_id:
                 return signer
-        raise NotFound(f"unknown signer {signer_id!r}; run 'aqt-signoff init' first", code="unknown_signer")
+        raise NotFound(Text("signoff.error.unknown_signer", "unknown signer {signer}; run 'aqt-signoff init' first",
+                            signer=repr(signer_id)), code="unknown_signer")
 
     def find_key(self, key_id: str) -> tuple[SignerEntry, KeyEntry] | None:
         for signer in self.signers:
@@ -419,19 +420,21 @@ def unlock(registry: Registry, signer: SignerEntry, authenticator: Authenticator
     """Load the signer's active key with a freshly entered passphrase. Raises ``AuthFailed``."""
     active = signer.active_key()
     if active is None:
-        raise AuthFailed(f"{signer.id} has no active key; enrol a new one with 'aqt-signoff init --add-key'",
-                         code="no_active_key")
+        raise AuthFailed(Text("signoff.error.no_active_key", "{signer} has no active key; enrol a new one with "
+                              "'aqt-signoff init --add-key'", signer=signer.id), code="no_active_key")
     path = registry.key_path(signer.id)
     if not path.exists():
-        raise NotFound(f"key file for {signer.id} not found in {registry.keys_dir}", code="key_missing")
+        raise NotFound(Text("signoff.error.key_missing", "key file for {signer} not found in {folder}",
+                            signer=signer.id, folder=registry.keys_dir), code="key_missing")
     passphrase = authenticator.passphrase(signer, purpose)
     try:
         key = load_signer(path, passphrase=passphrase)
     except (ValueError, TypeError) as error:
-        raise AuthFailed("re-authentication failed: wrong passphrase or unreadable key") from error
+        raise AuthFailed(Text("signoff.error.auth_failed",
+                              "re-authentication failed: wrong passphrase or unreadable key")) from error
     if key.key_id != active.key_id:
-        raise AuthFailed(f"key file holds {key.key_id}, but the active registry key is {active.key_id}",
-                         code="key_mismatch")
+        raise AuthFailed(Text("signoff.error.key_file_mismatch", "key file holds {key}, but the active registry key "
+                              "is {active}", key=key.key_id, active=active.key_id), code="key_mismatch")
     try:   # a key from an earlier version (PKCS#8, PBKDF2) is re-encrypted with scrypt now
         upgrade_key(path, passphrase)
     except (OSError, ValueError, TypeError):

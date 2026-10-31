@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Message codes (`aqt_evidence.Text`, English unchanged) on decision notes (`quarantine.decision.*`), outcomes
+  (`quarantine.outcome.*`), decision errors and refusal details (`quarantine.error.*`, `quarantine.refused.*`)
+  and thresholds errors (`quarantine.thresholds.*`). The detectors stay free of aqt-spec: their reasons are plain
+  strings, listed by code in `heuristics.REASON_CODES` (and `onnx.MODEL_WINDOW`).
 - Security fix (round 3): with aqt-signoff installed, decisions count only with keys its enrolment check counts
   (`enrolment_view`, `verify_decision(..., enrolment=)`): a key an agent writes into `signers.json`, even with a
   self-signed enrolment record, releases nothing, and the decider refuses to sign with it (`unenrolled_key`).

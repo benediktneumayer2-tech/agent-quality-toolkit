@@ -28,7 +28,7 @@ import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
 from pathlib import Path
 
-from aqt_evidence import bytes_hash, new_record, subject
+from aqt_evidence import Text, bytes_hash, new_record, subject, text_join
 
 from . import antigaming
 from .actors import current_actor
@@ -342,20 +342,27 @@ def attest(ledger: Ledger, plan_path: str, item: str, evidence: list[str], reaso
     return ledger.emit(record)
 
 
-HIDDEN_FIX = ("for skip-worktree / assume-unchanged run git update-index --no-skip-worktree / "
-              "--no-assume-unchanged; for stat-cache remove core.fsmonitor or a relaxed core.checkStat / "
-              "core.trustctime and touch the files")
+HIDDEN_FIX = Text("change.gate.hidden_fix", "for skip-worktree / assume-unchanged run git update-index "
+                  "--no-skip-worktree / --no-assume-unchanged; for stat-cache remove core.fsmonitor or a relaxed "
+                  "core.checkStat / core.trustctime and touch the files")
+
+
+def listing(items: list[str], limit: int = 20) -> str:
+    """``items`` as one line, at most ``limit`` of them."""
+    shown = ", ".join(items[:limit])
+    return Text("change.list.more", "{items} and {n} more", items=shown, n=len(items) - limit) \
+        if len(items) > limit else shown
 
 
 def hidden_text(hidden: list[dict], limit: int = 20) -> str:
     """``Git.hidden_changes()`` as one line."""
-    text = ", ".join(f"{h['path']} ({h['flag']}, {h['state']})" for h in hidden[:limit])
-    return text + (f" and {len(hidden) - limit} more" if len(hidden) > limit else "")
+    return listing([f"{h['path']} ({h['flag']}, {h['state']})" for h in hidden], limit)
 
 
 def trust_note(entry: dict) -> str:
     """Why the receipts of an ``unverified`` item do not count."""
-    return "; ".join(f"{u['receipt']} {TRUST_TEXT[u['trust']]}" for u in entry.get("untrusted", []))
+    return text_join("; ", [Text("change.gate.receipt_trust", "{receipt} {trust}", receipt=u["receipt"],
+                                 trust=TRUST_TEXT[u["trust"]]) for u in entry.get("untrusted", [])])
 
 
 def trust_blocks(entry: dict) -> bool:

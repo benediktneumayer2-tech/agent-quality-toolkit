@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Message codes (`aqt_evidence.Text`, English unchanged) on the verification summary, break reasons, problems and
+  warnings (`trail.verify.*`), detached-signature details (`trail.signature.*`, `trail.review_check.*`), ALCOA++
+  details (`trail.alcoa.*`), `observed.chain_detail` (`trail.observe.*`), review findings (`trail.finding.*`),
+  review refusals and errors (`trail.refused.*`, `trail.review.*`). A worksheet adds `finding_codes`
+  (`{finding id: {code, args}}`) beside `findings`; it is not part of `worksheet_digest` or of the signed review.
 - Security (round 3, with aqt-signoff): registry keys count only as aqt-signoff's counter-signed enrolment
   rules count them (a self-signed enrolment record of a new key waits for an approval by an enrolled signer);
   `check_enrolment` uses them unchanged. Reviewer independence (`scope_actors`) no longer counts a signer's

@@ -30,15 +30,16 @@ import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from aqt_evidence import (CanonicalError, checkpoint_problems, content_hash, parse_canonical_line, record_hash,
-                          verify_chain, verify_checkpoint, verify_statement)
+from aqt_evidence import (CanonicalError, Text, checkpoint_problems, content_hash, parse_canonical_line, record_hash,
+                          text_join, verify_chain, verify_checkpoint, verify_statement)
 
 from . import tsa
 from .review import _profile_entry, in_period, is_test_anchor, is_writer_record, scope_actors
 from .signers import SignerInfo, check_enrolment, key_owners, parse_time
 
 STATEMENT_VERSION = "0.1"
-UNCHECKED = "the key rests on signers.json alone: it was not checked against its enrolment record"
+UNCHECKED = Text("trail.signature.unchecked",
+                 "the key rests on signers.json alone: it was not checked against its enrolment record")
 
 
 @dataclass
@@ -64,10 +65,13 @@ class TrailReport:
 
     def summary(self) -> str:
         if self.first_bad_seq is not None:
-            return f"broken from seq {self.first_bad_seq}: {self.reason}"
+            return Text("trail.verify.broken", "broken from seq {seq}: {reason}", seq=self.first_bad_seq,
+                        reason=self.reason)
         if not self.ok:
-            return f"chain intact ({self.count} records) but: {self.problems[0]}"
-        return f"intact: {self.count} records, head seq {self.head_seq} {self.head}"
+            return Text("trail.verify.problems", "chain intact ({count} records) but: {problem}", count=self.count,
+                        problem=self.problems[0])
+        return Text("trail.verify.intact", "intact: {count} records, head seq {seq} {head}", count=self.count,
+                    seq=self.head_seq, head=self.head)
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -86,18 +90,20 @@ def load_lines(path: str | os.PathLike) -> tuple[list[dict], tuple[int, str] | N
     with open(path, "rb") as handle:
         for number, line in enumerate(handle, 1):
             if not line.strip():
-                return records, (number, "empty line")
+                return records, (number, Text("trail.verify.line_empty", "empty line"))
             if not line.endswith(b"\n"):
-                return records, (number, "incomplete last line")
+                return records, (number, Text("trail.verify.line_incomplete", "incomplete last line"))
             try:
                 record = parse_canonical_line(line)
             except CanonicalError as error:
                 text = str(error)
                 if text.startswith("not valid JSON"):
-                    return records, (number, "line is not valid JSON")
+                    return records, (number, Text("trail.verify.line_not_json", "line is not valid JSON"))
                 if "canonical form" in text:
-                    return records, (number, "line is not in canonical form (re-serialised or edited)")
-                return records, (number, f"line is not AQT JSON ({text})")
+                    return records, (number, Text("trail.verify.line_not_canonical",
+                                                  "line is not in canonical form (re-serialised or edited)"))
+                return records, (number, Text("trail.verify.line_not_aqt_json", "line is not AQT JSON ({error})",
+                                              error=text))
             records.append(record)
     return records, None
 
@@ -135,25 +141,35 @@ def _check_point(point, records: list[dict], keys: dict, label: str, report: Tra
     """True when ``point`` is signed by a service key, names this log and matches the record at its seq."""
     shape = checkpoint_problems(point)
     if shape:
-        report.problems.append(f"{label}: malformed checkpoint ({'; '.join(shape)})")
+        report.problems.append(Text("trail.verify.point_malformed", "{label}: malformed checkpoint ({problems})",
+                                    label=label, problems="; ".join(shape)))
         return False
     try:
         valid = verify_checkpoint(point, keys)
     except (TypeError, ValueError, AttributeError):
         valid = False
     if not valid:
-        report.problems.append(f"{label} at seq {point['seq']}: signature invalid or key unknown")
+        report.problems.append(Text("trail.verify.point_signature", "{label} at seq {seq}: signature invalid or key "
+                                    "unknown", label=label, seq=point["seq"]))
         return False
     if report.log_id and point["log"] != report.log_id:
-        report.problems.append(f"{label} at seq {point['seq']} belongs to another log ({point['log']})")
+        report.problems.append(Text("trail.verify.point_other_log", "{label} at seq {seq} belongs to another log "
+                                    "({log})", label=label, seq=point["seq"], log=point["log"]))
         return False
     if report.head_seq is None or point["seq"] > report.head_seq:
-        report.problems.append(f"{label} at seq {point['seq']} is beyond the head: the trail was truncated")
+        report.problems.append(Text("trail.verify.point_truncated", "{label} at seq {seq} is beyond the head: the "
+                                    "trail was truncated", label=label, seq=point["seq"]))
         return False
     if record_hash(records[point["seq"]]) != point["head"]:
-        report.problems.append(f"{label} at seq {point['seq']} does not match the record: the trail was rewritten")
+        report.problems.append(Text("trail.verify.point_rewritten", "{label} at seq {seq} does not match the "
+                                    "record: the trail was rewritten", label=label, seq=point["seq"]))
         return False
     return True
+
+
+LABEL_CHECKPOINT = Text("trail.verify.label_checkpoint", "checkpoint")
+LABEL_HEAD = Text("trail.verify.label_head", "external head")
+LABEL_ANCHOR = Text("trail.verify.label_anchor", "anchor checkpoint")
 
 
 def _cover(report: TrailReport, seq: int) -> None:
@@ -169,45 +185,52 @@ def _check_anchor(record: dict, seq: int, data: dict, records: list[dict], keys:
                   report: TrailReport) -> None:
     action = record.get("action")
     if not is_writer_record(record):
-        report.problems.append(f"seq {seq}: trail.anchor ({action}) was not written by the writer (a client sent "
-                               "it); it does not count as an anchor")
+        report.problems.append(Text("trail.verify.anchor_not_writer", "seq {seq}: trail.anchor ({action}) was not "
+                                    "written by the writer (a client sent it); it does not count as an anchor",
+                                    seq=seq, action=action))
         return
     point = data.get("checkpoint")
     if action == "external-head":   # a note that a head was exported; the copy itself is checked with --heads
-        _check_point(point, records, keys, f"external-head note seq {seq}", report)
+        _check_point(point, records, keys, Text("trail.verify.label_head_note", "external-head note seq {seq}",
+                                                seq=seq), report)
         return
     if action != "rfc3161":
-        report.problems.append(f"seq {seq}: trail.anchor with unknown action {action!r}")
+        report.problems.append(Text("trail.verify.anchor_unknown_action", "seq {seq}: trail.anchor with unknown "
+                                    "action {action}", seq=seq, action=repr(action)))
         return
     report.anchors += 1
-    matched = _check_point(point, records, keys, "anchor checkpoint", report)
+    matched = _check_point(point, records, keys, LABEL_ANCHOR, report)
     stamp = data.get("tsa")
     try:
         token = base64.b64decode(stamp["token_b64"], validate=True)
         digest = bytes.fromhex(point["head"].split(":", 1)[1])
     except (KeyError, ValueError, TypeError, AttributeError, IndexError):
-        report.problems.append(f"anchor seq {seq}: token unreadable")
+        report.problems.append(Text("trail.verify.anchor_token", "anchor seq {seq}: token unreadable", seq=seq))
         return
     if is_test_anchor(record):     # any client may ask for one: it never breaks verify and counts only if trusted
         own = tsa.verify_token(token, digest)
         if own.problems:
-            report.problems.append(f"anchor seq {seq}: {'; '.join(own.problems)}")
+            report.problems.append(Text("trail.verify.anchor_problems", "anchor seq {seq}: {problems}", seq=seq,
+                                        problems="; ".join(own.problems)))
             return
         check = tsa.verify_token(token, digest, ca_certs=tsa_ca) if tsa_ca else None
         if check is None or check.problems or not check.chain_checked:
-            report.warnings.append(f"anchor seq {seq}: from the built-in TEST ONLY authority; not counted "
-                                   "(--test-tsa trusts it, for tests and demos)")
+            report.warnings.append(Text("trail.verify.anchor_test_only", "anchor seq {seq}: from the built-in TEST "
+                                        "ONLY authority; not counted (--test-tsa trusts it, for tests and demos)",
+                                        seq=seq))
             return
     else:
         check = tsa.verify_token(token, digest, ca_certs=tsa_ca)
     if check.problems:
-        report.problems.append(f"anchor seq {seq}: {'; '.join(check.problems)}")
+        report.problems.append(Text("trail.verify.anchor_problems", "anchor seq {seq}: {problems}", seq=seq,
+                                    problems="; ".join(check.problems)))
     elif check.chain_checked:
         report.anchors_verified += 1
         if matched:
             _cover(report, point["seq"])
     else:
-        report.warnings.append(f"anchor seq {seq}: TSA certificate chain not checked (no --tsa-ca)")
+        report.warnings.append(Text("trail.verify.anchor_chain_unchecked", "anchor seq {seq}: TSA certificate chain "
+                                    "not checked (no --tsa-ca)", seq=seq))
 
 
 def signature_status(record: dict, *, signers: dict[str, SignerInfo] | None = None,
@@ -224,65 +247,81 @@ def signature_status(record: dict, *, signers: dict[str, SignerInfo] | None = No
     data = record.get("data") if isinstance(record.get("data"), dict) else {}
     block = data.get("signature")
     if not isinstance(block, dict) or not isinstance(block.get("statement"), dict):
-        return "unsigned", "no detached signature in data.signature"
+        return "unsigned", Text("trail.signature.none", "no detached signature in data.signature")
     statement = block["statement"]
     signer = statement.get("signer") if isinstance(statement.get("signer"), dict) else {}
     problems = []
     if statement.get("aqt_signature") != STATEMENT_VERSION:
-        problems.append("unsupported statement version")
+        problems.append(Text("trail.signature.version", "unsupported statement version"))
     if block.get("alg") != "ed25519":
-        problems.append("alg must be ed25519")
+        problems.append(Text("trail.signature.alg", "alg must be ed25519"))
     if not isinstance(block.get("key"), str) or statement.get("key") != block.get("key"):
-        problems.append("statement key differs from the signing key")
+        problems.append(Text("trail.signature.key_differs", "statement key differs from the signing key"))
     if statement.get("record_type") != record.get("type"):
-        problems.append(f"statement is for record type {statement.get('record_type')!r}, not {record.get('type')!r}")
+        problems.append(Text("trail.signature.record_type", "statement is for record type {signed}, not {stored}",
+                             signed=repr(statement.get("record_type")), stored=repr(record.get("type"))))
     if "meaning" in record and record["meaning"] != statement.get("meaning"):
-        problems.append("record meaning differs from the signed meaning")
+        problems.append(Text("trail.signature.meaning", "record meaning differs from the signed meaning"))
     if not isinstance(signer.get("id"), str) or not signer["id"]:
-        problems.append("statement names no signer")
+        problems.append(Text("trail.signature.no_signer", "statement names no signer"))
     signed_at = parse_time(statement.get("signed_at"))
     if signed_at is None:
-        problems.append("signed_at is not a time")
+        problems.append(Text("trail.signature.signed_at", "signed_at is not a time"))
     if problems:
-        return "invalid", "; ".join(problems)
+        return "invalid", text_join("; ", problems)
     key_id = block["key"]
     if not signers:
         valid = verify_statement(block, keys or {})
         if valid is None:
-            return "unknown-key", f"key {key_id} is not in the signer registry"
+            return "unknown-key", Text("trail.signature.key_unknown", "key {key} is not in the signer registry",
+                                       key=key_id)
         if not valid:
-            return "invalid", "signature does not verify (statement altered or wrong key)"
-        return "unbound", "valid, but the key's owner was not checked (no signer registry)"
+            return "invalid", Text("trail.signature.not_verified",
+                                   "signature does not verify (statement altered or wrong key)")
+        return "unbound", Text("trail.signature.unbound",
+                               "valid, but the key's owner was not checked (no signer registry)")
     owners = key_owners(signers, key_id)
     if not owners:
-        return "unknown-key", f"key {key_id} is not in the signer registry"
+        return "unknown-key", Text("trail.signature.key_unknown", "key {key} is not in the signer registry",
+                                   key=key_id)
     entry = next((key for owner, key in owners if owner.id == signer["id"]), None)
     if entry is None:
-        return "invalid", f"key {key_id} belongs to {owners[0][0].id}, but the statement names {signer['id']}"
+        return "invalid", Text("trail.signature.key_other_owner", "key {key} belongs to {owner}, but the statement "
+                               "names {signer}", key=key_id, owner=owners[0][0].id, signer=signer["id"])
     if entry.public is None or not verify_statement(block, {key_id: entry.public}):
-        return "invalid", "signature does not verify (statement altered or wrong key)"
+        return "invalid", Text("trail.signature.not_verified",
+                               "signature does not verify (statement altered or wrong key)")
     if own_key_statement(record):
         # A key's own enrolment request or revocation proves possession of the key; it is signed just
         # before the writer stores it (and a revocation at its revocation time), so the key's validity
         # period does not apply. Whether the key counts is the enrolment check's business.
-        return "valid", ("" if entry.backed is not False else f"key {key_id} does not count: {entry.evidence}")
+        return "valid", ("" if entry.backed is not False else Text(
+            "trail.signature.key_does_not_count", "key {key} does not count: {evidence}", key=key_id,
+            evidence=entry.evidence))
     if entry.backed is False:
-        return "unknown-key", (f"key {key_id} of {signer['id']} is in signers.json but not backed by its enrolment "
-                               f"record ({entry.evidence}); see 'aqt-signoff signers check'")
+        return "unknown-key", Text("trail.signature.key_not_backed", "key {key} of {signer} is in signers.json but "
+                                   "not backed by its enrolment record ({evidence}); see 'aqt-signoff signers check'",
+                                   key=key_id, signer=signer["id"], evidence=entry.evidence)
     enrolled, revoked = parse_time(entry.enrolled_at), parse_time(entry.revoked_at)
     if enrolled is not None and signed_at < enrolled:
-        return "revoked", f"signed before key {key_id} was enrolled ({entry.enrolled_at})"
+        return "revoked", Text("trail.signature.before_enrolment", "signed before key {key} was enrolled ({time})",
+                               key=key_id, time=entry.enrolled_at)
     if entry.revoked_at and (revoked is None or signed_at >= revoked):
-        return "revoked", f"key {key_id} was revoked at {entry.revoked_at}"
+        return "revoked", Text("trail.signature.revoked", "key {key} was revoked at {time}", key=key_id,
+                               time=entry.revoked_at)
     notes = []
     stored = parse_time(record.get("time"))
     if revoked is not None and stored is not None and stored >= revoked:
-        notes.append(f"signed before key {key_id} was revoked ({entry.revoked_at}) but stored after it")
+        notes.append(Text("trail.signature.stored_after_revocation", "signed before key {key} was revoked ({time}) "
+                          "but stored after it", key=key_id, time=entry.revoked_at))
     if entry.backed is None:
-        notes.append(f"{UNCHECKED} ({entry.evidence or 'the registry was not checked against the trail'})")
+        notes.append(Text("trail.signature.unchecked_why", "{unchecked} ({why})", unchecked=UNCHECKED,
+                          why=entry.evidence or Text("trail.signature.registry_unchecked",
+                                                     "the registry was not checked against the trail")))
     elif entry.evidence:
-        notes.append(f"key {key_id}: {entry.evidence}")
-    return "valid", "; ".join(notes)
+        notes.append(Text("trail.signature.key_evidence", "key {key}: {evidence}", key=key_id,
+                          evidence=entry.evidence))
+    return "valid", text_join("; ", notes)
 
 
 def own_key_statement(record: dict) -> bool:
@@ -301,36 +340,38 @@ def _review_problems(record: dict, seq: int, data: dict, records: list[dict]) ->
     subject = statement.get("subject") if isinstance(statement.get("subject"), dict) else {}
     problems = []
     if statement.get("meaning") != "reviewed" or record.get("meaning") != "reviewed":
-        problems.append("meaning is not 'reviewed'")
+        problems.append(Text("trail.review_check.meaning", "meaning is not 'reviewed'"))
     if who.get("kind") != "human" or who.get("id") != signer.get("id"):
-        problems.append(f"the record's actor {who.get('id')!r} is not the signer {signer.get('id')!r}")
+        problems.append(Text("trail.review_check.actor", "the record's actor {actor} is not the signer {signer}",
+                             actor=repr(who.get("id")), signer=repr(signer.get("id"))))
     body = {key: value for key, value in data.items() if key != "signature"}
     if subject.get("kind") != "trail-review" or subject.get("sha256") != content_hash(body) \
             or record.get("subject") != subject:
-        problems.append("review content differs from what was signed")
+        problems.append(Text("trail.review_check.content", "review content differs from what was signed"))
     if "profile_params" in data:     # reviews since the parameters are signed: they must be the profile's
         params, queries = data.get("profile_params"), data.get("profile_queries")
         if not isinstance(params, dict) or not isinstance(queries, list) or \
                 _profile_entry(str(data.get("profile")), queries, params)["sha256"] != data.get("profile_sha256"):
-            problems.append("its profile parameters do not match its profile hash")
+            problems.append(Text("trail.review_check.profile", "its profile parameters do not match its profile hash"))
     scope = data.get("scope") if isinstance(data.get("scope"), dict) else {}
     start, end = scope.get("from_seq"), scope.get("to_seq")
     if type(start) is not int or type(end) is not int or not 0 <= start <= end < seq:
-        problems.append("its scope is not a seq range before the review")
+        problems.append(Text("trail.review_check.scope", "its scope is not a seq range before the review"))
         return problems
     if record_hash(records[end]) != data.get("head") or data.get("head") != scope.get("head"):
-        problems.append(f"its head does not match the record at seq {end}")
+        problems.append(Text("trail.review_check.head", "its head does not match the record at seq {seq}", seq=end))
     since, until = scope.get("since"), scope.get("until")
     if (since is not None and not isinstance(since, str)) or (until is not None and not isinstance(until, str)):
-        problems.append("its period is malformed")
+        problems.append(Text("trail.review_check.period", "its period is malformed"))
         return problems
     selected = [r for r in records[start:end + 1] if in_period(r, since, until)]
     actors = scope_actors(selected)
     # reviews signed before a signer's own enrolment stopped counting as activity list those signers too
     if data.get("actors_reviewed") not in (actors, scope_actors(selected, legacy=True)):
-        problems.append("its actors in scope differ from the trail")
+        problems.append(Text("trail.review_check.actors", "its actors in scope differ from the trail"))
     if signer.get("id") in actors:
-        problems.append(f"the reviewer {signer.get('id')} acted in the reviewed scope (not independent)")
+        problems.append(Text("trail.review_check.not_independent", "the reviewer {reviewer} acted in the reviewed "
+                             "scope (not independent)", reviewer=signer.get("id")))
     return problems
 
 
@@ -360,14 +401,16 @@ def review_statuses(records: list[dict], *, signers: dict[str, SignerInfo] | Non
             if status == "valid":
                 problems = _review_problems(record, record["chain"]["seq"], data, records)
                 if problems:
-                    status, detail = "invalid", "; ".join(problems)
+                    status, detail = "invalid", text_join("; ", problems)
             digest = _statement_digest(data) if status != "unsigned" else None
             if digest in first:
-                status, detail = "invalid", f"replayed copy of the review signed in record {first[digest]}; it counts once"
+                status, detail = "invalid", Text("trail.signature.review_replayed", "replayed copy of the review "
+                                                 "signed in record {record}; it counts once", record=first[digest])
             elif digest:
                 first[digest] = record.get("id")
         except (TypeError, AttributeError, KeyError, ValueError, IndexError) as error:
-            status, detail = "invalid", f"malformed trail.review ({type(error).__name__})"
+            status, detail = "invalid", Text("trail.signature.review_malformed", "malformed trail.review ({error})",
+                                             error=type(error).__name__)
         results.append((record, status, detail))
     return results
 
@@ -381,7 +424,7 @@ def verify_trail(path: str | os.PathLike, *, keys: dict, checkpoints: str | os.P
     (``check_enrolment``). A plain ``{key_id: key}`` dict only shows that a trusted key signed."""
     report = TrailReport(ok=False, log_id=log_id)
     if not keys:
-        report.problems.append("no service public key to verify with")
+        report.problems.append(Text("trail.verify.no_service_key", "no service public key to verify with"))
         return report
     if signers is None:
         signers = getattr(signer_keys, "signers", None)
@@ -389,12 +432,15 @@ def verify_trail(path: str | os.PathLike, *, keys: dict, checkpoints: str | os.P
     for index, record in enumerate(records):   # shapes that would stop the chain check itself
         if "sig" in record and not isinstance(record["sig"], list) or \
                 any(not isinstance(s, dict) for s in record.get("sig") or []):
-            records, bad_line = records[:index], (index + 1, "sig is not a list of signature objects")
+            records, bad_line = records[:index], (index + 1, Text("trail.verify.sig_not_list",
+                                                                  "sig is not a list of signature objects"))
             break
     try:
         result = verify_chain(records, keys=keys, require_signature=True)
     except (TypeError, AttributeError, ValueError, KeyError) as error:
-        report.first_bad_seq, report.reason = 0, f"a record could not be checked ({type(error).__name__}: {error})"
+        report.first_bad_seq, report.reason = 0, Text("trail.verify.unchecked_record", "a record could not be "
+                                                      "checked ({type}: {error})", type=type(error).__name__,
+                                                      error=str(error))
         return report
     report.count, report.head_seq, report.head = result.count, result.head_seq, result.head_hash
     report.warnings.extend(result.warnings)
@@ -402,25 +448,27 @@ def verify_trail(path: str | os.PathLike, *, keys: dict, checkpoints: str | os.P
         report.first_bad_seq, report.reason = result.first_bad_seq, result.reason
         return report
     if bad_line:
-        report.first_bad_seq, report.reason = len(records), f"line {bad_line[0]}: {bad_line[1]}"
+        report.first_bad_seq, report.reason = len(records), Text("trail.verify.bad_line", "line {line}: {reason}",
+                                                              line=bad_line[0], reason=bad_line[1])
         return report
     if not pinned:
-        report.warnings.append("service key not pinned (--pin-key): a full rewrite under a new key is only "
-                               "detected by external heads or anchors")
+        report.warnings.append(Text("trail.verify.key_not_pinned", "service key not pinned (--pin-key): a full "
+                                    "rewrite under a new key is only detected by external heads or anchors"))
     if signers:
         signers = check_enrolment(signers, records)
     if checkpoints and Path(checkpoints).exists():
         for point in _load_points(checkpoints, "checkpoints", report):
             report.checkpoints += 1
-            if _check_point(point, records, keys, "checkpoint", report):
+            if _check_point(point, records, keys, LABEL_CHECKPOINT, report):
                 _outside(report, point["seq"])
     elif checkpoints and report.head_seq is not None:
-        report.warnings.append(f"no checkpoints file ({checkpoints}): only external heads and anchors can show "
-                               "that records were dropped from the end")
+        report.warnings.append(Text("trail.verify.no_checkpoints_file", "no checkpoints file ({path}): only "
+                                    "external heads and anchors can show that records were dropped from the end",
+                                    path=checkpoints))
     if heads:
         for point in _load_points(heads, "heads", report):
             report.heads += 1
-            if _check_point(point, records, keys, "external head", report):
+            if _check_point(point, records, keys, LABEL_HEAD, report):
                 _cover(report, point["seq"])
                 _outside(report, point["seq"])
     unknown, unbound, unchecked_reviews, unenrolled, unchecked_keys = 0, 0, 0, 0, 0
@@ -439,8 +487,9 @@ def verify_trail(path: str | os.PathLike, *, keys: dict, checkpoints: str | os.P
             if is_review and status != "unsigned":
                 digest = _statement_digest(data)
                 if digest in reviewed:
-                    report._signature_problem(f"seq {seq}: trail.review repeats the review signed at seq "
-                                              f"{reviewed[digest]} (same signed statement); it counts once")
+                    report._signature_problem(Text("trail.verify.review_repeated", "seq {seq}: trail.review repeats "
+                                                   "the review signed at seq {first} (same signed statement); it "
+                                                   "counts once", seq=seq, first=reviewed[digest]))
                     continue
                 if digest:
                     reviewed[digest] = seq
@@ -449,17 +498,21 @@ def verify_trail(path: str | os.PathLike, *, keys: dict, checkpoints: str | os.P
             if is_review:
                 report.reviews += 1
                 if status == "unsigned":
-                    report._signature_problem(f"seq {seq}: trail.review is not signed (no data.signature)")
+                    report._signature_problem(Text("trail.verify.review_unsigned", "seq {seq}: trail.review is not "
+                                                   "signed (no data.signature)", seq=seq))
                     continue
                 if status != "invalid":
                     for problem in _review_problems(record, seq, data, records):
-                        report._signature_problem(f"seq {seq}: review signature: {problem}")
+                        report._signature_problem(Text("trail.verify.review_signature", "seq {seq}: review "
+                                                       "signature: {detail}", seq=seq, detail=problem))
             in_registry = bool(signers) and bool(key_owners(signers, str(data["signature"].get("key"))))
             if status in ("invalid", "revoked"):
-                report._signature_problem(f"seq {seq}: detached signature in data.signature is invalid: {detail}")
+                report._signature_problem(Text("trail.verify.signature_invalid", "seq {seq}: detached signature in "
+                                               "data.signature is invalid: {detail}", seq=seq, detail=detail))
             elif status == "unknown-key":
                 if is_review and signers:
-                    report._signature_problem(f"seq {seq}: review signature: {detail}")
+                    report._signature_problem(Text("trail.verify.review_signature", "seq {seq}: review "
+                                                   "signature: {detail}", seq=seq, detail=detail))
                 elif is_review:
                     unchecked_reviews += 1
                 elif in_registry:
@@ -471,42 +524,51 @@ def verify_trail(path: str | os.PathLike, *, keys: dict, checkpoints: str | os.P
             elif detail:
                 if UNCHECKED in detail:
                     unchecked_keys += 1
-                    detail = detail.split(UNCHECKED)[0].rstrip("; ")
+                    notes = detail.args["items"] if getattr(detail, "code", None) == "aqt.join" else [detail]
+                    detail = text_join("; ", [note for note in notes if UNCHECKED not in note])
                 if detail:
-                    report.warnings.append(f"seq {seq}: {detail}")
+                    report.warnings.append(Text("trail.verify.seq_note", "seq {seq}: {detail}", seq=seq,
+                                                detail=detail))
         except (TypeError, AttributeError, KeyError, ValueError, IndexError) as error:
-            text = f"seq {seq}: malformed {record.get('type')} payload ({type(error).__name__})"
+            text = Text("trail.verify.payload_malformed", "seq {seq}: malformed {type} payload ({error})", seq=seq,
+                        type=record.get("type"), error=type(error).__name__)
             if record.get("type") == "trail.anchor":
                 report.problems.append(text)
             else:
                 report._signature_problem(text)
     if unknown:
-        report.warnings.append(f"{unknown} detached signature(s) by keys not in the signer registry")
+        report.warnings.append(Text("trail.verify.unknown_keys", "{n} detached signature(s) by keys not in the "
+                                    "signer registry", n=unknown))
     if unenrolled:
-        report.warnings.append(f"{unenrolled} detached signature(s) by registry keys not backed by their enrolment "
-                               "records; they do not count (aqt-signoff signers check)")
+        report.warnings.append(Text("trail.verify.unenrolled_keys", "{n} detached signature(s) by registry keys not "
+                                    "backed by their enrolment records; they do not count (aqt-signoff signers "
+                                    "check)", n=unenrolled))
     if unchecked_keys:
-        report.warnings.append(f"{unchecked_keys} detached signature(s) rest on signers.json alone: "
-                               f"{getattr(signers, 'enrolment', None) or 'registry keys were not checked'}")
+        report.warnings.append(Text("trail.verify.unchecked_keys", "{n} detached signature(s) rest on signers.json "
+                                    "alone: {why}", n=unchecked_keys, why=getattr(signers, "enrolment", None) or Text(
+                                        "trail.verify.registry_unchecked", "registry keys were not checked")))
     if unchecked_reviews:
-        report.warnings.append(f"{unchecked_reviews} review signature(s) not checked: no signer registry, so the "
-                               "reviewer's identity is unverified")
+        report.warnings.append(Text("trail.verify.unchecked_reviews", "{n} review signature(s) not checked: no "
+                                    "signer registry, so the reviewer's identity is unverified", n=unchecked_reviews))
     if unbound:
-        report.warnings.append(f"{unbound} detached signature(s) verify, but key ownership was not checked "
-                               "(no signer registry)")
+        report.warnings.append(Text("trail.verify.unbound", "{n} detached signature(s) verify, but key ownership was "
+                                    "not checked (no signer registry)", n=unbound))
     if report.head_seq is not None:
         if report.checkpoint_seq is None:
-            report.warnings.append("no checkpoint matches the trail: records dropped from the end would go unnoticed")
+            report.warnings.append(Text("trail.verify.no_checkpoint", "no checkpoint matches the trail: records "
+                                        "dropped from the end would go unnoticed"))
         elif report.checkpoint_seq < report.head_seq:
-            report.warnings.append(f"{report.head_seq - report.checkpoint_seq} record(s) after the newest checkpoint "
-                                   f"(seq {report.checkpoint_seq}): dropping them would go unnoticed")
+            report.warnings.append(Text("trail.verify.after_checkpoint", "{n} record(s) after the newest checkpoint "
+                                        "(seq {seq}): dropping them would go unnoticed",
+                                        n=report.head_seq - report.checkpoint_seq, seq=report.checkpoint_seq))
         if report.covered_seq is None:
-            report.warnings.append("no external head (--heads) or CA-verified RFC 3161 anchor covers this trail: in "
-                                   "user mode an agent that reads the service key could rewrite and re-sign it "
-                                   "unnoticed")
+            report.warnings.append(Text("trail.verify.not_covered", "no external head (--heads) or CA-verified RFC "
+                                        "3161 anchor covers this trail: in user mode an agent that reads the service "
+                                        "key could rewrite and re-sign it unnoticed"))
         elif report.covered_seq < report.head_seq:
-            report.warnings.append(f"records seq {report.covered_seq + 1}–{report.head_seq} are not covered by an "
-                                   "external head or a CA-verified anchor (in user mode they could be rewritten "
-                                   "and re-signed unnoticed)")
+            report.warnings.append(Text("trail.verify.partly_covered", "records seq {first}–{last} are not covered by "
+                                        "an external head or a CA-verified anchor (in user mode they could be "
+                                        "rewritten and re-signed unnoticed)", first=report.covered_seq + 1,
+                                        last=report.head_seq))
     report.ok = not report.problems
     return report

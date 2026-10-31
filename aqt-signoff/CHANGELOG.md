@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+- Message codes (`aqt_evidence.Text`, English unchanged) on the verify summary (`signoff.verify.*`), the policy
+  note (`signoff.policy.*`), signature row details (`signoff.signature.*`), prepared-action details
+  (`signoff.action.*`), refusal messages (`signoff.refused.*`) and the decision errors a user interface shows
+  (`signoff.error.*`): `aqt_evidence.coded(error)` gives code and parameters.
+
 ### Security (verification round 3)
 - Re-bootstrap: only a key that counted before the re-bootstrap confirms it (`rebootstrap[].counted_before`);
   approvals by a key that counts through the re-bootstrapped key are listed in `not_confirming` and do not confirm

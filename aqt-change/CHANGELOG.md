@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Message codes on the gate reason details and the trail trust texts (`change.gate.*`, `change.trust.*`; English
+  unchanged). The gate JSON (`gate`, `report --json` / `--gate-file`) adds `detail_code` and `detail_args`
+  beside a coded `detail`; finish records keep their shape.
 - Security: with aqt-trail in use, `gate`, `finish`, the Claude Code hooks and the commit-msg hook count a
   receipt or review only if the trail log holds the same record (id and content hash) received over the
   writer's socket. A record only in the local `records.jsonl`, or edited there, gives NO-GO

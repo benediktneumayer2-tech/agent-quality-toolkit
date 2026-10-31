@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Message codes (`aqt_evidence.Text`, English unchanged) on candidate titles (`capa.candidate.<rule>`; the stored
+  title stays the English text), effectiveness reasons (`capa.effectiveness.*`) and the accept, dismiss and close
+  errors (`capa.blocked.*`, `capa.error.*`, `capa.refused.not_human`).
 - Security fix: with aqt-signoff installed, an approval counts only from signatures that verify. Independence
   (the implementer is excluded unless `allow_self_approval`) and the `approved` policy are checked on exactly
   those signatures, and `by`, `at` (the signed time) and `record` name the signature that completed the

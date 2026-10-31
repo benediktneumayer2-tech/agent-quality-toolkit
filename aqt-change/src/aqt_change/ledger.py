@@ -24,8 +24,8 @@ import re
 from pathlib import Path
 from typing import Iterable, Iterator
 
-from aqt_evidence import (SinkError, canonical_json, evidence_sources, load_public_key, open_sink, record_content_hash,
-                          resolve_sink, spool_file, state_dir, verify_record_signatures)
+from aqt_evidence import (SinkError, Text, canonical_json, evidence_sources, load_public_key, open_sink,
+                          record_content_hash, resolve_sink, spool_file, state_dir, verify_record_signatures)
 
 from .config import INDEPENDENCE, PROJECT_FILE, Config, load_config, parse_project_settings
 from .errors import ChangeError, usage
@@ -37,22 +37,24 @@ from .plan import STABLE_ID
 ID_TOKEN = re.compile(rb"rec_[0-9a-f]{28}")
 CHECKED_TYPES = ("change.receipt", "change.review")
 TRUST_NOGO = ("absent", "mismatch", "unsigned", "required")   # the trail contradicts the mirror, or is required
-TRAIL_REQUIRED = (f"the project requires an aqt-trail log (require_trail or trail_keys in {PROJECT_FILE}) and none "
-                  "is found in this environment (with trail_keys, only a log whose keys/ folder holds a pinned "
-                  "service key counts): run the command where the trail is (the owner's shell or CI), start the "
-                  "writer (aqt-trail serve), or set AQT_EVIDENCE to its trail.jsonl")
+TRAIL_REQUIRED = Text("change.gate.trail_required", "the project requires an aqt-trail log (require_trail or "
+                      "trail_keys in {file}) and none is found in this environment (with trail_keys, only a log whose "
+                      "keys/ folder holds a pinned service key counts): run the command where the trail is (the "
+                      "owner's shell or CI), start the writer (aqt-trail serve), or set AQT_EVIDENCE to its "
+                      "trail.jsonl", file=PROJECT_FILE)
 TRUST_TEXT = {
-    "absent": "not in the aqt-trail log (written only to the local mirror or a sink file, or spooled while the "
-              "writer was down: run the commands again with the writer running)",
-    "mismatch": "differs from the record with the same id in the aqt-trail log",
-    "unsigned": f"is in the trail log, but without a valid signature by a service key pinned in trail_keys "
-                f"({PROJECT_FILE}): that log was not written by the project's trail writer",
-    "unattributed": "reached the aqt-trail log through the spool, without an observed sender; run the commands "
-                    "again with the writer running",
-    "unreadable": "cannot be checked: records go to an aqt-trail writer, or earlier records of this project "
-                  "came back from one, but no trail log is readable here (run the command where the trail is, "
-                  "or set AQT_EVIDENCE to its trail.jsonl)",
-    "required": "cannot be checked: " + TRAIL_REQUIRED,
+    "absent": Text("change.trust.absent", "not in the aqt-trail log (written only to the local mirror or a sink "
+                   "file, or spooled while the writer was down: run the commands again with the writer running)"),
+    "mismatch": Text("change.trust.mismatch", "differs from the record with the same id in the aqt-trail log"),
+    "unsigned": Text("change.trust.unsigned", "is in the trail log, but without a valid signature by a service key "
+                     "pinned in trail_keys ({file}): that log was not written by the project's trail writer",
+                     file=PROJECT_FILE),
+    "unattributed": Text("change.trust.unattributed", "reached the aqt-trail log through the spool, without an "
+                         "observed sender; run the commands again with the writer running"),
+    "unreadable": Text("change.trust.unreadable", "cannot be checked: records go to an aqt-trail writer, or earlier "
+                       "records of this project came back from one, but no trail log is readable here (run the "
+                       "command where the trail is, or set AQT_EVIDENCE to its trail.jsonl)"),
+    "required": Text("change.trust.required", "cannot be checked: {why}", why=TRAIL_REQUIRED),
 }
 
 
@@ -417,13 +419,18 @@ class Ledger:
         local = self.git.existing_commits({r["data"]["base_commit"] for path, r in begins
                                            if path is None and r["data"]["plan_id"] == plan_id})
         where_state = self.state / "plans" / f"{plan_id}.json"
-        for recorded, nogo, where in ((confirmed, True, "the aqt-trail log"), (local, False, "the local mirror")):
+        for recorded, nogo in ((confirmed, True), (local, False)):
             if recorded and (base not in recorded or len(recorded) > 1):
-                return {"code": "plan_base_mismatch", "nogo": nogo and base not in recorded,
-                        "detail": f"the plan state {where_state} names base commit {base}, but {where} records "
-                                  f"{', '.join(sorted(recorded))} for this plan; a changed base commit can hide "
-                                  "commits from the scope check and the project settings check (restore the one "
-                                  "the plan began with)"}
+                args = {"state": where_state, "base": base, "recorded": ", ".join(sorted(recorded))}
+                detail = Text("change.gate.plan_base_mismatch_trail", "the plan state {state} names base commit "
+                              "{base}, but the aqt-trail log records {recorded} for this plan; a changed base commit "
+                              "can hide commits from the scope check and the project settings check (restore the "
+                              "one the plan began with)", **args) if nogo else \
+                    Text("change.gate.plan_base_mismatch_mirror", "the plan state {state} names base commit {base}, "
+                         "but the local mirror records {recorded} for this plan; a changed base commit can hide "
+                         "commits from the scope check and the project settings check (restore the one the plan "
+                         "began with)", **args)
+                return {"code": "plan_base_mismatch", "nogo": nogo and base not in recorded, "detail": detail}
         return None
 
     # --- project settings ------------------------------------------------------------
