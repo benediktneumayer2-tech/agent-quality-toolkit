@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 
 from aqt_evidence import SinkError, iter_evidence
 
-from . import evidence_fingerprint, installed
+from . import coded_fields, evidence_fingerprint, installed
 from .trail import parse_time
 
 _CACHE: dict = {}
@@ -37,7 +37,7 @@ def thresholds_in_use() -> dict | None:
     try:
         info = thresholds_mod.load(config.thresholds).summary()
     except thresholds_mod.ThresholdsError as error:
-        return {"error": str(error), "path": config.thresholds}
+        return {"error": str(error), **coded_fields("error", error), "path": config.thresholds}
     return {**info, "path": config.thresholds or str(thresholds_mod.default_path())}
 
 

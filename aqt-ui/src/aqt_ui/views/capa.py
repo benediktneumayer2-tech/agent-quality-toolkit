@@ -18,7 +18,9 @@ from __future__ import annotations
 import dataclasses
 from typing import Callable
 
-from . import NotFound, Stale, UsageProblem, require
+from aqt_evidence import Text
+
+from . import NotFound, Stale, UsageProblem, coded_fields, coded_list, message, require
 from .changes import _signers, signoff_call
 from .signatures import open_signoff
 
@@ -43,8 +45,9 @@ class CapaView:
         deviations.sort(key=lambda d: (d.get("state") == "closed", not d.get("overdue"), d.get("num") or 0))
         effectiveness.sort(key=lambda e: {"not-effective": 0, "pending": 1}.get(e.get("result"), 2))
         return {"candidates": capa.candidates(), "deviations": deviations, "signers": _signers(),
-                "effectiveness": [{k: e.get(k) for k in ("action_id", "dev_id", "result", "reasons", "counts",
-                                                         "window", "approval")} for e in effectiveness],
+                "effectiveness": [{**{k: e.get(k) for k in ("action_id", "dev_id", "result", "reasons", "counts",
+                                                            "window", "approval")},
+                                   "reason_codes": coded_list(e.get("reasons"))} for e in effectiveness],
                 "effectiveness_error": error_text,
                 "counts": {"candidates": len(capa.candidates()),
                            "overdue": sum(1 for d in deviations if d.get("overdue")),
@@ -64,7 +67,7 @@ class CapaView:
         try:
             shown = self.capa.show(dev_id)
         except CapaError as error:
-            raise NotFound(str(error)) from error
+            raise NotFound(message(error)) from error
         for item in shown["actions"]:           # what an approval is bound to
             row = self.capa.store.action(item["action_id"])
             item.update(implemented_record=row["implemented_record"], implemented_hash=row["implemented_hash"],
@@ -88,7 +91,7 @@ class CapaView:
         try:
             signer = so.signer_entry(signer_id or None)
         except SignoffError as error:
-            raise UsageProblem(str(error)) from error
+            raise UsageProblem(message(error)) from error
         config = dataclasses.replace(load_config(), identity_id=signer.id, identity_role=signer.role or None,
                                      identity_display=signer.name or None)
         capa = Capa(config, guard=human_check)
@@ -104,14 +107,14 @@ class CapaView:
             capa.require_human(ATTEMPTED[kind])               # records capa.refused itself
         except Refused as error:
             last = written[-1] if written else {}
-            return {"ok": False, "message": str(error), "record_id": last.get("id"),
-                    "reason_code": (last.get("data") or {}).get("reason_code"),
+            return {"ok": False, "message": message(error), **coded_fields("message", error),
+                    "record_id": last.get("id"), "reason_code": (last.get("data") or {}).get("reason_code"),
                     "markers": (last.get("data") or {}).get("agent_markers", [])}
         if kind == "close":
             try:
                 current = capa.show(ref)
             except CapaError as error:
-                raise NotFound(str(error)) from error
+                raise NotFound(message(error)) from error
             version = current["timeline"][-1]["id"] if current["timeline"] else None
             if not shown_version or version != shown_version:
                 raise Stale("the deviation changed since it was shown; nothing was recorded. Reload it.")
@@ -126,11 +129,21 @@ class CapaView:
             else:
                 record = capa.close(ref, reason=reason, no_action=no_action)
         except Refused as error:
-            return {"ok": False, "message": str(error), "record_id": written[-1]["id"] if written else None}
+            return {"ok": False, "message": message(error), **coded_fields("message", error),
+                    "record_id": written[-1]["id"] if written else None}
         except (Blocked, CapaError) as error:
-            raise UsageProblem(str(error)) from error
+            raise UsageProblem(message(error)) from error
         data = record.get("data") or {}
-        return {"ok": True, "message": f"{kind} recorded" + (f" ({data['dev_id']})" if data.get("dev_id") else ""),
+        dev = data.get("dev_id")
+        if dev and kind == "accept":
+            done = Text("ui.capa.accept_recorded", "accept recorded ({dev})", dev=dev)
+        elif dev and kind == "close":
+            done = Text("ui.capa.close_recorded", "close recorded ({dev})", dev=dev)
+        elif not dev and kind == "dismiss":
+            done = Text("ui.capa.dismiss_recorded", "dismiss recorded")
+        else:
+            done = f"{kind} recorded" + (f" ({dev})" if dev else "")
+        return {"ok": True, "message": done, **coded_fields("message", done),
                 "record_id": record.get("id"), "record_type": record.get("type"), "time": record.get("time"),
                 "dev_id": data.get("dev_id")}
 
@@ -164,7 +177,8 @@ class CapaView:
         stored, refusal = signoff_call(so, sign)
         if refusal:
             return refusal
-        return {"ok": True, "message": f"{action_id} approved (signed)", "record_id": stored.get("id"),
+        done = Text("ui.capa.action_approved", "{action} approved (signed)", action=action_id)
+        return {"ok": True, "message": done, **coded_fields("message", done), "record_id": stored.get("id"),
                 "record_type": stored.get("type"), "time": stored.get("time")}
 
     def trends(self) -> str:

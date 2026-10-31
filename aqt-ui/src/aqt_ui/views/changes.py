@@ -17,7 +17,10 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from . import NotFound, Stale, UsageProblem, evidence_fingerprint, fingerprint, installed, refusal_text, require
+from aqt_evidence import Text
+
+from . import (NotFound, Stale, UsageProblem, coded_fields, evidence_fingerprint, fingerprint, installed,
+               message, refusal_text, require)
 from .signatures import open_signoff
 
 # Gate reason codes in words; the code stays visible next to the sentence.
@@ -171,7 +174,7 @@ class ChangesView:
         try:
             ledger = Ledger.open(root)
         except (ChangeError, OSError) as error:
-            raise UsageProblem(str(error)) from error
+            raise UsageProblem(message(error)) from error
         for state in ledger.plan_states():
             if plan_id in (state.get("plan_id"), Path(str(state.get("path"))).stem):
                 return self._plan(ledger, state, with_release=with_release)
@@ -232,7 +235,8 @@ class ChangesView:
             return refusal
         for root in root_box:
             self.forget(root)                                         # the release state changed
-        return {"ok": True, "message": f"change {plan_id} released", "record_id": stored.get("id"),
+        done = Text("ui.changes.released", "change {plan} released", plan=plan_id)
+        return {"ok": True, "message": done, **coded_fields("message", done), "record_id": stored.get("id"),
                 "record_type": stored.get("type"), "time": stored.get("time")}
 
     # -- prepared actions --------------------------------------------------------------------------------
@@ -241,7 +245,7 @@ class ChangesView:
         if not installed("aqt_signoff"):
             return []
         so = open_signoff()
-        return so.actions.list()
+        return [{**view, **coded_fields("detail", view.get("detail"))} for view in so.actions.list()]
 
     def summary(self) -> dict:
         return {"installed": {"aqt-change": installed("aqt_change"), "aqt-signoff": installed("aqt_signoff")},
@@ -255,9 +259,10 @@ class ChangesView:
         try:
             view = so.actions.show(action_id)
         except SignoffError as error:
-            raise NotFound(str(error)) from error
+            raise NotFound(message(error)) from error
         problem = spec_problem(view)
-        return {**view, "spec_ok": problem is None, "spec_error": problem, "signers": _signers()}
+        return {**view, **coded_fields("detail", view.get("detail")), "spec_ok": problem is None,
+                "spec_error": problem, **coded_fields("spec_error", problem), "signers": _signers()}
 
     @staticmethod
     def decide_action(action_id: str, kind: str, *, expected_hash: str, reason: str, passphrase: str,
@@ -282,8 +287,12 @@ class ChangesView:
             return refusal
         row = so.actions.get(action_id)
         stored = (row.get("approvals") or [None])[-1] if kind == "approve" else row.get("rejection")
-        return {"ok": True, "message": f"{kind} recorded for {action_id}; status now {view['status']}",
-                "status": view["status"], "record_id": (stored or {}).get("id"),
+        done = Text("ui.changes.action_approved", "approve recorded for {action}; status now {status}",
+                    action=action_id, status=view["status"]) if kind == "approve" else \
+            Text("ui.changes.action_rejected", "reject recorded for {action}; status now {status}", action=action_id,
+                 status=view["status"])
+        return {"ok": True, "message": done, **coded_fields("message", done), "status": view["status"],
+                "record_id": (stored or {}).get("id"),
                 "time": (stored or {}).get("time"), "approvals": view.get("approvals") or []}
 
 
@@ -306,7 +315,7 @@ class ChangesView:
             try:
                 ledger = Ledger.open(project)
             except (ChangeError, OSError) as error:
-                raise UsageProblem(str(error)) from error
+                raise UsageProblem(message(error)) from error
             state = approval_state(ledger, plan_id)
             if not state.get("record"):
                 raise UsageProblem(f"plan {plan_id} has no version to approve")
@@ -322,7 +331,8 @@ class ChangesView:
         if refusal:
             return refusal
         self.forget(project)                                          # the gate changes with the approval
-        return {"ok": True, "message": f"plan {plan_id} approved", "record_id": stored.get("id"),
+        done = Text("ui.changes.plan_approved", "plan {plan} approved", plan=plan_id)
+        return {"ok": True, "message": done, **coded_fields("message", done), "record_id": stored.get("id"),
                 "record_type": stored.get("type"), "time": stored.get("time")}
 
 
@@ -346,11 +356,13 @@ def release_state(finish_id: str | None) -> dict | None:
     try:
         report = so.verify_record(finish_id, required=["released"], record_invalidations=False)
     except SignoffError as error:
-        return {"record": finish_id, "state": "missing", "detail": str(error)}
+        return {"record": finish_id, "state": "missing", "detail": message(error), **coded_fields("detail", error)}
+    summary, policy = report.summary(), report.policies["released"].as_dict()
     value = {"record": finish_id, "sha256": report.subject.get("sha256"),
-             "state": "released" if report.ok else "unreleased", "summary": report.summary(),
-             "policy": report.policies["released"].as_dict(),
-             "signatures": [r for r in rows(report) if r["meaning"] == "released"]}
+             "state": "released" if report.ok else "unreleased", "summary": summary,
+             **coded_fields("summary", summary), "policy": {**policy, **coded_fields("note", policy["note"])},
+             "signatures": [{**r, **coded_fields("detail", r["detail"])} for r in rows(report)
+                            if r["meaning"] == "released"]}
     if len(_RELEASES) > 256:
         _RELEASES.clear()
     _RELEASES[key] = value
@@ -415,8 +427,8 @@ def spec_problem(view: dict) -> str | None:
         computed = None
     if (computed != view.get("action_sha256") or not isinstance(spec, dict) or spec.get("action_id") != view.get("id")
             or spec.get("version") != view.get("version")):
-        return ("the stored specification does not match its action hash; it may have been changed after it was "
-                "prepared. It cannot be approved or rejected here.")
+        return Text("ui.changes.spec_mismatch", "the stored specification does not match its action hash; it may "
+                    "have been changed after it was prepared. It cannot be approved or rejected here.")
     return None
 
 
@@ -427,18 +439,19 @@ def signoff_call(so, call: Callable) -> tuple:
         return call(), None
     except Refused as error:
         code = getattr(error, "code", None)
-        return None, {"ok": False, "message": str(error), "reason_code": code, "reason_text": refusal_text(code),
-                      "record_id": _last_refusal(so)}
+        return None, {"ok": False, "message": message(error), **coded_fields("message", error), "reason_code": code,
+                      "reason_text": refusal_text(code), "record_id": _last_refusal(so)}
     except AuthFailed as error:
-        return None, {"ok": False, "message": f"the key could not be unlocked ({getattr(error, 'code', 'auth_failed')})",
-                      "reason_code": "auth_failed", "reason_text": refusal_text("auth_failed"),
-                      "record_id": _last_record(so, "signoff.auth.failed")}
+        words = Text("ui.signoff.unlock_failed", "the key could not be unlocked ({code})",
+                     code=getattr(error, "code", "auth_failed"))
+        return None, {"ok": False, "message": words, **coded_fields("message", words), "reason_code": "auth_failed",
+                      "reason_text": refusal_text("auth_failed"), "record_id": _last_record(so, "signoff.auth.failed")}
     except Conflict as error:
-        raise Stale(str(error)) from error
+        raise Stale(message(error)) from error
     except SignoffNotFound as error:
-        raise NotFound(str(error)) from error
+        raise NotFound(message(error)) from error
     except (UsageError, SignoffError) as error:
-        raise UsageProblem(str(error)) from error
+        raise UsageProblem(message(error)) from error
 
 
 def _signers() -> list[dict]:

@@ -42,9 +42,9 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
-from aqt_evidence import SinkError, spool_file
+from aqt_evidence import SinkError, Text, spool_file
 
-from . import NotFound, Stale, UsageProblem, fingerprint, refusal_text
+from . import NotFound, Stale, UsageProblem, coded_fields, coded_list, fingerprint, message, refusal_text
 
 REASON_CHARS = 200
 PAGE = 100          # records per page in the Trail view
@@ -237,8 +237,8 @@ def detached_signature(record: dict, signers: dict | None = None) -> dict | None
         status, detail = signature_status(record, signers=signers)
     except Exception as error:  # noqa: BLE001 - a malformed statement is shown as invalid, never crashes
         status, detail = "invalid", f"cannot be checked: {type(error).__name__}"
-    return {"status": status, "detail": detail, "meaning": statement.get("meaning"), "signer": signer.get("id"),
-            "key": block.get("key"), "signed_at": statement.get("signed_at")}
+    return {"status": status, "detail": detail, **coded_fields("detail", detail), "meaning": statement.get("meaning"),
+            "signer": signer.get("id"), "key": block.get("key"), "signed_at": statement.get("signed_at")}
 
 
 def _counts_as_anchor(record: dict, anchored_seq, test_tsa: bool) -> bool:
@@ -312,8 +312,9 @@ class TrailView:
         from aqt_trail.verify import verify_trail
         config = self.config
         if not config.trail_path.exists():
+            summary = Text("ui.trail.no_trail", "no trail at {path}", path=str(config.state))
             return {"ok": False, "missing": True, "checked_at": _stamp(), "count": 0, "alcoa": [],
-                    "summary": f"no trail at {config.state}", "problems": [], "warnings": []}
+                    "summary": summary, **coded_fields("summary", summary), "problems": [], "warnings": []}
         snapshot = take_snapshot(config.trail_path)        # the bytes this result is about
         try:
             signer_keys = registry_keys(load_registry())
@@ -330,14 +331,19 @@ class TrailView:
             alcoa = alcoa_report(records, report, skew_ms=int(params["skew_ms"]),
                                  unanchored_hours=int(params["unanchored_hours"]),
                                  export_check=lambda: export_dry_run(config))
-        result = {"ok": report.ok, "summary": report.summary(), "count": report.count, "head_seq": report.head_seq,
-                  "head": report.head, "first_bad_seq": report.first_bad_seq, "reason": report.reason,
-                  "problems": report.problems, "warnings": report.warnings, "log_id": log_id,
+        alcoa = [{**result, **coded_fields("detail", result["detail"])} for result in alcoa]
+        summary = report.summary()
+        result = {"ok": report.ok, "summary": summary, **coded_fields("summary", summary), "count": report.count,
+                  "head_seq": report.head_seq, "head": report.head, "first_bad_seq": report.first_bad_seq,
+                  "reason": report.reason, **coded_fields("reason", report.reason),
+                  "problems": report.problems, "problem_codes": coded_list(report.problems),
+                  "warnings": report.warnings, "warning_codes": coded_list(report.warnings), "log_id": log_id,
                   "signatures": report.signatures, "anchors": report.anchors, "checked_at": _stamp(), "alcoa": alcoa,
                   "_snapshot": snapshot}
         changed = snapshot_change(config.trail_path, snapshot)
         if changed:                                        # changed while it was being verified
-            snapshot["changed"] = f"{changed} while it was being verified"
+            snapshot["changed"] = Text("ui.trail.changed_while_verifying", "{change} while it was being verified",
+                                       change=changed)
         return result
 
     def changed_since_check(self, check: dict | None) -> str | None:
@@ -380,7 +386,8 @@ class TrailView:
             "state": state, "records": len(rows), "head_seq": rows[-1]["chain"]["seq"] if rows else None,
             "path": str(self.config.trail_path), "log_id": (check or {}).get("log_id"),
             "check": {k: v for k, v in (check or {}).items() if k != "alcoa" and not k.startswith("_")} or None,
-            "changed": changed, "verifying": self.running, "appended_since_check": unverified,
+            "changed": changed, **coded_fields("changed", changed), "verifying": self.running,
+            "appended_since_check": unverified,
             "last_anchor": self.index.last_anchor, "last_review": self.last_review(),
             "writer": self.writer(), "unreadable": self.index.unreadable,
             "test_mode": self.test_mode(), "review_profile": self.review_profile(),
@@ -518,7 +525,7 @@ class TrailView:
             sheet = run_review(read_records(config.trail_path), profile, log_id=config.meta()["log_id"],
                                since=since or None, until=until or None, trail=str(config.trail_path))
         except ValueError as error:
-            raise UsageProblem(str(error)) from error
+            raise UsageProblem(message(error)) from error
         path = save_worksheet(sheet, self.reviews_dir())
         shown = json.loads(json.dumps(sheet))           # exactly what the page receives
         digest = worksheet_digest(shown)
@@ -562,7 +569,7 @@ class TrailView:
         try:
             human_check()
         except HumanCheckError as error:
-            return self._refuse_review(reviewer, "agent_context", str(error), list(error.context.markers))
+            return self._refuse_review(reviewer, "agent_context", message(error), list(error.context.markers))
         with self._lock:
             digest, sheet = self._sheets.get(sheet_id, (None, None))
         same = bool(shown_sha256) and digest is not None and hmac.compare_digest(digest.encode(), shown_sha256.encode())
@@ -575,7 +582,9 @@ class TrailView:
         try:
             signer = load_signer(key_path, passphrase=passphrase.encode() if encrypted else None)
         except (ValueError, TypeError) as error:
-            return self._refuse_review(reviewer, "auth_failed", f"could not unlock the key: {error}")
+            return self._refuse_review(reviewer, "auth_failed", Text("ui.trail.unlock_failed",
+                                                                     "could not unlock the key: {error}",
+                                                                     error=str(error)))
         records = read_all(config.trail_path)
         try:
             record = build_review(sheet, records, reviewer_id=reviewer, signer=signer,
@@ -588,11 +597,13 @@ class TrailView:
         except ReviewRefused as refused:
             return self._refuse_review(reviewer, refused.code, refused.message)
         except ValueError as error:
-            raise UsageProblem(str(error)) from error
+            raise UsageProblem(message(error)) from error
         stored = self._send(record)
         with self._lock:
             self._sheets.pop(sheet_id, None)              # signed once
-        return {"ok": True, "message": f"review {record['id']} signed by {reviewer}", "record_id": record["id"],
+        done = Text("ui.trail.review_signed", "review {record} signed by {reviewer}", record=record["id"],
+                    reviewer=reviewer)
+        return {"ok": True, "message": done, **coded_fields("message", done), "record_id": record["id"],
                 "record_type": "trail.review", "time": (stored or record).get("time")}
 
     def _send(self, record: dict) -> dict | None:
@@ -609,8 +620,8 @@ class TrailView:
             self._send(record)
         except (UsageProblem, SinkError, OSError):
             pass
-        return {"ok": False, "message": f"refused: {message}", "reason_code": code, "reason_text": refusal_text(code),
-                "markers": markers or [], "record_id": record["id"]}
+        return {"ok": False, "message": message, **coded_fields("message", message), "reason_code": code,
+                "reason_text": refusal_text(code), "markers": markers or [], "record_id": record["id"]}
 
     def export(self) -> tuple[str, bytes]:
         """``aqt-trail export --tar``: a verification bundle, built in a temporary folder and sent as a file."""
@@ -654,13 +665,13 @@ def snapshot_change(path: Path, snapshot: dict) -> str | None:
     try:
         info = os.stat(path)
     except FileNotFoundError:
-        return "the trail file was removed"
+        return Text("ui.trail.file_removed", "the trail file was removed")
     except OSError as error:
-        return f"the trail file cannot be read ({error.strerror})"
+        return Text("ui.trail.file_unreadable", "the trail file cannot be read ({error})", error=error.strerror)
     if (info.st_dev, info.st_ino) != (snapshot["dev"], snapshot["ino"]):
-        return "the trail file was replaced by another file"
+        return Text("ui.trail.file_replaced", "the trail file was replaced by another file")
     if info.st_size < snapshot["size"]:
-        return "the trail file was truncated"
+        return Text("ui.trail.file_truncated", "the trail file was truncated")
     key = (info.st_ctime_ns, info.st_size)
     if key == snapshot.get("confirmed"):
         return None
@@ -668,9 +679,9 @@ def snapshot_change(path: Path, snapshot: dict) -> str | None:
         digest = _prefix_sha256(path, snapshot["size"])
         again = os.stat(path)
     except OSError as error:
-        return f"the trail file cannot be read ({error.strerror})"
+        return Text("ui.trail.file_unreadable", "the trail file cannot be read ({error})", error=error.strerror)
     if digest != snapshot["sha256"]:
-        return "records covered by the check were modified"
+        return Text("ui.trail.records_modified", "records covered by the check were modified")
     if (again.st_dev, again.st_ino, again.st_ctime_ns) == (info.st_dev, info.st_ino, info.st_ctime_ns):
         snapshot["confirmed"] = key
     return None

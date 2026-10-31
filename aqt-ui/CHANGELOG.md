@@ -28,6 +28,18 @@ One flow (same version, not yet released):
 - Keyboard: `j`/`k` move through the queue, `Enter` opens, `n` opens the next case, `Escape` closes a
   sheet; never while typing in a field. A banner names the fix when the trail writer is down.
 - Labels in English and German; the change steps have their own German nouns (`STEPS_DE`).
+- The tools' own sentences in German too: gate details, trail verification (summary, break reason, problems,
+  warnings), ALCOA++ details, chain status and detail, signature details, review findings and refusals, the
+  sign-off summary and `[policy.released]` note, prepared-action details, quarantine detector reasons, notes,
+  outcomes and errors, thresholds errors, CAPA candidate titles and effectiveness reasons, qualification kinds,
+  conclusions and triggers, and aqt-ui's own decision results. The views send each sentence's message code and
+  parameters beside the English (`X_code` / `X_args`, `X_codes` for lists, `message_code` / `message_args` in
+  decision results and problem responses); the page shows the German from `static/messages.js` and falls back
+  to the English when the code is unknown or does not describe the text. Stored sentences (detector reasons,
+  CAPA titles, `observed.chain_detail`) are matched against the catalogue's English. The review refusal
+  message no longer repeats "refused: " after the page's own "Refused:".
+- No trail yet: the queue shows the case "No audit trail yet" with its fix (`aqt setup`) instead of an empty
+  queue.
 
 Security review fixes (same version, not yet released):
 

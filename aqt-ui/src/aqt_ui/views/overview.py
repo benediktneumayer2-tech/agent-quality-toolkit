@@ -13,7 +13,9 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 
-from . import ViewProblem, evidence_fingerprint, fingerprint, installed
+from aqt_evidence import Text, text_join
+
+from . import ViewProblem, coded_fields, evidence_fingerprint, fingerprint, installed
 from .trail import TrailView, parse_time
 
 SEVERITY = {"critical": 0, "high": 1, "medium": 2, "low": 3}
@@ -26,10 +28,11 @@ TOOLS = [("aqt-trail", "aqt_trail", "trail."), ("aqt-quarantine", "aqt_quarantin
 def item(severity: str, view: str, title: str, detail: str = "", ref: str | None = None, code: str = "",
          key: str = "", page: str = "", since: str | None = None, **args) -> dict:
     """One queue entry. ``key`` and ``args`` let the page show the title in the chosen language;
-    ``title`` and ``detail`` are the English words. ``page`` is the case id (its page is
-    ``/case/<id>``), ``since`` when the case began, if known."""
-    return {"severity": severity, "view": view, "title": title, "detail": detail, "ref": ref, "code": code,
-            "key": key or code, "id": page or f"{view}:{code or key}", "since": since,
+    ``title`` and ``detail`` are the English words; a ``detail`` from a tool that carries a message code
+    adds ``detail_code`` / ``detail_args``. ``page`` is the case id (its page is ``/case/<id>``), ``since``
+    when the case began, if known."""
+    return {"severity": severity, "view": view, "title": title, "detail": detail, **coded_fields("detail", detail),
+            "ref": ref, "code": code, "key": key or code, "id": page or f"{view}:{code or key}", "since": since,
             "args": {name: value for name, value in args.items() if value is not None}}
 
 
@@ -51,18 +54,21 @@ def build(app) -> dict:
     counts = {"trail": 0, "quarantine": 0, "changes": 0, "signatures": 0, "capa": 0, "qualifications": 0}
 
     # trail
-    if status["state"] == "broken":
+    if status["state"] == "missing":
+        needs.append(item("high", "trail", "No audit trail yet",
+                          "Set up the trail, a signing key and the hooks with: aqt setup", code="trail_missing"))
+    elif status["state"] == "broken":
         check = status["check"] or {}
         needs.append(item("critical", "trail", f"Trail broken from seq {check.get('first_bad_seq')}",
                           check.get("reason") or "", code="trail_broken", since=check.get("checked_at"),
                           seq=check.get("first_bad_seq")))
     elif status["state"] == "changed":
         needs.append(item("critical", "trail", "Trail changed since the last check",
-                          f"{status['changed']}; the last result no longer applies. Verify the trail again.",
-                          code="trail_changed"))
+                          Text("ui.overview.trail_changed", "{change}; the last result no longer applies. Verify the "
+                               "trail again.", change=status["changed"]), code="trail_changed"))
     elif status["state"] == "problems":
         needs.append(item("critical", "trail", "Trail verification found problems",
-                          "; ".join((status["check"] or {}).get("problems", [])[:2]), code="trail_problems",
+                          text_join("; ", (status["check"] or {}).get("problems", [])[:2]), code="trail_problems",
                           since=(status["check"] or {}).get("checked_at")))
     for result in alcoa:
         if result["status"] == "fail":

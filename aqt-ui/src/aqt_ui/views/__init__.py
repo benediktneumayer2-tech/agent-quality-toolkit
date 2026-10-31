@@ -73,6 +73,27 @@ def refusal_text(code) -> str | None:
     return REFUSALS.get(code) if isinstance(code, str) else None
 
 
+def coded_fields(name: str, value) -> dict:
+    """``{name}_code`` and ``{name}_args`` for a sentence that carries a message code (``aqt_evidence.Text``,
+    or an exception whose message is one), else nothing: the page shows it in the chosen language from its
+    catalogue (static/messages.js) and falls back to the English ``name`` field."""
+    from aqt_evidence import coded
+    found = coded(value)
+    return {f"{name}_code": found["code"], f"{name}_args": found["args"]} if found else {}
+
+
+def coded_list(values) -> list:
+    """``{code, args}`` (or None) per sentence of a list, for a ``{name}_codes`` field beside it."""
+    from aqt_evidence import coded
+    return [coded(value) for value in values or []]
+
+
+def message(error) -> str:
+    """The message of ``error`` as it was raised: an ``aqt_evidence.Text`` keeps its code (``str()`` drops it)."""
+    first = error.args[0] if error.args else None
+    return first if isinstance(first, str) else str(error)
+
+
 def installed(module: str) -> bool:
     return importlib.util.find_spec(module) is not None
 

@@ -57,7 +57,7 @@ export const DE = {
   "running": "läuft", "invalid": "ungültig", "invalidated": "ungültig gemacht", "revoked": "widerrufen",
   "unknown-signer": "unbekannte Person", "signed": "unterschrieben", "unsigned": "ohne Unterschrift",
   "unknown-key": "unbekannter Schlüssel", "unbound": "Person nicht geprüft", "unconfirmed": "unbestätigt",
-  "critical": "kritisch", "high": "hoch", "medium": "mittel", "low": "niedrig", "major": "schwer", "minor": "gering",
+  "critical": "kritisch", "info": "Hinweis", "high": "hoch", "medium": "mittel", "low": "niedrig", "major": "schwer", "minor": "gering",
   "pass": "bestanden", "warn": "Warnung", "fail": "nicht bestanden", "hold": "zurückhalten", "explained": "erklärt",
   "deviation": "Abweichung", "detector": "Detektor", "ai-reviewer": "KI-Prüfer", "corrective": "Korrekturmaßnahme",
   "preventive": "Vorbeugemaßnahme", "none": "keine", "not evaluated": "nicht bewertet",
@@ -309,6 +309,8 @@ export const DE = {
   "Waits for a fix: find out why the trail does not verify": "Wartet auf eine Korrektur: herausfinden, warum der Audit Trail die Prüfung nicht besteht",
   "Waits for a fix: move the spooled records into the trail": "Wartet auf eine Korrektur: die zwischengespeicherten Einträge in den Audit Trail übernehmen",
   "Waits for a fix: start the trail writer": "Wartet auf eine Korrektur: den Schreibdienst starten",
+  "Waits for a fix: set up the audit trail": "Wartet auf eine Korrektur: den Audit Trail einrichten",
+  "Set up the trail, a signing key and the hooks in a terminal (safe to run again):": "Audit Trail, Signaturschlüssel und Hooks im Terminal einrichten (kann gefahrlos wiederholt werden):",
   "Waits for a look at the records behind this result": "Wartet auf einen Blick auf die Einträge hinter diesem Ergebnis",
   "Waits for a look: who tried to decide, and why": "Wartet auf einen Blick: wer entscheiden wollte und warum",
   "Waits for a person: the gate needs a manual check": "Wartet auf einen Menschen: Die Freigabeprüfung braucht eine manuelle Prüfung",
@@ -366,6 +368,7 @@ export const DE = {
 // "Needs you" entries by key: [title, detail]; {name} takes the entry's values, null keeps the
 // tool's own words, "@reason" the gate reason in German.
 export const NEEDS = {
+  trail_missing: ["Noch kein Audit Trail", "Audit Trail, Signaturschlüssel und Hooks einrichten mit: aqt setup"],
   trail_broken: ["Audit Trail beschädigt ab Seq {seq}", null],
   trail_problems: ["Die Prüfung des Audit Trails fand Probleme", null],
   trail_changed: ["Audit Trail seit der letzten Prüfung verändert", null],

@@ -32,7 +32,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from . import __version__
 from .config import UiConfig
 from .guard import Guard, Mode
-from .views import NotInstalled, UsageProblem, ViewProblem, installed
+from .views import NotInstalled, UsageProblem, ViewProblem, coded_fields, installed
 from .views.trail import PAGE
 
 STATIC = Path(__file__).parent / "static"
@@ -340,7 +340,7 @@ class Handler(BaseHTTPRequestHandler):
             self.api(method, path, query, session)
         except ViewProblem as error:
             self.problem(error.status, str(error), **({"install": error.package} if isinstance(error, NotInstalled)
-                                                      else {}))
+                                                      else {}), **coded_fields("message", error))
         except (BrokenPipeError, ConnectionResetError):
             pass
         except Exception as error:  # noqa: BLE001 - never crash the server; never echo the request

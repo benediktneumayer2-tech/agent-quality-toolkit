@@ -17,11 +17,11 @@ from __future__ import annotations
 
 from typing import Callable
 
-from . import NotFound, Stale, UsageProblem, require
+from aqt_evidence import Text
+
+from . import NotFound, Stale, UsageProblem, coded_fields, message, require
 
 FULL_LIMIT = 200_000      # characters per page of the full view
-CHANGED = ("{error}. Only content with the hash recorded when the case was opened is shown and decided on, so "
-           "nothing is shown and no decision can be made here.")
 CONTEXT = 300             # characters around each evidence span in the default view
 STATE_ORDER = {"held": 0, "warned": 1, "threat": 2, "released": 3}
 
@@ -141,7 +141,10 @@ class QuarantineView:
         """(text, None) when the stored original has the case's recorded hash, else (None, why)."""
         content = decider.case_content(case.case_id)
         if content.text is None:
-            return None, CHANGED.format(error=content.error or "the stored original is not available")
+            return None, Text("ui.quarantine.content_changed", "{error}. Only content with the hash recorded when the "
+                              "case was opened is shown and decided on, so nothing is shown and no decision can be "
+                              "made here.", error=content.error or Text("ui.quarantine.no_original",
+                                                                        "the stored original is not available"))
         return content.text, None
 
     def case(self, case_id: str, *, full: bool = False, page: int = 0, shown: dict | None = None) -> dict:
@@ -152,7 +155,7 @@ class QuarantineView:
         try:
             case_id = normalise_case_id(case_id)
         except StoreError as error:
-            raise UsageProblem(str(error)) from error
+            raise UsageProblem(message(error)) from error
         decider = self.decider()
         cases, _ = decider.fold()
         case = cases.get(case_id)
@@ -174,7 +177,8 @@ class QuarantineView:
         decisions = [{"id": d.record.get("id"), "time": d.record.get("time"), "action": d.record.get("action"),
                       "type": d.record.get("type"), "by": (d.record.get("actor") or {}).get("id"),
                       "display": (d.record.get("actor") or {}).get("display"), "status": d.status,
-                      "honoured": d.honoured, "note": d.note, "reason": visible(str(d.record.get("reason", "")))}
+                      "honoured": d.honoured, "note": d.note, **coded_fields("note", d.note),
+                      "reason": visible(str(d.record.get("reason", "")))}
                      for d in case.decisions]
         refused = [{"id": r.get("id"), "time": r.get("time"), "by": (r.get("actor") or {}).get("id"),
                     "attempted": (r.get("data") or {}).get("attempted_action"),
@@ -191,7 +195,8 @@ class QuarantineView:
                            "calibrated": bool(thresholds.get("calibrated"))},
             "chars": data.get("chars"), "evidence": evidence, "decisions": decisions, "refusals": refused,
             "delivered": len(case.delivered), "opened_record": case.opened.get("id"),
-            "content": content, "content_error": text_error, "signers": self.signers(decider),
+            "content": content, "content_error": text_error, **coded_fields("content_error", text_error),
+            "signers": self.signers(decider),
             "content_verified": verified, "unseen_pages": unseen,
             "needs_full_view": verified and bool(unseen) and case.state in ("held", "warned", "threat", "released"),
             "can_release": verified and not unseen and case.state in ("held", "warned", "threat"),
@@ -211,7 +216,7 @@ class QuarantineView:
         try:
             case_id = normalise_case_id(case_id)
         except StoreError as error:
-            raise UsageProblem(str(error)) from error
+            raise UsageProblem(message(error)) from error
         decider = self.decider(passphrase=passphrase, human_check=human_check)
         cases, _ = decider.fold()
         case = cases.get(case_id)
@@ -248,9 +253,9 @@ class QuarantineView:
             else:
                 raise UsageProblem(f"unknown decision {kind}")
         except DecisionError as error:
-            raise (UsageProblem if error.exit_code == 2 else Stale)(str(error)) from error
+            raise (UsageProblem if error.exit_code == 2 else Stale)(message(error)) from error
         except StoreError as error:
-            raise UsageProblem(str(error)) from error
+            raise UsageProblem(message(error)) from error
         return _outcome(outcome)
 
     def trust(self, domain: str, *, reason: str, passphrase: str, signer_id: str | None, human_check: Callable,
@@ -278,13 +283,14 @@ class QuarantineView:
             outcome = decider.trust_source(domain or "", reason, expires=expires or None, signer_id=signer_id or None,
                                            subdomains=bool(subdomains), revoke=revoke)
         except DecisionError as error:
-            raise (UsageProblem if error.exit_code == 2 else Stale)(str(error)) from error
+            raise (UsageProblem if error.exit_code == 2 else Stale)(message(error)) from error
         return _outcome(outcome)
 
 
 def _outcome(outcome) -> dict:
     record = outcome.record
     data = record.get("data") or {}
-    return {"ok": outcome.ok, "message": outcome.message, "record_id": record.get("id"),
+    return {"ok": outcome.ok, "message": outcome.message, **coded_fields("message", outcome.message),
+            "record_id": record.get("id"),
             "record_type": record.get("type"), "time": record.get("time"),
             "reason_code": data.get("reason_code"), "markers": data.get("agent_markers", [])}

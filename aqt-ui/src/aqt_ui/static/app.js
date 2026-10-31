@@ -3,6 +3,7 @@
 // because evidence (quarantined pages, reasons, excerpts) is untrusted. All text goes through
 // vis(), which shows hidden characters (bidi controls, zero-width characters, ...) as <U+XXXX>.
 import { DE, NEEDS, REASONS_DE, REFUSALS_DE, STEPS_DE } from "./i18n.js";
+import { MESSAGES } from "./messages.js";
 import { vis } from "./text.js";
 
 // ---- language: English by default, German on request; the choice stays in this browser ------------
@@ -13,6 +14,70 @@ function t(text, vars) {
   const out = (LANG === "de" && DE[text]) || text;
   return vars ? out.replace(/\{(\w+)\}/g, (all, key) => (vars[key] === undefined || vars[key] === null ? all : String(vars[key]))) : out;
 }
+// ---- sentences of the tools: the server sends the English text and, next to it, its message code and
+// parameters (aqt_evidence.Text). msg() shows the German from messages.js; it falls back to the English
+// it was sent when the code is unknown, or when the English template filled with the parameters is not
+// exactly that text (then the code does not describe it). A stored sentence comes without parameters:
+// its code is then a family (a code prefix) and the entry whose English template it matches is used.
+function pyText(value) {          // a parameter as Python's str() wrote it into the English sentence
+  return value === null || value === undefined ? "None" : value === true ? "True" : value === false ? "False" : String(value);
+}
+function isCoded(value) { return !!value && typeof value === "object" && typeof value.code === "string"; }
+function render(code, args, lang) {
+  const values = args || {};
+  if (code === "aqt.join") {
+    const parts = (values.items || []).map((item) => (isCoded(item) ? render(item.code, item.args, lang) : pyText(item)));
+    return parts.includes(null) ? null : parts.join(values.sep ?? ", ");
+  }
+  const entry = MESSAGES[code];
+  if (!entry) return null;
+  let failed = false;
+  const out = entry[lang].replace(/\{(\w+)\}/g, (all, name) => {
+    const value = values[name];
+    if (!(name in values) || Array.isArray(value)) { failed = true; return all; }
+    if (!isCoded(value)) return pyText(value);
+    const inner = render(value.code, value.args, lang);
+    if (inner === null) failed = true;
+    return inner || "";
+  });
+  return failed ? null : out;
+}
+function recognise(family, english) {
+  const group = family.split(".").slice(0, 2).join(".") + ".";
+  const plain = (value) => {        // a parameter that is itself a fixed sentence of the group ("unknown source")
+    const found = Object.keys(MESSAGES).find((c) => c.startsWith(group) && MESSAGES[c].en === value && !/\{\w+\}/.test(value));
+    return found ? { code: found, args: {} } : value;
+  };
+  for (const [code, entry] of Object.entries(MESSAGES)) {
+    if (!code.startsWith(family)) continue;
+    const names = [];
+    const pattern = entry.en.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\\\{(\w+)\\\}/g, (all, name) => { names.push(name); return "(.*?)"; });
+    const found = new RegExp(`^${pattern}$`, "s").exec(english);
+    if (found) return { code, args: Object.fromEntries(names.map((name, i) => [name, plain(found[i + 1])])) };
+  }
+  return null;
+}
+function msg(code, args, english) {
+  const text = english === null || english === undefined ? "" : String(english);
+  if (LANG !== "de" || !code || !text) return text;
+  let found = { code, args };
+  if (args === null || args === undefined) {
+    found = MESSAGES[code] && !/\{\w+\}/.test(MESSAGES[code].en) ? { code, args: {} } : recognise(code, text);
+    if (!found) return text;
+  }
+  if (render(found.code, found.args, "en") !== text) return text;
+  return render(found.code, found.args, "de") ?? text;
+}
+// obj[name] in the chosen language, with its code and parameters from obj[name + "_code" / "_args"].
+function msgOf(obj, name) { return obj ? msg(obj[`${name}_code`], obj[`${name}_args`], obj[name]) : ""; }
+// A list of sentences with their codes (the {name}_codes field beside it).
+function msgList(list, codes) { return (list || []).map((text, i) => (codes && codes[i] ? msg(codes[i].code, codes[i].args, text) : text)); }
+// A code word of a tool (validate kinds, chain status ...) in German, else the code itself.
+function codeWord(prefix, value) {
+  const entry = LANG === "de" && value ? MESSAGES[`${prefix}${value}`] : null;
+  return entry ? entry.de : value;
+}
+
 function setLang(lang) {
   LANG = lang === "de" ? "de" : "en";
   try { localStorage.setItem("aqt-ui-lang", LANG); } catch (e) { /* not remembered; works for this page */ }
@@ -115,7 +180,7 @@ const STATUS_KIND = {
 };
 // A refusal code in words (the server sends the English words), or "" for a code without words.
 function refusalWords(code, english) {
-  return (LANG === "de" && REFUSALS_DE[code]) || english || "";
+  return (LANG === "de" && (REFUSALS_DE[code] || (MESSAGES[`refusal.${code}`] || {}).de)) || english || "";
 }
 // A status word: its colour comes from the English key, the word shown from the chosen language.
 function stWord(word, label) {
@@ -136,7 +201,7 @@ function section(title, ...children) { return h("section", { class: "section" },
 function inspSection(title, ...children) { return h("section", { class: "insp-section" }, title ? h("h3", { text: title }) : null, children); }
 function empty(title, text) { return h("div", { class: "empty" }, h("strong", { text: title }), text ? h("span", { text }) : null); }
 function errorBox(error) {
-  const box = h("div", { class: "error-box", role: "alert" }, error.message || String(error));
+  const box = h("div", { class: "error-box", role: "alert" }, (error.data && error.data.message_code ? msgOf(error.data, "message") : error.message) || String(error));
   if (error.data && error.data.install) put(box, h("div", { class: "small" }, t("Install:"), " ", h("code", { text: `uv pip install -e ${error.data.install}` })));
   return box;
 }
@@ -256,10 +321,10 @@ function renderTopbar() {
   if (status) {
     if (status.state === "broken") {
       broken.hidden = false;
-      put(clear(broken), t("Trail broken from seq {seq}: {reason}", { seq: num(status.check.first_bad_seq), reason: status.check.reason || "" }));
+      put(clear(broken), t("Trail broken from seq {seq}: {reason}", { seq: num(status.check.first_bad_seq), reason: msgOf(status.check, "reason") }));
     } else if (status.state === "changed") {
       broken.hidden = false;
-      put(clear(broken), t("Trail changed since the last check: {reason}. Verify it again.", { reason: status.changed || "" }));
+      put(clear(broken), t("Trail changed since the last check: {reason}. Verify it again.", { reason: msgOf(status, "changed") }));
     }
     writerBar(status);
     const [kind, text] = trailLine(status);
@@ -420,9 +485,10 @@ function decisionPanel({ actions, subject, signers, submit, note, fields, noSign
       const { status, data } = await submit(chosen, { reason: reason.value.trim(), passphrase, signer_id: signerSelect.value });
       const kind = data.ok ? "ok" : status === 409 ? "stale" : "refused";
       let text;
-      if (data.ok) text = `${t("Recorded as {record}", { record: data.record_id || "a record" })}${data.time ? " · " + fmtTime(data.time) : ""}. ${data.message || ""}`;
-      else if (status === 409) text = `${t("Not signed:")} ${data.message}`;
-      else text = `${t("Refused:")} ${refusalWords(data.reason_code, data.reason_text) ? refusalWords(data.reason_code, data.reason_text) + ". " : ""}${data.message}${data.record_id ? ` (${t("refusal recorded as {record}", { record: data.record_id })})` : ""}`;
+      const said = msgOf(data, "message");
+      if (data.ok) text = `${t("Recorded as {record}", { record: data.record_id || "a record" })}${data.time ? " · " + fmtTime(data.time) : ""}. ${said}`;
+      else if (status === 409) text = `${t("Not signed:")} ${said}`;
+      else text = `${t("Refused:")} ${refusalWords(data.reason_code, data.reason_text) ? refusalWords(data.reason_code, data.reason_text) + ". " : ""}${said}${data.record_id ? ` (${t("refusal recorded as {record}", { record: data.record_id })})` : ""}`;
       put(result, h("div", { class: `result ${kind}`, role: "status", text }));
       announce(text);
       if (data.ok) {
@@ -506,9 +572,12 @@ const SEVERITY_KIND = { critical: "fail", high: "warn", medium: "info", low: "ne
 // Title and detail of a "Needs you" entry in the chosen language (English comes from the server).
 function needText(item) {
   const de = LANG === "de" && NEEDS[item.key];
-  if (!de) return [item.title, item.detail];
-  const fill = (text) => text.replace(/\{(\w+)\}/g, (all, key) => (item.args[key] === undefined ? all : typeof item.args[key] === "number" ? num(item.args[key]) : t(String(item.args[key]))));
-  const detail = de[1] === null ? item.detail : de[1] === "@reason" ? (REASONS_DE[item.args.reason_code] || item.detail) : fill(de[1]);
+  if (!de) return [item.title, msgOf(item, "detail")];
+  const word = (key, value) => (key === "kind" ? codeWord("validate.kind.", value)
+    : key === "triggers" ? String(value).split(", ").map((x) => codeWord("validate.trigger.", x)).join(", ")
+      : typeof value === "number" ? num(value) : t(String(value)));
+  const fill = (text) => text.replace(/\{(\w+)\}/g, (all, key) => (item.args[key] === undefined ? all : word(key, item.args[key])));
+  const detail = de[1] === null ? msgOf(item, "detail") : de[1] === "@reason" ? (REASONS_DE[item.args.reason_code] || item.detail) : fill(de[1]);
   return [fill(de[0]), detail];
 }
 // The page of a case: /case/<id> (the id is readable: "quarantine:Q7SEGGW", "plan:0:s01" ...).
@@ -580,14 +649,14 @@ async function renderHealth(main) {
      [t("Review parameters"), profileWord(status.review_profile)]]
       .map(([k, v]) => h("div", {}, h("dt", { text: k }), h("dd", {}, v))));
   put(main, section([`${t("Trail status")} `, h("span", { class: "hint" }, verifyBtn)], band,
-    status.state === "broken" ? h("p", { class: "small", text: `${t("Verifier:")} ${check.summary}` }) : null));
+    status.state === "broken" ? h("p", { class: "small", text: `${t("Verifier:")} ${msgOf(check, "summary")}` }) : null));
 
   const strip = h("div", { class: "alcoa" });
   if (data.alcoa.length) {
     for (const item of data.alcoa) {
-      const chip = h("button", { class: "chip-btn", type: "button", title: `${item.id}: ${item.detail}` }, stWord(item.status, `${t(item.attribute)} ${t(item.status)}`));
+      const chip = h("button", { class: "chip-btn", type: "button", title: `${item.id}: ${msgOf(item, "detail")}` }, stWord(item.status, `${t(item.attribute)} ${t(item.status)}`));
       chip.addEventListener("click", () => setInspector(inspSection("ALCOA++", h("p", { class: "insp-title", text: t(item.attribute) }), stWord(item.status),
-        h("p", { text: item.detail }), kv([[t("Catalogue"), h("code", { text: item.id })], [t("Related"), item.related.join(", ")]]),
+        h("p", { text: msgOf(item, "detail") }), kv([[t("Catalogue"), h("code", { text: item.id })], [t("Related"), item.related.join(", ")]]),
         h("p", { class: "small muted", text: t("pass means the check found nothing; it does not mean a process is compliant.") }))));
       put(strip, chip);
     }
@@ -702,7 +771,7 @@ function recordedBlock({ data, chosen }) {
   setTimeout(() => button.focus(), 0);
   return h("div", { class: "recorded", role: "status" },
     h("p", { class: "recorded-title" }, st("pass", t("Recorded: {decision}", { decision: chosen.label }))),
-    kv([[t("Record"), h("code", { text: data.record_id || "–" })], [t("Time"), fmtTime(data.time)], data.message ? [t("Result"), data.message] : null]),
+    kv([[t("Record"), h("code", { text: data.record_id || "–" })], [t("Time"), fmtTime(data.time)], data.message ? [t("Result"), msgOf(data, "message")] : null]),
     h("div", { class: "actions" }, button, S.caseId ? h("span", { class: "small muted", text: next ? t("or press n") : t("Nothing else needs you.") }) : null));
 }
 // How to resolve a case that has no decision on the page: a sentence and the exact command(s).
@@ -799,7 +868,7 @@ const CASES = {
     const x = candidateParts(candidate, data.signers, { onDone: done });
     const others = data.candidates.filter((c) => c !== candidate);
     f.body(x.summary, others.length ? inspSection(t("Other candidates ({n})", { n: others.length }), h("ul", { class: "evidence-list" },
-      others.map((c) => h("li", {}, h("a", { href: "#", onclick: (e) => { e.preventDefault(); setQuery({ candidate: c.candidate_id }); route(); }, text: c.title }), ` · ${c.rule}`)))) : null);
+      others.map((c) => h("li", {}, h("a", { href: "#", onclick: (e) => { e.preventDefault(); setQuery({ candidate: c.candidate_id }); route(); }, text: candidateTitle(c) }), ` · ${c.rule}`)))) : null);
     if (notice) f.decide(t("Decided"), recordedBlock(notice));
     else f.decide(null, x.decision);
   },
@@ -813,10 +882,10 @@ const CASES = {
     const trailLink = [t("Open in {view}", { view: t("Trail") }), "/trail"];
     const integrity = () => inspSection(t("Integrity"), stWord(status.state), kv([[t("Records"), num(status.records)], [t("Head seq"), num(status.head_seq)],
       [t("Checked"), check.checked_at ? fmtTime(check.checked_at) : t("not yet")], check.first_bad_seq != null ? [t("Broken from seq"), num(check.first_bad_seq)] : null,
-      check.reason ? [t("Reason"), check.reason] : null, status.changed ? [t("Changed"), status.changed] : null]),
-      check.summary ? h("p", { class: "small break", text: `${t("Verifier:")} ${check.summary}` }) : null,
-      (check.problems || []).map((p) => h("p", { class: "small break", text: `${t("Problem:")} ${p}` })),
-      (check.warnings || []).map((w) => h("p", { class: "small muted break", text: `${t("Warning:")} ${w}` })));
+      check.reason ? [t("Reason"), msgOf(check, "reason")] : null, status.changed ? [t("Changed"), msgOf(status, "changed")] : null]),
+      check.summary ? h("p", { class: "small break", text: `${t("Verifier:")} ${msgOf(check, "summary")}` }) : null,
+      msgList(check.problems, check.problem_codes).map((p) => h("p", { class: "small break", text: `${t("Problem:")} ${p}` })),
+      msgList(check.warnings, check.warning_codes).map((w) => h("p", { class: "small muted break", text: `${t("Warning:")} ${w}` })));
     const verify = () => h("div", { class: "actions" }, h("button", { class: "btn small", type: "button", text: t("Verify now"),
       onclick: async (e) => { e.target.disabled = true; await post("/api/trail/verify"); pollVerify(); } }));
     if (["trail_broken", "trail_changed", "trail_problems"].includes(code)) {
@@ -826,7 +895,7 @@ const CASES = {
     } else if (code === "alcoa") {
       const result = (ov.alcoa || []).find((a) => a.id === rest.slice(1).join(":"));
       const f = caseFrame(main, item, { title: t("ALCOA++ result"), stop: ["fix", t("Waits for a look at the records behind this result")], links: [trailLink] });
-      f.body(result ? inspSection(t("ALCOA++"), stWord(result.status, `${t(result.attribute)} ${t(result.status)}`), h("p", { text: result.detail }),
+      f.body(result ? inspSection(t("ALCOA++"), stWord(result.status, `${t(result.attribute)} ${t(result.status)}`), h("p", { text: msgOf(result, "detail") }),
         kv([[t("Catalogue"), h("code", { text: result.id })], [t("Related"), (result.related || []).join(", ") || "–"]]),
         h("p", { class: "small muted", text: t("pass means the check found nothing; it does not mean a process is compliant.") })) : h("p", { class: "muted", text: t("Not computed yet: run Verify now.") }));
       f.decide(t("How to resolve"), resolveSteps([[t("Read the full report with the records it names:"), "aqt-trail alcoa"]]));
@@ -849,13 +918,14 @@ const CASES = {
         run.disabled = true;
         const { status: code2, data } = await post("/api/trail/review/run", {});
         run.disabled = false;
-        if (code2 !== 200 || !data.ok) { put(clear(out), h("div", { class: "result refused", text: data.message || `HTTP ${code2}` })); return; }
+        if (code2 !== 200 || !data.ok) { put(clear(out), h("div", { class: "result refused", text: msgOf(data, "message") || `HTTP ${code2}` })); return; }
         f.decide(t("Decide"), ...reviewPanel(data, { onDone: done }));
       });
       f.decide(t("Decide"), h("p", { class: "small muted", text: t("Runs the risk queries over a period and lists the findings. Preparing writes a worksheet file, no evidence; the signed review is recorded in the trail.") }),
         h("div", { class: "actions" }, run), out);
     } else {
       const fixes = {
+        trail_missing: [t("Waits for a fix: set up the audit trail"), [t("Set up the trail, a signing key and the hooks in a terminal (safe to run again):"), "aqt setup"]],
         writer_down: [t("Waits for a fix: start the trail writer"), [t("Start the writer in a terminal:"), "aqt-trail serve"]],
         spooled: [t("Waits for a fix: move the spooled records into the trail"), [t("Append the spooled records to the trail:"), "aqt-trail drain"]],
         unanchored: [t("Waits for a fix: anchor the trail head"), [t("Sign the head and add an RFC 3161 time stamp:"), "aqt-trail checkpoint --anchor"]],
@@ -874,8 +944,8 @@ const CASES = {
     const q = data.qualifications.find((x) => x.subject_id === subject);
     const f = caseFrame(main, item, { title: t("Qualification of {subject}", { subject }), stop: ["fix", t("Waits for requalification")],
       links: [[t("Open in {view}", { view: t("Qualifications") }), "/qualifications"]] });
-    if (q) f.body(inspSection(t("Qualification"), stWord(q.state), kv([[t("Kind"), t(q.kind)], [t("Decision"), t(q.decision)], [t("Conclusion"), q.conclusion],
-      [t("Valid until"), fmtTime(q.valid_until)], [t("Approved by"), `${q.approver_name || ""} ${q.approver || ""}`], [t("Triggers"), q.triggers.join(", ") || t("none recorded")], [t("Record"), h("code", { text: q.record })]])));
+    if (q) f.body(inspSection(t("Qualification"), stWord(q.state), kv([[t("Kind"), codeWord("validate.kind.", q.kind)], [t("Decision"), t(q.decision)], [t("Conclusion"), codeWord("validate.conclusion.", q.conclusion)],
+      [t("Valid until"), fmtTime(q.valid_until)], [t("Approved by"), `${q.approver_name || ""} ${q.approver || ""}`], [t("Triggers"), triggerWords(q.triggers) || t("none recorded")], [t("Record"), h("code", { text: q.record })]])));
     f.decide(t("How to resolve"), resolveSteps([[t("Run the validation again under the locked protocol and qualify the new run, in your own terminal:"),
       "aqt-validate detector run protocol.toml --out runs/<new>", 'aqt-validate qualify runs/<new> --approve --reason "…"']]));
   },
@@ -1024,19 +1094,20 @@ function releaseSection(step, d, p, { onDone, notice }) {
     return step("release", ...parts);
   }
   if (release.state === "missing") {
-    parts.push(h("p", { class: "flag", text: release.detail }), h("p", { class: "small muted", text: t("The finish record is not in the audit trail, so it cannot be signed here. Start the writer and drain the spool.") }));
+    parts.push(h("p", { class: "flag", text: msgOf(release, "detail") }), h("p", { class: "small muted", text: t("The finish record is not in the audit trail, so it cannot be signed here. Start the writer and drain the spool.") }));
     return step("release", ...parts);
   }
   const pol = d.release_policy || { min_signatures: 1, roles: [], distinct_from_author: false };
   const result = release.policy || {};
   parts.push(h("p", {}, stWord(release.state === "released" ? "released" : "unsigned", release.state === "released" ? t("released") : t("not released yet")), " ",
-    h("span", { class: "small muted", text: release.summary })));
+    h("span", { class: "small muted", text: msgOf(release, "summary") })));
   if (release.signatures.length) parts.push(plainTable([t("Printed name"), "ID", t("Role"), t("Local time"), t("Reason"), t("Status")], release.signatures.map((x) =>
-    [x.name, h("td", { class: "mono small", text: x.id }), x.role, h("td", { class: "small", text: x.local }), h("td", { class: "wrap small", text: x.reason }), h("td", {}, stWord(x.status))])));
+    [x.name, h("td", { class: "mono small", text: x.id }), x.role, h("td", { class: "small", text: x.local }), h("td", { class: "wrap small", text: x.reason }),
+      h("td", {}, stWord(x.status), x.status !== "valid" && x.detail ? h("span", { class: "small muted", text: ` ${msgOf(x, "detail")}` }) : null)])));
   parts.push(h("p", { class: "small muted" }, t("Policy [policy.released] in signoff.toml: {n} valid signature(s), {roles}, {author}.", {
     n: pol.min_signatures, roles: pol.roles.length ? t("roles {list}", { list: pol.roles.join(", ") }) : t("any role"),
     author: pol.distinct_from_author ? t("not by an author of the change") : t("the author may sign") }),
-    result.note ? ` ${result.note}` : ""));
+    result.note ? ` ${msgOf(result, "note")}` : ""));
   parts.push(h("p", { class: "small" }, t("Download the manifest:"), " ",
     downloadButton(`/api/signatures/manifest?record=${encodeURIComponent(p.finish)}&format=md`, "release-manifest.md", "Markdown", "btn small ghost"), " ",
     downloadButton(`/api/signatures/manifest?record=${encodeURIComponent(p.finish)}&format=html`, "release-manifest.html", "HTML", "btn small ghost")));
@@ -1137,13 +1208,13 @@ function integrityPanel(open) {
   const check = (status && status.check) || {};
   const button = h("button", { class: "btn small", type: "button", text: t("Verify now"), onclick: async () => { button.disabled = true; button.textContent = vis(t("Verifying…")); await post("/api/trail/verify"); pollVerify(); } });
   const parts = [inspSection(t("Integrity"), status ? stWord(status.state) : null,
-    h("p", { class: "break", text: check.summary || t("Not verified yet.") }),
+    h("p", { class: "break", text: msgOf(check, "summary") || t("Not verified yet.") }),
     check.checked_at ? kv([[t("Checked"), fmtTime(check.checked_at)], [t("Took"), `${check.seconds ?? "?"} s`], [t("Signatures"), num(check.signatures)], [t("Anchors"), num(check.anchors)]]) : null,
-    (check.problems || []).map((p) => h("p", { class: "small break", text: `${t("Problem:")} ${p}` })),
-    (check.warnings || []).map((w) => h("p", { class: "small muted break", text: `${t("Warning:")} ${w}` })),
+    msgList(check.problems, check.problem_codes).map((p) => h("p", { class: "small break", text: `${t("Problem:")} ${p}` })),
+    msgList(check.warnings, check.warning_codes).map((w) => h("p", { class: "small muted break", text: `${t("Warning:")} ${w}` })),
     h("div", { class: "actions" }, button))];
   const alcoa = (S.overview && S.overview.alcoa) || [];
-  if (alcoa.length) parts.push(inspSection("ALCOA++", alcoa.map((a) => h("p", { class: "small" }, stWord(a.status, t(a.attribute)), " ", a.detail))));
+  if (alcoa.length) parts.push(inspSection("ALCOA++", alcoa.map((a) => h("p", { class: "small" }, stWord(a.status, t(a.attribute)), " ", msgOf(a, "detail")))));
   parts.push(reviewStart(), exportSection());
   setInspector(...parts);
   if (open === "review") document.getElementById("review-start")?.scrollIntoView({ block: "start" });
@@ -1161,7 +1232,7 @@ function reviewStart() {
     clear(out);
     const { status, data } = await post("/api/trail/review/run", { since: since.value.trim(), until: until.value.trim() });
     run.disabled = false;
-    if (status !== 200 || !data.ok) { put(out, h("div", { class: "result refused", text: data.message || `HTTP ${status}` })); return; }
+    if (status !== 200 || !data.ok) { put(out, h("div", { class: "result refused", text: msgOf(data, "message") || `HTTP ${status}` })); return; }
     setInspector(...reviewPanel(data));
   });
   return h("section", { class: "insp-section", id: "review-start" }, h("h3", { text: t("Audit-trail review") }),
@@ -1200,7 +1271,7 @@ function reviewPanel(sheet, { onDone } = {}) {
     put(list, h("div", { class: "finding" },
       h("p", { class: "small" }, h("strong", { text: f.id }), " ", stWord(f.severity), ` ${f.query} · `,
         t("{n} record(s)", { n: f.record_ids.length })),
-      h("p", { class: "small muted break", text: f.explanation }), h("div", { class: "field-row" }, select, note)));
+      h("p", { class: "small muted break", text: findingText(sheet, f) }), h("div", { class: "field-row" }, select, note)));
   }
   const actors = sheet.actors_reviewed || [];
   const signers = (sheet.signers || []).filter((s) => !actors.includes(s.id));
@@ -1228,6 +1299,11 @@ function reviewPanel(sheet, { onDone } = {}) {
     inspSection(t("Findings ({n})", { n: sheet.findings.length }), list),
     panel,
   ];
+}
+// A finding's explanation in the chosen language (its code is in the worksheet's finding_codes).
+function findingText(sheet, f) {
+  const c = (sheet.finding_codes || {})[f.id];
+  return c ? msg(c.code, c.args, f.explanation) : f.explanation;
 }
 function exportSection() {
   return inspSection(t("Export"),
@@ -1259,12 +1335,12 @@ async function openRecord(row) {
       [t("Claimed"), `${r.actor.id}${r.actor.role ? " (" + r.actor.role + ")" : ""}`],
       [t("Observed"), obs.process_chain && obs.process_chain.length ? obs.process_chain.join(" ← ") : (obs.via || obs.origin || t("not observed"))],
       [t("Harness"), obs.harness || t("none detected")], [t("Via"), obs.via || obs.origin || "–"],
-      [t("Chain status"), obs.chain_status ? `${obs.chain_status}${obs.chain_detail ? " (" + obs.chain_detail + ")" : ""}` : "–"],
+      [t("Chain status"), obs.chain_status ? `${codeWord("trail.chain_status.", obs.chain_status)}${obs.chain_detail ? " (" + msg("trail.observe.", null, obs.chain_detail) + ")" : ""}` : "–"],
       drained ? [t("Drained by"), `${(drained.process_chain || []).join(" ← ") || "–"}${drained.harness ? " · " + drained.harness : ""} · ${drained.chain_status || "–"}`] : null,
     ]), attributionNote(data.attribution)),
     inspSection(t("Signatures"), (r.sig || []).map((s) => kv([[t("Writer key"), h("code", { text: s.key })]])),
       sig ? kv([[t("Detached"), h("span", {}, stWord(sig.status), ` ${sig.meaning ? t(sig.meaning) : "–"} · ${sig.signer || "–"}`)],
-        sig.detail ? [t("Check"), sig.detail] : null, [t("Key"), h("code", { text: sig.key || "–" })]]) : null),
+        sig.detail ? [t("Check"), msgOf(sig, "detail")] : null, [t("Key"), h("code", { text: sig.key || "–" })]]) : null),
     inspSection(t("Stored record (text)"), h("pre", { class: "json", text: JSON.stringify(r, null, 2) })),
   );
 }
@@ -1367,14 +1443,14 @@ function quarantineParts(c, { full, open, onDone }) {
     const pre = h("pre", { class: "text", tabindex: "0", "aria-label": t("Case content, untrusted") });
     for (const w of c.content.windows) {
       if (w.cut_before) put(pre, h("span", { class: "muted", text: "… " }));
-      for (const piece of w.pieces) put(pre, piece.mark ? h("mark", { title: piece.mark, text: piece.text }) : document.createTextNode(vis(piece.text)));
+      for (const piece of w.pieces) put(pre, piece.mark ? h("mark", { title: piece.mark.split("; ").map(detectorReason).join("; "), text: piece.text }) : document.createTextNode(vis(piece.text)));
       if (w.cut_after) put(pre, h("span", { class: "muted", text: " …" }));
       put(pre, "\n\n");
     }
     put(content, h("p", { class: "untrusted", text: t("Untrusted third-party text. Highlighted passages are detector evidence; hidden characters are shown as <U+XXXX>.") }), pre,
       !full && !c.content.complete ? h("button", { class: "btn small", type: "button", text: t("Show full content ({n} characters)", { n: num(c.content.chars) }), onclick: () => open(true, unseen.length ? unseen[0] : 0) }) : null,
       full && c.content.pages > 1 ? contentPager(c, (p) => open(true, p)) : null);
-  } else put(content, h("p", { class: "muted", text: c.content_error || t("Content not available.") }));
+  } else put(content, h("p", { class: "muted", text: msgOf(c, "content_error") || t("Content not available.") }));
   const fullFirst = c.needs_full_view ? h("div", { class: "note-box" },
     h("p", { class: "small", text: t("Release and threat declaration need the whole content on screen first. Not shown yet: {n} of {pages} page(s).", { n: unseen.length, pages: c.content.pages }) }),
     h("button", { class: "btn small primary", type: "button", text: t("Show page {page}", { page: unseen[0] + 1 }), onclick: () => open(true, unseen[0]) })) : null;
@@ -1398,16 +1474,18 @@ function quarantineParts(c, { full, open, onDone }) {
         [t("Thresholds"), `${c.thresholds.version || "?"} ${c.thresholds.calibrated ? t("calibrated") : t("NOT calibrated (defaults)")}`],
         [t("Opened"), fmtTime(c.opened)], [t("Reached model"), c.reached_model ? t("yes") : t("no")], [t("Content"), hashButton(c.content_sha256)], [t("Record"), h("code", { text: c.opened_record })]]),
       c.domain ? h("p", { class: "small" }, h("a", { href: `/quarantine?tab=sources&trust=${encodeURIComponent(c.domain)}`, onclick: (e) => { e.preventDefault(); go(`/quarantine?tab=sources&trust=${encodeURIComponent(c.domain)}`); }, text: t("Trust {domain} for later content…", { domain: c.domain }) })) : null),
-    evidence: c.evidence.length ? inspSection(t("Evidence"), h("ul", { class: "evidence-list" }, c.evidence.map((e) => h("li", {}, h("strong", { text: e.label }), ` (${e.detector}): ${e.reason} `, h("code", { text: e.excerpt }))))) : null,
+    evidence: c.evidence.length ? inspSection(t("Evidence"), h("ul", { class: "evidence-list" }, c.evidence.map((e) => h("li", {}, h("strong", { text: e.label }), ` (${e.detector}): ${detectorReason(e.reason)} `, h("code", { text: e.excerpt }))))) : null,
     content: inspSection(t("Content"), content),
     journal: c.journal_problems && c.journal_problems.length ? inspSection(t("Journal lines ignored for this case"),
       c.journal_problems.map((p) => h("p", { class: "small flag break", text: p }))) : null,
     history: c.decisions.length || c.refusals.length ? inspSection(t("History"),
-      c.decisions.map((d) => h("p", { class: "small" }, `${fmtTime(d.time)} ${d.action} · ${d.display || ""} ${d.by} · ${t("signature")} `, stWord(d.status), d.honoured ? "" : ` (${t("not honoured")})`, d.note ? ` ${d.note}` : "", h("br"), h("span", { class: "muted", text: `${t("Reason")}: ${d.reason}` }))),
-      c.refusals.map((r) => h("p", { class: "small" }, stWord("fail", t("refused")), ` ${fmtTime(r.time)} ${r.attempted} (${r.reason_code}${r.markers.length ? "; " + r.markers.join(", ") : ""})`))) : null,
+      c.decisions.map((d) => h("p", { class: "small" }, `${fmtTime(d.time)} ${d.action} · ${d.display || ""} ${d.by} · ${t("signature")} `, stWord(d.status), d.honoured ? "" : ` (${t("not honoured")})`, d.note ? ` ${msgOf(d, "note")}` : "", h("br"), h("span", { class: "muted", text: `${t("Reason")}: ${d.reason}` }))),
+      c.refusals.map((r) => h("p", { class: "small" }, stWord("fail", t("refused")), ` ${fmtTime(r.time)} ${r.attempted}${refusalWords(r.reason_code) ? ": " + refusalWords(r.reason_code) : ""} (${r.reason_code}${r.markers.length ? "; " + r.markers.join(", ") : ""})`))) : null,
     decision: fullFirst ? inspSection(t("Decision"), fullFirst) : panel,
   };
 }
+// A detector's span reason (records keep the English): the catalogue entry it matches.
+function detectorReason(reason) { return msg("quarantine.detector.", null, reason); }
 function contentPager(c, open) {
   const w = c.content.windows[0];
   const page = c.content.page;
@@ -1429,7 +1507,7 @@ async function renderChanges(main) {
     if (!data.actions.length) { put(main, empty(t("No prepared actions"), t("Actions appear here when an agent prepares one with aqt-signoff action prepare."))); return; }
     const order = { prepared: 0, expired: 0, unknown: 1, approved: 2, claimed: 3 };
     const actions = data.actions.slice().sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9));
-    const rows = actions.map((a) => ({ data: a, cells: [h("td", { class: "mono", text: a.id }), h("td", {}, stWord(a.status)), h("td", { class: "wrap", text: (a.spec && a.spec.description) || a.detail || "" }),
+    const rows = actions.map((a) => ({ data: a, cells: [h("td", { class: "mono", text: a.id }), h("td", {}, stWord(a.status)), h("td", { class: "wrap", text: (a.spec && a.spec.description) || msgOf(a, "detail") }),
       h("td", { class: "hide-narrow mono small", text: (a.preparer && a.preparer.id) || "" }), h("td", { class: "hide-narrow" }, hashButton(a.action_sha256, 10))] }));
     const x = table([t("Action"), t("Status"), t("What"), th(t("Prepared by"), "hide-narrow"), th("Hash", "hide-narrow")], rows, (a) => openAction(a.id, data.signers));
     put(main, x.table);
@@ -1475,7 +1553,7 @@ function openGate(p, root, signers, project) {
     g.decision);
 }
 function reasonList(reasons) {
-  return h("ul", { class: "evidence-list" }, reasons.map((r) => h("li", {}, reasonText(r), " ", h("code", { class: "muted", text: r.code }), r.item ? ` · ${t("check item")} ${r.item}` : "", r.detail ? ` · ${r.detail}` : "")));
+  return h("ul", { class: "evidence-list" }, reasons.map((r) => h("li", {}, reasonText(r), " ", h("code", { class: "muted", text: r.code }), r.item ? ` · ${t("check item")} ${r.item}` : "", r.detail ? ` · ${msgOf(r, "detail")}` : "")));
 }
 function receiptList(receipts) {
   return receipts.length ? receipts.map((r) => h("div", { class: "receipt small" }, h("strong", { text: r.item }), " ", stWord(r.state === "ok" ? "fresh" : r.state, r.state === "ok" ? t("fresh") : t(r.state)), " ", r.text || "",
@@ -1509,11 +1587,11 @@ function actionParts(a, signers, { onDone }) {
   const open = a.spec_ok && ["prepared", "approved", "expired"].includes(a.status);
   const specText = JSON.stringify(a.spec, null, 2);
   return {
-    summary: inspSection(t("Prepared action"), h("p", { class: "insp-title mono", text: a.id }), stWord(a.status), a.detail ? h("span", { class: "muted small", text: ` ${a.detail}` }) : null,
+    summary: inspSection(t("Prepared action"), h("p", { class: "insp-title mono", text: a.id }), stWord(a.status), a.detail ? h("span", { class: "muted small", text: ` ${msgOf(a, "detail")}` }) : null,
       kv([[t("Version"), a.version], [t("Prepared by"), (a.preparer && a.preparer.id) || "–"], ["Hash", hashButton(a.action_sha256, 16)], [t("Updated"), fmtTime(a.updated_at)],
         [t("Approvals"), a.approvals.length ? a.approvals.map((x) => `${x.signer} (${x.role})`).join(", ") : t("none")]])),
     spec: inspSection(t("What will run (text)"),
-      a.spec_ok ? null : h("p", { class: "flag", role: "alert", text: `${t("Not decidable here:")} ${a.spec_error}` }),
+      a.spec_ok ? null : h("p", { class: "flag", role: "alert", text: `${t("Not decidable here:")} ${msgOf(a, "spec_error")}` }),
       vis(specText) !== specText ? h("p", { class: "flag", text: t("The specification contains hidden characters, shown as <U+XXXX>. Check exactly what will run.") }) : null,
       h("pre", { class: "json", text: specText })),
     decision: open ? decisionPanel({
@@ -1540,8 +1618,8 @@ async function renderSignatures(main) {
     const params = new URLSearchParams({ [kind.value]: value.value.trim() });
     try {
       const r = await api(`/api/signatures/verify?${params}`);
-      const rows = r.rows.map((x) => ({ data: x, cells: [x.name, h("td", { class: "mono small", text: x.id }), x.role, t(x.meaning), h("td", { class: "small", text: x.local }), h("td", { class: "wrap small", text: x.reason }), h("td", {}, stWord(x.status), x.status !== "valid" && x.detail ? h("span", { class: "small muted", text: ` ${x.detail}` }) : null)] }));
-      put(out, section(t("Result"), h("p", {}, stWord(r.ok ? "valid" : "warn", r.summary)), kv([[t("Subject"), `${r.subject.kind}: ${r.subject.ref}`], [t("Content"), hashButton(r.subject.sha256, 20)]]),
+      const rows = r.rows.map((x) => ({ data: x, cells: [x.name, h("td", { class: "mono small", text: x.id }), x.role, t(x.meaning), h("td", { class: "small", text: x.local }), h("td", { class: "wrap small", text: x.reason }), h("td", {}, stWord(x.status), x.status !== "valid" && x.detail ? h("span", { class: "small muted", text: ` ${msgOf(x, "detail")}` }) : null)] }));
+      put(out, section(t("Result"), h("p", {}, stWord(r.ok ? "valid" : "warn", msgOf(r, "summary"))), kv([[t("Subject"), `${r.subject.kind}: ${r.subject.ref}`], [t("Content"), hashButton(r.subject.sha256, 20)]]),
         rows.length ? table([t("Printed name"), "ID", t("Role"), t("Meaning"), t("Local time"), t("Reason"), t("Status")], rows, (x) => setInspector(inspSection(t("Signature"), kv(Object.entries(x).map(([k, v]) => [k, String(v)]))))).table : h("p", { class: "muted", text: t("No signatures over this content.") }),
         h("p", { class: "small" }, t("Download the manifest:"), " ", downloadButton(`/api/signatures/manifest?${params}&format=md`, "signature-manifest.md", "Markdown", "btn small ghost"), " ",
           downloadButton(`/api/signatures/manifest?${params}&format=html`, "signature-manifest.html", "HTML", "btn small ghost")),
@@ -1570,7 +1648,7 @@ async function renderCapa(main) {
     tab, (id) => { setQuery({ tab: id }); route(); }));
   if (tab === "candidates") {
     if (!data.candidates.length) { put(main, empty(t("No open candidates"), t("aqt-capa scan finds candidates in the evidence."))); return; }
-    const rows = data.candidates.map((x) => ({ data: x, cells: [h("td", { class: "mono small", text: x.candidate_id }), h("td", { class: "hide-narrow", text: x.rule }), h("td", { class: "wrap", text: x.title }), x.severity ? t(x.severity) : "–", h("td", { class: "small hide-narrow", text: ago(x.time) })] }));
+    const rows = data.candidates.map((x) => ({ data: x, cells: [h("td", { class: "mono small", text: x.candidate_id }), h("td", { class: "hide-narrow", text: x.rule }), h("td", { class: "wrap", text: candidateTitle(x) }), x.severity ? t(x.severity) : "–", h("td", { class: "small hide-narrow", text: ago(x.time) })] }));
     put(main, table([t("Candidate"), th(t("Rule"), "hide-narrow"), t("What"), t("Severity"), th(t("When"), "hide-narrow")], rows, (x) => {
       const c = candidateParts(x, data.signers, {});
       setInspector(c.summary, c.decision);
@@ -1580,7 +1658,7 @@ async function renderCapa(main) {
   if (tab === "effectiveness") {
     if (data.effectiveness_error) put(main, h("div", { class: "error-box", text: data.effectiveness_error }));
     if (!data.effectiveness.length) { put(main, empty(t("No running effectiveness checks"), t("They start when a corrective action is approved."))); return; }
-    const rows = data.effectiveness.map((e) => ({ data: e, cells: [h("td", { class: "mono", text: e.action_id }), h("td", { class: "mono", text: e.dev_id }), h("td", {}, stWord(e.result)), h("td", { class: "wrap small", text: (e.reasons || []).join("; ") })] }));
+    const rows = data.effectiveness.map((e) => ({ data: e, cells: [h("td", { class: "mono", text: e.action_id }), h("td", { class: "mono", text: e.dev_id }), h("td", {}, stWord(e.result)), h("td", { class: "wrap small", text: msgList(e.reasons, e.reason_codes).join("; ") })] }));
     put(main, table([t("Action"), t("Deviation"), t("Result"), t("Why")], rows, (e) => openDeviation(e.dev_id)).table,
       h("p", { class: "small muted section", text: t("Shown without recording; aqt-capa effectiveness in a terminal records changed results.") }));
     return;
@@ -1591,10 +1669,12 @@ async function renderCapa(main) {
   put(main, table([t("Deviation"), t("State"), t("Title"), th(t("Severity"), "hide-narrow"), th(t("Due"), "hide-narrow")], rows, (d) => openDeviation(d.dev_id)).table,
     h("p", { class: "section small" }, downloadButton("/api/capa/trends", "capa-trends.md", t("Download the trend summary (Markdown)"), "btn small ghost")));
 }
+// A candidate's title (stored English): the catalogue entry of its rule that it matches.
+function candidateTitle(x) { return msg(`capa.candidate.${String(x.rule || "").replace(/-/g, "_")}`, null, x.title); }
 // The parts of a CAPA candidate, for the inspector and the case page.
 function candidateParts(x, signers, { onDone }) {
   return {
-    summary: inspSection(t("Candidate"), h("p", { class: "insp-title", text: x.title }),
+    summary: inspSection(t("Candidate"), h("p", { class: "insp-title", text: candidateTitle(x) }),
       kv([["ID", h("code", { text: x.candidate_id })], [t("Rule"), x.rule], [t("Source"), `${x.source_type}: ${x.source_ref}`], [t("Severity"), x.severity ? t(x.severity) : "–"], [t("Session"), x.session || "–"], [t("Time"), fmtTime(x.time)]])),
     decision: decisionPanel({
       actions: [{ id: "accept", label: t("Accept as deviation"), meaning: "accepted", button: t("Accept as deviation"),
@@ -1644,24 +1724,25 @@ async function openDeviation(devId) {
 }
 
 // ---- Qualifications -----------------------------------------------------------------------------------
+function triggerWords(triggers) { return (triggers || []).map((x) => codeWord("validate.trigger.", x)).join(", "); }
 async function renderQualifications(main) {
   const data = await api("/api/qualifications");
   clear(main);
   if (!data.qualifications.length) put(main, empty(t("No qualifications recorded"), data.installed ? t("Qualify a detector with aqt-validate (in a terminal).") : t("aqt-validate is not installed.")));
   else {
-    const words = (q) => ({ valid: t("valid until {date}", { date: String(q.valid_until).slice(0, 10) }), expiring: t("expires in {n} day(s)", { n: q.days_left }), expired: t("expired"), triggered: t("triggered: {list}", { list: q.triggers.join(", ") }), rejected: t("rejected") })[q.state];
-    const rows = data.qualifications.map((q) => ({ data: q, cells: [h("td", { class: "wrap", text: q.subject_id }), t(q.kind), h("td", {}, stWord(q.state, words(q))), h("td", { class: "num", text: q.days_left ?? "–" }),
+    const words = (q) => ({ valid: t("valid until {date}", { date: String(q.valid_until).slice(0, 10) }), expiring: t("expires in {n} day(s)", { n: q.days_left }), expired: t("expired"), triggered: t("triggered: {list}", { list: triggerWords(q.triggers) }), rejected: t("rejected") })[q.state];
+    const rows = data.qualifications.map((q) => ({ data: q, cells: [h("td", { class: "wrap", text: q.subject_id }), codeWord("validate.kind.", q.kind), h("td", {}, stWord(q.state, words(q))), h("td", { class: "num", text: q.days_left ?? "–" }),
       h("td", { class: "hide-narrow mono small", text: q.approver || "" }), h("td", { class: "hide-narrow" }, q.same_thresholds === null ? "–" : q.same_thresholds ? stWord("pass", t("same as qualified")) : stWord("warn", t("different file in use")))] }));
     put(main, table([t("Subject"), t("Kind"), t("Status"), th(t("Days left"), "num"), th(t("Approver"), "hide-narrow"), th(t("Thresholds"), "hide-narrow")], rows, (q) => setInspector(
       inspSection(t("Qualification"), h("p", { class: "insp-title", text: q.subject_id }), stWord(q.state, words(q)),
-        kv([[t("Kind"), t(q.kind)], [t("Decision"), t(q.decision)], [t("Conclusion"), q.conclusion], [t("Valid until"), fmtTime(q.valid_until)], [t("Approved by"), `${q.approver_name || ""} ${q.approver || ""}`],
+        kv([[t("Kind"), codeWord("validate.kind.", q.kind)], [t("Decision"), t(q.decision)], [t("Conclusion"), codeWord("validate.conclusion.", q.conclusion)], [t("Valid until"), fmtTime(q.valid_until)], [t("Approved by"), `${q.approver_name || ""} ${q.approver || ""}`],
           [t("Reason"), q.reason], [t("Band"), q.band ? t(q.band) : "–"], [t("Expected FPR ≤"), q.expected_fpr_upper_ppm != null ? `${num(q.expected_fpr_upper_ppm)} ppm` : "–"], [t("Record"), h("code", { text: q.record })],
-          [t("Triggers"), q.triggers.join(", ") || t("none recorded")]])),
+          [t("Triggers"), triggerWords(q.triggers) || t("none recorded")]])),
       q.report_summary ? inspSection(t("Run report"), kv([[t("Issued"), fmtTime(q.report_summary.time)], [t("Report"), q.report_summary.subject || "–"]]), h("pre", { class: "json", text: JSON.stringify(q.report_summary.data, null, 2) })) : null,
     )).table);
   }
   const x = data.thresholds;
-  put(main, section(t("Thresholds in use (aqt-quarantine)"), !x ? h("p", { class: "muted", text: t("aqt-quarantine is not installed.") }) : x.error ? h("div", { class: "error-box", text: x.error })
+  put(main, section(t("Thresholds in use (aqt-quarantine)"), !x ? h("p", { class: "muted", text: t("aqt-quarantine is not installed.") }) : x.error ? h("div", { class: "error-box", text: msgOf(x, "error") })
     : kv([[t("Version"), x.version], [t("Calibrated"), x.calibrated ? stWord("pass", t("calibrated")) : stWord("warn", t("not calibrated (defaults)"))], ["SHA-256", hashButton(x.sha256, 20)], [t("File"), h("span", { class: "break", text: x.path })]]),
     h("p", { class: "small muted", text: t("Requalification triggers are shown as recorded; aqt-validate check in a terminal evaluates and records new ones.") })));
 }

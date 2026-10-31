@@ -14,7 +14,7 @@ from typing import Callable
 
 from aqt_evidence import HumanCheckError
 
-from . import NotFound, UsageProblem, require
+from . import NotFound, UsageProblem, coded_fields, message, require
 
 MAX_FILE_BYTES = 64 * 1024 * 1024
 
@@ -64,7 +64,7 @@ def open_signoff(*, passphrase: str | None = None, human_check: Callable | None 
                 human_check()
             except HumanCheckError as error:
                 code = "agent_context" if error.context.is_agent else "no_tty"
-                raise self.refuse(attempted, who, code, str(error), error.context.markers) from None
+                raise self.refuse(attempted, who, code, message(error), error.context.markers) from None
 
     return GuardedSignoff.open(authenticator=StaticPassphrase(passphrase or ""), require_tty=False)
 
@@ -109,7 +109,10 @@ class SignaturesView:
             else:
                 raise UsageProblem("give a file path, a record ID or a sha256 hash")
         except SignoffError as error:
-            raise (NotFound if type(error).__name__ == "NotFound" else UsageProblem)(str(error)) from error
-        return {"ok": report.ok, "summary": report.summary(), "subject": report.subject,
-                "rows": rows(report), "policies": {m: p.as_dict() for m, p in report.policies.items()},
+            raise (NotFound if type(error).__name__ == "NotFound" else UsageProblem)(message(error)) from error
+        summary = report.summary()
+        policies = {m: p.as_dict() for m, p in report.policies.items()}
+        return {"ok": report.ok, "summary": summary, **coded_fields("summary", summary), "subject": report.subject,
+                "rows": [{**r, **coded_fields("detail", r["detail"])} for r in rows(report)],
+                "policies": {m: {**p, **coded_fields("note", p["note"])} for m, p in policies.items()},
                 "manifest_md": render(report, "md"), "manifest_html": render(report, "html")}
