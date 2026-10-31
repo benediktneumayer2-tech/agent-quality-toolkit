@@ -33,6 +33,16 @@ The demo prints each check as `[ok  ]` while it runs. Each line is one control d
 
 After the install it runs offline, with made-up data, in a temporary folder, and never touches your own settings. [The worked example](#the-worked-example-one-poisoned-web-page) explains what you just saw.
 
+**To use it on your own work,** install everything with the `aqt` command and put the commands on your `PATH` ([manual 1.3](docs/manual.md#13-install-everything-recommended) and [1.4](docs/manual.md#14-put-the-commands-on-your-path)), then run, in your own terminal (not inside an agent session):
+
+```bash
+aqt setup                                  # once per machine: the audit trail, its writer, your signing identity
+aqt status                                 # one verdict, and the fix for each problem
+cd ~/code/my-project && aqt project init   # in each repository where agents work
+```
+
+`aqt project init` adds the Claude Code hooks, rules that stop Claude Code from running the decision commands that belong to a person (a first fence, not a boundary: [manual 3.7](docs/manual.md#37-back-up-and-keep-secrets-out-of-the-agents-reach)), a short block of agent instructions in `CLAUDE.md` (or `AGENTS.md`) and aqt-change's project settings. It asks before each step and is safe to run again. It never commits, so commit the files it lists: the last line of its output gives the command, for example `git add .claude/settings.json CLAUDE.md .aqt/change.toml && git commit -m "AQT project setup"`.
+
 ## The parts
 
 Seven habits of a medicine plant became seven tools; the eighth is the shared form they all fill in. The `aqt` command and the optional aqt-ui page sit on top of them.
@@ -47,7 +57,7 @@ Seven habits of a medicine plant became seven tools; the eighth is the shared fo
 | [aqt-capa](aqt-capa/README.md) | Deviation and CAPA (corrective and preventive action) | Turns an agent failure into a deviation (a recorded "this should not have happened"), finds the root cause, gets a fix to the agent's instruction file (`AGENTS.md`) approved, then checks that the fix worked. | A mistake must not happen again. |
 | [aqt-trail](aqt-trail/README.md) | The bound logbook nobody can secretly edit | The audit trail. A separate writer program stores every record and links it to the one before. Unlike most agent logs, it does not just keep what the sender claims: it asks the Linux kernel which program sent the record. It checks the trail against ALCOA++, the pharma checklist for trustworthy records, and supports a signed review. | Always, to show later what happened. |
 | [aqt-spec](aqt-spec/README.md) | The standard form and the rulebook | One record format for all tools (who did what, when, why, to which exact content), plus catalogues of the regulations and a crosswalk from each rule to the tool that supports it. | You build a tool or check the regulations. |
-| [`aqt`](aqt-cli/README.md) (the `aqt-cli` package) | The front desk | One command for everything: `aqt setup` creates the audit trail, starts its writer and enrols your signing identity, step by step; `aqt status` says in one screen whether everything is in order and how to fix what is not; `aqt <tool> …` runs any tool, for example `aqt trail verify`. | You use the toolkit day to day. |
+| [`aqt`](aqt-cli/README.md) (the `aqt-cli` package) | The front desk | One command for everything: `aqt setup` creates the audit trail, starts its writer and enrols your signing identity, step by step; `aqt status` says in one screen whether everything is in order and how to fix what is not; `aqt project init` sets up each repository where agents work; `aqt <tool> …` runs any tool, for example `aqt trail verify`. | You use the toolkit day to day. |
 | [aqt-ui](aqt-ui/README.md) (optional) | The quality desk | One local web page that shows the state of all tools, lists what needs you, and lets you make the human decisions (quarantine, plan and action approval, CAPA, trail review) with your passphrase, in English or German. Refuses decisions from agents. | You prefer a page to many commands. |
 
 **Each part works on its own, needing only the shared `aqt-spec` library; together they form a loop.** All of them write the same kind of record into the same trail, so they use each other's evidence: aqt-capa finds a refused release, aqt-validate's approved thresholds drive the quarantine, and the trail review checks every signature.
@@ -80,7 +90,7 @@ The editable draw.io sources and their generator are in [`docs/diagrams/`](docs/
 | Protect an agent that reads the web | [aqt-quarantine](aqt-quarantine/README.md) | aqt-signoff, then aqt-validate to set the thresholds |
 | Show later what happened | [aqt-trail](aqt-trail/README.md) | the Claude Code hooks, which call the tools automatically ([manual 4.8](docs/manual.md#48-combining-the-claude-code-hooks)) |
 | Check the mapping to pharma regulations | the [crosswalk](aqt-spec/crosswalk.md) | the [catalogues](aqt-spec/catalogues/) |
-| Set up all tools for daily work | install everything ([manual 1.3](docs/manual.md#13-install-everything-recommended)), then `aqt setup` in your own terminal | `aqt status`, and the daily and weekly routine in [manual chapter 5](docs/manual.md) |
+| Set up all tools for daily work | install everything ([manual 1.3](docs/manual.md#13-install-everything-recommended)), then `aqt setup` in your own terminal | `aqt project init` in each repository ([manual 3.9](docs/manual.md#39-set-up-each-repository-where-agents-work)), then the daily and weekly routine in [manual chapter 5](docs/manual.md) |
 
 ## The worked example: one poisoned web page
 
@@ -171,7 +181,7 @@ The [catalogues](aqt-spec/catalogues/) hold 121 paraphrased requirements from 11
 - **Some checks are manual.** The Claude Code hooks, a live advisor pairing and the AI-reviewer command lines have documented manual checks, not automated tests. The trail's separate-user mode is not yet tested.
 - **Demo shortcuts.** The demo's people use fixed passphrases (DEMO ONLY), and its time stamps come from a local test authority (TEST ONLY).
 - **Preview.** Version 0.1; interfaces may change before 1.0. Linux only. Not on PyPI (the Python package index) yet: install from this repository. Ready-made hooks exist for Claude Code only; with Codex or pi you run the commands yourself, and aqt-trail imports their session logs.
-- **Tests.** `scripts/test_all.sh` runs 985 offline tests (984 in the ten packages, including the optional aqt-ui and the `aqt` command, and one for the demo) with a throw-away home folder. `scripts/clean_install_check.sh` builds every package, installs only the built packages into a fresh environment outside the checkout and runs every tool, `aqt status` and the demo there (`--docker` does the same in a throw-away container). GitHub's automatic checks (CI) run both, the tests on Python 3.11, 3.12 and 3.13.
+- **Tests.** `scripts/test_all.sh` runs 1011 offline tests (1010 in the ten packages, including the optional aqt-ui and the `aqt` command, and one for the demo) with a throw-away home folder. `scripts/clean_install_check.sh` builds every package, installs only the built packages into a fresh environment outside the checkout and runs every tool, `aqt status` and the demo there (`--docker` does the same in a throw-away container). GitHub's automatic checks (CI) run both, the tests on Python 3.11, 3.12 and 3.13.
 
 ## Privacy and security
 

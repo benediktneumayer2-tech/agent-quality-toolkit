@@ -753,6 +753,27 @@ Case IDs are `Q` plus six characters from a Crockford-style alphabet (`Q7SEGGW`)
 
 **Files.** Configuration `$XDG_CONFIG_HOME/aqt/capa.toml` (`[identity]`, `[evidence]`, `[project]`, `[scan]`, `[due_days]`, `[similarity]`, `[approval]`). State: the SQLite working index `$XDG_STATE_HOME/aqt/capa/capa.db` (`AQT_CAPA_DB` or `[state] db`) and `snapshots/<sha256>` of control files beside it. The index is not evidence; `aqt-capa rebuild` recreates it from the `capa.*` records. Accept, dismiss, classify, investigation, recorded approval, cancel, extend and close are unsigned records, so in a plain JSONL sink `rebuild` replays a forged closure. aqt-capa does not verify chains or signatures of the evidence it reads; run `aqt-trail verify` for that.
 
+### 5.9 aqt-cli (the `aqt` command)
+
+**Purpose.** One command on top of the packages: `aqt status` / `aqt setup` for one machine, `aqt project status` / `aqt project init` for one repository, and `aqt <tool> …`, which runs a tool's command line in the same process. It holds no state of its own; it calls the packages' APIs and command lines. The [aqt-cli README](../aqt-cli/README.md) has every check and its fix.
+
+**Modules.** `checks.py`: the model (`Check`: `id`, `test`, optional `step`, `does`, `personal`, `part_of`; `Result`: `ok`/`warn`/`fail`/`skip`, explanation, fix, `data`, `can_apply`; `Context`: `yes`, `interactive`, the runners) and the machine list `CHECKS`. `project.py`: `ProjectContext` (adds `root`, `git`, `local`) and the repository list `PROJECT_CHECKS`. `cli.py`: argument parsing, the status printer and `apply_steps`. `tools.py`: the pass-through table. The status commands only run the tests; `--json` returns `{verdict, checks: [{id, result, explanation, fix, data?}]}` (`aqt project status` adds `project`). Exit codes: 0 when no check failed, 1 when one failed, 2 for a usage or runtime error.
+
+**The shared step runner.** `aqt setup` and `aqt project init` are both `apply_steps(ctx, checks, …)`. It runs every test, lists the steps to do (a check whose step another step already covers, `part_of`, is listed once), then goes through the checks in order: it runs each test again just before its step, because an earlier step may have done it; prints `yours to do: <fix>` for a gap the step cannot fix (`can_apply = False`); asks `[Y/n]` unless `--yes`; runs the step; and reports `done`, `skipped: …` (`StepSkipped`) or `FAILED: …` (any other exception), then continues. It ends with a fresh status of the same list, and that status gives the exit code. **Without a terminal** (stdin is not a TTY) and without `--yes`, every step that is not personal is skipped with `skipped (no terminal; --yes applies it)`, so an agent's shell changes nothing by accident. The one personal step (enrolling a signer in `aqt setup`) is not asked for and decides itself: without a terminal it is skipped unless `--id`, `--name` and `--role` are given, and it always leaves the passphrase to aqt-signoff's own prompt.
+
+**`aqt project init` / `aqt project status`** (`project.py`). `resolve_root` turns `DIR` into its git top level. Only installed tools count (`importlib.util.find_spec`).
+
+- *Hooks.* The wanted hooks are aqt-trail's six events, `aqt_quarantine.cli.CLAUDE_SNIPPET` and `aqt_change.hooks.SNIPPET`. A hook is present when any of `~/.claude/settings.json` (`CLAUDE_CONFIG_DIR`), `.claude/settings.json` and `.claude/settings.local.json` has a group for the same event and matcher (`None`, `""` and `"*"` are equal) with the same command (the first word compared by its base name, so `/path/to/aqt-trail hook claude-code` counts).
+- *Deny rules* (`deny_rules`). `Bash(aqt-<tool> <sub>:*)` and `Bash(aqt <tool> <sub>:*)` for each subcommand in `DECISIONS`, `Bash(aqt-ui:*)` and `Bash(aqt ui:*)`, `Read` rules for the quarantine state folder (as aqt-quarantine's configuration names it), the trail's `keys/` and aqt-sensei's owner token, and `Edit` rules for the AQT state and configuration folders plus any quarantine or trail state folder outside them. Paths come from the real `XDG_*` values: `~/…` under the home folder, else `//…` (Claude Code reads a single leading `/` as relative to the settings file). A rule present in any of the three settings files counts. The rules are a first fence, not a boundary: Claude Code matches a Bash rule against the command as written, so a full path, `sh -c`, `python -m …` or an option before the subcommand (`aqt-trail --json review sign`) is not stopped; the human check (section 4.3) and the passphrase remain the protection.
+- *Settings files.* A file that is not JSON, or whose `hooks`, an event list, a group's `hooks`, `permissions` or `permissions.deny` has another shape, fails with `can_apply = False`. Otherwise missing groups are appended per event and missing rules to `permissions.deny`; other keys keep their order; output is 2-space JSON.
+- *Instructions.* `with_block` replaces the single `<!-- aqt:begin -->` … `<!-- aqt:end -->` pair or appends one; repeated or unmatched markers fail. It edits the root `CLAUDE.md` and `AGENTS.md` that exist (one of them when both resolve to the same file), else creates `CLAUDE.md`.
+- *`.aqt/change.toml`.* Written only when missing (`change_settings_text`), with `trail_keys` set to the `key_id` in `trail.json` when this account has a trail, else with both trail lines as comments; refused while `aqt_change.plans.active_plans` names a plan. An existing file is parsed with `parse_project_settings` and only warned about (trail key not named, `require_trail` off).
+- *aqt-ui.* `AQT_UI_CONFIG`, else `ui.toml` in aqt-ui's configuration folder: created, `[changes]` appended, or a one-line `projects = [...]` extended and accepted only if re-parsing gives the old list plus the entry; any other shape prints the line to add.
+- *Git hook.* `aqt_change.hooks.install_git_hook` when `<hooks dir>/commit-msg` does not exist; an existing hook that does not run aqt-change is a warning with the line to add.
+- *Committed.* `git status --porcelain` for `.claude/settings.json`, `CLAUDE.md`, `AGENTS.md` and `.aqt/change.toml`, and for `.claude/settings.local.json` whether the repository's own ignore rules cover it; the fix is one `git add … && git commit` line (with `cd <root>` when run from elsewhere).
+
+**Writes** (`write_file`). A new file is created exclusively. An existing one is first copied (`shutil.copy2`) to `$XDG_STATE_HOME/aqt/backups/project-init/<root name>-<8 hex of the root path's SHA-256>/<name>.<UTC time>[.<n>]` (folder 0700), then replaced through a temporary file and `os.replace` on the symlink's target, keeping its mode. The backups are outside the repository because an untracked file there would make aqt-change receipts stale. Nothing is ever committed.
+
 ---
 
 ## 6. Cross-tool interfaces
@@ -846,7 +867,7 @@ Reports cite catalogue items as `<catalogue>:<item>`, where the item is the clau
 | aqt-change | `TaskCompleted`, `Stop`, `SubagentStop`; Git `commit-msg` | `aqt-change hook claude-code`, `aqt-change hook commit-msg` | Exit 2 blocks "done" without fresh passing receipts; checks trailers |
 | aqt-sensei | `UserPromptSubmit`, `Stop`, `Notification` (`permission_prompt`) | `aqt-sensei hook-state working\|idle\|blocked` | Exact pane state for the tmux backend |
 
-Snippets: `aqt-trail/examples/claude-code-hooks.json`, `aqt-quarantine hooks print claude-code`, `aqt-change hooks print`, `aqt-sensei/examples/claude-code-hooks.json`. Hook payload shapes change with Claude Code versions; each package documents a manual check in a real session.
+`aqt project init` merges the first three into a repository's `.claude/settings.json` (section 5.9). Snippets: `aqt-trail/examples/claude-code-hooks.json`, `aqt-quarantine hooks print claude-code`, `aqt-change hooks print`, `aqt-sensei/examples/claude-code-hooks.json`. Hook payload shapes change with Claude Code versions; each package documents a manual check in a real session.
 
 ---
 
@@ -862,7 +883,7 @@ Everything the suite writes, with the defaults. "umask" means the file is create
 | `keys/<slug>.key` | aqt-signoff, `aqt-quarantine init` | Passphrase-encrypted Ed25519 private key (AQT key format, section 2.6) | 0600 |
 | `keys/<slug>.key.pub` | same | Public key | umask |
 | `keys/<slug>.<hex>.revoked.key[.pub]` | aqt-signoff `revoke` | Retired key files | as before |
-| `trail.toml`, `signoff.toml`, `change.toml`, `quarantine.toml`, `validate.toml`, `capa.toml`, `sensei.toml` | You (`aqt-quarantine init` and `aqt-sensei init` write starter files) | Per-tool configuration | umask |
+| `trail.toml`, `signoff.toml`, `change.toml`, `quarantine.toml`, `validate.toml`, `capa.toml`, `sensei.toml`, `ui.toml` | You (`aqt-quarantine init` and `aqt-sensei init` write starter files, `aqt setup` writes `trail.toml` and `signoff.toml`, `aqt project init` writes `[changes] projects` in `ui.toml`) | Per-tool configuration | umask |
 | `sensei/owner.token` | `aqt-sensei init` | Owner token for the bridge | 0600 |
 | **State** `$XDG_STATE_HOME/aqt/` | | | |
 | `evidence.jsonl` | Any tool via the default `JsonlSink` | Unchained records | 0600 |
@@ -880,6 +901,7 @@ Everything the suite writes, with the defaults. "umask" means the file is create
 | `quarantine/` (`AQT_QUARANTINE_STATE`) | aqt-quarantine | `journal.jsonl`, `outbox.jsonl`, `cases/<CASE>/original.txt` | dir 0700, files 0600 |
 | `validate/` (`AQT_VALIDATE_STATE`) | aqt-validate | `runs/<run>/`, `cache/reviewer/`, `tmp/` | run and cache dirs 0700 |
 | `capa/capa.db` (`AQT_CAPA_DB`), `capa/snapshots/` | aqt-capa | Working index; snapshots of control files | umask |
+| `backups/project-init/<repository>-<hash>/` | `aqt project init` | A copy of each file before it changed it (section 5.9) | dir 0700, files as the original |
 | `sensei/` (`AQT_SENSEI_STATE`) | aqt-sensei | `pairs.json`, `messages/<pair>.jsonl`, `ledger-spool.jsonl`, `homes/<platform>/` | state dir, `messages/` and each home 0700; files 0600 |
 | **Runtime** `$XDG_RUNTIME_DIR/` | | | |
 | `aqt/trail.sock` | `aqt-trail serve` | Writer socket | 0600 (0660 in separate-user mode) |
@@ -887,9 +909,10 @@ Everything the suite writes, with the defaults. "umask" means the file is create
 | **Home** | | | |
 | `~/aqt-ui-login-*/login.html` | `aqt-ui` | Private page that forwards the browser to the one-time login link; deleted after a login and when the server stops (in `$XDG_RUNTIME_DIR` or the temporary directory without a usable home folder) | dir 0700, file 0600 |
 | **Project** | | | |
-| `<repository>/.aqt/change.toml` | You (committed) | aqt-change project settings (section 5.4) | as committed |
+| `<repository>/.aqt/change.toml` | You or `aqt project init` (committed) | aqt-change project settings (section 5.4) | as committed |
+| `<repository>/.claude/settings.json` (`settings.local.json` with `--local`), `CLAUDE.md`, `AGENTS.md` | `aqt project init` (additions only; you commit) | Claude Code hooks and deny rules; the agent-instruction block (section 5.9) | as before, or umask |
 | `<git-dir>/aqt-change/` (`AQT_CHANGE_STATE`) | aqt-change | `plans/`, `objects/`, `logs/`, `attempts/`, `records.jsonl` | files 0600 |
-| `<git-dir>/hooks/commit-msg` | `aqt-change hooks install-git` | Trailer check shim (never overwrites) | executable |
+| `<git-dir>/hooks/commit-msg` | `aqt-change hooks install-git`, `aqt project init` | Trailer check shim (never overwrites) | executable |
 | `<project>/.sensei/<pair>/` | aqt-sensei advisor | The advisor's writable scratch folder | inside the sandbox |
 | **Separate-user mode** | | | |
 | `/etc/aqt/trail.toml`, `/var/lib/aqt-trail/`, `/run/aqt-trail/trail.sock` | `scripts/setup-system-user.sh` | System configuration, state and socket | see section 5.2 |
@@ -953,7 +976,7 @@ Tamper evidence is not tamper prevention. A record set is trustworthy to the deg
 
 ### 9.1 Suites
 
-Each package has an offline pytest suite in `<package>/tests/` with synthetic fixtures: no network, no real agents or models, no GPU. Counts observed on 2026-10-30 (Python 3.13), after the four fix rounds of the security review:
+Each package has an offline pytest suite in `<package>/tests/` with synthetic fixtures: no network, no real agents or models, no GPU. Counts observed on 2026-10-31 (Python 3.13), after the four fix rounds of the security review and `aqt project init`:
 
 | Suite | Passed | Skipped | Notes |
 |---|---|---|---|
@@ -966,10 +989,10 @@ Each package has an offline pytest suite in `<package>/tests/` with synthetic fi
 | aqt-validate | 110 | 0 | Statistics against reference values, loaders, detector and reviewer runs |
 | aqt-capa | 23 | 0 | Units, CLI, end to end, signature-based approval |
 | aqt-ui | 93 | 0 | Login, Host, CSRF and Origin, session key, request limits, read-only and peer checks for every decision, substituted content, release only after every page was shown, the record inspector, test mode and review parameters, each decision end to end, German labels, paging and a 50,000-record trail |
-| aqt-cli | 28 | 0 | `aqt status` (including the signer check), `aqt setup`, tool pass-through |
+| aqt-cli | 54 | 0 | `aqt status` (including the signer check), `aqt setup`, `aqt project init` and `aqt project status` (merging into existing settings, user-level hooks, `--local`, instruction blocks and links, `.aqt/change.toml`, `ui.toml` shapes, no terminal), tool pass-through |
 | demo | 1 | 0 | `examples/demo/test_demo.py`: the full story, 43 expected outcomes |
 
-In total 985 tests pass: 984 package tests (including the optional aqt-ui and aqt-cli) plus the demo test. Some tests skip themselves when a tool is missing: `openssl` (aqt-trail token cross-check) and `git` (aqt-change quick start).
+In total 1011 tests pass: 1010 package tests (including the optional aqt-ui and aqt-cli) plus the demo test. Some tests skip themselves when a tool is missing: `openssl` (aqt-trail token cross-check) and `git` (aqt-change quick start).
 
 ### 9.2 Running them
 

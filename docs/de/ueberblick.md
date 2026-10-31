@@ -76,6 +76,14 @@ Unverändert aus einem Demo-Lauf vom 22. Oktober 2026 ([Übersicht](../../exampl
 - [Änderungsbericht](../../examples/demo/sample-output/trace-report.md): genehmigter Plan, Testbelege, Review, genehmigter gegen tatsächlichen Änderungsumfang.
 - [Beispiel einer Validierungsdokumentation (Übung)](validierungsbeispiel.md).
 
+## Einrichtung
+
+Installiert wird aus dem Repository (Anleitung im [Benutzerhandbuch](../manual.md), englisch). Danach im eigenen Terminal, nicht in einer Agenten-Sitzung:
+
+- `aqt setup`, einmal je Rechner: legt den Audit Trail an, startet sein Schreibprogramm und richtet die eigene elektronische Unterschrift ein; die Passphrase tippt man selbst.
+- `aqt project init`, einmal in jedem Repository, in dem Agenten arbeiten ([Handbuch 3.9](../manual.md#39-set-up-each-repository-where-agents-work)). Es trägt ein: die Claude-Code-Hooks; Sperrregeln, mit denen Claude Code die einer Person vorbehaltenen Entscheidungsbefehle nicht ausführt (ein erster Zaun, keine sichere Grenze); einen kurzen Block in der Arbeitsanweisung des Agenten (`CLAUDE.md` oder `AGENTS.md`); die Projekteinstellungen der Änderungskontrolle. Es fragt vor jedem Schritt, ändert beim zweiten Lauf nichts und übernimmt nichts selbst in die Versionsverwaltung (git commit): Das erledigt man selbst, den Befehl dafür gibt es aus.
+- `aqt status` und `aqt project status` zeigen jederzeit, was fehlt, mit dem Befehl zur Behebung.
+
 ## Abgrenzung
 
 - **Kein validiertes System.** Es macht keinen Prozess GMP-, GDP-, Part-11- oder Annex-11-konform. Die Validierung für den eigenen Verwendungszweck bleibt beim Anwender.
@@ -86,4 +94,4 @@ Unverändert aus einem Demo-Lauf vom 22. Oktober 2026 ([Übersicht](../../exampl
 
 ## Entstehung
 
-Benedikt Neumayer hat das Toolkit mit KI-Coding-Agenten gebaut; Anforderungen, Architektur und Review kamen von ihm. Stand: acht Pakete plus der Befehl `aqt` und die optionale lokale Weboberfläche aqt-ui, 985 automatisierte Tests, eine Demo mit 43 geprüften Ergebnissen; Linux, Python (Programmiersprache) 3.11–3.13. Lizenzen: Apache-2.0 für den Code, CC BY 4.0 für Spezifikation und Kataloge.
+Benedikt Neumayer hat das Toolkit mit KI-Coding-Agenten gebaut; Anforderungen, Architektur und Review kamen von ihm. Stand: acht Pakete plus der Befehl `aqt` und die optionale lokale Weboberfläche aqt-ui, 1011 automatisierte Tests, eine Demo mit 43 geprüften Ergebnissen; Linux, Python (Programmiersprache) 3.11–3.13. Lizenzen: Apache-2.0 für den Code, CC BY 4.0 für Spezifikation und Kataloge.

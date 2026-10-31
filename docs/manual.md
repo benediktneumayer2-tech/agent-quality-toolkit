@@ -10,7 +10,7 @@ How the tools work inside (record format, chaining, verification, module structu
 
 ## How to read this manual
 
-- Chapters 1 to 3 are done once.
+- Chapters 1 to 3 are done once; section 3.9 once in each repository where agents work.
 - Chapter 4 has one workflow per tool. Read only the ones you need.
 - Chapter 5 puts the workflows into a daily and a weekly routine, and says where to start.
 - Chapter 6 lists real error messages and what to do about them.
@@ -80,7 +80,7 @@ uv pip install --python .venv/bin/python -e "aqt-spec[schema]" -e aqt-trail -e a
     -e aqt-change -e aqt-sensei -e aqt-quarantine -e aqt-validate -e aqt-capa -e aqt-ui -e aqt-cli
 ```
 
-- `aqt-cli` provides the `aqt` command: `aqt setup` and `aqt status` (chapter 3), and every tool as `aqt <tool> …`, for example `aqt trail verify` for `aqt-trail verify`.
+- `aqt-cli` provides the `aqt` command: `aqt setup` and `aqt status` (chapter 3), `aqt project init` and `aqt project status` for each repository (3.9), and every tool as `aqt <tool> …`, for example `aqt trail verify` for `aqt-trail verify`.
 - `-e` installs in editable mode: after a `git pull` the new code is used without reinstalling.
 - The `[schema]` extra lets `aqt-evidence conform` check the content of every record against its schema.
 - Optional: aqt-quarantine's ONNX detector (a local machine-learning model in addition to the built-in pattern rules) needs `-e "aqt-quarantine[hf]"`. See `aqt-quarantine/docs/detectors.md`.
@@ -95,6 +95,8 @@ ln -sf ~/agent-quality-toolkit/.venv/bin/aqt ~/agent-quality-toolkit/.venv/bin/a
 ```
 
 Most Linux distributions put `~/.local/bin` on the `PATH` at login. If `command -v aqt-trail` prints nothing in a new terminal, add `export PATH="$HOME/.local/bin:$PATH"` to `~/.profile`, then log out and in again.
+
+The Claude Code hooks that `aqt project init` writes (3.9) call the commands by name, such as `aqt-trail hook claude-code`, so they must be on the `PATH` that Claude Code sees. That is the environment Claude Code was started from: a terminal, or for a desktop menu or an editor, the desktop session, which can differ from your terminal. Check it once by asking the agent to run `command -v aqt-trail aqt-quarantine aqt-change`: each must print a path. If a hook command is not found, Claude Code carries on without that hook, and so without its control.
 
 ### 1.5 Install only some packages
 
@@ -211,13 +213,14 @@ The tools follow the XDG convention: settings in `$XDG_CONFIG_HOME` (default `~/
 |---|---|---|
 | `~/.config/aqt/signers.json` | Signer registry: people, roles, public keys | Yes: with aqt-signoff installed, every tool checks it against the enrolment records; without aqt-signoff, aqt-quarantine and aqt-trail read it as it is |
 | `~/.config/aqt/keys/` | Private keys, passphrase-encrypted (`human:alice` → `human-alice.key`), and `.key.pub` files | Yes |
-| `~/.config/aqt/*.toml` | One configuration file per tool: `trail.toml`, `signoff.toml`, `quarantine.toml`, `change.toml`, `capa.toml`, `validate.toml`, `sensei.toml` | Yes (no edits) |
+| `~/.config/aqt/*.toml` | One configuration file per tool: `trail.toml`, `signoff.toml`, `quarantine.toml`, `change.toml`, `capa.toml`, `validate.toml`, `sensei.toml`, `ui.toml` | Yes (no edits) |
 | `~/.config/aqt/sensei/owner.token` | aqt-sensei owner token | Yes |
 | `~/.local/state/aqt/trail/` | `trail.jsonl` (the log), `checkpoints.jsonl`, `keys/service.key` (the writer's key, unencrypted), `reviews/` | Yes (service key) |
 | `~/.local/state/aqt/spool/spool.jsonl` | Records waiting for the writer | — |
 | `~/.local/state/aqt/evidence.jsonl` | The log when no trail writer is used | — |
 | `~/.local/state/aqt/quarantine/` | Journal and case files with the withheld content | Yes (no reading) |
 | `~/.local/state/aqt/signoff/`, `capa/`, `validate/`, `sensei/` | Working indexes, validation runs, advisor homes | — |
+| `~/.local/state/aqt/backups/project-init/<repository>-<hash>/` | A copy of every file that `aqt project init` (3.9) changed, taken before the change, as `<file name>.<UTC time>`. It is outside the repository because an untracked file there would make aqt-change receipts stale | — |
 | `<repository>/.git/aqt-change/` | aqt-change's working ledger for that repository | — |
 | `$XDG_RUNTIME_DIR/aqt/trail.sock` | The trail writer's socket | — |
 
@@ -245,7 +248,7 @@ aqt setup
 
 It checks what is missing and does sections 3.2 to 3.5 for you, one confirmed step at a time: it creates the trail, installs and starts the writer as a systemd user service, enrols your signing identity (you choose the ID, name and role and type the passphrase yourself, at aqt-signoff's prompt) and writes `signoff.toml` and `trail.toml` with your time zone. It never overwrites a key, the signer registry or an existing settings file, and you can run it again at any time; finished steps are skipped. It ends with `aqt status` (3.6). `aqt setup --yes` skips the confirmations, except for the identity, which always needs you.
 
-Read 3.1 first, and 3.7 afterwards. The rest of this chapter explains what `aqt setup` does, for doing it by hand or for an unusual setup. Done by hand, the steps go in this order: the trail writer comes first so that even the enrolment of your signing key is recorded in the audit trail (the same order as the integration demo). Allow about 20 minutes.
+Read 3.1 first, and 3.7 afterwards. Then set up each repository where agents work with `aqt project init` (3.9). The rest of this chapter explains what `aqt setup` does, for doing it by hand or for an unusual setup. Done by hand, the steps go in this order: the trail writer comes first so that even the enrolment of your signing key is recorded in the audit trail (the same order as the integration demo). Allow about 20 minutes.
 
 ### 3.1 Decide who is who
 
@@ -453,7 +456,11 @@ If a passphrase is lost: **[you]** `aqt-signoff revoke human:alice --reason "pas
 - `~/.config/aqt/`: an agent that edits the registry could add a key of its own. With aqt-signoff installed, such a key does not count: without its enrolment request it is ignored, and with a request it stays pending until an enrolled person approves it (3.4). What remains is first use (enrol yourself first) and the re-bootstrap above. Without aqt-signoff installed, aqt-quarantine and aqt-trail cannot check enrolments;
 - `~/.local/state/aqt/quarantine/` (withheld content) and the trail's `service.key`.
 
-For Claude Code, `aqt-quarantine hooks print claude-code` prints deny rules for these folders (see 4.1 and 4.8). Stronger options are a sandbox for agents (for example bubblewrap) that hides `~/.config/aqt/keys` and mounts `signers.json` read-only, and separate-user mode for the trail (3.8).
+For Claude Code, `aqt project init` (3.9) writes **deny rules** into the repository's `.claude/settings.json`: Claude Code refuses to run the decision commands of every installed tool, in both spellings (`aqt-signoff sign …` and `aqt signoff sign …`), and `aqt-ui`, to read the quarantine folder, the trail's `keys/` folder (the unencrypted service key) and aqt-sensei's owner token, and to edit the AQT configuration and state folders. The rules use your real `XDG_CONFIG_HOME` and `XDG_STATE_HOME`.
+
+Deny rules are a first fence, not a boundary. Claude Code matches a Bash rule against the command as it is written, so `aqt-signoff sign …` is stopped, but a full path (`~/.local/bin/aqt-signoff sign …`), `sh -c '…'`, `python -m …` or an option before the subcommand (`aqt-trail --json review sign …`) is not. A Read rule does not stop a script that opens the file itself. The real protection stays the agent-session guard and, above all, the passphrase (2.4).
+
+Stronger options are a sandbox for agents (for example bubblewrap) that hides `~/.config/aqt/keys` and mounts `signers.json` read-only, and separate-user mode for the trail (3.8).
 
 ### 3.8 Optional: separate-user mode for the trail
 
@@ -471,6 +478,48 @@ sudo sh aqt-trail/scripts/setup-system-user.sh /opt/aqt/bin/aqt-trail
 It installs `aqt-trail/examples/aqt-trail-system.service` as the system unit `aqt-trail.service`, which runs with the group `aqt-trail-clients`: you (a member after logging in again) can reach the socket and read the log; only `aqt-trail` can read the service key.
 
 If you set up the user service in 3.2, stop it (`systemctl --user disable --now aqt-trail`). Afterwards set `AQT_SINK=unix:/run/aqt-trail/trail.sock` in `~/.profile` instead of 3.3, and point the reading tools at the log with `AQT_EVIDENCE=/var/lib/aqt-trail/trail.jsonl`. Keep the file name `trail.jsonl` at the end of that path, and do not point at a copy: the tools recognise the trail log by this name. They read it before any other file, and aqt-change checks receipts and reviews against it (4.2); if it cannot find the log, aqt-change answers MANUAL_VERIFY_REQUIRED, because it cannot confirm them. An agent controls its own environment and could unset these variables, so in each repository also commit `require_trail = true` and the writer's key ID (`trail_keys`) in `.aqt/change.toml` (4.2): then a missing log means NO-GO, and only a log signed by that writer confirms anything. In this mode the public key is in `/var/lib/aqt-trail/keys/`, which the clients group can read, and the agent cannot read the private key.
+
+### 3.9 Set up each repository where agents work
+
+`aqt setup` prepares the machine. Each repository where an agent works needs a few files of its own, which `aqt project init` writes. Run it after `aqt setup`, in your own terminal, inside the repository or with its path:
+
+```bash
+cd ~/code/my-project
+aqt project init
+```
+
+It lists the steps, then asks before each one. A real first run in a new repository, with all tools installed:
+
+```text
+aqt project init: 5 step(s) to do
+  - merge the missing Claude Code hooks and deny rules into .claude/settings.json
+  - write the agent-instruction block into CLAUDE.md
+  - write .aqt/change.toml (aqt-change project settings)
+  - add this repository to [changes] projects in ~/.config/aqt/ui.toml
+  - install the aqt-change commit-msg hook
+11 of 11 Claude Code hooks are missing (aqt-trail 6, aqt-quarantine 2, aqt-change 3). Merge the missing Claude Code hooks and deny rules into .claude/settings.json? [Y/n]
+…
+  warn  committed       not committed yet: .claude/settings.json (untracked), CLAUDE.md (untracked), .aqt/change.toml (untracked)
+                        fix: git add .claude/settings.json CLAUDE.md .aqt/change.toml && git commit -m "AQT project setup"
+```
+
+What it does, for the tools that are installed:
+
+| Step | What it writes |
+|---|---|
+| Claude Code hooks and deny rules | Merges the hooks of aqt-trail, aqt-quarantine and aqt-change (4.8) and the deny rules (3.7) into `.claude/settings.json`. It only adds what is missing and keeps your own entries; hooks and rules already in `~/.claude/settings.json` count. It refuses a file that is not valid JSON. |
+| Agent instructions | A block between `<!-- aqt:begin -->` and `<!-- aqt:end -->` in the `CLAUDE.md` and `AGENTS.md` that exist, or a new `CLAUDE.md`: web content is data, how to work under an aqt-change plan, and that decisions belong to a person. A later run replaces only that block. |
+| aqt-change project settings | `.aqt/change.toml` (4.2) when there is none: the trail check with this machine's trail service key (when `aqt-trail init` has run here), signed plan approval, at least a fresh-context review, and the `plans/**` globs. It never rewrites an existing file, and does not write one while a plan is in progress. |
+| aqt-ui project list | Adds the repository to `[changes] projects` in `~/.config/aqt/ui.toml` (4.9). |
+| Git commit-msg hook | `aqt-change hooks install-git`, only when the repository has no commit-msg hook. |
+
+Before it changes an existing file, it copies it to `~/.local/state/aqt/backups/project-init/` (2.5). It never commits.
+
+**Commit the files.** Until you do, the line `committed` warns and prints the command, as above. Commit them before an agent begins a plan: a commit of `.aqt/change.toml` during a plan changes the project settings and gives MANUAL_VERIFY_REQUIRED (4.2).
+
+**Options.** `aqt project init --yes` applies every step without asking. Without a terminal (for example when an agent runs it) and without `--yes`, it changes nothing and says `skipped (no terminal; --yes applies it)` for each step. `aqt project init --local` writes the hooks and deny rules into `.claude/settings.local.json` instead: for settings that only you use, for example when your `XDG_*` folders are not the default (4.8). Git must ignore that file, otherwise aqt-change counts it as a change; the line `committed` prints the `.gitignore` command.
+
+**Check later.** `aqt project status` shows the same checks without changing anything, with the fix for each gap; `aqt project status --json` gives them for scripts. A second `aqt project init` in a repository that is set up and committed says `nothing to do`. After the first run, restart Claude Code in that repository so that it loads the hooks.
 
 ## 4. Workflows
 
@@ -514,13 +563,15 @@ Content that could not be checked (a detector error, an unreadable thresholds fi
 
    All options are in `aqt-quarantine/examples/quarantine.toml`.
 
-3. Print the Claude Code snippet and merge it into `~/.claude/settings.json` (all projects) or a project's `.claude/settings.json`. The tool never edits these files itself.
+3. Connect Claude Code: in each repository, `aqt project init` (3.9) merges aqt-quarantine's hooks and deny rules into `.claude/settings.json` and writes its paragraph into `CLAUDE.md`. The hooks are a `PostToolUse` hook for `WebFetch|WebSearch|mcp__.*` and a `UserPromptSubmit` hook that delivers released content; the paragraph tells the agent what a hold notice means.
+
+   By hand, or for all projects in `~/.claude/settings.json`, print the snippet and the paragraph and merge them yourself (aqt-quarantine never edits these files):
 
    ```bash
    aqt-quarantine hooks print claude-code
    ```
 
-   The snippet adds a `PostToolUse` hook for `WebFetch|WebSearch|mcp__.*`, a `UserPromptSubmit` hook that delivers released content, and deny rules that stop the agent from running decision commands and from reading the quarantine folder. It also prints a paragraph for your `CLAUDE.md` that tells the agent what a hold notice means. If you use hooks of several AQT tools, see 4.8.
+   Its deny rules cover only aqt-quarantine's decision commands and the default AQT folders. If you use hooks of several AQT tools, see 4.8.
 
 4. Check:
 
@@ -610,7 +661,7 @@ Key terms:
 
 #### One-time setup
 
-1. Commit the project's settings in the repository, in `.aqt/change.toml`. They belong to the project, not to one person's environment, which an agent can change, and every setting there can only make checks stricter (all keys: *Project settings* in `aqt-change/docs/usage.md`):
+1. Commit the project's settings in the repository, in `.aqt/change.toml`. They belong to the project, not to one person's environment, which an agent can change, and every setting there can only make checks stricter (all keys: *Project settings* in `aqt-change/docs/usage.md`). `aqt project init` (3.9) writes the file when it is missing, with the values below, except `min_review_independence = "fresh-context"`; when this machine has no trail service key, it writes `require_trail` and `trail_keys` as comments. It then prints the commit command. To write it by hand:
 
    ```toml
    require_trail = true                  # receipts and reviews count only when the trail confirms them
@@ -635,7 +686,7 @@ Key terms:
 
 2. Keep tool output in ignored paths. **Any** new untracked file that git does not ignore (a coverage report, a scratch note) makes receipts stale. Add such paths to the repository's `.gitignore`, or to `fingerprint_exclude` in `.aqt/change.toml`. Only the repository's own committed `.gitignore` files take a file out: a file that only `.git/info/exclude`, your global Git ignore file or an untracked `.gitignore` hides is still fingerprinted and gives MANUAL (`locally_ignored_files`), because a test run may load it and a fresh checkout lacks it. The `.gitignore` that pytest, mypy, ruff and venv/uv put into their own folders (`.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `.venv`, `.tox`, `.nox`) counts; add a virtual environment under another name (`venv/`, `env/`) to the committed `.gitignore`.
 
-3. **[agent or you]** In each repository where agents work:
+3. **[agent or you]** In each repository where agents work, `aqt project init` (3.9) merges aqt-change's Claude Code hooks (`TaskCompleted`, `Stop`, `SubagentStop`) into `.claude/settings.json` and installs the commit-msg check of the AQT-* trailers when the repository has no commit-msg hook. By hand:
 
    ```bash
    aqt-change hooks print          # snippet for .claude/settings.json: TaskCompleted, Stop, SubagentStop
@@ -1359,7 +1410,7 @@ See chapter 6 for a known 0.1 issue with two aqt-quarantine record types.
 
 ### 4.8 Combining the Claude Code hooks
 
-The hooks of aqt-trail (record everything), aqt-quarantine (scan web results) and aqt-change (no done without evidence) can run together. Merge them into `~/.claude/settings.json`, keeping any hooks you already have. This is the three snippets combined:
+The hooks of aqt-trail (record everything), aqt-quarantine (scan web results) and aqt-change (no done without evidence) can run together. `aqt project init` (3.9) writes them combined into a repository's `.claude/settings.json`, keeping your own entries; hooks that are already in `~/.claude/settings.json` count, so it adds nothing twice. To do it by hand, for one repository or for all projects in `~/.claude/settings.json`, merge this combination of the three snippets, keeping any hooks you already have:
 
 ```json
 {
@@ -1388,7 +1439,8 @@ The hooks of aqt-trail (record everything), aqt-quarantine (scan web results) an
 ```
 
 - The aqt-change hook does nothing outside a git repository with plans, so it is safe in the user-wide settings.
-- The deny rules use the default folders. Adjust them if you moved `XDG_CONFIG_HOME` or `XDG_STATE_HOME`.
+- The deny list here is the minimum, aqt-quarantine's rules with the default folders. `aqt project init` writes the full list (3.7): the decision commands of every installed tool in both spellings, `aqt-ui`, and the folder rules for your real `XDG_*` folders (71 rules with every tool installed and the default folders). `aqt project status --json` lists the rules still missing under the check `claude.deny`; in a repository that is not set up yet, that is the full list.
+- If you moved `XDG_CONFIG_HOME` or `XDG_STATE_HOME`, the folder rules name your own folders: by hand, adjust them; with `aqt project init`, a folder outside your home folder becomes an absolute path (`//…`) that fits only your machine, so use `aqt project init --local` to keep the rules in `.claude/settings.local.json`, which stays out of git (3.9).
 - Restart Claude Code after editing. `aqt-quarantine doctor` reports whether its hook is found.
 - If you use aqt-sensei with tmux, also merge `aqt-sensei/examples/claude-code-hooks.json` in the worker's project.
 
@@ -1409,7 +1461,7 @@ aqt-ui
 The browser opens the login link through a private page that only you can read, so the link appears in no command line: a `0600` file in a `0700` folder `~/aqt-ui-login-*` in your home folder, where snap-packaged browsers (such as Ubuntu's default Firefox) can read it too. The page is deleted once a link was used and when the server stops. If your browser cannot open it (for example a Flatpak browser), use the printed link; after a crash, delete a leftover `~/aqt-ui-login-*` folder. A link works once, and each browser tab needs its own: press Enter in the terminal for a fresh link, which makes older unused links invalid. Every use of a link is printed in the terminal, so a login that was not yours shows up there. Ctrl+C stops the server and ends every session. The session cookie alone is not enough to use the page: each request also carries a session key that only the tab that logged in has.
 
 - **Overview** answers "Is everything in order, and what needs me?": the "Needs you" queue comes first (held cases, prepared actions, gates that are not GO, CAPA candidates, refused attempts, a review that is due, qualifications about to expire), then trail status and ALCOA++ per attribute. Only RFC 3161 anchors that the writer wrote (TEST ONLY anchors only in test mode), and signed reviews whose signature is valid and not a copy, count as the last anchor and the last review. In test mode (`[anchor] test_tsa = true` in `trail.toml`) the top bar says TEST MODE and "Needs you" lists it; review parameters in `trail.toml` that differ from aqt-trail's built-in defaults are listed there too and in the review panel, before you sign. Any process of your user can edit `trail.toml`, so remove what you did not set. Refusals are shown with their code and in plain words, for example `enrolment_pending`: "The key waits for approval by an enrolled signer and does not count yet".
-- **Decisions in the page:** release a quarantine case (offered only once this browser session was shown the whole held content; long content comes in pages of 200,000 characters) or declare it a threat (the highlighted passages are enough, because a threat keeps the content withheld); trust a source until a date (this only lowers the band for later content from that domain and releases no case) or revoke that trust; approve the plan version a gate shows (add your repositories under `[changes] projects` in `~/.config/aqt/ui.toml`); approve or reject a prepared action; accept or dismiss a CAPA candidate, approve an implemented corrective action and close a deviation; sign the audit-trail review (a person who acted in the period cannot sign it; the page signs the worksheet it showed you, and in separate-user mode keeps worksheets in `$XDG_STATE_HOME/aqt/trail-reviews`). Each one shows who signs, with which meaning, over which content, and asks for your passphrase again. If the content changed since you opened it, nothing is signed. Each is recorded by the owning package, as the command line does it.
+- **Decisions in the page:** release a quarantine case (offered only once this browser session was shown the whole held content; long content comes in pages of 200,000 characters) or declare it a threat (the highlighted passages are enough, because a threat keeps the content withheld); trust a source until a date (this only lowers the band for later content from that domain and releases no case) or revoke that trust; approve the plan version a gate shows (for the repositories under `[changes] projects` in `~/.config/aqt/ui.toml`, which `aqt project init` fills in, 3.9); approve or reject a prepared action; accept or dismiss a CAPA candidate, approve an implemented corrective action and close a deviation; sign the audit-trail review (a person who acted in the period cannot sign it; the page signs the worksheet it showed you, and in separate-user mode keeps worksheets in `$XDG_STATE_HOME/aqt/trail-reviews`). Each one shows who signs, with which meaning, over which content, and asks for your passphrase again. If the content changed since you opened it, nothing is signed. Each is recorded by the owning package, as the command line does it.
 - **Without a passphrase:** verify the trail, download a verification bundle for an auditor, verify signatures, follow deviations and qualifications. Signing a file or record, the CAPA investigation and action steps, and qualifying a detector stay in the terminal.
 - **Language:** a switch in the top bar shows English or German labels; the browser remembers the choice.
 - **Trail and record inspector:** the Trail view shows 100 records per page; the Overview stays fast with tens of thousands of records. The inspector shows the claimed actor next to the observed process chain and its status (a human claim the writer could not confirm is marked "unconfirmed", as in the review), and each detached signature with its verification status, checked against the trail's enrolment records.
@@ -1429,7 +1481,9 @@ You do not need all eight tools on day one.
 | "The agent reads the web and could be hijacked" | aqt-quarantine | aqt-signoff (one key for all), then aqt-validate to calibrate |
 | "I cannot show later what happened" | aqt-trail | the hooks in 4.8 |
 
-A sensible order for full use: aqt-trail and aqt-signoff (chapter 3), then aqt-change, then aqt-quarantine. Add aqt-capa once there is evidence to scan, aqt-validate before you rely on detector thresholds, and aqt-sensei when you want second opinions.
+With everything installed (1.3), the order is: `aqt setup` once per machine (chapter 3), then `aqt project init` in each repository where agents work and a commit of the files it lists (3.9), then the work itself (5.2). `aqt status` and `aqt project status` show at any time what is missing.
+
+Set up by hand, a sensible order for full use is: aqt-trail and aqt-signoff (chapter 3), then aqt-change, then aqt-quarantine. Add aqt-capa once there is evidence to scan, aqt-validate before you rely on detector thresholds, and aqt-sensei when you want second opinions.
 
 ### 5.2 Daily routine
 
