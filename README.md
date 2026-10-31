@@ -45,7 +45,7 @@ cd ~/code/my-project && aqt project init   # in each repository where agents wor
 
 ## The parts
 
-Seven habits of a medicine plant became seven tools; the eighth is the shared form they all fill in. The `aqt` command and the optional aqt-ui page sit on top of them.
+Seven habits of a medicine plant became seven tools; the eighth is the shared form they all fill in. The `aqt` command and the optional aqt-ui page sit on top of them, and the optional aqt-egress box adds a goods-out inspection.
 
 | Part | Remember it as | What it does, in plain words | Use it when |
 |---|---|---|---|
@@ -59,6 +59,7 @@ Seven habits of a medicine plant became seven tools; the eighth is the shared fo
 | [aqt-spec](aqt-spec/README.md) | The standard form and the rulebook | One record format for all tools (who did what, when, why, to which exact content), plus catalogues of the regulations and a crosswalk from each rule to the tool that supports it. | You build a tool or check the regulations. |
 | [`aqt`](aqt-cli/README.md) (the `aqt-cli` package) | The front desk | One command for everything: `aqt setup` creates the audit trail, starts its writer and enrols your signing identity, step by step; `aqt status` says in one screen whether everything is in order and how to fix what is not; `aqt project init` sets up each repository where agents work; `aqt <tool> …` runs any tool, for example `aqt trail verify`. | You use the toolkit day to day. |
 | [aqt-ui](aqt-ui/README.md) (optional) | The quality desk | One local web page that opens on what needs you, with one page per case and per change, and lets you make the human decisions (quarantine, plan and action approval, signing a finished change as released, CAPA, trail review) with your passphrase, in English or German. Refuses decisions from agents. | You prefer a page to many commands. |
+| [aqt-egress](aqt-egress/README.md) (optional, Python 3.12+) | Goods-out inspection | `aqt egress run -- claude` starts the agent in a box (a Linux sandbox) whose only way out is one proxy (a program that forwards network traffic and so sees all of it). Every request the agent sends out of its box is recorded with the process that sent it, for example `curl < bash < claude`, with short masked excerpts; requests to LLM providers only by their structure, without text. This first stage observes and records; it blocks nothing. | You want to show later what an agent sent, and where. |
 
 **Each part works on its own, needing only the shared `aqt-spec` library; together they form a loop.** All of them write the same kind of record into the same trail, so they use each other's evidence: aqt-capa finds a refused release, aqt-validate's approved thresholds drive the quarantine, and the trail review checks every signature.
 
@@ -89,6 +90,7 @@ The editable draw.io sources and their generator are in [`docs/diagrams/`](docs/
 | Stop "done" claims that have no evidence | [aqt-change](aqt-change/README.md) | aqt-trail, then aqt-signoff for a signed plan approval |
 | Protect an agent that reads the web | [aqt-quarantine](aqt-quarantine/README.md) | aqt-signoff, then aqt-validate to set the thresholds |
 | Show later what happened | [aqt-trail](aqt-trail/README.md) | the Claude Code hooks, which call the tools automatically ([manual 4.8](docs/manual.md#48-combining-the-claude-code-hooks)) |
+| See what an agent sends out, and to which hosts | [aqt-egress](aqt-egress/README.md): `aqt egress run -- claude`, then `aqt egress report` ([manual 4.10](docs/manual.md#410-watching-what-an-agent-sends-out-aqt-egress)) | aqt-trail, so that the records are chained and their sender is observed |
 | Check the mapping to pharma regulations | the [crosswalk](aqt-spec/crosswalk.md) | the [catalogues](aqt-spec/catalogues/) |
 | Set up all tools for daily work | install everything ([manual 1.3](docs/manual.md#13-install-everything-recommended)), then `aqt setup` in your own terminal | `aqt project init` in each repository ([manual 3.9](docs/manual.md#39-set-up-each-repository-where-agents-work)), then the daily and weekly routine in [manual chapter 5](docs/manual.md) |
 
@@ -178,15 +180,16 @@ The [catalogues](aqt-spec/catalogues/) hold 121 paraphrased requirements from 11
 - **Tamper-evident, not tamper-proof.** The evidence is only as strong as its keys and time stamps; keep them out of the agents' reach. The check for an agent session is a guard that a determined program can fool: the passphrase is the real control, so never type it into an agent chat.
 - **A gate is only as trustworthy as the place it runs.** The agent controls its own environment. For QM use, commit the project settings `.aqt/change.toml` (require the trail, pin its writer's key, set the gate policy) and run the gate you rely on in your own shell or in CI ([manual 4.2](docs/manual.md#42-change-control-for-an-agent-task-aqt-change)).
 - **Security review: AI-assisted, not a professional audit.** In October 2026, AI reviewers running models from two vendors attacked the toolkit as a same-user agent would. Fresh AI verifiers then checked the fixes twice, which led to three more fix rounds; after these four fix rounds and two verifications, no open high-rated finding is known. The [review report](docs/security-review-2026-10.md) lists every finding, its fix and the limits that remain. One of them: the first person who enrols a signing key counts without anyone's approval, so enrol yourself before you let agents work, and check the first signer that `aqt status` names.
+- **The outbound box records; it does not block.** aqt-egress sees only agents started with `aqt egress run`. Data can still leave inside traffic that looks normal (a git push, a package download), your LLM provider still receives the whole context, files stay writable for later use outside the box, and Unix sockets outside `/run` stay reachable. It needs bubblewrap and unprivileged user namespaces, and nftables to catch programs that ignore the proxy ([its limits](aqt-egress/README.md#threat-model-and-limits)).
 - **Some checks are manual.** The Claude Code hooks, a live advisor pairing and the AI-reviewer command lines have documented manual checks, not automated tests. The trail's separate-user mode is not yet tested.
 - **Demo shortcuts.** The demo's people use fixed passphrases (DEMO ONLY), and its time stamps come from a local test authority (TEST ONLY).
 - **Preview.** Version 0.1; interfaces may change before 1.0. Linux only. Not on PyPI (the Python package index) yet: install from this repository. Ready-made hooks exist for Claude Code only; with Codex or pi you run the commands yourself, and aqt-trail imports their session logs.
-- **Tests.** `scripts/test_all.sh` runs 1095 offline tests (1094 in the ten packages, including the optional aqt-ui and the `aqt` command, and one for the demo) with a throw-away home folder. `scripts/clean_install_check.sh` builds every package, installs only the built packages into a fresh environment outside the checkout and runs every tool, `aqt status` and the demo there (`--docker` does the same in a throw-away container). GitHub's automatic checks (CI) run both, the tests on Python 3.11, 3.12 and 3.13.
+- **Tests.** `scripts/test_all.sh` runs 1173 offline tests (1172 in the eleven packages, including the optional aqt-ui and aqt-egress and the `aqt` command, and one for the demo) with a throw-away home folder. `scripts/clean_install_check.sh` builds every package, installs only the built packages into a fresh environment outside the checkout and runs every tool, `aqt status` and the demo there (`--docker` does the same in a throw-away container). GitHub's automatic checks (CI) run both, the tests on Python 3.11, 3.12 and 3.13 (aqt-egress on 3.12 and 3.13 only).
 
 ## Privacy and security
 
 - **Everything runs on your machine.** Only two things leave it, and only if you set them up: a trusted time stamp request sends the 32-byte hash of the trail's latest entry to the time-stamp authority you chose, and aqt-sensei's advisor talks to its model vendor.
-- **What is stored:** names in IDs, the reasons people write, and short excerpts: up to 160 characters of imported prompts and tool calls (obvious secrets masked) and up to 280 characters of advisor messages. Set `excerpt_chars = 0` in `trail.toml` to keep only hashes of imports.
+- **What is stored:** names in IDs, the reasons people write, and short excerpts: up to 160 characters of imported prompts and tool calls (obvious secrets masked) and up to 280 characters of advisor messages. Set `excerpt_chars = 0` in `trail.toml` to keep only hashes of imports. aqt-egress, if you use it, records up to 280 characters of what an agent sent to and received from hosts that are not LLM providers (common credential shapes masked; `excerpt_chars = 0` in `egress.toml` turns this off), and its `full` mode keeps whole masked bodies, LLM conversations included, in a private store.
 - **Where:** keys and settings in `~/.config/aqt`, records in `~/.local/state/aqt`.
 - **Reporting a vulnerability:** privately, as described in [SECURITY.md](SECURITY.md).
 
@@ -209,6 +212,7 @@ The [catalogues](aqt-spec/catalogues/) hold 121 paraphrased requirements from 11
 | Prompt injection | Text hidden in content the agent reads (a web page, a tool's output) that tries to give the agent new orders. |
 | Command line, hook | The text window where you type commands; a hook is a small command that an agent program runs automatically at a set moment, for example after every web fetch. |
 | Sandbox | A fenced-off environment in which a program can only reach what it is allowed to. |
+| Proxy | A program that forwards network traffic for other programs, and so can see and record all of it. |
 | MCP | Model Context Protocol, a plug-in standard through which agents use outside tools. |
 | CI | Continuous integration: GitHub runs all tests automatically on every change. |
 | GMP, GDP, GxP | Good Manufacturing Practice and Good Distribution Practice, the rules for making and shipping medicines; GxP is the umbrella term. |

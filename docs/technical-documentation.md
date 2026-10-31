@@ -30,7 +30,7 @@ Paths in this document use the XDG base directories. `$XDG_CONFIG_HOME` defaults
 
 ### 1.1 The eight packages
 
-The repository is a monorepo of eight Python packages, plus the optional local web interface `aqt-ui` and the `aqt` command (package `aqt-cli`), each described in its README. Each package has its own `pyproject.toml`, `README.md`, `CHANGELOG.md`, `docs/`, `examples/` and an offline test suite. All need Python 3.11 or later and run on Linux.
+The repository is a monorepo of eight Python packages, plus the optional local web interface `aqt-ui`, the `aqt` command (package `aqt-cli`) and the optional outbound checkpoint `aqt-egress`, each described in its README. Each of the eight packages has its own `pyproject.toml`, `README.md`, `CHANGELOG.md`, `docs/`, `examples/` and an offline test suite; aqt-ui, aqt-cli and aqt-egress have their own `pyproject.toml`, `README.md`, `CHANGELOG.md` and test suite too. All need Python 3.11 or later (aqt-egress 3.12 or later) and run on Linux.
 
 | Package | Import name | Command | Role | Runtime dependencies |
 |---|---|---|---|---|
@@ -42,6 +42,7 @@ The repository is a monorepo of eight Python packages, plus the optional local w
 | `aqt-quarantine` | `aqt_quarantine` | `aqt-quarantine` | Detectors, quarantine bands, signed release decisions, Claude Code hooks | `aqt-spec`, `cryptography`; optional ONNX stack (`[hf]` extra) |
 | `aqt-validate` | `aqt_validate` | `aqt-validate` | Detector validation and AI-reviewer qualification with exact confidence bounds | `aqt-spec`; detector plug-ins via the `[quarantine]` extra |
 | `aqt-capa` | `aqt_capa` | `aqt-capa` | Deviations, investigations, corrective actions, effectiveness checks, trends | `aqt-spec`, `cryptography`; uses `aqt-signoff` if installed |
+| `aqt-egress` (optional) | `aqt_egress` | `aqt-egress` (also `aqt egress`) | Outbound checkpoint: a bubblewrap box whose only way out is a proxy; every outbound request recorded with the process that sent it (section 5.10) | `aqt-spec`, `mitmproxy` 12.x; external programs `bwrap`, `nft`, `ip` |
 
 Every package depends on `aqt-spec`. The other packages do not import each other, with optional exceptions: aqt-change and aqt-capa call `aqt_signoff.is_approved` when aqt-signoff is installed; aqt-trail and aqt-quarantine check registry keys with aqt-signoff's enrolment rules when it is installed (section 4.1); and aqt-validate loads detector plug-ins that aqt-quarantine registers. Everything else between the tools is data: evidence records in JSONL files, the signer registry, and the thresholds file.
 
@@ -57,6 +58,7 @@ flowchart LR
         V["aqt-validate"]
         K["aqt-capa"]
         H["aqt-trail hook / import<br/>(agent sessions)"]
+        E["aqt-egress<br/>(own spool, section 5.10)"]
     end
     Producers -->|"open_sink().append(record)"| SINK{"AQT_SINK"}
     SINK -->|"unix:"| W["aqt-trail writer<br/>restamp, observe, chain, sign"]
@@ -83,7 +85,7 @@ In words: every tool builds records with `aqt_evidence.new_record` and hands the
 - **The writer is not the actor.** Tools claim an actor; only the trail writer adds `observed`, the attribution it saw itself.
 - **Humans sign, agents propose.** Decisions that need a person carry a detached Ed25519 statement made with a passphrase-protected key. Agents can prepare, run and report, but are refused when they try to decide.
 - **Files, not services.** Apart from the trail writer and the aqt-sensei bridge, the tools are plain command-line programs. They read and write files under the XDG directories.
-- **Standard library first and offline.** No network calls happen unless the user configures one (an RFC 3161 time-stamp authority, a model download for the optional ONNX detector). Tests never use the network.
+- **Standard library first and offline.** No network calls happen unless the user configures one (an RFC 3161 time-stamp authority, a model download for the optional ONNX detector); aqt-egress forwards only what the command in its box sends. Tests never use the network.
 
 ---
 
@@ -316,7 +318,7 @@ $ aqt-evidence vectors
 
 - **Units.** Floats are forbidden, so scores, rates, thresholds and confidence bounds are integers in parts per million with the suffix `_ppm` (0.898991 is written `898991`). Durations are integer milliseconds with the suffix `_ms`.
 - **Types.** `<tool>.<kind>`, with steps told apart by `action` (for example `change.plan.reconciled` with `baseline`, `begin` or `reconcile`). Every tool also has `<tool>.refused` for refused attempts, with `action: "refused"`, the claimed actor as `actor`, and `data = {attempted_action, reason_code, agent_markers}`. Third parties use `x-<org>.<kind>`; such types pass L1 without a payload check.
-- **Registry.** `aqt-spec/schemas/registry.json` lists the 46 registered types with their tool, summary, known actions and meanings, whether a human actor must give a reason, and the payload schema under `schemas/data/`. Payload schemas in 0.1 fix only the minimal fields other tools rely on and allow additional fields. The registry's action and meaning lists are the ones the 0.1 tools write (for example `validate.qualification` with `approve`/`reject`, `quarantine.source.trusted` revocations with meaning `rejected`, `capa.action implemented` with `authored`); `trail.event` and `trail.import` leave their actions open. The spec allows further actions. A meaning outside a type's list produces a conformance *warning*, not a failure. The integration demo checks that every type, action and meaning in its trail is registered, and a test in aqt-spec keeps the spec's table and `registry.json` in step.
+- **Registry.** `aqt-spec/schemas/registry.json` lists the 51 registered types with their tool, summary, known actions and meanings, whether a human actor must give a reason, and the payload schema under `schemas/data/`. Payload schemas in 0.1 fix only the minimal fields other tools rely on and allow additional fields. The registry's action and meaning lists are the ones the 0.1 tools write (for example `validate.qualification` with `approve`/`reject`, `quarantine.source.trusted` revocations with meaning `rejected`, `capa.action implemented` with `authored`); `trail.event` and `trail.import` leave their actions open. The spec allows further actions. A meaning outside a type's list produces a conformance *warning*, not a failure. The integration demo checks that every type, action and meaning in its trail is registered, and a test in aqt-spec keeps the spec's table and `registry.json` in step.
 
 ---
 
@@ -774,6 +776,77 @@ Case IDs are `Q` plus six characters from a Crockford-style alphabet (`Q7SEGGW`)
 
 **Writes** (`write_file`). A new file is created exclusively. An existing one is first copied (`shutil.copy2`) to `$XDG_STATE_HOME/aqt/backups/project-init/<root name>-<8 hex of the root path's SHA-256>/<name>.<UTC time>[.<n>]` (folder 0700; a file outside the repository, such as `ui.toml`, to `project-init/user/`), then replaced through a temporary file and `os.replace` on the symlink's target, keeping its mode. The backups are outside the repository because an untracked file there would make aqt-change receipts stale. Nothing is ever committed.
 
+### 5.10 aqt-egress (the outbound checkpoint, optional)
+
+**Purpose.** Run a command, usually an agent, in a box whose only way out is a proxy in the launcher process, and record every outbound request with the box process that sent it. This stage (stage 6) observes and records; nothing is blocked. Python 3.12 or later; `mitmproxy` 12.x (pinned below 13, because aqt-egress serves sockets through mitmproxy's internal server classes); the external programs `bwrap`, `nft` and `ip` are taken only from `/usr/bin`, `/usr/sbin`, `/bin` or `/sbin`, and only when the file, its target and its folder belong to root and nobody else can write them (`netns.system_tool`), never from `PATH`. `aqt-egress/docs/box.md` records what was verified on which system.
+
+**Modules.** `run.py` (one session from start to end), `box.py` (bwrap command line, mounts, environment), `netns.py` (the helper that sets up the box's network), `proxy.py` (listeners and the mitmproxy add-on `Egress`), `attribution.py` (the box process behind a socket), `resolver.py` (the box resolver), `llm.py` (LLM destinations and request structure), `mask.py` (masking and fingerprints), `store.py` (body store), `records.py` (record writer and private spool), `report.py`, `settings.py`, `cli.py`.
+
+**Start-up sequence** (`run.run`):
+
+1. A session ID `egs_…`; the state folder `$XDG_STATE_HOME/aqt/egress` (0700); the private CA, created once (`ca/`, mitmproxy's own files, 0600); the fingerprint key; the files the box will see, in `sessions/<id>/public/` (`ca.pem`, `bundle.pem` = the system bundle plus the CA, `resolv.conf` naming `127.0.0.1`); the proxy's log `sessions/<id>/proxy.log`, never the boxed command's terminal.
+2. `box.BoxProcess` starts `bwrap --die-with-parent --unshare-user --unshare-net --unshare-pid --unshare-ipc --disable-userns --bind / / --dev /dev --proc /proc --tmpfs /run …` with `--info-fd` and `--block-fd`, plus `--new-session` when `dev.tty.legacy_tiocsti` is not 0. bwrap writes the box's first process (`child-pid`) to the info pipe and waits on the block pipe before it starts the command.
+3. `netns.open_listeners` opens `/proc/<child-pid>/ns/net` and asks the kernel for the user namespace that owns it (`ioctl(NS_GET_USERNS)`): with `--disable-userns` the box's processes sit in a nested user namespace, and only the outer one can enter the network namespace. It starts the helper `python -I -m aqt_egress.netns` with only `PATH` and `LANG` in its environment and the two namespace descriptors and one end of a socket pair as its only extra file descriptors. The helper looks up `nft` and `ip` first (inside, root's files belong to nobody), joins the user namespace and then the network namespace (`setns` into a user namespace needs a single-threaded process, hence a separate one), waits until `lo` is up, loads the nftables table below, adds `192.0.2.1/32` on `lo` and default routes over `lo` (IPv4 with that source address, and IPv6), creates the listening sockets, sends them to the launcher (`SCM_RIGHTS`) with a JSON summary that includes the table as `nft list table` reports it, and exits. No aqt-egress process stays inside the box. Without `nft` or `ip`, or when the table cannot be loaded, no routes are added either (`redirect: false` in the session record, with the error).
+4. The launcher creates the record writer, drains its private spool and appends `egress.session started` synchronously, with the box facts: bwrap version, paths and SHA-256 of `bwrap`, `nft` and `ip`, kernel, hidden and read-only folders, the network summary and the box's first pid. Any failure up to here kills the box: first its first process by pid (it outlives the outer bwrap while it waits on the block pipe, and the end of that pipe would start the command), then bwrap, and only then is the pipe closed.
+5. `_serve` runs mitmproxy's `Master` without listeners of its own (`server = false`) and serves the box's sockets with `asyncio.start_server(handler, sock=…)` and mitmproxy's `regular` and `transparent` connection handlers; the resolver's UDP sockets get datagram endpoints. SIGINT is ignored (it is for the boxed command); SIGTERM and SIGHUP terminate the box. A timer every 10 seconds turns lookups unclaimed for 30 seconds into records and refreshes the host's own addresses. Then `release()` writes to the block pipe, and the command starts.
+6. When the command ends, or the proxy stops first (which terminates the box and is recorded as `proxy_stopped`), connections get two seconds to finish their hooks, the writer is flushed (records still queued after 30 seconds count as failed), `egress.session ended` is appended with the exit code, duration, counts and record routes, the private spool is drained once more, and `last-session.json` (0600) is written for `aqt egress status` and `aqt status`.
+
+The table in the box's network namespace (`netns.RULES`):
+
+```text
+table inet aqt_egress {
+    chain nat_out {
+        type nat hook output priority -100; policy accept;
+        fib daddr type local return
+        meta l4proto tcp redirect to :15001
+        udp dport 53 redirect to :53
+    }
+    chain filter_out {
+        type filter hook output priority 0; policy accept;
+        fib daddr type local accept
+        drop
+    }
+}
+```
+
+| Listener | Address in the box | Served as |
+|---|---|---|
+| `proxy` | `127.0.0.1:3128` TCP | mitmproxy's regular mode: the HTTP proxy that the proxy variables name, including `CONNECT` |
+| `redirect` | port 15001 TCP, all addresses | Transparent mode; the original destination comes from the kernel (`SO_ORIGINAL_DST`) |
+| `direct80`, `direct443` | ports 80 and 443 TCP, all addresses | Transparent mode with the destination taken from the TLS server name or the Host header (none: the connection fails); server connections open lazily here, eagerly everywhere else so that server-first protocols work |
+| `dns`, `dns6` | `127.0.0.1:53` and `::1:53` UDP | The box resolver: A → `127.0.0.1`, AAAA → `::1`, other types empty, TTL 1 s. Bound to the addresses, not a wildcard, so answers to redirected queries leave from the redirect target and the kernel turns their source back into the server the client asked |
+| `local4:PORT`, `local6:PORT` | `127.0.0.1:PORT`, `::1:PORT` TCP | Forwarded to the configured local endpoint on the host |
+
+**Mounts and environment** (`box.bwrap_argv`, `box.box_environment`). `/` is bound read-write, with a fresh `/proc`, a minimal `/dev` and an empty `/run`. Read-only binds: `$XDG_RUNTIME_DIR/aqt` (the trail writer's socket), the real path of `/etc/resolv.conf`, the system CA bundle (replaced by the combined one), `/run/aqt-egress` (the public files), `/sys/fs/cgroup`, the AQT configuration and state folders, and the installation (`sys.prefix`, `sys.base_prefix` and the folders of `aqt_egress`, `aqt_evidence` and `mitmproxy`). The shared spool folder is bound writable again. Empty tmpfs over the egress state, the quarantine state (as aqt-quarantine's configuration names it), `/tmp/.X11-unix` and `/tmp/tmux-<uid>`. `--private-tmp` adds `--tmpfs /tmp` and binds the project, the home folder and the AQT folders back where they live under `/tmp`. The environment gets the proxy variables (`http://127.0.0.1:3128`), `NO_PROXY` for the box's loopback, the CA variables, `NODE_EXTRA_CA_CERTS`, `NODE_USE_ENV_PROXY=1`, `AQT_EGRESS_SESSION` and `AQT_AGENT_SESSION` (both the session ID); `AQT_EGRESS_TEST*` is removed.
+
+**The proxy** (`proxy.Egress`, a mitmproxy add-on). mitmproxy verifies upstream certificates (`ssl_insecure = false`) and runs without HTTP/3.
+
+- *Attribution* (`client_connected`, `attribution.Box`). The connection is looked up in the box's `/proc/<first pid>/net/tcp` and `tcp6` by both of its ends (the client's address and the address it connected to), so another socket with the same local address cannot stand in for it. The box process that holds `socket:[inode]` is the sender, and the chain goes up its parents to the box's first process. `chain_status` is `complete`, `partial` (a process exited during the walk, or a parent started after its child), `shared` (several box processes hold the socket; `holders` lists them and the chain is the most recently started one's) or `unavailable` (no holder any more). Each entry has the host pid, the pid in the box, `comm`, `exe`, the first twelve arguments (masked; free text longer than 40 characters with spaces only as `[text N chars sha256:…]`) and the start time. Pids, start times and `exe` come from the kernel; `comm` and the arguments are what the process says about itself. Lookups are attributed the same way through the UDP tables.
+- *Before connecting* (`server_connect`). The proxy resolves the name itself; if any answer is the host's loopback or an address of one of its interfaces (`ip -j addr`, refreshed every 10 seconds), the connection is refused with `host-loopback` or `host-local`, unless it is a configured local endpoint, and the refusal is recorded as an `observed` record with `decision: refused` and `reason_code`. The destination address is left unchanged, because mitmproxy reuses server connections by address.
+- *After connecting, before sending* (`server_connected`). The connected peer is checked again (DNS rebinding); if it is the host, both sides are closed and nothing is sent. Otherwise the `opened` record is appended (awaited, in an executor thread) before mitmproxy sends anything upstream, so a proxy that dies mid-exchange still leaves the destination.
+- *Per exchange.* One `observed` record per HTTP request, WebSocket or other TCP connection, linked to its `opened` (`rel: opened`) and to the session's `started` record (`rel: session`). `destination` is where the proxy connected (`host`, `port`, `ip`, `sni`, `via` = `proxy`, `redirect`, `direct80`, `direct443` or `local`); `host_header` is added only when the client claimed another host. Bodies stream through a `Tap`: SHA-256, byte count, the first 64 KiB kept for the excerpt and the LLM structure, and in full mode a 0600 temporary file in `bodies/tmp/` that moves into the store when the exchange is complete, so nothing is held back from the agent. Excerpts are decoded (a gzip or deflate prefix is enough), masked before they are cut, and `excerpt_chars` long.
+- *TLS pass-through.* A server name listed in `passthrough`, or a (server name, destination) pair learned from the client's explicit TLS alert (`unknown ca`, `bad certificate`, `certificate unknown`) for the rest of the session, is passed through unread: `tls: {mode: passthrough, reason: configured | client-rejected-certificate}`, with the bytes counted on the box side of the connection; the failed attempt's record has `passthrough_learned`.
+- *LLM destinations* (`llm.py`): the built-in provider hosts and their subdomains, `llm_hosts` and the local endpoints. Their records have an `llm` field (`provider`, `model`, message count and roles, system prompt present, tool names, stream flag) instead of excerpts, and their process entries carry no arguments.
+- *Failing hooks* are guarded: each is counted (`hook_errors` in the `ended` record) and, where it was to write the record, leaves a minimal one with an `error`.
+
+**Records and the private spool** (`records.py`). Records are built on the proxy's event loop and appended by one background thread through `EgressSink`: the route `open_sink()` chooses (3.1), but with `SocketSink(spool=False)`. While the writer does not answer, records go to aqt-egress's own spool `$XDG_STATE_HOME/aqt/egress/spool.jsonl` (opened with `O_NOFOLLOW`, locked, 0600, hidden in the box), never to the shared spool, which the box can write for its hooks. `drain_spool` sends them through the writer's `drain` op (3.5), at the start and end of every session and with `aqt egress drain`. The actor is `service:aqt-egress`; the writer observes the `aqt egress run` process as the sender, and the box process is in `data.process`. The `ended` record counts the routes (`trail`, `spooled`, `file`) and `failed`.
+
+**Masking and the body store** (`mask.py`, `store.py`). Credential headers (`authorization`, `proxy-authorization`, `cookie`, `set-cookie`, `x-api-key` and other API-key and token headers) are recorded as name, scheme and `hmac-sha256:` plus 16 hex digits, keyed with the per-installation `fingerprint.key` (32 random bytes). The masking rules replace private key blocks, bearer, basic and digest credentials, JWTs, `sk-`/`rk-`/`pk-` keys, GitHub, GitLab and Slack tokens, AWS key IDs, Google API keys, Hugging Face tokens, and the values of `password`, `token`, `secret`, `api_key` and similar pairs with `[masked]`. In full mode, objects are `bodies/<2 hex>/<64 hex>.gz`: gzip of the stored bytes, named by their SHA-256; text bodies are decoded (Content-Encoding) and masked first, binary bodies stored as they passed, and the masked headers of an exchange are one JSON object. `read` checks the hash. Storing an existing object renews its time, and `prune` deletes objects not used within the retention period, plus temporary files older than a day that a crash left behind.
+
+**Report** (`report.py`). `aqt egress report` reads `egress.session`, `egress.request` and `egress.lookup` records with `iter_evidence`. A record whose actor is not `service:aqt-egress`, or whose `observed.pid` differs from that of its session's `started` record, is listed as unverified and left out. Destinations are grouped by where the proxy connected; `NEW` means the destination's first record in the evidence read belongs to this session; `claimed_other` counts records with a `host_header`; an `opened` record without a linked `observed` one counts as unfinished.
+
+**Record types** (registry and spec §11):
+
+| Type | Actions | Subject | Notes |
+|---|---|---|---|
+| `egress.session` | `started`, `ended` | `egress.session` / session ID | Mode `observe`, policy version `none`; test options if `AQT_EGRESS_TEST` was set |
+| `egress.request` | `opened`, `observed` | `egress.destination` / `host:port` | Required `data`: `session`, `destination` (`{host, port}`), `mode`, `decision` |
+| `egress.lookup` | `observed` | `egress.name` / the name | Name (every byte kept, in DNS presentation form), query types, count, first and last time, process |
+| `egress.pruned` | `pruned` | `egress.store` / `bodies` | Removed objects and bytes, kept objects, retention, cutoff |
+| `egress.refused` | `refused` | — | Registered for the `<tool>.refused` convention (2.9); stage 6 writes none |
+
+**Files.** Section 7. **Tests.** `tests/test_box.py` runs real boxes against local test servers (no internet; `AQT_EGRESS_TEST` maps names to them) and skips itself where bubblewrap or user namespaces are missing; records go through a real aqt-trail writer, and the trail must verify.
+
 ---
 
 ## 6. Cross-tool interfaces
@@ -810,6 +883,7 @@ The `data` field names that other tools rely on are fixed by spec §11 and the p
 | `sensei.decision` | `decision`, `message_id`, `pair_id` |
 | `validate.qualification` / `.requalification` | `configuration_hash`, `valid_until` (+ `trigger`) |
 | `capa.action` | `target` (`{path, before_sha256, after_sha256}`), `effectiveness_criterion` |
+| `egress.request` | `session`, `destination` (`{host, port}`: where the proxy connected), `mode` (`observe`), `decision` (`allowed` \| `refused`) |
 | `<tool>.refused` | `attempted_action`, `reason_code`, `agent_markers` |
 
 ### 6.2 The aqt-signoff API for other tools
@@ -883,7 +957,7 @@ Everything the suite writes, with the defaults. "umask" means the file is create
 | `keys/<slug>.key` | aqt-signoff, `aqt-quarantine init` | Passphrase-encrypted Ed25519 private key (AQT key format, section 2.6) | 0600 |
 | `keys/<slug>.key.pub` | same | Public key | umask |
 | `keys/<slug>.<hex>.revoked.key[.pub]` | aqt-signoff `revoke` | Retired key files | as before |
-| `trail.toml`, `signoff.toml`, `change.toml`, `quarantine.toml`, `validate.toml`, `capa.toml`, `sensei.toml`, `ui.toml` | You (`aqt-quarantine init` and `aqt-sensei init` write starter files, `aqt setup` writes `trail.toml` and `signoff.toml`, `aqt project init` writes `[changes] projects` in `ui.toml`) | Per-tool configuration | umask |
+| `trail.toml`, `signoff.toml`, `change.toml`, `quarantine.toml`, `validate.toml`, `capa.toml`, `sensei.toml`, `ui.toml`, `egress.toml` | You (`aqt-quarantine init` and `aqt-sensei init` write starter files, `aqt setup` writes `trail.toml` and `signoff.toml`, `aqt project init` writes `[changes] projects` in `ui.toml`) | Per-tool configuration | umask |
 | `sensei/owner.token` | `aqt-sensei init` | Owner token for the bridge | 0600 |
 | **State** `$XDG_STATE_HOME/aqt/` | | | |
 | `evidence.jsonl` | Any tool via the default `JsonlSink` | Unchained records | 0600 |
@@ -903,6 +977,14 @@ Everything the suite writes, with the defaults. "umask" means the file is create
 | `capa/capa.db` (`AQT_CAPA_DB`), `capa/snapshots/` | aqt-capa | Working index; snapshots of control files | umask |
 | `backups/project-init/<repository>-<hash>/` | `aqt project init` | A copy of each file before it changed it (section 5.9) | dir 0700, files as the original |
 | `sensei/` (`AQT_SENSEI_STATE`) | aqt-sensei | `pairs.json`, `messages/<pair>.jsonl`, `ledger-spool.jsonl`, `homes/<platform>/` | state dir, `messages/` and each home 0700; files 0600 |
+| `egress/` | aqt-egress | Its state folder; an empty folder inside the box | 0700 |
+| `egress/ca/` | `aqt egress run` (first run) | The private CA: mitmproxy's key and certificate files | dir 0700, files 0600 |
+| `egress/fingerprint.key` | aqt-egress | 32 random bytes keying the credential fingerprints | 0600 |
+| `egress/bodies/<2 hex>/<64 hex>.gz`, `egress/bodies/tmp/` | `aqt egress run` in full mode; `aqt egress prune` | The body store; bodies in flight | dirs 0700, files 0600 |
+| `egress/spool.jsonl` | aqt-egress | Its own spool: records waiting for the trail writer | 0600 |
+| `egress/sessions/<id>/public/` | `aqt egress run` | `ca.pem`, `bundle.pem`, `resolv.conf`, which the box sees as `/run/aqt-egress` and `/etc/resolv.conf` (not removed by `prune`) | session dir 0700, files 0644 |
+| `egress/sessions/<id>/proxy.log` | `aqt egress run` | The proxy's warnings and errors | umask |
+| `egress/last-session.json` | `aqt egress run` | Summary of the last session for `aqt egress status` and `aqt status` | 0600 |
 | **Runtime** `$XDG_RUNTIME_DIR/` | | | |
 | `aqt/trail.sock` | `aqt-trail serve` | Writer socket | 0600 (0660 in separate-user mode) |
 | `aqt-sensei/` (`AQT_SENSEI_RUNTIME`) | `aqt-sensei serve` | `owner.sock`, `agent.sock`, `pairs/<id>/advisor.sock` and shim, `panes/` | dirs 0700, sockets 0600 |
@@ -910,6 +992,7 @@ Everything the suite writes, with the defaults. "umask" means the file is create
 | `~/aqt-ui-login-*/login.html` | `aqt-ui` | Private page that forwards the browser to the one-time login link; deleted after a login and when the server stops (in `$XDG_RUNTIME_DIR` or the temporary directory without a usable home folder) | dir 0700, file 0600 |
 | **Project** | | | |
 | `<repository>/.aqt/change.toml` | You or `aqt project init` (committed) | aqt-change project settings (section 5.4) | as committed |
+| `<repository>/.aqt/egress.toml` | You (committed) | aqt-egress project settings: `require` (section 5.10) | as committed |
 | `<repository>/.claude/settings.json` (`settings.local.json` with `--local`), `CLAUDE.md`, `AGENTS.md` | `aqt project init` (additions only; you commit) | Claude Code hooks and deny rules; the agent-instruction block (section 5.9) | as before, or umask |
 | `<git-dir>/aqt-change/` (`AQT_CHANGE_STATE`) | aqt-change | `plans/`, `objects/`, `logs/`, `attempts/`, `records.jsonl` | files 0600 |
 | `<git-dir>/hooks/commit-msg` | `aqt-change hooks install-git`, `aqt project init` | Trailer check shim (never overwrites) | executable |
@@ -917,7 +1000,7 @@ Everything the suite writes, with the defaults. "umask" means the file is create
 | **Separate-user mode** | | | |
 | `/etc/aqt/trail.toml`, `/var/lib/aqt-trail/`, `/run/aqt-trail/trail.sock` | `scripts/setup-system-user.sh` | System configuration, state and socket | see section 5.2 |
 
-Record contents to keep in mind for data protection: actor IDs and display names, signer names, short excerpts (prompt and tool excerpts in `trail.import`, evidence excerpts in `quarantine.held`, message excerpts in `sensei.message`, output tails in receipts), and paths such as the Python executable in a receipt's environment summary.
+Record contents to keep in mind for data protection: actor IDs and display names, signer names, short excerpts (prompt and tool excerpts in `trail.import`, evidence excerpts in `quarantine.held`, message excerpts in `sensei.message`, output tails in receipts, masked excerpts of what an agent sent and received in `egress.request`), paths such as the Python executable in a receipt's environment summary, and the destinations, request paths and command lines in `egress.*` records. In full mode, `egress/bodies/` holds whole masked request and response bodies, including LLM conversations.
 
 ---
 
@@ -927,7 +1010,7 @@ Record contents to keep in mind for data protection: actor IDs and display names
 
 - **The adversary is an agent**, possibly steered by injected content: a coding agent that claims "done" without evidence, approves its own work, edits records, or follows instructions from a web page. Agents usually run as the same Unix user as the person they work for.
 - **Out of scope:** an attacker with the owner's private keys or passphrases, root, a root-equivalent group (`sudo`, `docker`), a modified installation, or kernel escapes. Detector evasion by adaptive prompt injection is also out of scope: detectors are triage.
-- **Single user, single host, local use.** The tools are designed for a developer workstation; there are no network listeners, and every socket is a Unix socket.
+- **Single user, single host, local use.** The tools are designed for a developer workstation. The only network listeners are aqt-ui's on `127.0.0.1` and aqt-egress's inside the network namespace of its box; every other socket is a Unix socket.
 
 ### 8.2 What each control protects against, and what it does not
 
@@ -942,6 +1025,7 @@ Record contents to keep in mind for data protection: actor IDs and display names
 | aqt-quarantine detectors and fail-closed bands | Known-style injections reaching the agent through the covered tools | Adaptive attacks; other channels (`curl` in a shell, downloaded files, uncovered tools); content in the warn band, which the model has already seen; a hook that does not run (Claude Code then passes the original) |
 | aqt-sensei bubblewrap sandbox | An advisor writing to the project, reading the bridge state, the owner token, sockets, other pairs or the owner's agent homes | Confidentiality: with the network shared (the default) the advisor can send what it reads to the internet; a same-user process outside the panes that reads the token |
 | aqt-change receipts and gate | A careless agent claiming "done" without running anything; silent plan changes; stale evidence; with aqt-trail, receipts and reviews forged or edited in the local ledger, and (with `require_trail` and `trail_keys`) a trail check switched off through the environment or answered by a log the agent wrote; changes hidden from `git status`, also behind an untracked `.gitignore`; Python bytecode standing in for the source; tested changes left out of the commit; a user configuration that loosens the gate; project settings dropped by editing a plan's base commit | Without aqt-trail, a forged ledger or plain JSONL sink (use `gate --rerun`); a made-up receipt sent through the writer's socket (the trail keeps the sender's process chain); in user mode, a log re-signed with the real service key; deleting a later failing run from the local ledger; without aqt-trail, a base commit rewritten together with its `begin` record in the ledger; ignored build output a run loads other than Python bytecode (only a clean-checkout run is decisive); local clean filters; a committed `.gitignore` change (visible in the diff); inadequate tests (reviews and aqt-validate address that) |
+| aqt-egress box | Outbound traffic from the box leaving unseen: every connection out of the box goes through the proxy (with nftables also direct connections to IP addresses on any port and DNS queries to outside resolvers), and an `opened` record is written before data flows upstream; the box creating user namespaces, changing its firewall, seeing or signalling the proxy, reading the CA key, the body store or the fingerprint key, or writing the AQT folders and the installation aqt-egress runs from; the box reaching the host itself (loopback and interface addresses, also through DNS rebinding) | Data inside allowed channels (an LLM request, a git push to your own remote); pinned TLS (passed through, recorded by size); Unix sockets outside `/run` and the hidden folders; files the box leaves for later use outside it; records planted in the shared spool or through the writer's `drain` op, which carry no observed sender; programs not started in the box; a launcher killed before release (the command can start, without network) |
 | aqt-capa | Deviations disappearing as anecdotes; unapproved or reverted changes to agent instructions (hash-bound); an unverified record posing as an independent approval | Failures that no control records; tampered input evidence (aqt-capa does not verify chains); forged unsigned steps such as a closure in a plain JSONL sink |
 
 ### 8.3 Where tamper evidence comes from
@@ -960,7 +1044,7 @@ Tamper evidence is not tamper prevention. A record set is trustworthy to the deg
 ### 8.4 Known limitations
 
 - **Security review.** The code had an AI-assisted security review in October 2026, not a professional audit. The [review report](security-review-2026-10.md) lists every finding, its fix and the limits that remain.
-- **Linux only.** Attribution needs `SO_PEERCRED` and `/proc`; locking uses `fcntl`; the advisor sandbox needs bubblewrap and unprivileged user namespaces (on Ubuntu, AppArmor can block them; `aqt-sensei doctor` detects that).
+- **Linux only.** Attribution needs `SO_PEERCRED` and `/proc`; locking uses `fcntl`; the advisor sandbox and the aqt-egress box need bubblewrap and unprivileged user namespaces (on Ubuntu, AppArmor can block them; `aqt-sensei doctor` and `aqt egress status` detect that), and the box's redirect needs nftables.
 - **Time** is the writer's clock unless anchored. Clock jumps are recorded, not prevented.
 - **Separate-user mode is scripted but not exercised by the tests.** The units pass `systemd-analyze verify`, but the script itself has not run in CI. Check once that a client user can write through `/run/aqt-trail/trail.sock` and read the log before relying on this mode.
 - **The advisor sandbox does not use `bwrap --new-session`.** The advisor runs in the pane's terminal session.
@@ -976,11 +1060,11 @@ Tamper evidence is not tamper prevention. A record set is trustworthy to the deg
 
 ### 9.1 Suites
 
-Each package has an offline pytest suite in `<package>/tests/` with synthetic fixtures: no network, no real agents or models, no GPU. Counts observed on 2026-10-31 (Python 3.13), after the four fix rounds of the security review and `aqt project init`:
+Each package has an offline pytest suite in `<package>/tests/` with synthetic fixtures: no network, no real agents or models, no GPU. Counts observed on 2026-10-31 (Python 3.13), after the four fix rounds of the security review, `aqt project init` and aqt-egress:
 
 | Suite | Passed | Skipped | Notes |
 |---|---|---|---|
-| aqt-spec | 205 | 0 | Message codes (`Text`); vectors, schemas, catalogues (every cited catalogue ID exists), spec documents agree with the code; Hypothesis property tests for canonical JSON, hashing, chain and signature verification |
+| aqt-spec | 206 | 0 | Message codes (`Text`); vectors, schemas, catalogues (every cited catalogue ID exists), spec documents agree with the code; Hypothesis property tests for canonical JSON, hashing, chain and signature verification |
 | aqt-trail | 200 | 0 | Writer, server, tamper cases, TSA and test mode, importers, review and profile parameters, enrolment-backed registry keys, ALCOA++, bundles |
 | aqt-signoff | 79 | 0 | Signatures, statuses, replays, counter-signed enrolment (bootstrap, approval, roles, rotation, re-bootstrap and its confirmation, unsigned revocations, replayed requests, one import, export with enrolment evidence), key format, actions, CLI, L1 conformance of its records |
 | aqt-change | 124 | 0 | Plan format, reconciliation, receipts, content fingerprint, hidden changes, ignore rules and the fresh bytecode cache, trail confirmation, project settings and the plan's base commit, finish, gate, hooks, quick start |
@@ -989,10 +1073,11 @@ Each package has an offline pytest suite in `<package>/tests/` with synthetic fi
 | aqt-validate | 110 | 0 | Statistics against reference values, loaders, detector and reviewer runs |
 | aqt-capa | 25 | 0 | Units, CLI, end to end, signature-based approval |
 | aqt-ui | 153 | 0 | Queue, case and change pages, Sign released bound to the change's own finish (record, plan version, receipts, HEAD), message codes and the German catalogue; login, Host, CSRF and Origin, session key, request limits, read-only and peer checks for every decision, substituted content, release only after every page was shown, the record inspector, test mode and review parameters, each decision end to end, German labels, paging and a 50,000-record trail |
-| aqt-cli | 55 | 0 | `aqt status` (including the signer check), `aqt setup`, `aqt project init` and `aqt project status` (merging into existing settings, user-level hooks, `--local`, instruction blocks and links, `.aqt/change.toml`, `ui.toml` shapes, no terminal), tool pass-through |
+| aqt-cli | 57 | 0 | `aqt status` (including the signer check and the optional `egress` line), `aqt setup`, `aqt project init` and `aqt project status` (merging into existing settings, user-level hooks, `--local`, instruction blocks and links, `.aqt/change.toml`, `ui.toml` shapes, no terminal), tool pass-through, the install hint for aqt-egress |
+| aqt-egress | 74 | 0 | Settings, masking, fingerprints, the body store, the resolver and the `/proc` parsing; the proxy against local test servers (records per request, `opened` before data, loopback and host-address refusal, TLS pass-through, LLM structure, local endpoints, full mode, hook and store errors); the report, `prune`, `drain` and `status`; real boxes (attribution, escape attempts, read-only and hidden folders, redirect, `--private-tmp`), with records through a real aqt-trail writer and a verified trail. The box tests skip themselves without bubblewrap or user namespaces; `test_all.sh` skips the suite on Python 3.11 |
 | demo | 1 | 0 | `examples/demo/test_demo.py`: the full story, 43 expected outcomes |
 
-In total 1095 tests pass: 1094 package tests (including the optional aqt-ui and aqt-cli) plus the demo test. Some tests skip themselves when a tool is missing: `openssl` (aqt-trail token cross-check) and `git` (aqt-change quick start).
+In total 1173 tests pass: 1172 package tests (including the optional aqt-ui and aqt-egress, and aqt-cli) plus the demo test. Some tests skip themselves when a tool is missing: `openssl` (aqt-trail token cross-check) and `git` (aqt-change quick start).
 
 ### 9.2 Running them
 
@@ -1002,7 +1087,7 @@ scripts/test_all.sh aqt-trail       # one or more packages (the demo runs only w
 cd aqt-trail && .venv/bin/python -m pytest -q     # directly, inside a package
 ```
 
-`scripts/test_all.sh` needs `uv`. It creates a missing `<package>/.venv` (`uv venv`, then `uv pip install -e ../aqt-spec -e ".[test]"`; aqt-validate also gets aqt-quarantine for the plug-in tests) and `examples/demo/.venv` with all eight packages. Each suite runs with:
+`scripts/test_all.sh` needs `uv`. It creates a missing `<package>/.venv` (`uv venv`, then `uv pip install -e ../aqt-spec -e ".[test]"`; aqt-validate also gets aqt-quarantine for the plug-in tests) and `examples/demo/.venv` with all eight packages. aqt-egress's suite needs Python 3.12 or later; with an older interpreter the script skips it and says so in the table. Each suite runs with:
 
 - throw-away `HOME`, `XDG_STATE_HOME`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME` and `TMPDIR`, and a short `XDG_RUNTIME_DIR` under `/tmp`;
 - every `AQT_*` variable removed from the environment;
@@ -1022,7 +1107,7 @@ Started from inside an agent session, the demo's ALCOA++ report fails *attributa
 
 ### 9.4 CI
 
-`.github/workflows/ci.yml` runs on every push and pull request on `ubuntu-latest` with Python 3.11, 3.12 and 3.13. It installs `uv`, `bubblewrap` and `tmux`, then runs `scripts/test_all.sh`; further jobs run `scripts/clean_install_check.sh` and audit the third-party dependencies of all packages with `pip-audit`. The `.github/workflows/ci.yml` files inside the package folders are path-filtered workflows for a package that lives in its own repository; GitHub Actions runs only the root workflow in this monorepo.
+`.github/workflows/ci.yml` runs on every push and pull request on `ubuntu-latest` with Python 3.11, 3.12 and 3.13. It installs `uv`, `bubblewrap`, `tmux` and `nftables`, then runs `scripts/test_all.sh` (aqt-egress is skipped on Python 3.11); further jobs run `scripts/clean_install_check.sh` and audit the third-party dependencies of all packages with `pip-audit`. The `.github/workflows/ci.yml` files inside the package folders are path-filtered workflows for a package that lives in its own repository; GitHub Actions runs only the root workflow in this monorepo.
 
 ---
 
@@ -1121,7 +1206,9 @@ New features go into `catalogues/features.yaml` (`package`, `description`, `reco
 | `AQT_SINK` | All tools | `file:/path.jsonl` or `unix:/path.sock`; unset: the trail writer when one answers or a trail exists, else `$XDG_STATE_HOME/aqt/evidence.jsonl` (section 3.1) |
 | `AQT_EVIDENCE` | All readers | Colon-separated JSONL files to read records from; files named `trail.jsonl` are read first (section 3.6) |
 | `AQT_ACTOR` | aqt-trail, aqt-signoff, aqt-change, aqt-validate, aqt-capa | Claimed actor ID (never turns an agent context into a human in aqt-change) |
-| `AQT_AGENT_SESSION` | Human check; aqt-change, aqt-capa, aqt-validate session IDs | Marks an agent session; set to `1` inside the aqt-sensei sandbox |
+| `AQT_AGENT_SESSION` | Human check; aqt-change, aqt-capa, aqt-validate session IDs | Marks an agent session; set to `1` inside the aqt-sensei sandbox and to the egress session ID inside the aqt-egress box |
+| `AQT_EGRESS_SESSION` | Set by aqt-egress inside the box | The egress session ID, for matching records of hooks inside the box to the session |
+| `AQT_EGRESS_TEST` | aqt-egress tests | JSON test options (local test servers, their CA); removed from the box's environment and named in the session record when set |
 | `AQT_TRAIL_STATE` | aqt-trail | Trail state directory |
 | `AQT_SIGNERS`, `AQT_KEYS_DIR` | aqt-signoff, aqt-quarantine, aqt-trail | Signer registry and key directory |
 | `AQT_SIGNOFF_CONFIG`, `AQT_SIGNOFF_STATE` | aqt-signoff | Configuration file; state directory |
@@ -1139,5 +1226,5 @@ New features go into `catalogues/features.yaml` (`package`, `description`, `reco
 - One console script per package, `argparse` subcommands, `--json` for machine-readable output. Global options such as `--json` and `--config` are accepted before or after the subcommand.
 - Exit codes: **0** ok, **1** check failed or refused, **2** usage or runtime error. Hooks follow their harness's protocol instead (for Claude Code, exit 2 blocks).
 - Configuration is TOML at `$XDG_CONFIG_HOME/aqt/<tool>.toml`, read with the standard library; every path can be overridden by a flag or an environment variable. Example files are in each package's `examples/`.
-- Services listen on Unix sockets only; there are no TCP listeners.
+- Services listen on Unix sockets only. The exceptions are aqt-ui on `127.0.0.1` and aqt-egress's listeners, which exist only inside the network namespace of its box.
 - Network access is off unless the user configures it.

@@ -8,9 +8,9 @@ Please use GitHub's private vulnerability reporting ("Security" tab → "Report 
 
 ## Scope
 
-In scope: signature and chain verification that accepts tampered records, signature statements that can be replayed or rebound to other content, agent-context checks (`require_human`) that an agent can bypass without operating-system access, sandbox escapes in aqt-sensei, and secrets reaching evidence records.
+In scope: signature and chain verification that accepts tampered records, signature statements that can be replayed or rebound to other content, agent-context checks (`require_human`) that an agent can bypass without operating-system access, sandbox escapes in aqt-sensei, traffic that leaves the aqt-egress box without passing its proxy or without a record, the box reaching the host itself, the CA key or the AQT folders, and secrets reaching evidence records.
 
-Out of scope: attacks that need the owner's private keys or passphrases, root on the host, or a modified installation; detector evasion by adaptive prompt injection (detectors are a triage layer, see the README's honest scope).
+Out of scope: attacks that need the owner's private keys or passphrases, root on the host, or a modified installation; detector evasion by adaptive prompt injection (detectors are a triage layer, see the README's honest scope); data hidden inside traffic that aqt-egress lets through (stage 6 observes and blocks nothing).
 
 ## Threat model in brief
 
@@ -29,10 +29,26 @@ Since the October 2026 review and its fix rounds:
 - **Change control with the trail.** With aqt-trail in use, aqt-change counts a receipt or review only when the trail holds the same record, received from its sender over the writer's socket. Commit `require_trail = true` and the writer's key id (`trail_keys`) in the project's `.aqt/change.toml`, so that the agent's environment can neither switch this check off nor point it at a log the agent wrote; gate policy committed there cannot be relaxed by the user configuration. The tree fingerprint hashes every tracked file instead of trusting `git status`; only `.gitignore` files that are part of the repository leave a file out of it; every check run gets a fresh, empty Python bytecode cache; and `finish` refuses to leave a tested change out of its commit. The plan's base commit is checked against its `begin` record, so editing it does not drop the project settings (`plan_base_mismatch`). Limits: a same-user agent can still send a made-up receipt through the socket (the trail keeps its process chain); in user mode it can read the service key, so the key pin is real only in separate-user mode; aqt-change's local copy still decides which records belong to a project; ignored files that a run may load besides Python bytecode (compiled modules, other tools' build caches, the virtual environment) are not checked. A gate is only as trustworthy as the environment and the working tree it runs in: run the gate that decides on a clean checkout in CI.
 - **The local web page.** The aqt-ui cookie alone is no session: every request also needs a session key that the page keeps per browser tab. A release is offered only after every page of the held content was shown in that session; a threat may be declared from the highlighted passages, because it keeps the content withheld.
 
+**The outbound box (aqt-egress, optional)** is a new trust boundary: the agent and everything it starts run inside a bubblewrap box, the recording proxy outside it. In stage 6 (observe and record) it guarantees:
+
+- nothing leaves the box without passing the proxy (where nftables works, direct connections to IP addresses on any port and DNS queries to outside resolvers too), and each upstream connection gets an `opened` record before any data flows on it;
+- the box cannot create user namespaces, change its firewall, see or signal the proxy, reach the host's own loopback or its other addresses (except local endpoints you configured), or write the AQT folders and the installation the recorder runs from.
+
+It does not guarantee:
+
+- a closed channel: it blocks nothing, and data can ride inside traffic that it lets through, such as an LLM request or a git push;
+- anything about Unix sockets outside `/run` (for example in `/tmp` or in the home folder): they stay reachable from the box and may act outside it; `--private-tmp` closes those in `/tmp`;
+- a sender for records that the box plants in the shared spool: they carry no observed sender;
+- that a launcher killed before it releases the box stops the command: the command can still start, without any network.
+
+**The CA key.** The proxy reads TLS with a private CA, created once in `$XDG_STATE_HOME/aqt/egress/ca/` (files 0600, folder 0700). The box sees only the certificate: the key, the body store and the fingerprint key lie in a folder that is empty inside the box. The CA is trusted only inside the box, through environment variables and a certificate bundle mounted there; it is never added to the system's trust store. Any process of your user outside the box can read the key and make certificates that programs inside the box trust; nothing outside the box trusts them. Deleting `ca/` makes the next session create a new CA, and each session record carries the fingerprint of the one it used.
+
 The full list of limits is in the [review report](docs/security-review-2026-10.md#limits-that-remain) and in the "Threat model and limits" section of each package README.
 
 ## Review status
 
 In October 2026, AI reviewers running models from two vendors reviewed the code at commit `363b445` from the position of a same-user agent. This was an AI-assisted review, not a professional security audit. Fresh AI verifiers then checked the fixes twice; each time they found most of them sound, some only partly, and some new problems, which three further fix rounds addressed. After four fix rounds and two verifications, no open high-rated finding is known; the fixes of the fourth round have not been verified yet. Every finding, its fix or documented limit, the verifications and what remains open are in the [review report](docs/security-review-2026-10.md).
+
+aqt-egress, added after that review, had its own AI-assisted review before release, again not a professional audit; its fixes are listed in its [changelog](aqt-egress/CHANGELOG.md).
 
 Version 0.1 is a preview.
