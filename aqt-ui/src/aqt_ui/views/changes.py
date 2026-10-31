@@ -105,6 +105,7 @@ class ChangesView:
             return plan
         try:
             self._details(ledger, plan, public, items, evidence, with_release)
+            plan["open_tasks"] = [{"id": t.id, "text": t.text} for t in parsed.tasks if not t.checked]
         except Exception as error:  # noqa: BLE001 - one malformed mirror line must not take down the queue
             problem = Text("ui.changes.plan_unreadable", "plan {plan} cannot be shown: {error}", plan=plan["plan_id"],
                            error=f"{type(error).__name__}: {error}")
@@ -458,7 +459,12 @@ def bind_finish(ledger, plan_id: str, rel: str, finish_id: str, records: list[di
     plan in this repository. And it must be a finish of what the fresh gate evaluated
     (``gate_receipts``): the plan version the plan state accepts now, the receipts the gate counts now and,
     for a finish that committed, HEAD or a commit with HEAD's tree. A finish without a commit (``finish
-    --no-commit``) records only the head before the change; receipts and plan version bind it."""
+    --no-commit``) records only the head before the change; receipts and plan version bind it.
+
+    It must also be this project's own finish: one that aqt-change finish recorded in this plan state's
+    history, naming one of this plan state's versions (its ``plan-version`` link), with receipts of this plan
+    run on this repository's history since the plan's base commit; with aqt-change owning the plan
+    lifecycle, the plan state must say completed (finish writes it so)."""
     from aqt_change.gitio import trailers
     from aqt_change.ledger import TRUST_TEXT, TrailCheck
     from aqt_evidence import record_content_hash
@@ -514,8 +520,24 @@ def bind_finish(ledger, plan_id: str, rel: str, finish_id: str, records: list[di
     if later:
         return None, Text("ui.release.not_latest", "{later} is a later change.finish record of plan {plan} than "
                           "{record}", later=str(later[-1].get("id")), plan=plan_id, record=finish_id)
+    # this project's own finish, as aqt-change finish recorded it in the plan state
+    from aqt_change.plans import external
+    state = ledger.plan_state(plan_id) or {}
+    history = [h for h in state.get("history") or [] if isinstance(h, dict)]
+    if finish_id not in {h.get("record") for h in history if h.get("action") == "finish"}:
+        return None, Text("ui.release.not_in_plan_state", "{record} is not a finish that aqt-change finish recorded "
+                          "in this project's plan state", record=finish_id)
+    link = next((x.get("ref") for x in found.get("links") or [] if isinstance(x, dict) and x.get("rel") == "plan-version"),
+                None)
+    if not link or link not in {h.get("record") for h in history if h.get("action") != "finish"}:
+        return None, Text("ui.release.other_plan_instance", "the plan version {version} that {record} names is not "
+                          "one of this project's plan versions", version=str(link), record=finish_id)
+    if not external(ledger) and state.get("status") != "completed":
+        return None, Text("ui.release.not_completed", "{record} did not complete the plan: the plan state is "
+                          "{status}, not completed (aqt-change finish writes it completed)", record=finish_id,
+                          status=str(state.get("status")))
     # what the fresh gate evaluated: this plan version, these receipts, this tree
-    accepted = (ledger.plan_state(plan_id) or {}).get("accepted_raw")
+    accepted = state.get("accepted_raw")
     version = found.get("subject").get("sha256") if isinstance(found.get("subject"), dict) else None
     if not accepted or version != accepted:
         return None, Text("ui.release.other_plan_version", "the change moved on since it was finished: {record} is "
@@ -526,6 +548,17 @@ def bind_finish(ledger, plan_id: str, rel: str, finish_id: str, records: list[di
         return None, Text("ui.release.other_receipts", "the change moved on since it was finished: the receipts of "
                           "{record} are not the ones the gate counts now. Finish it again (aqt-change finish).",
                           record=finish_id)
+    base = state.get("base_commit")
+    receipts = {r.get("id"): r for r in records if r.get("type") == "change.receipt" and r.get("id") in set(named)}
+    for receipt_id in named:
+        data = (receipts.get(receipt_id) or {}).get("data")
+        data = data if isinstance(data, dict) else {}
+        run_at = (data.get("git") or {}).get("head") if isinstance(data.get("git"), dict) else None
+        if data.get("plan_id") != plan_id or not isinstance(base, str) or not isinstance(run_at, str) \
+                or ledger.git.run("merge-base", "--is-ancestor", base, run_at, check=False).returncode != 0:
+            return None, Text("ui.release.foreign_receipt", "the receipt {receipt} of {record} was not run on this "
+                              "plan's history since its base commit {base}", receipt=str(receipt_id), record=finish_id,
+                              base=str(base))
     if found["data"].get("commit"):
         head = ledger.head()
         if commit != head and tree_of(ledger, commit) != tree_of(ledger, head):

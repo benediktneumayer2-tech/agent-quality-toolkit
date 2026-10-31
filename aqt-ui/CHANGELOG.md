@@ -4,6 +4,14 @@
 
 First version.
 
+Verification of the third review (same version, not yet released):
+
+- The finish signed must be this project's own: recorded by aqt-change finish in the plan state's history,
+  naming one of its plan versions, the plan state completed (with aqt-change owning the lifecycle), and its
+  receipts run on this repository's history since the plan's base commit (`ui.release.not_in_plan_state`,
+  `ui.release.other_plan_instance`, `ui.release.not_completed`, `ui.release.foreign_receipt`). Open tasks of
+  the plan are shown on the Release step. The README's security model states the limits.
+
 Third review of Sign released (same version, not yet released):
 
 - The finish record signed must be a finish of what the fresh gate evaluated: the plan version accepted now,

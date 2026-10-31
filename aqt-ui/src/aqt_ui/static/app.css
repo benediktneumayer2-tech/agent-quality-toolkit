@@ -358,6 +358,8 @@ table.list.plain tr:hover td { background: none; }
 .case-decide .decision { margin: 0; max-width: 42rem; }
 .case-decide .insp-section { padding: 0 0 18px; }
 .case-also { margin-top: 20px; }
+.flag-box { margin: 0 0 14px; }
+.flag-box .flag { margin: 0 0 4px; }
 .resolve { margin: 0; padding-left: 22px; max-width: 48rem; }
 .resolve li { margin-bottom: 14px; }
 .resolve p { margin: 0 0 6px; }

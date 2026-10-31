@@ -85,26 +85,31 @@ def test_a_forged_finish_naming_an_untested_ancestor_is_refused(finished, trail,
     client.login()
     data = change_of(client)
     assert data["plan"]["finish"] == forged["id"]
-    refused(client, trail, data, {"ui.release.other_head"})
+    refused(client, trail, data, {"ui.release.other_head", "ui.release.not_in_plan_state"})
 
 
-# -- E3-4: the --no-commit shape: bound by receipts and plan version, the head labelled as before the change -------
-def test_a_finish_without_a_commit_is_bound_by_receipts_and_plan_version(finished, trail, env, ui_factory, monkeypatch):
-    initial = out(finished, "rev-list", "--max-parents=0", "HEAD")
-    forged = forge_finish(finished, monkeypatch, env, idempotency_key="nc", commit=None, head=initial)
-    client = ui_factory(config=UiConfig(projects=[finished]))
+# -- E3-4: the --no-commit shape: the head is shown as the head before the change ---------------------------------
+def test_a_finish_without_a_commit_is_released_with_the_head_before_the_change(trail, signer, env, ui_factory,
+                                                                               monkeypatch):
+    from aqt_change.finish import finish
+    from aqt_change.ledger import Ledger
+    root = finish_project(env / "nc", env, monkeypatch, finish_it=False)
+    monkeypatch.chdir(root)
+    finish(Ledger.open(root), P, key="nc", summary="done", no_commit=True)
+    monkeypatch.chdir(env)
+    client = ui_factory(config=UiConfig(projects=[root]))
     client.login()
     data = change_of(client)
     plan = data["plan"]
-    assert plan["finish"] == forged["id"] and plan["release"]["state"] == "unreleased"
-    assert plan["finish_record"]["commit"] is None and plan["finish_record"]["head"] == initial
-    assert plan["head"] == out(finished, "rev-parse", "HEAD") != initial          # HEAD is shown beside it
+    assert plan["decision"] == "GO" and plan["release"]["state"] == "unreleased", plan.get("finish_problem")
+    assert plan["finish_record"]["commit"] is None and plan["finish_record"]["head"] == plan["head"]
     app = (Path(__file__).resolve().parents[1] / "src" / "aqt_ui" / "static" / "app.js").read_text()
     assert 't("Head before the change")' in app and "head before the change {before}, HEAD {head}" in app
-    # the same shape after a later commit names receipts the gate no longer counts
-    (finished / "src" / "calc.py").write_text("def add(a, b):\n    return b + a\n")
-    git(finished, "commit", "-qam", "later")
-    rerun(finished, monkeypatch, env)
+    assert client.post("/api/change/0/s01/release", body(data))[0] == 200
+    # after a later commit the receipts the gate counts are others
+    (root / "src" / "calc.py").write_text("def add(a, b):\n    return b + a\n")
+    git(root, "commit", "-qam", "later")
+    rerun(root, monkeypatch, env)
     refused(client, trail, change_of(client))
 
 
@@ -127,7 +132,8 @@ def test_another_projects_finish_is_refused_after_merge_ours(finished, trail, en
     client.login()
     data = change_of(client)
     assert data["plan"]["decision"] == "GO" and data["plan"]["finish"] == theirs["id"]
-    refused(client, trail, data, {"ui.release.other_plan_version", "ui.release.other_receipts"})
+    refused(client, trail, data, {"ui.release.other_plan_version", "ui.release.other_receipts",
+                                  "ui.release.not_in_plan_state"})
     status, other_data, _ = client.get("/api/change/1/s01?fresh=1")
     assert other_data["plan"]["release"]["state"] == "unreleased"
 

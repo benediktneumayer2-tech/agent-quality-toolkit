@@ -76,7 +76,7 @@ def git(root: Path, *args: str) -> None:
     subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, text=True)
 
 
-def finish_project(root: Path, env: Path, monkeypatch) -> Path:
+def finish_project(root: Path, env: Path, monkeypatch, *, finish_it: bool = True, tick: bool = True) -> Path:
     """A Git project at ``root`` whose plan s01 was begun, checked (a passing receipt) and finished: the gate is
     GO and the change.finish record waits for a "released" signature."""
     from aqt_change import plans, receipts
@@ -106,9 +106,11 @@ def finish_project(root: Path, env: Path, monkeypatch) -> Path:
     ledger = Ledger.open(root)
     plans.begin(ledger, P)
     plan = root / P
-    plan.write_text(plan.read_text().replace("- [ ] [T01]", "- [x] [T01]"))
+    if tick:
+        plan.write_text(plan.read_text().replace("- [ ] [T01]", "- [x] [T01]"))
     receipts.run(ledger, [], plan_path=P, all_items=True, echo=False)
-    finish(ledger, P, key="s01-finish", summary="add() done")
+    if finish_it:
+        finish(ledger, P, key="s01-finish", summary="add() done")
     monkeypatch.chdir(env)
     return root
 

@@ -1113,10 +1113,13 @@ function observedText(o) {
 function releaseSection(step, d, p, { onDone, notice }) {
   const release = p.release;
   const fin = p.finish_record || {};
-  if (!p.finish) return step("release", h("p", { class: "muted", text: t("Not finished yet: the change.finish record is written by aqt-change finish.") }));
+  // tasks the accepted plan still has open: seen before anything is signed
+  const open = (p.open_tasks || []).length ? h("div", { class: "flag-box" }, h("p", { class: "flag", text: t("Open tasks in the plan:") }),
+    h("ul", { class: "evidence-list" }, p.open_tasks.map((x) => h("li", {}, h("strong", { text: x.id || "–" }), " ", x.text)))) : null;
+  if (!p.finish) return step("release", open, h("p", { class: "muted", text: t("Not finished yet: the change.finish record is written by aqt-change finish.") }));
   if (p.finish_problem || (release && release.state === "unbound")) {
     // the record the gate names is not tied to this change: nothing to show as released, nothing to sign
-    return step("release", kv([[t("Finish record"), h("code", { text: p.finish })], [t("HEAD now"), p.head ? hashButton(p.head, 40) : "–"]]),
+    return step("release", open, kv([[t("Finish record"), h("code", { text: p.finish })], [t("HEAD now"), p.head ? hashButton(p.head, 40) : "–"]]),
       h("p", { class: "flag", role: "alert" }, stWord("fail", t("not tied to this change")), " ", msgOf(p, "finish_problem")),
       h("p", { class: "small muted", text: t("The finish record that aqt-change's local copy names cannot be released here. It must be this plan's latest change.finish record in the evidence (with a trail, in the trail), the same as the local copy, and a finish of what the gate evaluates now: the accepted plan version, the receipts the gate counts and HEAD (or a commit with HEAD's files). After later changes, finish the change again with aqt-change finish.") }));
   }
@@ -1127,7 +1130,7 @@ function releaseSection(step, d, p, { onDone, notice }) {
     [t("By (as the record says)"), fin.by || "–"], [t("Observed sender"), fin.observed ? observedText(fin.observed) : t("not observed (no trail writer)")],
     fin.commit ? [t("Finished commit"), hashButton(fin.commit, 40)] : [t("Head before the change"), fin.head ? hashButton(fin.head, 40) : "–"],
     [t("HEAD now"), p.head ? [hashButton(p.head, 40), fin.commit ? ` ${sameHead ? t("(the finished commit)") : t("(same files as the finished commit)")}` : ""] : "–"],
-    [t("Hash"), hashButton(fin.sha256 || (release && release.sha256), 16)]])];
+    [t("Hash"), hashButton(fin.sha256 || (release && release.sha256), 16)]]), open];
   if (!d.installed["aqt-signoff"] || (release && release.state === "unavailable")) {
     parts.push(h("p", { class: "small" }, t("aqt-signoff is not installed"), ": ", h("code", { text: "uv pip install -e aqt-signoff" })));
     return step("release", ...parts);

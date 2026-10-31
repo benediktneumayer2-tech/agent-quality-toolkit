@@ -376,6 +376,7 @@ export const DE = {
   "(same files as the finished commit)": "(dieselben Dateien wie der abgeschlossene Commit)",
   "change {plan}, finish record {record}, commit {commit}, HEAD {head}": "Änderung {plan}, Abschlusseintrag {record}, Commit {commit}, HEAD {head}",
   "change {plan}, finish record {record}, head before the change {before}, HEAD {head}": "Änderung {plan}, Abschlusseintrag {record}, HEAD vor der Änderung {before}, HEAD {head}",
+  "Open tasks in the plan:": "Offene Aufgaben im Plan:",
 };
 
 // "Needs you" entries by key: [title, detail]; {name} takes the entry's values, null keeps the
