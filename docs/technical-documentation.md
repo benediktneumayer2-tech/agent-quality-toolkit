@@ -980,19 +980,19 @@ Each package has an offline pytest suite in `<package>/tests/` with synthetic fi
 
 | Suite | Passed | Skipped | Notes |
 |---|---|---|---|
-| aqt-spec | 200 | 0 | Vectors, schemas, catalogues (every cited catalogue ID exists), spec documents agree with the code; Hypothesis property tests for canonical JSON, hashing, chain and signature verification |
-| aqt-trail | 195 | 0 | Writer, server, tamper cases, TSA and test mode, importers, review and profile parameters, enrolment-backed registry keys, ALCOA++, bundles |
-| aqt-signoff | 73 | 0 | Signatures, statuses, replays, counter-signed enrolment (bootstrap, approval, roles, rotation, re-bootstrap and its confirmation, unsigned revocations, replayed requests, one import, export with enrolment evidence), key format, actions, CLI, L1 conformance of its records |
-| aqt-change | 122 | 0 | Plan format, reconciliation, receipts, content fingerprint, hidden changes, ignore rules and the fresh bytecode cache, trail confirmation, project settings and the plan's base commit, finish, gate, hooks, quick start |
+| aqt-spec | 205 | 0 | Message codes (`Text`); vectors, schemas, catalogues (every cited catalogue ID exists), spec documents agree with the code; Hypothesis property tests for canonical JSON, hashing, chain and signature verification |
+| aqt-trail | 200 | 0 | Writer, server, tamper cases, TSA and test mode, importers, review and profile parameters, enrolment-backed registry keys, ALCOA++, bundles |
+| aqt-signoff | 79 | 0 | Signatures, statuses, replays, counter-signed enrolment (bootstrap, approval, roles, rotation, re-bootstrap and its confirmation, unsigned revocations, replayed requests, one import, export with enrolment evidence), key format, actions, CLI, L1 conformance of its records |
+| aqt-change | 124 | 0 | Plan format, reconciliation, receipts, content fingerprint, hidden changes, ignore rules and the fresh bytecode cache, trail confirmation, project settings and the plan's base commit, finish, gate, hooks, quick start |
 | aqt-sensei | 55 | 3 | The skipped tests need real tmux and bubblewrap (opt-in) |
-| aqt-quarantine | 85 | 0 | Detectors, engine, decisions and their replays, enrolment-checked keys, journal problems, Claude Code adapter, payload conformance of every record type |
+| aqt-quarantine | 89 | 0 | Detectors, engine, decisions and their replays, enrolment-checked keys, journal problems, Claude Code adapter, payload conformance of every record type |
 | aqt-validate | 110 | 0 | Statistics against reference values, loaders, detector and reviewer runs |
-| aqt-capa | 23 | 0 | Units, CLI, end to end, signature-based approval |
-| aqt-ui | 93 | 0 | Login, Host, CSRF and Origin, session key, request limits, read-only and peer checks for every decision, substituted content, release only after every page was shown, the record inspector, test mode and review parameters, each decision end to end, German labels, paging and a 50,000-record trail |
+| aqt-capa | 25 | 0 | Units, CLI, end to end, signature-based approval |
+| aqt-ui | 153 | 0 | Queue, case and change pages, Sign released bound to the change's own finish (record, plan version, receipts, HEAD), message codes and the German catalogue; login, Host, CSRF and Origin, session key, request limits, read-only and peer checks for every decision, substituted content, release only after every page was shown, the record inspector, test mode and review parameters, each decision end to end, German labels, paging and a 50,000-record trail |
 | aqt-cli | 55 | 0 | `aqt status` (including the signer check), `aqt setup`, `aqt project init` and `aqt project status` (merging into existing settings, user-level hooks, `--local`, instruction blocks and links, `.aqt/change.toml`, `ui.toml` shapes, no terminal), tool pass-through |
 | demo | 1 | 0 | `examples/demo/test_demo.py`: the full story, 43 expected outcomes |
 
-In total 1012 tests pass: 1011 package tests (including the optional aqt-ui and aqt-cli) plus the demo test. Some tests skip themselves when a tool is missing: `openssl` (aqt-trail token cross-check) and `git` (aqt-change quick start).
+In total 1095 tests pass: 1094 package tests (including the optional aqt-ui and aqt-cli) plus the demo test. Some tests skip themselves when a tool is missing: `openssl` (aqt-trail token cross-check) and `git` (aqt-change quick start).
 
 ### 9.2 Running them
 

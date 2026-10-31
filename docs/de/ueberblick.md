@@ -94,4 +94,4 @@ Installiert wird aus dem Repository (Anleitung im [Benutzerhandbuch](../manual.m
 
 ## Entstehung
 
-Benedikt Neumayer hat das Toolkit mit KI-Coding-Agenten gebaut; Anforderungen, Architektur und Review kamen von ihm. Stand: acht Pakete plus der Befehl `aqt` und die optionale lokale Weboberfläche aqt-ui, 1012 automatisierte Tests, eine Demo mit 43 geprüften Ergebnissen; Linux, Python (Programmiersprache) 3.11–3.13. Lizenzen: Apache-2.0 für den Code, CC BY 4.0 für Spezifikation und Kataloge.
+Benedikt Neumayer hat das Toolkit mit KI-Coding-Agenten gebaut; Anforderungen, Architektur und Review kamen von ihm. Stand: acht Pakete plus der Befehl `aqt` und die optionale lokale Weboberfläche aqt-ui, 1095 automatisierte Tests, eine Demo mit 43 geprüften Ergebnissen; Linux, Python (Programmiersprache) 3.11–3.13. Lizenzen: Apache-2.0 für den Code, CC BY 4.0 für Spezifikation und Kataloge.
