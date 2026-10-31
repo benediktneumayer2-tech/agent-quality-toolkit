@@ -318,6 +318,7 @@ DECISIONS = {
     "capa-approve": ("/api/capa/actions/DEV-0001-A1/approve", {"expected_hash": "sha256:x"}, "signoff.refused"),
     "review": ("/api/trail/review/rv_000000000000/sign", {"head": "sha256:x", "dispositions": {"all": "ok"}},
                "trail.refused"),
+    "release": ("/api/change/0/s01/release", {"record": "rec_x", "sha256": "sha256:x"}, "signoff.refused"),
 }
 
 

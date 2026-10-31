@@ -27,7 +27,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Callable
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from . import __version__
 from .config import UiConfig
@@ -38,7 +38,9 @@ from .views.trail import PAGE
 STATIC = Path(__file__).parent / "static"
 STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
                 ".svg": "image/svg+xml", ".html": "text/html; charset=utf-8"}
-PAGES = {"/", "/trail", "/quarantine", "/changes", "/signatures", "/capa", "/qualifications"}
+PAGES = {"/", "/health", "/trail", "/quarantine", "/changes", "/signatures", "/capa", "/qualifications"}
+# a case page (/case/<case id>) and a change page (/change/<project>/<plan>): the same page shell
+PAGE_ROUTE = re.compile(r"/(case/[A-Za-z0-9._~:%@+-]{1,300}|change/[0-9]{1,4}/[A-Za-z0-9._~%@+-]{1,200})")
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; "
        "connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'")
 MAX_BODY = 64 * 1024
@@ -315,7 +317,7 @@ class Handler(BaseHTTPRequestHandler):
             if method == "GET" and path.startswith("/static/"):
                 self.static(path[len("/static/"):])
                 return
-            if method == "GET" and path in PAGES:
+            if method == "GET" and (path in PAGES or PAGE_ROUTE.fullmatch(path)):
                 self.static("index.html")         # the page shell holds no data; the API needs the session
                 return
             if not path.startswith("/api/"):
@@ -458,6 +460,13 @@ class Handler(BaseHTTPRequestHandler):
                 shown_record=str(body.get("record") or ""), shown_sha256=str(body.get("sha256") or ""),
                 reason=str(body.get("reason") or ""), passphrase=self._secret or "",
                 signer_id=body.get("signer_id"), human_check=check))
+        elif len(route) == 4 and route[:2] == ("GET", "change"):
+            self.send_json(200, app.changes.change(route[2], unquote(route[3]), fresh=query.get("fresh") == "1"))
+        elif len(route) == 5 and route[:2] == ("POST", "change") and route[4] == "release":
+            self.decide(lambda body, check: app.changes.sign_release(
+                route[2], unquote(route[3]), shown_record=str(body.get("record") or ""),
+                shown_sha256=str(body.get("sha256") or ""), reason=str(body.get("reason") or ""),
+                passphrase=self._secret or "", signer_id=body.get("signer_id"), human_check=check))
         elif route == ("GET", "signatures"):
             self.send_json(200, app.signatures().registry())
         elif route == ("GET", "signatures", "verify"):
