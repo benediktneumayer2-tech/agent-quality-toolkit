@@ -54,8 +54,10 @@ class CapaView:
     def counts(self) -> dict:
         """Cheap counts for the home queue (no scan)."""
         deviations = self.capa.list()
-        return {"candidates": len(self.capa.candidates()), "overdue": sum(1 for d in deviations if d.get("overdue")),
-                "open": sum(1 for d in deviations if d.get("state") != "closed")}
+        candidates = self.capa.candidates()
+        times = sorted(str(c.get("time")) for c in candidates if c.get("time"))
+        return {"candidates": len(candidates), "overdue": sum(1 for d in deviations if d.get("overdue")),
+                "open": sum(1 for d in deviations if d.get("state") != "closed"), "oldest": times[0] if times else None}
 
     def deviation(self, dev_id: str) -> dict:
         from aqt_capa import CapaError
