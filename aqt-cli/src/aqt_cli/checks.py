@@ -3,7 +3,8 @@
 Every entry of ``CHECKS`` has a test (result ok / warn / fail / skip, a one-line explanation
 and the fix as a command) and, where the toolkit can do the fix itself, a step. ``aqt status``
 runs the tests; ``aqt setup`` runs them and applies the steps. Both use this one list, so the
-status and the setup cannot drift apart.
+status and the setup cannot drift apart. ``project.PROJECT_CHECKS`` does the same for one
+repository (``aqt project status`` / ``aqt project init``).
 
 Steps never overwrite keys, the signer registry or an existing configuration file. The one
 personal step (enrolling a signer) always leaves the passphrase to aqt-signoff's own prompt.
@@ -113,8 +114,12 @@ class Check:
     id: str
     test: Callable[[Context], Result]
     step: Callable[[Context], None] | None = None
-    does: str = ""            # what the step does, as aqt setup lists it
+    does: str | Callable[[Context], str] = ""   # what the step does, as aqt setup lists it
     personal: bool = False    # needs the person: an ID to choose and a passphrase to type
+    part_of: str | None = None   # the step of this check id also does this one (listed once)
+
+    def describe(self, ctx: Context) -> str:
+        return self.does(ctx) if callable(self.does) else self.does
 
 
 # -- helpers ---------------------------------------------------------------------------------

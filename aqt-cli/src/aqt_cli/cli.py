@@ -3,6 +3,10 @@
   aqt status [--json] [--verify]     is everything in order? one verdict, and the fix for each problem
   aqt setup [--yes] [--id ID --name NAME --role ROLE]
                                      first-time setup, step by step; safe to rerun
+  aqt project status [DIR] [--json]  what AQT needs in this repository, and the fix for each gap
+  aqt project init [DIR] [--yes] [--local]
+                                     set this repository up (hooks, deny rules, agent instructions,
+                                     aqt-change settings); safe to rerun, never commits
   aqt <tool> ARGS...                 run a tool with these arguments: trail, signoff, change, sensei,
                                      quarantine, validate, capa, ui, spec (or evidence)
 
@@ -15,7 +19,7 @@ import argparse
 import json
 import sys
 
-from . import __version__
+from . import __version__, project
 from .checks import CHECKS, FAIL, Context, StepSkipped, needs_step, run_check, run_checks, verdict
 from .tools import TOOLS, run_tool
 
@@ -24,10 +28,10 @@ def _exit(results) -> int:
     return 1 if verdict(results) == FAIL else 0
 
 
-def print_status(results, say=print) -> None:
+def print_status(results, say=print, title: str = "aqt status") -> None:
     counts = {kind: sum(1 for r in results if r.result == kind) for kind in ("fail", "warn")}
     detail = ", ".join(f"{n} {'failed' if kind == 'fail' else 'warning(s)'}" for kind, n in counts.items() if n)
-    say(f"aqt status: {verdict(results).upper()}" + (f" ({detail})" if detail else ""))
+    say(f"{title}: {verdict(results).upper()}" + (f" ({detail})" if detail else ""))
     for result in results:
         say(f"  {result.result:<5} {result.id:<15} {result.explanation}")
         if result.fix and result.result != "ok":
@@ -47,17 +51,20 @@ def _capital(text: str) -> str:
     return text[:1].upper() + text[1:]
 
 
-def setup(ctx: Context) -> int:
+def apply_steps(ctx: Context, checks, name: str, title: str) -> int:
     """Show what is missing, apply each step (after confirmation unless --yes), then show the status."""
-    initial = dict(zip((check.id for check in CHECKS), run_checks(ctx)))
-    todo = [check for check in CHECKS if needs_step(check, initial[check.id])]
-    if todo:
-        ctx.say(f"aqt setup: {len(todo)} step(s) to do")
-        for check in todo:
-            ctx.say(f"  - {check.does}" + ("  [needs you]" if check.personal else ""))
+    initial = dict(zip((check.id for check in checks), run_checks(ctx, checks)))
+    todo = [check for check in checks if needs_step(check, initial[check.id])]
+    listed = [check for check in todo if not any(other.id == check.part_of for other in todo)]
+    if listed:
+        ctx.say(f"{name}: {len(listed)} step(s) to do")
+        for check in listed:
+            ctx.say(f"  - {check.describe(ctx)}" + ("  [needs you]" if check.personal else ""))
+        if not ctx.yes and not ctx.interactive and any(not check.personal for check in listed):
+            ctx.say("no terminal to confirm the steps: they are skipped; rerun with --yes to apply them")
     else:
-        ctx.say("aqt setup: nothing to do")
-    for check in CHECKS:
+        ctx.say(f"{name}: nothing to do")
+    for check in checks:
         if check.step is None:
             continue
         result = run_check(ctx, check)      # fresh: an earlier step may have done this one already
@@ -65,10 +72,13 @@ def setup(ctx: Context) -> int:
             ctx.say(f"{check.id}: yours to do: {result.fix}")
         if not needs_step(check, result):
             continue
-        question = f"{_capital(result.explanation)}. {_capital(check.does)}?"
-        if not check.personal and not ctx.yes and not ctx.confirm(question):
-            ctx.say(f"{check.id}: skipped")
-            continue
+        if not check.personal and not ctx.yes:
+            if not ctx.interactive:
+                ctx.say(f"{check.id}: skipped (no terminal; --yes applies it)")
+                continue
+            if not ctx.confirm(f"{_capital(result.explanation)}. {_capital(check.describe(ctx))}?"):
+                ctx.say(f"{check.id}: skipped")
+                continue
         try:
             check.step(ctx)
         except StepSkipped as skipped:
@@ -78,9 +88,13 @@ def setup(ctx: Context) -> int:
         else:
             ctx.say(f"{check.id}: done")
     ctx.say("")
-    results = run_checks(ctx)
-    print_status(results, ctx.say)
+    results = run_checks(ctx, checks)
+    print_status(results, ctx.say, title)
     return _exit(results)
+
+
+def setup(ctx: Context) -> int:
+    return apply_steps(ctx, CHECKS, "aqt setup", "aqt status")
 
 
 def cmd_setup(args) -> int:
@@ -89,11 +103,37 @@ def cmd_setup(args) -> int:
     return setup(ctx)
 
 
+def project_init(ctx: project.ProjectContext) -> int:
+    return apply_steps(ctx, project.PROJECT_CHECKS, "aqt project init", "aqt project status")
+
+
+def _project_context(args, **kw) -> project.ProjectContext:
+    root, git = project.resolve_root(args.dir)
+    return project.ProjectContext(root=root, git=git, interactive=sys.stdin.isatty(), **kw)
+
+
+def cmd_project(args) -> int:
+    try:
+        if args.project_command == "init":
+            return project_init(_project_context(args, yes=args.yes, local=args.local))
+        ctx = _project_context(args)
+    except (OSError, ValueError) as error:
+        print(f"aqt project: {error}", file=sys.stderr)
+        return 2
+    results = run_checks(ctx, project.PROJECT_CHECKS)
+    if args.json:
+        print(json.dumps({"verdict": verdict(results), "project": str(ctx.root),
+                          "checks": [r.as_dict() for r in results]}, indent=2))
+    else:
+        print_status(results, title="aqt project status")
+    return _exit(results)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="aqt", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--version", action="version", version=f"aqt (agent-quality-toolkit) {__version__}")
-    sub = parser.add_subparsers(dest="command", metavar="{status,setup,<tool>}")
+    sub = parser.add_subparsers(dest="command", metavar="{status,setup,project,<tool>}")
     p = sub.add_parser("status", help="one verdict for the whole setup, with the fix for each problem")
     p.add_argument("--json", action="store_true", help="machine-readable output")
     p.add_argument("--verify", action="store_true", help="verify the whole trail (slower on large trails)")
@@ -105,6 +145,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--name", help="your printed name")
     p.add_argument("--role", help="your role, e.g. quality-manager or developer")
     p.set_defaults(func=cmd_setup)
+    p = sub.add_parser("project", help="what AQT needs in one repository: status, or init to set it up")
+    project_sub = p.add_subparsers(dest="project_command", required=True, metavar="{status,init}")
+    p = project_sub.add_parser("status", help="what is in place in this repository, and the fix for each gap")
+    p.add_argument("dir", nargs="?", help="the repository (default: the current directory)")
+    p.add_argument("--json", action="store_true", help="machine-readable output")
+    p.set_defaults(func=cmd_project)
+    p = project_sub.add_parser("init", help="set this repository up, step by step; safe to rerun; never commits")
+    p.add_argument("dir", nargs="?", help="the repository (default: the current directory)")
+    p.add_argument("--yes", action="store_true", help="apply every step without asking")
+    p.add_argument("--local", action="store_true",
+                   help="write the Claude Code hooks and deny rules into .claude/settings.local.json")
+    p.set_defaults(func=cmd_project)
     return parser
 
 
