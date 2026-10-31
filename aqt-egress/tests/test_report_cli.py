@@ -118,3 +118,47 @@ def test_x2_11_records_from_another_sender_are_unverified():
     assert [d["host"] for d in second["destinations"]] == ["api.example", "collector.example"]
     assert second["unverified"] == [{"id": forged["id"], "type": "egress.request", "sender_pid": 777}]
     assert "not from this session's proxy process" in render(report)
+
+
+def _observed(pid, start=100, chain=("python3", "bash"), extra=()):
+    processes = [{"pid": pid, "comm": chain[0], "start_time": start}, *extra]
+    return {"pid": pid, "via": "socket", "process_chain": [p["comm"] for p in processes], "processes": processes}
+
+
+def test_n3_drained_duplicate_and_box_records_do_not_count():
+    launcher = _observed(4242)
+    records = sample()
+    for record in records:
+        record["observed"] = launcher
+    box_process = _observed(777, 500, ("curl",), extra=[{"pid": 5000, "comm": "bwrap", "start_time": 400},
+                                                         {"pid": 4242, "comm": "python3", "start_time": 100}])
+    drained_from_box = request("egs_b", "drained.example", 443, "2026-10-31T10:00:05.000000Z")
+    drained_from_box["observed"] = {"via": "spool", "process_chain": [], "processes": [], "drained_by": box_process}
+    drained_shared = request("egs_b", "shared.example", 443, "2026-10-31T10:00:06.000000Z")
+    drained_shared["observed"] = {"via": "spool", "process_chain": [], "processes": []}
+    second_start = rec("egress.session", "started", {"session": "egs_b"}, "2026-10-31T10:00:07.000000Z")
+    second_start["observed"] = {"via": "spool", "process_chain": [], "processes": []}
+    forged = request("egs_b", "forged.example", 443, "2026-10-31T10:00:08.000000Z")
+    forged["observed"] = box_process
+    opened = rec("egress.request", "opened", {"session": "egs_b", "mode": "observe", "decision": "allowed",
+                                              "destination": {"host": "x.example", "port": 443}},
+                 "2026-10-31T10:00:09.000000Z")
+    opened["observed"] = launcher
+    closing = request("egs_b", "x.example", 443, "2026-10-31T10:00:10.000000Z")
+    closing["links"] = [{"rel": "opened", "ref": opened["id"]}]
+    closing["observed"] = box_process                    # pretends to complete the real opened record
+    drained_ok = request("egs_b", "late.example", 443, "2026-10-31T10:00:11.000000Z")
+    drained_ok["observed"] = {"via": "spool", "process_chain": [], "processes": [], "drained_by": launcher}
+    report = build(records + [drained_from_box, drained_shared, second_start, forged, opened, closing, drained_ok])
+    second = report["sessions"][1]
+    hosts = {d["host"] for d in second["destinations"]}
+    assert hosts == {"api.example", "collector.example", "late.example"}
+    assert {u["id"] for u in second["unverified"]} == {drained_from_box["id"], drained_shared["id"],
+                                                        second_start["id"], forged["id"], closing["id"]}
+    assert second["unfinished"] == 1 and second["checked"] is True
+
+
+def test_n3_sessions_without_a_trail_writer_are_shown_unchecked():
+    report = build(sample())
+    assert all(item["checked"] is False and not item["unverified"] for item in report["sessions"])
+    assert "not checked: no trail writer observed these records" in render(report)

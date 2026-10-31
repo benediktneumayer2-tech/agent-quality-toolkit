@@ -294,3 +294,31 @@ def test_x2_13_a_failure_before_release_ends_the_box(env, monkeypatch):
     assert not marker.exists()
     left = subprocess.run(["pgrep", "-f", str(marker)], capture_output=True, text=True)
     assert left.stdout.strip() == ""
+
+
+@pytest.mark.skipif(bool(NEEDS), reason=f"needs {', '.join(NEEDS)} in the box")
+def test_launcher_killed_before_release_never_starts_the_command(env):
+    marker = env / "gate.marker"
+    script = (
+        "import time, aqt_egress.run as r\n"
+        "from pathlib import Path\n"
+        "from aqt_egress.settings import Settings\n"
+        "real = r.open_listeners\n"
+        "def slow(*a, **k):\n"
+        "    Path(%r).write_text('waiting')\n"
+        "    time.sleep(60)\n"
+        "    return real(*a, **k)\n"
+        "r.open_listeners = slow\n"
+        "r.run(['sh', '-c', 'touch %s'], project=Path(%r), settings=Settings())\n"
+    ) % (str(env / "waiting"), marker, str(env))
+    launcher = subprocess.Popen([sys.executable, "-c", script])
+    deadline = time.monotonic() + 30
+    while not (env / "waiting").exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert (env / "waiting").exists(), "the launcher did not reach the box setup"
+    launcher.kill()                                   # SIGKILL: no cleanup runs in the launcher
+    launcher.wait(10)
+    time.sleep(1.0)
+    assert not marker.exists()
+    left = subprocess.run(["pgrep", "-f", str(marker)], capture_output=True, text=True)
+    assert left.stdout.strip() == ""

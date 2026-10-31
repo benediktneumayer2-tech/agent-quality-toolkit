@@ -67,6 +67,13 @@ STREAM_PAUSE = 0.4
 
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+    seen: list[str] = []                      # paths the upstream received (N2: nothing on a closed connection)
+
+    def parse_request(self):
+        ok = super().parse_request()
+        if ok:
+            Handler.seen.append(self.path)
+        return ok
 
     def log_message(self, *args):
         pass

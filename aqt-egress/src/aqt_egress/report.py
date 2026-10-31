@@ -2,8 +2,9 @@
 
 Destinations are where the proxy connected; a different Host header or TLS server name the client
 claimed is counted as ``claimed_other``. Only records the trail writer observed coming from the
-session's own proxy process count: an ``egress.*`` record of a session sent by another process (for
-example from inside the box, through the trail socket) is listed as ``unverified`` and left out.
+session's own proxy process (or drained by a launcher or a process outside any box) count; see
+``verify``. Other ``egress.*`` records of a session (for example sent or drained from inside the box
+through the trail socket) are listed as ``unverified`` and left out.
 """
 
 from __future__ import annotations
@@ -40,26 +41,71 @@ def chain_text(process: dict | None) -> str:
     return " < ".join(entry.get("comm", "?") for entry in chain)
 
 
-def _sender(record: dict):
-    return (record.get("observed") or {}).get("pid")
+def _who(observed: dict | None) -> tuple | None:
+    """(pid, start time) of a sender the trail writer observed, or None."""
+    if not isinstance(observed, dict) or not observed.get("pid"):
+        return None
+    processes = observed.get("processes") or [{}]
+    return observed["pid"], processes[0].get("start_time")
 
 
-def build(records, *, session: str | None = None, since: str | None = None) -> dict:
-    records = [record for record in records if record.get("type") in TYPES]
-    launchers = {record["data"].get("session"): _sender(record) for record in records
-                 if record["type"] == "egress.session" and record.get("action") == "started"
-                 and isinstance(record.get("data"), dict)}
+def _boxed(observed: dict, launchers: set) -> bool:
+    """The sender runs below an aqt-egress launcher (inside its box), or below any bubblewrap."""
+    ancestors = (observed.get("processes") or [])[1:]
+    return any((entry.get("pid"), entry.get("start_time")) in launchers for entry in ancestors) \
+        or "bwrap" in (observed.get("process_chain") or [])[1:]
+
+
+def verify(records: list[dict]) -> tuple[list[dict], dict[str, list], set[str]]:
+    """(records that count, unverified records per session, sessions no writer observed at all).
+
+    A session's launcher is the sender the trail writer observed for its first ``started`` record, if
+    that sender does not itself run below another launcher (inside a box). A record counts when the
+    writer observed it from that launcher, or when it was drained from a spool by a launcher or by a
+    process outside any box (``observed.drained_by``). Anything else (another sender, a drain from
+    inside a box, the shared spool drained without a known drainer, a second ``started`` record) is
+    listed as unverified and left out. Sessions none of whose records carry an observation (no trail
+    writer was used) cannot be checked and are shown as such."""
+    started = [r for r in records if r["type"] == "egress.session" and r.get("action") == "started"]
+    candidates = {_who(r.get("observed")) for r in started} - {None}
+    launchers = {_who(r["observed"]) for r in started if _who(r.get("observed"))
+                 and not _boxed(r["observed"], candidates - {_who(r["observed"])})}
+    first: dict[str, dict] = {}
+    for record in started:
+        sid = (record.get("data") or {}).get("session")
+        if sid not in first and _who(record.get("observed")) in launchers:
+            first[sid] = record
+    observed_sessions = {(r.get("data") or {}).get("session") for r in records if "observed" in r}
     unverified: dict[str, list] = {}
     kept = []
     for record in records:
         sid = (record.get("data") or {}).get("session")
-        launcher, sender = launchers.get(sid), _sender(record)
-        if (launcher and sender and sender != launcher) or record.get("actor", {}).get("id") != "service:aqt-egress":
-            unverified.setdefault(sid, []).append({"id": record.get("id"), "type": record.get("type"),
-                                                   "sender_pid": sender})
-        else:
+        observed = record.get("observed")
+        ok = record.get("actor", {}).get("id") == "service:aqt-egress"
+        if ok and sid in observed_sessions:
+            launcher = _who(first[sid]["observed"]) if sid in first else None
+            sender, drainer = _who(observed), (observed or {}).get("drained_by")
+            if record["type"] == "egress.session" and record.get("action") == "started":
+                ok = first.get(sid) is record
+            elif sender:
+                ok = sender == launcher if launcher else (sender in launchers or not _boxed(observed, launchers))
+            elif isinstance(drainer, dict) and _who(drainer):
+                ok = _who(drainer) in launchers | {launcher} or not _boxed(drainer, launchers)
+            else:
+                ok = False
+        if ok:
             kept.append(record)
-    records = kept
+        else:
+            unverified.setdefault(sid, []).append({"id": record.get("id"), "type": record.get("type"),
+                                                   "sender_pid": (observed or {}).get("pid")
+                                                   or ((observed or {}).get("drained_by") or {}).get("pid")})
+    unchecked = {(r.get("data") or {}).get("session") for r in records} - observed_sessions
+    return kept, unverified, unchecked
+
+
+def build(records, *, session: str | None = None, since: str | None = None) -> dict:
+    records = [record for record in records if record.get("type") in TYPES]
+    records, unverified, unchecked = verify(records)
     opened = {record["id"]: record for record in records
               if record["type"] == "egress.request" and record.get("action") == "opened"}
     completed = {link.get("ref") for record in records if record.get("action") == "observed"
@@ -75,7 +121,8 @@ def build(records, *, session: str | None = None, since: str | None = None) -> d
 
     def entry(sid: str) -> dict:
         return sessions.setdefault(sid, {"session": sid, "requests": 0, "destinations": {}, "lookups": [],
-                                         "unverified": unverified.get(sid, []), "unfinished": 0})
+                                         "unverified": unverified.get(sid, []), "unfinished": 0,
+                                         "checked": sid not in unchecked})
 
     for record in records:
         data = record.get("data", {})
@@ -118,6 +165,9 @@ def build(records, *, session: str | None = None, since: str | None = None) -> d
             if dest.get("via") and dest["via"] not in target["via"]:
                 target["via"].append(dest["via"])
             target["first_time"] = min(target["first_time"], record["time"])
+    for sid in unverified:
+        if sid:
+            entry(sid)
     result = []
     for item in sessions.values():
         if session and not item["session"].startswith(session):
@@ -170,6 +220,8 @@ def render(report: dict) -> str:
             lines.append("  no end record: still running, or the proxy stopped before it could write one")
         if item["unfinished"]:
             lines.append(f"  {item['unfinished']} connection(s) opened without a completing record")
+        if not item["checked"]:
+            lines.append("  not checked: no trail writer observed these records (fallback file)")
         if item["unverified"]:
             lines.append(f"  {len(item['unverified'])} record(s) not from this session's proxy process, left out: "
                          + ", ".join(entry["id"] or "?" for entry in item["unverified"][:5]))

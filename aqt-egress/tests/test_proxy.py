@@ -342,6 +342,7 @@ def test_x2_12_a_failing_hook_still_leaves_a_record(make_proxy, monkeypatch):
         return real(*args)
     monkeypatch.setattr(llm_module, "provider", flaky)
     proxy.opener().open("http://plain.test/flaky").read()
+    assert len(requests_of(proxy.records())) == 1          # its record is written before the next step
     monkeypatch.setattr(proxy.addon, "_emit_http", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("emit")))
     proxy.opener().open("http://plain.test/minimal").read()
     records = requests_of(proxy.records())
@@ -349,3 +350,47 @@ def test_x2_12_a_failing_hook_still_leaves_a_record(make_proxy, monkeypatch):
     assert records[0]["data"]["path"] == "/flaky"
     assert records[1]["data"]["error"].startswith("aqt-egress could not record this exchange fully")
     assert records[1]["data"]["destination"]["host"] == "plain.test"
+
+
+# -- review recheck (N) --------------------------------------------------------------------------
+def test_n1_a_claimed_provider_host_does_not_hide_the_excerpt(make_proxy):
+    proxy = make_proxy()
+    proxy.opener().open(Request("http://plain.test/v1/messages", data=b"MARKER-OUTBOUND-DATA",
+                                headers={"Host": "api.anthropic.com"})).read()
+    [record] = requests_of(proxy.records())
+    data = record["data"]
+    assert "llm" not in data and data["request"]["excerpt"] == "MARKER-OUTBOUND-DATA"
+    assert data["destination"]["host"] == "plain.test" and data["destination"]["host_header"] == "api.anthropic.com"
+
+
+def test_n2_no_opened_record_no_traffic(make_proxy, monkeypatch):
+    from conftest import Handler
+    proxy = make_proxy()
+    real = proxy.writer.append_now
+    monkeypatch.setattr(proxy.writer, "append_now",
+                        lambda record: False if record["action"] == "opened" else real(record))
+    Handler.seen.clear()
+    with pytest.raises((urllib.error.URLError, ConnectionError, OSError)):
+        proxy.opener().open(Request("http://plain.test/never", data=b"x"), timeout=10).read()
+    time.sleep(0.5)
+    assert "/never" not in Handler.seen and proxy.addon.counts["unrecorded_closed"] == 1
+    [record] = requests_of(proxy.records())
+    assert record["data"]["decision"] == "refused" and record["data"]["reason_code"] == "record-unavailable"
+
+
+def test_n4_a_local_endpoint_through_the_proxy_is_structure_only(make_proxy, upstream):
+    settings = Settings(local_endpoints=[("127.0.0.1", upstream.http_port)])
+    proxy = make_proxy(settings=settings, test_hosts={})
+    proxy.opener().open(Request(f"http://127.0.0.1:{upstream.http_port}/v1/chat/completions",
+                                data=b'{"model": "local-7b", "messages": [{"role": "user", "content": "SECRET"}]}')).read()
+    [record] = requests_of(proxy.records())
+    assert record["data"]["llm"]["provider"] == "local" and record["data"]["llm"]["model"] == "local-7b"
+    assert "excerpt" not in record["data"]["request"] and record["data"]["decision"] == "allowed"
+
+
+def test_x2_06_residual_an_empty_refresh_keeps_the_known_addresses(make_proxy):
+    proxy = make_proxy(test_hosts={}, own_addresses={"192.0.2.77"})
+    proxy.addon.refresh_addresses(set())
+    proxy.addon.refresh_addresses({"198.51.100.9"})
+    assert proxy.addon.own_addresses == {"192.0.2.77", "198.51.100.9"}
+    assert proxy.addon._outside("192.0.2.77", 80) == "host-local"

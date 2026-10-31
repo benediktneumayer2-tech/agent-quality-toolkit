@@ -63,16 +63,24 @@ Python `urllib` and Node `fetch` (Node 22 honours the proxy variables with `NODE
 
 ## After the review (X2)
 
-- **Killing a box before release.** bwrap's first process outlives the outer bwrap while it waits on the block
-  pipe (its parent-death signal is set only later), and the end of the pipe starts the command. A setup failure
-  therefore kills that process by its pid first, then bwrap, then closes the pipe (`test_x2_13`). If the launcher
-  itself is killed before release, the command can still start, without any network.
+- **Starting the command.** bwrap's `--block-fd` starts the command on the end of the pipe too, and bwrap's first
+  process outlives the outer bwrap until then (its parent-death signal is set only later), so a launcher killed
+  before release used to let the command start (without any network). The box's first command is now a start
+  gate (`/bin/sh`) that reads the pipe and starts the real command only on the exact random token the launcher
+  writes; the end of the pipe makes it exit (`test_launcher_killed_before_release_never_starts_the_command`).
+  A setup failure kills the first process by its pid, then bwrap, then closes the pipe (`test_x2_13`), and
+  SIGTERM/SIGHUP handlers are installed when `run` starts, so a terminated launcher ends its box too.
 - **cgroups.** `/sys/fs/cgroup` is bound read-only: the box shares the user's cgroups with the proxy and could
   otherwise freeze or kill it.
 - **Tools and code.** bwrap, nft and ip come only from root-owned system folders; the interpreter, the packages
   and (for editable installs) the sources aqt-egress runs from are read-only in the box.
 - **Host addresses.** Besides loopback, every address of the host's interfaces (from `ip -j addr`, refreshed every
-  10 seconds) is refused, unless it is a configured local endpoint.
+  10 seconds) is refused, unless it is a configured local endpoint. A refresh only adds addresses: an empty or
+  failed lookup never switches the refusal off.
+- **What starts aqt-egress.** Its interpreter, packages and sources are read-only in the box, but not the command
+  found through `PATH` (for example a shim in `~/.local/bin`), nor, with `pip install --user`, the other packages
+  and `.pth` files in the user site folder. Install it into a venv (or with `uv tool install`) and start it by its
+  full path.
 
 ## Side effects of the empty `/run`
 

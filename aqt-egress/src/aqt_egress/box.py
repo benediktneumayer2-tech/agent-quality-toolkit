@@ -2,7 +2,7 @@
 
 ``bwrap`` gets new user, network, PID and IPC namespaces, ``--disable-userns`` (no nested user
 namespaces, so no ``unshare`` inside), ``--die-with-parent``, ``--info-fd`` (the launcher learns
-the box's first process) and ``--block-fd`` (the command starts only after the launcher has set
+the box's first process) and a start gate (the command starts only after the launcher has set
 up the box's network and opened the listeners in it, see ``netns``).
 
 Files stay as they are: ``/`` is bound read-write, so the user's home and the agents'
@@ -44,6 +44,9 @@ from .settings import config_home, egress_state
 BOX_DIR = "/run/aqt-egress"
 SYSTEM_BUNDLES = ("/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt", "/etc/ssl/cert.pem")
 CA_VARIABLES = ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "GIT_SSL_CAINFO", "PIP_CERT")
+# The start gate, the box's first command: it starts the real command only on the exact token from the
+# launcher. The end of the pipe (a launcher killed before release) is not a start: the gate exits.
+GATE = 'IFS= read -r go < "/proc/self/fd/$1" && [ "$go" = "$2" ] || exit 125; shift 2; exec "$@"'
 
 
 class BoxUnavailable(RuntimeError):
@@ -165,7 +168,7 @@ def _under_tmp(path: Path) -> bool:
 
 
 def bwrap_argv(command: list[str], *, project: Path, public: dict[str, Path], info_fd: int,
-               block_fd: int, private_tmp: bool = False) -> tuple[list[str], dict]:
+               block_fd: int, token: str = "go", private_tmp: bool = False) -> tuple[list[str], dict]:
     """The bwrap command line and the facts about it (for the session record)."""
     bwrap = bwrap_path()
     if not bwrap:
@@ -211,7 +214,8 @@ def bwrap_argv(command: list[str], *, project: Path, public: dict[str, Path], in
     new_session = _legacy_tiocsti()
     if new_session:
         argv.append("--new-session")
-    argv += ["--chdir", str(project), "--info-fd", str(info_fd), "--block-fd", str(block_fd), "--", *command]
+    argv += ["--chdir", str(project), "--info-fd", str(info_fd), "--", "/bin/sh", "-c", GATE, "aqt-egress-gate",
+             str(block_fd), token, *command]
     facts = {"bwrap": bwrap_version(), "tools": tool_facts(), "kernel": platform.release(), "hidden": hidden,
              "read_only": read_only,
              "run": "empty tmpfs", "tmp": "private" if private_tmp else "shared", "new_session": new_session}
@@ -225,9 +229,10 @@ class BoxProcess:
                  private_tmp: bool = False):
         info_r, info_w = os.pipe()
         block_r, block_w = os.pipe()
+        self._token = os.urandom(16).hex()
         try:
             argv, self.facts = bwrap_argv(command, project=project, public=public, info_fd=info_w,
-                                          block_fd=block_r, private_tmp=private_tmp)
+                                          block_fd=block_r, token=self._token, private_tmp=private_tmp)
             self.process = subprocess.Popen(argv, pass_fds=(info_w, block_r), env=env)
         except BaseException:
             for fd in (info_r, info_w, block_r, block_w):
@@ -258,14 +263,14 @@ class BoxProcess:
 
     def release(self) -> None:
         """Let the command start."""
-        os.write(self._block, b"go")
+        os.write(self._block, self._token.encode() + b"\n")
         os.close(self._block)
         self._block = None
 
     def kill(self) -> None:
-        # The box's first process outlives the outer bwrap while it waits on the block pipe (its
-        # parent-death signal is set only afterwards), and the pipe's end would start the command:
-        # kill it by its pid first, then bwrap, and only then close the pipe.
+        # The box's first process outlives the outer bwrap until the command starts (its parent-death
+        # signal is set only then); the gate would exit on the pipe's end anyway, but kill it by its pid
+        # first, then bwrap, and only then close the pipe.
         init_pid = getattr(self, "init_pid", None)
         if init_pid:
             try:

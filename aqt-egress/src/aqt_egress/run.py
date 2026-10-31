@@ -46,9 +46,28 @@ def _log_to(path: Path):
     return logging.getLogger("aqt_egress").warning
 
 
+class Terminated(SystemExit):
+    """SIGTERM or SIGHUP before the proxy took over the signals: end the box, then exit."""
+
+
+def _terminate(signum, _frame):
+    raise Terminated(128 + signum)
+
+
 def run(command: list[str], *, project: Path, settings: Settings, private_tmp: bool = False, say=print) -> int:
     if not command:
         raise ValueError("no command given (aqt egress run -- COMMAND ...)")
+    # from the start: a SIGTERM/SIGHUP while the box is being set up ends the box (the except below),
+    # instead of killing this process with no cleanup
+    previous = {signum: signal.signal(signum, _terminate) for signum in (signal.SIGTERM, signal.SIGHUP)}
+    try:
+        return _run(command, project=project, settings=settings, private_tmp=private_tmp, say=say)
+    finally:
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
+
+
+def _run(command: list[str], *, project: Path, settings: Settings, private_tmp: bool, say) -> int:
     project = project.resolve()
     facts_project = project_settings(project)
     session = "egs_" + new_id()[4:]
@@ -152,7 +171,7 @@ async def _serve(box: BoxProcess, sockets: dict, addon: Egress, ca_dir: Path, up
         while True:
             await asyncio.sleep(UNCLAIMED_S / 3)
             addon.flush_lookups(UNCLAIMED_S)
-            addon.own_addresses = await loop.run_in_executor(None, host_addresses)   # a VPN may have come up
+            addon.refresh_addresses(await loop.run_in_executor(None, host_addresses))   # a VPN may have come up
 
     flusher = asyncio.create_task(flush())
     box.release()

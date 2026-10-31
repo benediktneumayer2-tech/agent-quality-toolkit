@@ -36,3 +36,8 @@ First slice of the outbound checkpoint: observe and record (nothing is blocked).
   the host's interface addresses are refused like loopback (`host-local`); attribution matches both socket ends
   and reports `shared` holders; non-WebSocket upgrades are recorded; test options are recorded; the report skips
   records from other senders; a setup failure kills the box before its command starts; DNS names keep every byte.
+- Recheck fixes: LLM handling is decided from where the proxy connected (and local endpoints on every path), not
+  from Host or SNI; a connection whose `opened` record cannot be written is closed unused; the report verifies
+  senders against the session's launcher (drained, duplicate and box-sent records are unverified); address
+  refreshes only add; the command starts on an explicit token from the launcher, and a killed launcher never
+  releases it.

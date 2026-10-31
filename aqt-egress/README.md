@@ -89,7 +89,9 @@ What it gives you:
 - Every connection that leaves the box goes through the proxy and is recorded with the sending process; direct connections to IP addresses on any port and DNS queries to outside resolvers are caught as well (where nftables works).
 - The box cannot create user namespaces, change its firewall, see or signal the proxy, or read the CA key and the body store.
 - The proxy never connects to the host itself for the box: neither its loopback nor any address of its interfaces (LAN, VPN, bridges), except configured local endpoints. Such requests are refused and recorded (`host-loopback`, `host-local`); the box's `localhost` is its own.
-- A record exists before data leaves: each upstream connection is recorded as `opened` before anything is sent on it, so a proxy that dies mid-exchange still leaves the destination; a failing hook is counted and leaves a minimal record. `aqt egress report` counts only records the trail writer saw coming from the session's own proxy process and lists others as unverified.
+- A record exists before data leaves: each upstream connection is recorded as `opened` before anything is sent on it, so a proxy that dies mid-exchange still leaves the destination; if that record cannot be written, the connection is closed unused (`record-unavailable`). A failing hook is counted and leaves a minimal record.
+- `aqt egress report` counts only records the trail writer observed coming from the session's own launcher (the sender of its first `started` record), or drained from a spool by a launcher or by a process outside any box. Records sent or drained from inside a box, records from the shared spool without a known drainer and second `started` records are listed as unverified and left out. Sessions recorded without a trail writer are shown as not checked.
+- Whether a request is an LLM request (structure only, no excerpt, no arguments) is decided by where the proxy connected, never by the Host header or TLS server name the client sends; a configured local endpoint counts as LLM on every path.
 
 What it does **not** do:
 - **Block anything.** This stage observes. Holding what the task does not explain is a later stage.
@@ -99,7 +101,7 @@ What it does **not** do:
 - **Contain what is not network.** Files stay writable: something in the box can leave a script that runs later outside it (a shell profile, a git hook). Unix sockets outside `/run` and the hidden folders (for example an editor's IPC socket in `/tmp`, an agent socket in your home) stay reachable and may act outside the box; `--private-tmp` closes those in `/tmp`. `--die-with-parent` ends the box with the proxy, but it does not undo what was written.
 - **Watch agents that are not in the box.** It protects only what runs inside `aqt egress run`.
 - **Attribute every byte.** Attribution is read from `/proc` when the connection arrives; a process that exits at once or hands its socket on can leave the chain `partial` or `unavailable`.
-- **Survive a killed launcher before start.** If `aqt egress run` is killed before the command starts, the command may still start, without any network.
+- **Protect how you start it.** The box makes aqt-egress's own Python, packages and sources read-only, but not the command you type: an `aqt` or `aqt-egress` found through `PATH` in a folder you can write (for example a shim in `~/.local/bin`) could be replaced from inside a box and run with the next session. With `pip install --user` (no venv), the other dependencies and `.pth` files in `~/.local/lib/pythonX.Y/site-packages` stay writable too. Install into a venv or with `uv tool install`, and start it by its full path when it matters.
 
 ## Regulatory status
 

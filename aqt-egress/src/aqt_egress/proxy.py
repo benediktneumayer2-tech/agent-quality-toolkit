@@ -49,7 +49,8 @@ PLACEHOLDER = "no-destination.aqt-egress.invalid"
 CA_BASENAME = "mitmproxy"
 HEAD_BYTES = 64 * 1024
 OUTSIDE_REFUSED = {"host-loopback": "aqt-egress: the host's own loopback is outside the box",
-                   "host-local": "aqt-egress: this host's own addresses are outside the box"}
+                   "host-local": "aqt-egress: this host's own addresses are outside the box",
+                   "record-unavailable": "aqt-egress: the connection could not be recorded, so it was closed"}
 LOOPBACK_REFUSED = OUTSIDE_REFUSED["host-loopback"]
 logger = logging.getLogger("aqt_egress")
 
@@ -339,9 +340,13 @@ class Egress:
         self.learned: dict[tuple, str] = {}           # (server name, destination) -> reason
         self.seq = 0
         self.counts = {"requests": 0, "opened": 0, "bytes_up": 0, "bytes_down": 0, "refused": 0,
-                       "store_errors": 0, "hook_errors": 0}
+                       "store_errors": 0, "hook_errors": 0, "unrecorded_closed": 0}
 
     # -- boundaries ---------------------------------------------------------------------------
+    def refresh_addresses(self, found: set[str]) -> None:
+        """Add newly seen host addresses; an empty or failed lookup never removes the known ones."""
+        self.own_addresses |= set(found or ())
+
     def _outside(self, address: str, port: int) -> str | None:
         """Why the box may not reach this address of the host itself, or None."""
         if self.allow_loopback or (normal_ip(address), port) in self.local:
@@ -474,11 +479,7 @@ class Egress:
             if info is not None:
                 info["refused"] = reason
                 self._emit_connection(data.client, data.server, info, error=OUTSIDE_REFUSED[reason])
-            handler = ctx.master.addons.get("proxyserver").connections.get(data.client.id)
-            for connection in (data.server, data.client):       # nothing is sent; the client sees a reset
-                transport = handler.transports.get(connection) if handler else None
-                if transport is not None and transport.writer is not None:
-                    transport.writer.close()
+            self._close(data)
             return
         host, port = self._address(data.server, None)
         record_data = {
@@ -488,13 +489,26 @@ class Egress:
                             "sni": data.server.sni, "via": info["via"] if info else None},
             "timing": {"start": _iso(data.server.timestamp_start)},
         }
-        if self._llm(host, info) or self._llm(data.client.sni, info):
+        if self._llm(host, port, info):
             record_data["process"] = _without_argv(record_data["process"])
         record = self.writer.record("egress.request", "opened", _clean(record_data), links=self._links(),
                                     subject={"kind": "egress.destination", "ref": f"{host}:{port}"})
         self.opened[data.server.id] = record["id"]
         self.counts["opened"] += 1
-        await asyncio.get_running_loop().run_in_executor(None, self.writer.append_now, record)
+        if not await asyncio.get_running_loop().run_in_executor(None, self.writer.append_now, record):
+            # no record, no traffic: close this connection before anything is sent on it
+            self.counts["unrecorded_closed"] += 1
+            if info is not None:
+                info["refused"] = "record-unavailable"
+            self._close(data)
+
+    def _close(self, data) -> None:
+        """Close both ends of a connection that was just opened; nothing has been sent on it yet."""
+        handler = ctx.master.addons.get("proxyserver").connections.get(data.client.id)
+        for connection in (data.server, data.client):       # the client sees a reset
+            transport = handler.transports.get(connection) if handler else None
+            if transport is not None and transport.writer is not None:
+                transport.writer.close()
 
     # -- HTTP --------------------------------------------------------------------------------
     @_guarded("requestheaders", emits=False)
@@ -506,16 +520,20 @@ class Egress:
                 name, _, port = host.rpartition(":") if host.count(":") == 1 else (host, "", "")
                 flow.request.host = (name or host).lower()
                 flow.request.port = int(port) if port.isdigit() else 80
-        provider = self._llm(flow.request.host, info) or self._llm(flow.request.pretty_host, info)
+        provider = self._llm(*self._address(flow.server_conn, flow.request), info)   # final decision at the end
         tap = Tap(self.store, keep=llm_api.KEEP_BYTES if provider else HEAD_BYTES)
         flow.metadata["aqt.llm"] = provider
         flow.metadata["aqt.request"] = tap
         flow.metadata["aqt.start"] = time.time()
         flow.request.stream = tap
 
-    def _llm(self, host: str | None, info: dict | None) -> str | None:
-        """The LLM provider of a destination, or None: such requests get no text excerpts."""
+    def _llm(self, host: str | None, port, info: dict | None) -> str | None:
+        """The LLM provider of the destination the proxy connects to (never of what the client claims in
+        Host or SNI), or None: such requests get no text excerpts. A configured local endpoint is ``local``
+        on every path (its own listener, the proxy, the redirect)."""
         if info is not None and info.get("via") == "local":
+            return "local"
+        if host and port and (normal_ip(host), port) in self.local:
             return "local"
         return llm_api.provider(host, self.settings.llm_hosts)
 
@@ -664,7 +682,7 @@ class Egress:
         req_tap: Tap | None = flow.metadata.get("aqt.request")
         resp_tap: Tap | None = flow.metadata.get("aqt.response")
         names, credentials = headers_summary(request.headers.items(multi=True), self.key)
-        provider = flow.metadata.get("aqt.llm") or self._llm(host, info) or self._llm(claimed, info)
+        provider = self._llm(host, port, info)
         chars = 0 if provider else self.settings.excerpt_chars      # LLM traffic: structure, never text
         data.update(protocol=protocol or request.http_version, tls=self._tls(info, flow.client_conn),
                     method=request.method, path=mask_text(path)[:2048],
@@ -731,7 +749,7 @@ class Egress:
                           claimed=flow.client_conn.sni)
         up, down = flow.metadata.get("aqt.up"), flow.metadata.get("aqt.down")
         start = flow.metadata.get("aqt.start")
-        provider = self._llm(host, info) or self._llm(flow.client_conn.sni, info)
+        provider = self._llm(host, port, info)
         chars = 0 if provider else self.settings.excerpt_chars
         if provider:
             data["process"] = _without_argv(data["process"])
@@ -771,7 +789,7 @@ class Egress:
                     request={"bytes": io.get("up", 0)}, response={"bytes": io.get("down", 0)},
                     timing={"start": _iso(client.timestamp_start),
                             "total_ms": _ms(client.timestamp_start, client.timestamp_end or time.time())})
-        if self._llm(host, info) or self._llm(client.sni, info):
+        if self._llm(host, port, info):
             data["process"] = _without_argv(data["process"])
         if error:
             data["error"] = mask_text(str(error))[:500]
