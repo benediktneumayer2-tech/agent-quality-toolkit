@@ -144,6 +144,57 @@
       ],
       "human_reason": false
     },
+    "egress.lookup": {
+      "tool": "aqt-egress",
+      "summary": "Name lookups answered by the box resolver that no request followed",
+      "schema": "data/egress.lookup.schema.json",
+      "actions": [
+        "observed"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "egress.pruned": {
+      "tool": "aqt-egress",
+      "summary": "Stored bodies older than the retention period deleted",
+      "schema": "data/egress.pruned.schema.json",
+      "actions": [
+        "pruned"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "egress.refused": {
+      "tool": "aqt-egress",
+      "summary": "Refused attempt (typically by an agent)",
+      "schema": "data/egress.refused.schema.json",
+      "actions": [
+        "refused"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "egress.request": {
+      "tool": "aqt-egress",
+      "summary": "Outbound request or connection seen by the checkpoint, with the sending process",
+      "schema": "data/egress.request.schema.json",
+      "actions": [
+        "observed"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
+    "egress.session": {
+      "tool": "aqt-egress",
+      "summary": "Outbound checkpoint session: the boxed command, settings and box facts",
+      "schema": "data/egress.session.schema.json",
+      "actions": [
+        "started",
+        "ended"
+      ],
+      "meanings": [],
+      "human_reason": false
+    },
     "quarantine.delivered": {
       "tool": "aqt-quarantine",
       "summary": "Released content delivered to the agent",

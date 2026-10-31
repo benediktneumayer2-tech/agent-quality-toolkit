@@ -307,6 +307,11 @@ The machine-readable registry is `schemas/registry.json`; each type has a payloa
 | `capa.effectiveness` | Effectiveness check result | evaluated, extended | — | |
 | `capa.closure` | CAPA closure | closed | approved | yes |
 | `capa.refused` | Refused attempt | refused | — | |
+| `egress.session` | Outbound checkpoint session (aqt-egress): the boxed command, settings and box facts | started, ended | — | |
+| `egress.request` | Outbound request or connection seen by the checkpoint, with the sending process | observed | — | |
+| `egress.lookup` | Name lookups answered by the box resolver that no request followed | observed | — | |
+| `egress.pruned` | Stored bodies older than the retention period deleted | pruned | — | |
+| `egress.refused` | Refused attempt | refused | — | |
 
 Actions and meanings listed are those the AQT 0.1 tools write; tools MAY use further actions. `—` under Actions means free-form actions (`trail.event`, `trail.import`). Minimal `data` fields fixed for cross-tool use:
 
@@ -322,6 +327,7 @@ Actions and meanings listed are those the AQT 0.1 tools write; tools MAY use fur
 | `sensei.decision` | `decision` (`approve` \| `edit` \| `discard` \| `forward`), `message_id`, `pair_id` |
 | `validate.qualification` | `configuration_hash`, `valid_until`; `validate.requalification` adds `trigger` |
 | `capa.action` | `target` (`{path, before_sha256, after_sha256}`), `effectiveness_criterion` |
+| `egress.request` | `session`, `destination` (`{host, port}`), `mode` (`observe` in 0.1 tools), `decision` (`allowed` \| `refused`) |
 | `<tool>.refused` | `attempted_action`, `reason_code`, `agent_markers` |
 
 ## 12. Shared files

@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Added
+- Record types for aqt-egress (additive, spec §11): `egress.session` (`started`, `ended`), `egress.request`
+  (`observed`; required `session`, `destination` `{host, port}`, `mode`, `decision`), `egress.lookup`,
+  `egress.pruned` and `egress.refused`, with payload schemas.
 - Message codes (`aqt_evidence.messages`): `Text(code, template, **args)` is a `str` that is exactly the English
   sentence (printed, in JSON or in a record) and carries `.code` and `.args`; `text_join(sep, parts)` keeps the
   parts (code `aqt.join`); `coded(value)` gives `{code, args}` as plain JSON for a `Text` or an exception whose

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:egress.lookup",
+  "title": "egress.lookup data",
+  "description": "Name lookups answered by the box resolver that no request followed",
+  "type": "object",
+  "properties": {
+    "session": {
+      "type": "string",
+      "minLength": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "types": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "count": {
+      "type": "integer"
+    },
+    "first_time": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/time"
+    },
+    "last_time": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/time"
+    },
+    "process": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "session",
+    "name"
+  ]
+}

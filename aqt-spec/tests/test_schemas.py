@@ -21,7 +21,7 @@ def test_registry_covers_suite_types_and_refused():
                  "change.receipt", "change.finish", "sensei.decision", "quarantine.delivered", "validate.qualification",
                  "capa.closure"):
         assert name in types
-    for tool in ("trail", "signoff", "change", "sensei", "quarantine", "validate", "capa"):
+    for tool in ("trail", "signoff", "change", "sensei", "quarantine", "validate", "capa", "egress"):
         assert f"{tool}.refused" in types
     assert all(schemas.schema_for(t) is not None for t in types)
     assert schemas.is_registered("x-acme.thing") and not schemas.is_registered("acme.thing")
@@ -42,6 +42,8 @@ EXAMPLES = {
     "validate.qualification": {"configuration_hash": "sha256:" + "e" * 64, "valid_until": "2027-04-21T00:00:00Z"},
     "capa.action": {"target": {"path": "AGENTS.md", "before_sha256": "sha256:" + "1" * 64,
                                "after_sha256": "sha256:" + "2" * 64}, "effectiveness_criterion": "no recurrence"},
+    "egress.request": {"session": "egs_1", "destination": {"host": "example.org", "port": 443, "via": "proxy"},
+                       "mode": "observe", "decision": "allowed"},
     "quarantine.refused": {"attempted_action": "release", "reason_code": "agent-context", "agent_markers": ["env:CLAUDECODE"]},
 }
 

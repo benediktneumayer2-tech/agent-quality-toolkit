@@ -308,12 +308,31 @@ TYPES: dict[str, tuple] = {
                            obj(action_id=STR, result=enum("effective", "not-effective", "pending"), counts=OBJ)),
     "capa.closure": ("CAPA closure", ["closed"], ["approved"], True,
                      obj(dev_id=STR, basis=STR, actions=ARR)),
+    # aqt-egress
+    "egress.session": ("Outbound checkpoint session: the boxed command, settings and box facts",
+                       ["started", "ended"], [], False,
+                       obj(["session"], session=NESTR, command=STRS, project=OBJ, mode=NESTR, store=NESTR,
+                           excerpt_chars=INT, retention_days={"type": ["integer", "string"]}, ca_fingerprint=STR,
+                           box=OBJ, policy_version=STR, exit_code={"type": ["integer", "null"]}, counts=OBJ,
+                           duration_ms=MS)),
+    "egress.request": ("Outbound request or connection seen by the checkpoint, with the sending process",
+                       ["observed"], [], False,
+                       obj(["session", "destination", "mode", "decision"], session=NESTR, seq=INT, process=OBJ,
+                           destination=obj(["host", "port"], host=STR, ip=STR, port=INT, sni=STR, via=STR),
+                           protocol=STR, tls=OBJ, method=STR, path=STR, query_sha256=SHA, request=OBJ,
+                           response=OBJ, timing=OBJ, lookups=ARR, mode=NESTR, decision=NESTR, error=STR)),
+    "egress.lookup": ("Name lookups answered by the box resolver that no request followed", ["observed"], [],
+                      False, obj(["session", "name"], session=NESTR, name=NESTR, types=STRS, count=INT,
+                                 first_time=TIME, last_time=TIME, process=OBJ)),
+    "egress.pruned": ("Stored bodies older than the retention period deleted", ["pruned"], [], False,
+                      obj(["removed"], removed=INT, bytes=INT, kept=INT, retention_days={"type": ["integer", "string"]},
+                          cutoff=TIME)),
 }
-for tool in ("trail", "signoff", "change", "sensei", "quarantine", "validate", "capa"):
+for tool in ("trail", "signoff", "change", "sensei", "quarantine", "validate", "capa", "egress"):
     TYPES[f"{tool}.refused"] = ("Refused attempt (typically by an agent)", ["refused"], [], False, REFUSED)
 
 TOOLS = {"trail": "aqt-trail", "signoff": "aqt-signoff", "change": "aqt-change", "sensei": "aqt-sensei",
-         "quarantine": "aqt-quarantine", "validate": "aqt-validate", "capa": "aqt-capa"}
+         "quarantine": "aqt-quarantine", "validate": "aqt-validate", "capa": "aqt-capa", "egress": "aqt-egress"}
 
 
 def payload_schema(name: str, summary: str, data: dict) -> dict:

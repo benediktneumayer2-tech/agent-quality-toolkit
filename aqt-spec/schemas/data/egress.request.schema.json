@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:egress.request",
+  "title": "egress.request data",
+  "description": "Outbound request or connection seen by the checkpoint, with the sending process",
+  "type": "object",
+  "properties": {
+    "session": {
+      "type": "string",
+      "minLength": 1
+    },
+    "seq": {
+      "type": "integer"
+    },
+    "process": {
+      "type": "object"
+    },
+    "destination": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "ip": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer"
+        },
+        "sni": {
+          "type": "string"
+        },
+        "via": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "host",
+        "port"
+      ]
+    },
+    "protocol": {
+      "type": "string"
+    },
+    "tls": {
+      "type": "object"
+    },
+    "method": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "query_sha256": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/sha256"
+    },
+    "request": {
+      "type": "object"
+    },
+    "response": {
+      "type": "object"
+    },
+    "timing": {
+      "type": "object"
+    },
+    "lookups": {
+      "type": "array"
+    },
+    "mode": {
+      "type": "string",
+      "minLength": 1
+    },
+    "decision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "error": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "session",
+    "destination",
+    "mode",
+    "decision"
+  ]
+}

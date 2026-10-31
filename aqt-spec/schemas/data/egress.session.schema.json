@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:egress.session",
+  "title": "egress.session data",
+  "description": "Outbound checkpoint session: the boxed command, settings and box facts",
+  "type": "object",
+  "properties": {
+    "session": {
+      "type": "string",
+      "minLength": 1
+    },
+    "command": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "project": {
+      "type": "object"
+    },
+    "mode": {
+      "type": "string",
+      "minLength": 1
+    },
+    "store": {
+      "type": "string",
+      "minLength": 1
+    },
+    "excerpt_chars": {
+      "type": "integer"
+    },
+    "retention_days": {
+      "type": [
+        "integer",
+        "string"
+      ]
+    },
+    "ca_fingerprint": {
+      "type": "string"
+    },
+    "box": {
+      "type": "object"
+    },
+    "policy_version": {
+      "type": "string"
+    },
+    "exit_code": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "counts": {
+      "type": "object"
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "session"
+  ]
+}

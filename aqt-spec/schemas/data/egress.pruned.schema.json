@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aqt:schema:0.1:data:egress.pruned",
+  "title": "egress.pruned data",
+  "description": "Stored bodies older than the retention period deleted",
+  "type": "object",
+  "properties": {
+    "removed": {
+      "type": "integer"
+    },
+    "bytes": {
+      "type": "integer"
+    },
+    "kept": {
+      "type": "integer"
+    },
+    "retention_days": {
+      "type": [
+        "integer",
+        "string"
+      ]
+    },
+    "cutoff": {
+      "$ref": "urn:aqt:schema:0.1:common#/$defs/time"
+    }
+  },
+  "required": [
+    "removed"
+  ]
+}
