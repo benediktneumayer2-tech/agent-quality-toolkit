@@ -39,6 +39,7 @@ The examples use two people: `human:alice` (quality manager) and `human:dave` (d
    - 4.7 [The audit trail (aqt-trail)](#47-the-audit-trail-aqt-trail)
    - 4.8 [Combining the Claude Code hooks](#48-combining-the-claude-code-hooks)
    - 4.9 [The local web page (aqt-ui)](#49-the-local-web-page-aqt-ui)
+   - 4.10 [Watching what an agent sends out (aqt-egress)](#410-watching-what-an-agent-sends-out-aqt-egress)
 5. [Putting it together](#5-putting-it-together)
 6. [Troubleshooting and FAQ](#6-troubleshooting-and-faq)
 7. [Glossary](#7-glossary)
@@ -53,10 +54,11 @@ The examples use two people: `human:alice` (quality manager) and `human:dave` (d
 | Python 3.11 or newer | All packages | `python3 --version` |
 | [uv](https://docs.astral.sh/uv/) | Creates the virtual environment and installs the packages | `uv --version` |
 | git | Getting the code; aqt-change and aqt-capa work on git repositories | `git --version` |
-| bubblewrap (optional) | Only for aqt-sensei: keeps the advisor agent read-only | `bwrap --version` |
+| bubblewrap (optional) | For aqt-sensei (keeps the advisor agent read-only) and aqt-egress (the box around the agent) | `bwrap --version` |
 | tmux (optional) | Only for aqt-sensei: the two agents run in terminal panes | `tmux -V` |
+| Python 3.12, nftables and iproute2 (optional) | Only for aqt-egress (4.10): it needs Python 3.12 or newer; `nft` and `ip` let the box catch programs that ignore the proxy | `nft --version`, `ip -V` |
 
-On Debian or Ubuntu, the optional tools come with `sudo apt install bubblewrap tmux`. If your Python is older than 3.11, uv can fetch a newer one: use `uv venv --python 3.12 .venv` in step 1.3.
+On Debian or Ubuntu, the optional tools come with `sudo apt install bubblewrap tmux nftables iproute2`. If your Python is older than 3.11, uv can fetch a newer one: use `uv venv --python 3.12 .venv` in step 1.3.
 
 ### 1.2 Get the code
 
@@ -84,6 +86,7 @@ uv pip install --python .venv/bin/python -e "aqt-spec[schema]" -e aqt-trail -e a
 - `-e` installs in editable mode: after a `git pull` the new code is used without reinstalling.
 - The `[schema]` extra lets `aqt-evidence conform` check the content of every record against its schema.
 - Optional: aqt-quarantine's ONNX detector (a local machine-learning model in addition to the built-in pattern rules) needs `-e "aqt-quarantine[hf]"`. See `aqt-quarantine/docs/detectors.md`.
+- Optional: the outbound checkpoint aqt-egress needs Python 3.12 or newer and `-e "aqt-cli[egress]"` (4.10).
 
 ### 1.4 Put the commands on your PATH
 
@@ -115,6 +118,7 @@ uv pip install --python .venv/bin/python -e "aqt-spec[schema]" -e aqt-change
 | A second-opinion advisor agent | `aqt-sensei` | aqt-trail |
 | Validation of a detector or AI reviewer | `aqt-validate` (plus `aqt-quarantine` for its detectors) | aqt-quarantine |
 | Deviations and CAPA | `aqt-capa` | the other tools: it finds deviations in their evidence |
+| A record of everything an agent sends out (Python 3.12+) | `aqt-egress` | aqt-trail |
 
 Without aqt-trail, every tool writes its records to the file `~/.local/state/aqt/evidence.jsonl`. You can add aqt-trail later: the tools then find its writer by themselves (3.3), and the tools that read evidence look in both places. Once the trail exists, signing keys count only by the enrolment records in the trail, so carry the earlier ones over once with **[you]** `aqt-signoff signers import` (3.4).
 
@@ -213,15 +217,17 @@ The tools follow the XDG convention: settings in `$XDG_CONFIG_HOME` (default `~/
 |---|---|---|
 | `~/.config/aqt/signers.json` | Signer registry: people, roles, public keys | Yes: with aqt-signoff installed, every tool checks it against the enrolment records; without aqt-signoff, aqt-quarantine and aqt-trail read it as it is |
 | `~/.config/aqt/keys/` | Private keys, passphrase-encrypted (`human:alice` → `human-alice.key`), and `.key.pub` files | Yes |
-| `~/.config/aqt/*.toml` | One configuration file per tool: `trail.toml`, `signoff.toml`, `quarantine.toml`, `change.toml`, `capa.toml`, `validate.toml`, `sensei.toml`, `ui.toml` | Yes (no edits) |
+| `~/.config/aqt/*.toml` | One configuration file per tool: `trail.toml`, `signoff.toml`, `quarantine.toml`, `change.toml`, `capa.toml`, `validate.toml`, `sensei.toml`, `ui.toml`, `egress.toml` | Yes (no edits) |
 | `~/.config/aqt/sensei/owner.token` | aqt-sensei owner token | Yes |
 | `~/.local/state/aqt/trail/` | `trail.jsonl` (the log), `checkpoints.jsonl`, `keys/service.key` (the writer's key, unencrypted), `reviews/` | Yes (service key) |
 | `~/.local/state/aqt/spool/spool.jsonl` | Records waiting for the writer | — |
 | `~/.local/state/aqt/evidence.jsonl` | The log when no trail writer is used | — |
 | `~/.local/state/aqt/quarantine/` | Journal and case files with the withheld content | Yes (no reading) |
 | `~/.local/state/aqt/signoff/`, `capa/`, `validate/`, `sensei/` | Working indexes, validation runs, advisor homes | — |
+| `~/.local/state/aqt/egress/` | aqt-egress: its private CA (`ca/`), the body store of `full` mode (`bodies/`), the fingerprint key, its own spool, one folder per session (`sessions/`) and `last-session.json` | Yes: hidden inside the box (4.10) |
 | `~/.local/state/aqt/backups/project-init/<repository>-<hash>/` | A copy of every file in a repository that `aqt project init` (3.9) changed, taken before the change, as `<file name>.<UTC time>`; files outside it, such as `ui.toml`, go to `project-init/user/`. It is outside the repository because an untracked file there would make aqt-change receipts stale | — |
 | `<repository>/.git/aqt-change/` | aqt-change's working ledger for that repository | — |
+| `<repository>/.aqt/egress.toml` | aqt-egress project settings (`require = true`), committed (4.10) | — |
 | `$XDG_RUNTIME_DIR/aqt/trail.sock` | The trail writer's socket | — |
 
 The evidence records are the authority. Working indexes such as `capa.db` can be rebuilt from them (`aqt-capa rebuild`).
@@ -233,7 +239,8 @@ The evidence records are the authority. Working indexes such as `capa.db` can be
 | `AQT_SINK` | all tools | Where records go: `unix:/path/trail.sock` (the trail writer) or `file:/path/file.jsonl`. Not set: the trail writer when one answers or a trail exists, else `~/.local/state/aqt/evidence.jsonl` (3.3) |
 | `AQT_EVIDENCE` | tools that read records (aqt-capa, aqt-change, aqt-signoff, aqt-validate) | Colon-separated record files to read. Default: the trail log, then the default sink file, then the spool. A record in the sink file or the spool never replaces a trail record with the same ID |
 | `AQT_ACTOR` | all tools | The claimed actor ID. Never makes an agent a human |
-| `AQT_AGENT_SESSION` | all tools | Marks a process as part of an agent session |
+| `AQT_AGENT_SESSION` | all tools | Marks a process as part of an agent session; inside an aqt-egress box it holds the egress session ID |
+| `AQT_EGRESS_SESSION` | set by aqt-egress | The egress session ID inside the box, so that records from hooks there can be matched to the session |
 | `AQT_QUARANTINE_THRESHOLDS` | aqt-quarantine | The thresholds file to use (overrides the configuration) |
 | `AQT_SIGNERS`, `AQT_KEYS_DIR` | aqt-signoff, aqt-quarantine, aqt-trail | Another registry or key folder |
 | `AQT_TRAIL_STATE`, `AQT_CHANGE_CONFIG`, `AQT_CAPA_DB`, `AQT_SENSEI_CONFIG` and similar | single tools | Path overrides; see each package's documentation |
@@ -1475,6 +1482,182 @@ The browser opens the login link through a private page that only you can read, 
 
 The page listens on `127.0.0.1` only. Its security model and limits are in the [aqt-ui README](../aqt-ui/README.md).
 
+### 4.10 Watching what an agent sends out (aqt-egress)
+
+aqt-egress is the goods-out inspection. It is an optional package that runs an agent, or any other command, in a **box**: a bubblewrap sandbox whose only way out is a proxy in the `aqt egress run` process. Every request that leaves the box goes into the audit trail with the process inside the box that sent it. This first stage observes and records: nothing is blocked, held or changed.
+
+Use it when:
+
+- you want to show afterwards which program sent what to which host during an agent session, for example after the agent read an untrusted page (4.1);
+- you want to know which hosts an agent or a build contacts: the report marks a destination that the evidence has not seen before as `NEW`.
+
+It records only what runs inside `aqt egress run`. An agent you start the usual way is not watched.
+
+#### One-time setup
+
+aqt-egress needs Linux, Python 3.12 or newer, and bubblewrap with unprivileged user namespaces. With `nft` (nftables) and `ip` (iproute2) installed, the box also catches programs that ignore the proxy settings; without them only proxy-aware programs and the ports 80 and 443 work.
+
+Add it to the environment of section 1.3. That environment must use Python 3.12 or newer: if `.venv/bin/python --version` says 3.11, create it again with `uv venv --python 3.12 .venv` and repeat the install of 1.3.
+
+```bash
+cd ~/agent-quality-toolkit
+uv pip install --python .venv/bin/python -e "aqt-cli[egress]"
+aqt egress status
+# aqt-egress 0.1.0.dev0: box ok (bubblewrap with user and network namespaces works)
+#   CA: not created yet (the first run creates it)
+#   last session: none
+```
+
+`aqt egress …` and `aqt-egress …` are the same command. The extra is called `egress` on the `agent-quality-toolkit` package (the `aqt-cli` folder). `aqt status` gets a line `egress` with the version, the CA, whether the box can start and the last session; that line never fails the verdict, and without the package it says `skip`. If the box cannot start, `aqt egress status` says why. If the cause is Ubuntu's AppArmor restriction of user namespaces, the remedy is an AppArmor profile for the system's bwrap, as for aqt-sensei (6.4); aqt-egress uses only a bwrap in a system folder such as `/usr/bin`.
+
+#### Steps
+
+1. **Start the agent in the box**, in your own terminal and in the project folder. The box can only cover what is started inside it.
+
+   ```bash
+   cd ~/code/my-project
+   aqt egress run -- claude
+   ```
+
+   Any command works after `--`: `codex`, a shell, a build. Options:
+
+   | Option | Effect |
+   |---|---|
+   | `--project DIR` | The project folder (default: the current folder). The command starts there, and the session record names it and its `.aqt/egress.toml`. |
+   | `--store excerpt\|full` | The storage mode for this session (default from `egress.toml`, else `excerpt`). |
+   | `--excerpt-chars N` | Length of the masked excerpts, 0 to 4096 (default 280; 0 = none). |
+   | `--private-tmp` | A fresh, empty `/tmp` in the box (see below). |
+   | `--local-endpoint 127.0.0.1:8080` | An inference server on this machine's loopback that the box may reach; repeatable. |
+
+   The proxy ignores Ctrl+C, which is meant for the boxed command. `aqt egress run` ends when the command ends and returns its exit code. If nftables cannot be used, it warns once: `aqt-egress: no nftables redirect in the box (…); only proxy-aware clients and ports 80/443 work`.
+2. **Work as usual.** The agent keeps its configuration, your home folder and the project. The next subsection lists what is different inside the box.
+3. **[agent or you] Look at what went out:** `aqt egress report` (all sessions), `--session ID` (an ID or its start), `--since 7d` (also `24h`, `30m` or a date), `--json` for scripts, `--evidence FILE` to read another record file.
+4. **[agent or you] Check the setup at any time:** `aqt egress status` (or the `egress` line of `aqt status`).
+
+#### What the box changes for the agent
+
+- **Proxy settings.** `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY` (and their lower-case forms) point at `http://127.0.0.1:3128` inside the box; `NO_PROXY` names the box's own loopback; `NODE_USE_ENV_PROXY=1` makes Node use them.
+- **A private certificate authority (CA).** The first run creates it in `~/.local/state/aqt/egress/ca/`. The proxy uses it to read TLS (HTTPS) traffic, and the box trusts it through `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, `GIT_SSL_CAINFO`, `PIP_CERT` (all `/run/aqt-egress/bundle.pem`), `NODE_EXTRA_CA_CERTS` (`/run/aqt-egress/ca.pem`) and a system certificate bundle that includes it. Its key is not visible inside the box.
+- **Name lookups.** `/etc/resolv.conf` names the box's own resolver, which answers every name with the box's own address and records it. Only the proxy resolves names for real. With nftables, every other TCP connection is redirected to the proxy too, DNS queries to any server are answered by the box resolver, and all other traffic to outside addresses is dropped (QUIC and other UDP: programs fall back to TCP).
+- **`/run` is empty**, apart from the box's own files and the trail writer's socket, which is put back read-only. The host's service sockets (D-Bus, systemd, docker, your runtime folder) are not reachable.
+- **Read-only:** the AQT configuration and state folders (the shared spool stays writable, so that records of agent hooks still reach the trail), `/sys/fs/cgroup`, and the folders aqt-egress runs from: its Python, its packages and, with the editable install of 1.3, the `aqt-egress` and `aqt-spec` source folders. The box therefore cannot change the next session's recorder.
+- **Hidden** (empty folders): the egress state (CA key, body store, fingerprint key), the quarantine state, and the X11 and tmux socket folders in `/tmp`. With `--private-tmp` the whole `/tmp` is fresh; the project, the home folder and the AQT folders are put back if they live under `/tmp`.
+- **No way to this machine itself.** The box's `localhost` is its own. The proxy refuses to connect for the box to this machine's loopback or to any address of its network interfaces (LAN, VPN, bridges), except the local endpoints you configured; such a request is refused and recorded (`host-loopback`, `host-local`). This protects aqt-ui and other local services. The client sees a `502 Bad Gateway` with `Connection killed: aqt-egress: the host's own loopback is outside the box`.
+- **The box counts as an agent session.** `AQT_AGENT_SESSION` and `AQT_EGRESS_SESSION` hold the egress session ID, so records from agent hooks inside the box can be matched to it, and every **[you]** step refuses there. Make decisions in a terminal outside the box.
+- **Everything else stays as it is:** the project, your home folder and the agent's configuration are read-write.
+
+#### What is recorded, and how long it is kept
+
+Records go where all AQT records go (3.3): to the trail writer when one runs, otherwise to the fallback file. While a trail's writer does not answer, they wait in aqt-egress's own spool (`~/.local/state/aqt/egress/spool.jsonl`, hidden in the box) and move into the trail at the start and the end of every session, or with **[agent or you]** `aqt egress drain`:
+
+```text
+$ aqt egress drain
+drained 0 record(s) into the trail
+```
+
+| Record type | Action | Written when |
+|---|---|---|
+| `egress.session` | `started`, `ended` | A session starts (command, masked; project and its `require`; storage mode; CA fingerprint; the facts of the box) and ends (exit code, duration, counts, where the records went) |
+| `egress.request` | `opened` | An upstream connection opens, before anything is sent on it |
+| `egress.request` | `observed` | Once per HTTP request, WebSocket or other TCP connection, linked to its `opened`: the process chain, the destination, protocol and TLS mode, method, masked path, header names, sizes, body hashes, status, timing, excerpts, `decision` (`allowed`, or `refused` with a `reason_code`) |
+| `egress.lookup` | `observed` | The box resolver answered a name and no request followed |
+| `egress.pruned` | `pruned` | `aqt egress prune` deleted stored bodies |
+
+Credential headers (`Authorization`, `Cookie`, API-key headers) are recorded only as their name, scheme and a keyed fingerprint, never with their value. Paths, excerpts, command lines and stored bodies go through a masking pass for common credential shapes (bearer tokens, provider API keys, JWTs, private keys, `password=` pairs). The masking is a guard for the record, not a leak detector.
+
+The storage mode decides how much is kept:
+
+- **`excerpt` (the default)** keeps hashes, sizes and masked excerpts of up to 280 characters of each request and response body in the records.
+- **LLM destinations get no text in either mode.** For the built-in LLM API hosts (Anthropic, OpenAI, Google, Mistral, OpenRouter, AWS Bedrock, GitHub Copilot and others, listed in the [aqt-egress README](../aqt-egress/README.md#storage-modes-and-settings)), the hosts under `llm_hosts` and the local endpoints, a record holds only the structure of the request: provider, `model`, the number of messages and their roles, whether there is a system prompt, tool names and the stream flag, plus sizes and hashes. Their records carry no command-line arguments. Free-text arguments elsewhere, such as a prompt for `claude -p` or a `sh -c` script, are kept only as length and hash, for example `sh -c [text 250 chars sha256:17827489b315]`.
+- **`full`** also keeps masked request and response headers and bodies in `~/.local/state/aqt/egress/bodies/` (folders 0700, files 0600, compressed). Each record names its bodies by their hash, so a changed or deleted body is noticed. Full mode keeps whole conversations with your LLM provider: turn it on deliberately, for a session (`--store full`) or in `egress.toml`.
+
+Stored bodies are kept for 90 days after their last use by default (`retention_days`: 7 or more, or `"forever"`). Nothing is deleted on its own: run **[agent or you]** `aqt egress prune [--retention-days N|forever] [--dry-run]`, for example weekly. It writes an `egress.pruned` record.
+
+```text
+$ aqt egress prune --dry-run
+would remove 0 stored object(s) (0 bytes); 3 kept (retention 90)
+```
+
+#### Settings
+
+`~/.config/aqt/egress.toml`; the flags of `aqt egress run` override it for one session:
+
+```toml
+store = "excerpt"        # default; "full" also keeps headers and bodies
+retention_days = 90      # full bodies: 7 or more, or "forever"
+excerpt_chars = 280      # masked excerpt length in the records (0 to 4096; 0 = none)
+passthrough = []         # hosts whose TLS is passed through unread (programs that pin certificates)
+llm_hosts = []           # more LLM API hosts besides the built-in list (structure only, no text)
+local_endpoints = []     # inference servers on this machine the box may reach, e.g. ["127.0.0.1:8080"]
+```
+
+- **`local_endpoints`.** A server such as llama.cpp on `127.0.0.1:8080` gets a listener on the box's own `127.0.0.1:8080` that the proxy forwards to this machine. The agent keeps its usual base URL; each request is recorded (`via: local`) and treated as an LLM destination. The box's own listener ports (53, 80, 443, 3128, 15001) cannot be used.
+- **`passthrough`.** A program that rejects the private CA with an explicit TLS alert (certificate pinning) fails once; that name at that destination is then passed through unread for the rest of the session and recorded as `passthrough` (`client-rejected-certificate`), with the bytes in each direction. List such hosts here to pass them through from the first connection.
+- **The project file.** A repository can commit `.aqt/egress.toml` with `require = true`. The session record carries it. In this version nothing checks it yet; a later `aqt project status` check is meant to warn about agent sessions that ran outside the box.
+
+#### What you will see
+
+After `aqt egress run --store excerpt -- curl -s https://example.com` (curl prints the page as usual):
+
+```text
+$ aqt egress report
+session egs_01a1938938bd6cba676481b6082a  2026-10-31T19:56:46 -> 2026-10-31T19:56:46  exit 0  1 request(s)  store excerpt
+  command: curl -s https://example.com
+  example.com:443  1 req  GETx1  up 0 B / down 577 B  [NEW]
+      1x  curl
+```
+
+One line per destination, where the proxy actually connected: the requests, methods, bytes in each direction, and below it each process chain that sent them (here curl alone, because curl was the boxed command; under an agent it reads like `curl < bash < claude`). The flags in brackets are `NEW` (the first time this destination appears in the evidence), errors, refused requests, and requests that claimed another host in their Host header or TLS server name. The report also names connections that were opened without a completing record, name lookups that no request followed, and records of the session that the trail writer saw coming from a process other than the session's proxy; those are left out as unverified.
+
+A second session in which the boxed shell also tried to reach a server on this machine's loopback, through a public name that resolves to `127.0.0.1`:
+
+```text
+session egs_01a1938990688b38b4ec29a1989e  2026-10-31T19:57:08 -> 2026-10-31T19:57:08  exit 0  2 request(s)  store full
+  command: sh -c [text 250 chars sha256:17827489b315]
+  example.com:443  1 req  GETx1  up 0 B / down 577 B
+      1x  curl < sh
+  localtest.me:8080  1 req  GETx1  up 0 B / down 0 B  [NEW, 1 error(s), 1 refused]
+      1x  curl < sh
+```
+
+The `egress.request` record of the first session, shortened:
+
+```json
+{"type": "egress.request", "action": "observed", "actor": {"kind": "service", "id": "service:aqt-egress"},
+ "data": {"session": "egs_01a1938938bd6cba676481b6082a", "mode": "observe", "decision": "allowed",
+  "process": {"chain": [{"comm": "curl", "exe": "/usr/bin/curl", "argv": ["curl", "-s", "https://example.com"],
+                         "pid": 932178, "box_pid": 2, "start_time": 94920070}], "chain_status": "complete"},
+  "destination": {"host": "example.com", "port": 443, "ip": "2606:4700:10::ac42:93f3", "sni": "example.com", "via": "proxy"},
+  "protocol": "HTTP/2.0", "tls": {"mode": "intercepted"}, "method": "GET", "path": "/",
+  "request": {"bytes": 0, "headers": ["user-agent", "accept"]},
+  "response": {"status": 200, "bytes": 577, "content_type": "text/html; charset=utf-8",
+               "body_sha256": "sha256:25dd…", "excerpt": "<!doctype html><html lang=en><head>…"},
+  "timing": {"start": "2026-10-31T19:56:46.270630Z", "total_ms": 8}}}
+```
+
+`process` is what the proxy found inside the box: the pids, start times and the executable come from the kernel, the command name and arguments are what the process says about itself. `chain_status` says how far that evidence goes (`complete`, `partial`, `shared` when several processes hold the socket, `unavailable`), as in the trail (2.2). The record's own sender, observed by the trail writer, is the `aqt egress run` process.
+
+#### Common mistakes
+
+- **A keyring under `/run`.** `gh`, git's libsecret credential helper and other secret-service clients reach their keyring over the session D-Bus in `/run/user/<uid>`, which is empty in the box, so they fail there. Use file-based credentials for work in the box. aqt-sensei's bridge sockets are not reachable either. Agents that keep their credentials in files (Claude Code, Codex, pi) are not affected.
+- **An editable install is read-only in the box.** With the editable install of 1.3, the virtual environment aqt-egress runs from and the `aqt-egress` and `aqt-spec` source folders are read-only inside the box: a `git pull` of the toolkit, `uv pip install` into that environment or an edit of those sources fails there with `Read-only file system`. Do it outside the box. The same holds for the AQT configuration and state folders.
+- **A program that ignores the proxy variables.** It still ends at the proxy: its name lookups return the box's own address, where the proxy listens on ports 80 and 443 and takes the destination from the TLS server name or the Host header, and with nftables every other TCP connection is redirected too (the record's `via` says `direct443`, `direct80` or `redirect`). Without nftables its connections to other ports fail at once with "network unreachable". A program that brings its own certificate list instead of the CA variables rejects the private CA: list its host under `passthrough`.
+- **A local server is refused.** A request to this machine's loopback or LAN address ends in `502 Bad Gateway … the host's own loopback is outside the box` (or `this host's own addresses`). Add the server under `local_endpoints` or `--local-endpoint`; the agent keeps its usual base URL.
+- **Python 3.11.** The `egress` extra installs nothing there, and `aqt egress` answers that aqt-egress is not installed and needs Python 3.12 or newer. Create the environment with Python 3.12 (see the setup above).
+- **A decision inside the box.** `aqt-signoff sign` or a quarantine release refuses inside the box, because it is an agent session. Run it in another terminal.
+
+#### Limits
+
+- **It blocks nothing.** This stage observes. Holding back what the task does not explain comes in a later stage.
+- **It does not make the LLM channel safe.** Your LLM provider receives the whole context by design; the record shows only that it went there, how much, with which model and under which key (as a fingerprint).
+- **It does not close allowed channels.** Data can ride on traffic that looks normal (a git push to your own remote, a request to a package registry). Data hidden inside normal requests is not reliably detectable.
+- **It cannot read pinned TLS.** Passed-through connections are recorded by host, size and time only.
+- **It does not contain what is not network.** Files stay writable, so something in the box can leave a script that runs later outside it (a shell profile, a git hook). Unix sockets outside `/run` and the hidden folders, for example an editor's socket in `/tmp` or an agent socket in your home folder, stay reachable; `--private-tmp` closes those in `/tmp`.
+- **Attribution is read when the connection arrives.** A process that exits at once or hands its socket on can leave the chain `partial` or `unavailable`.
+- **A killed launcher.** If `aqt egress run` is killed before the command starts, the command may still start, but without any network.
+
+The full threat model is in the [aqt-egress README](../aqt-egress/README.md#threat-model-and-limits), what was verified on which system in [`aqt-egress/docs/box.md`](../aqt-egress/docs/box.md).
+
 ## 5. Putting it together
 
 ### 5.1 Where to start
@@ -1486,6 +1669,7 @@ You do not need all eight tools on day one.
 | "The agent says done, but nothing was verified" | aqt-change | aqt-trail, then aqt-signoff for signed plan approval |
 | "The agent reads the web and could be hijacked" | aqt-quarantine | aqt-signoff (one key for all), then aqt-validate to calibrate |
 | "I cannot show later what happened" | aqt-trail | the hooks in 4.8 |
+| "I do not know what the agent sends out, or to whom" | aqt-egress (4.10) | aqt-trail |
 
 With everything installed (1.3), the order is: `aqt setup` once per machine (chapter 3), then `aqt project init` in each repository where agents work and a commit of the files it lists (3.9), then the work itself (5.2). `aqt status` and `aqt project status` show at any time what is missing.
 
@@ -1633,11 +1817,11 @@ Monthly or quarterly:
 
 **Does it work with Codex or pi?** Yes, for everything that is a command: all CLIs, `aqt-quarantine scan` in a pipe, `aqt-trail import codex|pi`, and aqt-sensei workers and advisors of all three. Ready-made hook adapters exist for Claude Code only.
 
-**Does anything leave my machine?** Only two things, and only when you configure them: RFC 3161 anchors send the 32-byte head hash to the TSA you chose, and aqt-sensei advisors talk to their model vendor. Everything else runs offline.
+**Does anything leave my machine?** Only two things, and only when you configure them: RFC 3161 anchors send the 32-byte head hash to the TSA you chose, and aqt-sensei advisors talk to their model vendor. Everything else runs offline. aqt-egress sends nothing of its own: it forwards what the command in its box sends.
 
 **Can I delete a wrong record?** No. The trail is append-only, and deleting would break verification. Record a correction instead: a new decision, `aqt-signoff invalidate` for a signature, or `aqt-trail event` with a reason.
 
-**Is personal data stored?** Names in actor IDs, the reasons you write, and short excerpts: up to 160 characters of imported prompts and tool calls (obvious secrets masked), up to 280 characters of advisor messages, and the evidence passages of quarantine cases. Set `[import] excerpt_chars = 0` in `trail.toml` to keep only hashes of imports.
+**Is personal data stored?** Names in actor IDs, the reasons you write, and short excerpts: up to 160 characters of imported prompts and tool calls (obvious secrets masked), up to 280 characters of advisor messages, and the evidence passages of quarantine cases. Set `[import] excerpt_chars = 0` in `trail.toml` to keep only hashes of imports. With aqt-egress: up to 280 masked characters of each request and response to hosts that are not LLM providers, the shortened, masked command lines of the processes that sent them, and in `full` mode whole masked bodies in its body store (4.10); `excerpt_chars = 0` in `egress.toml` keeps only hashes.
 
 **Does this make my process GMP- or Part 11-compliant?** No. The toolkit supports these practices; procedures, training and the validation of your own process remain yours. The clause-by-clause mapping, including what you still have to do, is in `aqt-spec/crosswalk.md`.
 
@@ -1657,6 +1841,7 @@ Monthly or quarterly:
 | **Audit trail** | The complete, time-ordered, tamper-evident list of records of who did what, when and why |
 | **Audit-trail review** | A documented check of the audit trail by someone not involved, with findings followed up |
 | **Band** | The quarantine result for a text: pass, warn or hold |
+| **Box** | In aqt-egress, the bubblewrap sandbox around an agent whose only way out is the proxy |
 | **bubblewrap (bwrap)** | A Linux program that runs another program in a sandbox with limited file and network access |
 | **CAPA** | Corrective and preventive action: removing the cause of a deviation and preventing its recurrence |
 | **Case** | In aqt-quarantine, a warned or held input waiting for a decision (ID such as `QR9EZD4`) |
@@ -1688,6 +1873,7 @@ Monthly or quarterly:
 | **Passphrase** | The secret that unlocks your private key; asked for every signature |
 | **ppm** | Parts per million; scores and rates are integers from 0 to 1,000,000 |
 | **Prompt injection** | Text written to make an AI follow the author's instructions instead of its user's |
+| **Proxy** | A program that forwards network traffic for other programs, and so can see and record it |
 | **Protocol (validation)** | The document that fixes intended use, data and acceptance criteria before a test |
 | **Qualification** | A person's formal acceptance that a tool is fit for its intended use, for a limited time |
 | **Quarantine** | Holding inputs of unknown status apart until a responsible person decides |

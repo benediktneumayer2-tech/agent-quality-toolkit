@@ -31,6 +31,8 @@ Der Agent wird behandelt wie ein neuer Mitarbeiter einer Fremdfirma im GMP-Betri
 | [aqt-trail](../../aqt-trail/README.md) | Audit Trail und Audit-Trail-Review | Ein eigenes Schreibprogramm speichert jeden Eintrag und fragt den Linux-Kernel (Kern des Betriebssystems), welches Programm ihn gesendet hat; prüft gegen ALCOA++, unterstützt ein unterschriebenes Review. |
 | [aqt-spec](../../aqt-spec/README.md) | Formblatt und Regelwerk | Ein Datensatzformat für alle Werkzeuge (wer, was, wann, warum, an welchem Inhalt), dazu Kataloge der Regelwerke. |
 
+**Optional: [aqt-egress](../../aqt-egress/README.md) (englisch), die Warenausgangskontrolle.** `aqt egress run -- claude` startet den Agenten in einer abgeschotteten Umgebung (einer „Box“), deren einziger Ausgang ein Proxy ist, ein Programm, das den Netzwerkverkehr weiterleitet und dabei alles sieht. Jede Anfrage, die die Box verlässt, wird mit dem Programm aufgezeichnet, das sie gesendet hat, dazu kurze maskierte Auszüge; Anfragen an KI-Anbieter nur mit ihrer Struktur, ohne Text. Diese erste Stufe beobachtet und zeichnet nur auf: Sie hält nichts zurück. Sie braucht Python 3.12 oder neuer.
+
 Unterschriften und Belege verweisen auf einen Hash (digitalen Fingerabdruck) des Inhalts; ein geändertes Komma ändert ihn vollständig. Jeder Audit-Trail-Eintrag enthält den Hash des vorigen, wie nummerierte Seiten eines gebundenen Logbuchs.
 
 ## Wie es zusammenspielt
@@ -94,4 +96,4 @@ Installiert wird aus dem Repository (Anleitung im [Benutzerhandbuch](../manual.m
 
 ## Entstehung
 
-Benedikt Neumayer hat das Toolkit mit KI-Coding-Agenten gebaut; Anforderungen, Architektur und Review kamen von ihm. Stand: acht Pakete plus der Befehl `aqt` und die optionale lokale Weboberfläche aqt-ui, 1095 automatisierte Tests, eine Demo mit 43 geprüften Ergebnissen; Linux, Python (Programmiersprache) 3.11–3.13. Lizenzen: Apache-2.0 für den Code, CC BY 4.0 für Spezifikation und Kataloge.
+Benedikt Neumayer hat das Toolkit mit KI-Coding-Agenten gebaut; Anforderungen, Architektur und Review kamen von ihm. Stand: acht Pakete plus der Befehl `aqt`, die optionale lokale Weboberfläche aqt-ui und die optionale Warenausgangskontrolle aqt-egress, 1173 automatisierte Tests, eine Demo mit 43 geprüften Ergebnissen; Linux, Python (Programmiersprache) 3.11–3.13 (aqt-egress ab 3.12). Lizenzen: Apache-2.0 für den Code, CC BY 4.0 für Spezifikation und Kataloge.
