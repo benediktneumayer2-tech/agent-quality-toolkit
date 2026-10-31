@@ -1,0 +1,15 @@
+aqt-egress — part of the Agent Quality Toolkit
+Copyright 2026 Benedikt Neumayer. Licensed under the Apache License, Version 2.0.
+
+New code; no code copied from other projects.
+
+Runtime dependencies: aqt-spec (Apache-2.0), mitmproxy (MIT) and its dependencies (among them
+cryptography, Apache-2.0 OR BSD-3-Clause; pyOpenSSL, Apache-2.0; h2, MIT).
+Runs as external programs (not included, not linked): bubblewrap (LGPL-2.0-or-later),
+nftables (GPL-2.0-only), iproute2 (GPL-2.0-or-later).
+Test-only: pytest (MIT), jsonschema (MIT), aqt-trail (Apache-2.0).
+
+Ideas only, no code: Anthropic's sandbox-runtime (Apache-2.0; a sandbox without a network whose
+only way out is a host proxy), iron-proxy (Apache-2.0; own DNS answers plus nftables against
+bypass), OpenSnitch (GPL-3.0; finding the process of a connection through /proc), and mitmproxy's
+TLS pass-through example add-on (MIT; pass a host through after the client rejected the CA).

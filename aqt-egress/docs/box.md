@@ -1,0 +1,71 @@
+# The box: what was verified, and the fallbacks
+
+Verified on Ubuntu with Linux 7.0, bubblewrap 0.9.0 (not setuid), nftables and iproute2, with Ubuntu's
+AppArmor restriction of unprivileged user namespaces switched on (`kernel.apparmor_restrict_unprivileged_userns = 1`;
+bubblewrap's own profile lets it create them, and the processes inside have no capabilities). The box tests in
+`tests/test_box.py` repeat these checks on every run and skip themselves where bubblewrap or user namespaces are
+missing.
+
+## How the box starts
+
+1. `bwrap --unshare-user --unshare-net --unshare-pid --unshare-ipc --disable-userns --die-with-parent
+   --info-fd N --block-fd M … -- COMMAND`. bubblewrap writes the box's first process to the info pipe and waits
+   on the block pipe before it starts the command.
+2. The launcher opens `/proc/<first process>/ns/net` and asks the kernel for the user namespace that owns it
+   (`ioctl(NS_GET_USERNS)`).
+3. A short-lived helper (`python -m aqt_egress.netns`) joins that user namespace and then the network namespace,
+   sets the network up, creates the listening sockets, sends them to the launcher (`SCM_RIGHTS`) and exits.
+4. The launcher serves the sockets with mitmproxy and writes to the block pipe: the command starts.
+
+## Findings
+
+| Question | Result |
+|---|---|
+| Can the host side enter the box's network namespace without privileges? | **Yes**, but not through the user namespace the box's processes are in. `--disable-userns` (which needs `--unshare-user`) puts them in a *nested* user namespace; the network namespace belongs to the outer one. Joining the inner one and then the network namespace fails with `EPERM`. Joining the owner found with `NS_GET_USERNS` works and gives full capabilities in that namespace only. `setns` into a user namespace needs a single-threaded process, hence the helper process. |
+| Can mitmproxy serve a socket created elsewhere? | **Yes.** mitmproxy has no option for it, but its server instances' connection handlers serve any accepted stream: `asyncio.start_server(handler, sock=…)` with mitmproxy's own `regular` and `transparent` handlers (mitmproxy 12.3, pinned below 13 because this uses its internals). No relay process and no host port are needed. |
+| Original destination of redirected connections? | **Yes**, `SO_ORIGINAL_DST` (IPv4 and IPv6) works on the accepted socket, read by mitmproxy's transparent mode. |
+| nftables in the box's namespace? | **Yes**, from the helper (it has `CAP_NET_ADMIN` there; the box's processes do not: `nft flush ruleset` inside fails). |
+| Does a redirect alone catch direct connections? | **No.** In a network namespace with only loopback, `connect()` to an outside address fails with "network unreachable" before netfilter sees it. The helper adds default routes over loopback. IPv4 also needs a source address with global scope (`192.0.2.1/32` on `lo`, a documentation address); otherwise redirected packets leave with source `0.0.0.0` and never connect. |
+| UDP DNS to an outside resolver? | Redirected to the box resolver, answered and recorded. The resolver is bound to `127.0.0.1` and `::1` (not a wildcard address), so its answers leave from the redirect target and the kernel rewrites their source back to the server the client asked; clients with connected sockets accept them. |
+| Other UDP (QUIC, NTP …)? | Dropped (`EPERM` at `sendto`); clients fall back to TCP. |
+| Connection reuse | The proxy must not rewrite the destination address of a connection: mitmproxy reuses server connections by address, at most five per address, and a rewritten one is never reused (requests on a keep-alive connection then hang). The loopback check therefore resolves the name, checks every answer and leaves the address as it is; a connection that still lands on loopback (DNS rebinding) is closed in `server_connected`, before anything is sent. |
+| Server-first protocols (SMTP, SSH banners) | Need eager server connections (mitmproxy's default); only the box's ports 80/443, whose destination comes from the TLS server name or Host header, connect lazily. |
+| Terminal injection (`TIOCSTI`) | Not possible with `dev.tty.legacy_tiocsti = 0` (this kernel). Where it is 1 or unknown, the box gets `--new-session`. |
+
+## Escape tests (all in `tests/test_box.py`)
+
+| Attempt inside the box | Result |
+|---|---|
+| TLS to an IP address on 443 without proxy variables | redirected to the proxy, intercepted, recorded with the sending process |
+| TCP to an IP address on another port (8080) | redirected to the proxy, recorded |
+| UDP DNS query to `8.8.8.8` with a name carrying data | answered by the box resolver; the name is recorded as an `egress.lookup`; nothing leaves |
+| UDP to an outside address on 443 | refused (`Operation not permitted`) |
+| `unshare -n`, `unshare -rn` | refused (no capabilities; nested user namespaces disabled) |
+| Read the CA key, list the body store | not there (the egress state is an empty folder in the box) |
+| See or signal the proxy or the test runner | not visible (own PID namespace); `kill -0` fails |
+| `nft flush ruleset` | refused |
+| Write to the AQT state (trail folder) | read-only file system |
+| `resolvectl query`, D-Bus, systemd user manager, docker | not reachable: `/run` is an empty tmpfs |
+
+A real run through the box worked for curl, git (`ls-remote` over HTTPS), pip (`download`), npm (`view`),
+Python `urllib` and Node `fetch` (Node 22 honours the proxy variables with `NODE_USE_ENV_PROXY=1`; without it,
+`fetch` reaches the box's port 443 through the resolver).
+
+## Fallbacks
+
+- **No nftables or iproute2** (or the table cannot be loaded): no default routes are added either. Proxy-aware
+  clients work, proxy-unaware clients reach ports 80/443 through the resolver, and every other connection fails at
+  once with "network unreachable". Only the name lookup is recorded. The session record says so
+  (`box.network.redirect = false`) and `aqt egress run` prints a warning.
+- **No IPv6 in the box:** the listeners fall back to IPv4 only.
+- **No bubblewrap or no user namespaces:** `aqt egress run` refuses to start; `aqt egress status` and the `egress`
+  line of `aqt status` say why.
+
+## What stays open
+
+- Files are shared read-write by design; something in the box can leave a script that runs later outside it.
+- Unix sockets outside `/run` and the hidden folders (for example an editor's IPC socket in `/tmp`, or an agent
+  socket in the home folder) stay reachable and may act outside the box. Abstract Unix sockets belong to the
+  network namespace and are not reachable.
+- Attribution is read from `/proc` when a connection or query arrives; a sender that already exited is recorded
+  as `unavailable`.
