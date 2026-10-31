@@ -41,3 +41,6 @@ First slice of the outbound checkpoint: observe and record (nothing is blocked).
   senders against the session's launcher (drained, duplicate and box-sent records are unverified); address
   refreshes only add; the command starts on an explicit token from the launcher, and a killed launcher never
   releases it.
+- A sender counts as outside every box only with a complete observation (the trail walks at most 16 ancestors);
+  a configured pass-through host passes through only where the proxy really connects to it; the start gate
+  closes its pipe before the command starts.

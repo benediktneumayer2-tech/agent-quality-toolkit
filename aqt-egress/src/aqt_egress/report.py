@@ -56,13 +56,20 @@ def _boxed(observed: dict, launchers: set) -> bool:
         or "bwrap" in (observed.get("process_chain") or [])[1:]
 
 
+def _outside_box(observed: dict, launchers: set) -> bool:
+    """Only a complete observation can show that a sender is outside every box: the trail writer walks at
+    most 16 ancestors, so a partial chain may just have stopped short of the box's bubblewrap."""
+    return observed.get("chain_status") == "complete" and not _boxed(observed, launchers) \
+        and "bwrap" not in (observed.get("process_chain") or [])
+
+
 def verify(records: list[dict]) -> tuple[list[dict], dict[str, list], set[str]]:
     """(records that count, unverified records per session, sessions no writer observed at all).
 
     A session's launcher is the sender the trail writer observed for its first ``started`` record, if
     that sender does not itself run below another launcher (inside a box). A record counts when the
     writer observed it from that launcher, or when it was drained from a spool by a launcher or by a
-    process outside any box (``observed.drained_by``). Anything else (another sender, a drain from
+    process shown outside any box by a complete observation (``observed.drained_by``). Anything else (another sender, a drain from
     inside a box, the shared spool drained without a known drainer, a second ``started`` record) is
     listed as unverified and left out. Sessions none of whose records carry an observation (no trail
     writer was used) cannot be checked and are shown as such."""
@@ -88,9 +95,9 @@ def verify(records: list[dict]) -> tuple[list[dict], dict[str, list], set[str]]:
             if record["type"] == "egress.session" and record.get("action") == "started":
                 ok = first.get(sid) is record
             elif sender:
-                ok = sender == launcher if launcher else (sender in launchers or not _boxed(observed, launchers))
+                ok = sender == launcher if launcher else (sender in launchers or _outside_box(observed, launchers))
             elif isinstance(drainer, dict) and _who(drainer):
-                ok = _who(drainer) in launchers | {launcher} or not _boxed(drainer, launchers)
+                ok = _who(drainer) in launchers | {launcher} or _outside_box(drainer, launchers)
             else:
                 ok = False
         if ok:

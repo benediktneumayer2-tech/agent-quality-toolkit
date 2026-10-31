@@ -398,8 +398,24 @@ class Egress:
         if info and not info["recorded"]:
             self._emit_connection(client, None, info, error=client.error)
 
+    async def _destination_is(self, name: str, server) -> bool:
+        """Whether the proxy's destination is ``name``: the name it connects to, or (for a redirected IP
+        address) one of the addresses ``name`` resolves to."""
+        host, port = self._address(server, None)
+        if not host:
+            return False
+        if host.lower().rstrip(".") == name:
+            return True
+        if not _is_ip(host):
+            return False
+        try:
+            found = await asyncio.get_running_loop().getaddrinfo(name, port, type=socket.SOCK_STREAM)
+        except OSError:
+            return False
+        return normal_ip(host) in {normal_ip(item[4][0]) for item in found}
+
     @_guarded("tls_clienthello", emits=False)
-    def tls_clienthello(self, data):
+    async def tls_clienthello(self, data):
         info = self.conns.get(data.context.client.id)
         sni = (data.client_hello.sni or "").lower().rstrip(".") or None
         server = data.context.server
@@ -407,7 +423,9 @@ class Egress:
             server.address = (sni, server.address[1])
         if info is not None:
             info["server"] = server
-        reason = "configured" if sni in self.passthrough_hosts else self.learned.get((sni, server.address))
+        # a configured host passes through only where the proxy really connects to it (SNI alone is a claim)
+        configured = sni in self.passthrough_hosts and await self._destination_is(sni, server)
+        reason = "configured" if configured else self.learned.get((sni, server.address))
         if info is not None:
             info["tls"] = {"mode": "passthrough", "reason": reason} if reason else {"mode": "intercepted"}
         if reason:

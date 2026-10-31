@@ -46,7 +46,8 @@ SYSTEM_BUNDLES = ("/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-b
 CA_VARIABLES = ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "GIT_SSL_CAINFO", "PIP_CERT")
 # The start gate, the box's first command: it starts the real command only on the exact token from the
 # launcher. The end of the pipe (a launcher killed before release) is not a start: the gate exits.
-GATE = 'IFS= read -r go < "/proc/self/fd/$1" && [ "$go" = "$2" ] || exit 125; shift 2; exec "$@"'
+GATE = ('IFS= read -r go < "/proc/self/fd/$1" && [ "$go" = "$2" ] || exit 125; '
+        '[ "$1" -le 9 ] && eval "exec $1<&-"; shift 2; exec "$@"')        # the pipe is not left to the command
 
 
 class BoxUnavailable(RuntimeError):

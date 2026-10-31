@@ -394,3 +394,20 @@ def test_x2_06_residual_an_empty_refresh_keeps_the_known_addresses(make_proxy):
     proxy.addon.refresh_addresses({"198.51.100.9"})
     assert proxy.addon.own_addresses == {"192.0.2.77", "198.51.100.9"}
     assert proxy.addon._outside("192.0.2.77", 80) == "host-local"
+
+
+def test_configured_passthrough_only_where_the_proxy_really_connects(make_proxy, upstream):
+    import ssl
+    proxy = make_proxy(settings=Settings(passthrough=["upstream.test"]),
+                       test_hosts={"upstream.test": f"127.0.0.1:{upstream.https_port}",
+                                   "other.test": f"127.0.0.1:{upstream.https_port}"})
+    for target, context in (("upstream.test:443", ssl.create_default_context(cafile=upstream.ca)),
+                            ("other.test:443", ssl.create_default_context(cafile=proxy.ca_file))):
+        tls = context.wrap_socket(_connect(proxy, target), server_hostname="upstream.test")
+        tls.sendall(b"GET /pt HTTP/1.1\r\nHost: upstream.test\r\nConnection: close\r\n\r\n")
+        answer = tls.recv(100)          # passed through: the upstream answers; intercepted: the proxy checks
+        assert b"200" in answer or target.startswith("other")   # other.test's certificate (502 here)
+        tls.close()
+    records = requests_of(proxy.records(settle=0.8))
+    modes = {r["data"]["destination"]["host"]: r["data"]["tls"]["mode"] for r in records}
+    assert modes == {"upstream.test": "passthrough", "other.test": "intercepted"}

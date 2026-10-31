@@ -81,6 +81,9 @@ cg=$(cut -d: -f3 /proc/self/cgroup | head -1)
 writable=""
 for dir in $AQT_TEST_INSTALL; do test -w "$dir" && writable="$writable $dir"; done
 say install_writable "${writable:-none}"
+pipes=""
+for fd in /proc/self/fd/*; do n=${fd##*/}; [ "$n" -gt 2 ] && case "$(readlink "$fd")" in pipe:*) pipes="$pipes $n";; esac; done
+say extra_pipes "${pipes:-none}"
 """
 
 
@@ -175,6 +178,7 @@ def test_box_records_attribute_verify_and_hold_against_escapes(env, upstream, tr
     assert results["host_sockets"] == "none"         # docker, D-Bus, systemd, resolved: /run is empty
     assert results["cgroup"] == "read-only"            # X2-03: the box cannot freeze or kill the proxy
     assert results["install_writable"] == "none"       # X2-09: the recorder's own code is read-only
+    assert results["extra_pipes"] == "none"            # G2: the start gate's pipe is not left to the command
     tools = started["data"]["box"]["tools"]
     assert tools["bwrap"]["path"].startswith(("/usr/", "/bin/")) and tools["bwrap"]["sha256"].startswith("sha256:")
     assert started["data"]["test_options"] == ["hosts", "upstream_ca"]          # X2-10

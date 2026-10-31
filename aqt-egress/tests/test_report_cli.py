@@ -162,3 +162,21 @@ def test_n3_sessions_without_a_trail_writer_are_shown_unchecked():
     report = build(sample())
     assert all(item["checked"] is False and not item["unverified"] for item in report["sessions"])
     assert "not checked: no trail writer observed these records" in render(report)
+
+
+def test_g1_a_truncated_drainer_chain_does_not_count_as_outside_a_box():
+    records = sample()
+    for record in records:
+        record["observed"] = _observed(4242)
+    deep = [{"pid": 9000 + n, "comm": "sh", "start_time": 600 + n} for n in range(16)]
+    partial = {"pid": 9000, "via": "socket", "chain_status": "partial", "processes": deep,
+               "process_chain": ["sh"] * 16}
+    complete = {**partial, "chain_status": "complete"}
+    hidden = request("egs_b", "deep.example", 443, "2026-10-31T10:00:05.000000Z")
+    hidden["observed"] = {"via": "spool", "process_chain": [], "processes": [], "drained_by": partial}
+    outside = request("egs_b", "outside.example", 443, "2026-10-31T10:00:06.000000Z")
+    outside["observed"] = {"via": "spool", "process_chain": [], "processes": [], "drained_by": complete}
+    report = build(records + [hidden, outside])
+    second = report["sessions"][1]
+    assert "outside.example" in {d["host"] for d in second["destinations"]}
+    assert [u["id"] for u in second["unverified"]] == [hidden["id"]]
