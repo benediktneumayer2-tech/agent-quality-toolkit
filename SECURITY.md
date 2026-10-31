@@ -38,8 +38,9 @@ It does not guarantee:
 
 - a closed channel: it blocks nothing, and data can ride inside traffic that it lets through, such as an LLM request or a git push;
 - anything about Unix sockets outside `/run` (for example in `/tmp` or in the home folder): they stay reachable from the box and may act outside it; `--private-tmp` closes those in `/tmp`;
-- a sender for records that the box plants in the shared spool: they carry no observed sender;
-- that a launcher killed before it releases the box stops the command: the command can still start, without any network.
+- that the box cannot add records of its own to the trail (through the shared spool or the writer's socket); `aqt egress report` counts only records the writer saw coming from the session's launcher, or drained by a launcher or a process outside any box, and lists the rest as unverified.
+
+A launcher killed before it releases the box never starts the command: the box starts only on a random token that the launcher writes after its setup.
 
 **The CA key.** The proxy reads TLS with a private CA, created once in `$XDG_STATE_HOME/aqt/egress/ca/` (files 0600, folder 0700). The box sees only the certificate: the key, the body store and the fingerprint key lie in a folder that is empty inside the box. The CA is trusted only inside the box, through environment variables and a certificate bundle mounted there; it is never added to the system's trust store. Any process of your user outside the box can read the key and make certificates that programs inside the box trust; nothing outside the box trusts them. Deleting `ca/` makes the next session create a new CA, and each session record carries the fingerprint of the one it used.
 
