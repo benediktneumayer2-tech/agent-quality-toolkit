@@ -76,6 +76,36 @@
     },
     "error": {
       "type": "string"
+    },
+    "llm": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "type": "string"
+        },
+        "messages": {
+          "type": "integer"
+        },
+        "roles": {
+          "type": "object"
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "stream": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "provider"
+      ]
     }
   },
   "required": [

@@ -115,7 +115,7 @@ Other values are invalid in 0.1.
 
 - `data` MUST be an object. Registered types define minimal required fields (§11); producers MAY add fields.
 - **Units:** scores, rates, thresholds and bounds are integers in parts per million with the suffix `_ppm`; durations are integer milliseconds with `_ms` (§4 forbids floats).
-- **Large or sensitive texts are never stored inline.** Store `sha256` (of the exact bytes) plus, where useful, a short excerpt (RECOMMENDED at most 280 characters). Secrets, credentials and raw prompts MUST NOT be stored.
+- **Large or sensitive texts are never stored inline.** Store `sha256` (of the exact bytes) plus, where useful, a short excerpt (RECOMMENDED at most 280 characters). Secrets, credentials and raw prompts MUST NOT be stored. Masked excerpts of what an agent sent to a non-LLM destination (`egress.request`) are evidence of outbound data, not stored prompts; requests to LLM API destinations are recorded by structure only, and `excerpt_chars = 0` turns the excerpts off.
 
 ## 4. Canonical JSON and parsing
 
