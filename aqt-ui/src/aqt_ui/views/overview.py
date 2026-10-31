@@ -150,7 +150,12 @@ def build(app) -> dict:
                 counts["changes"] += 1
         for project in changes.gates():
             for plan in project["plans"]:
-                entry = plan_item(project, plan)
+                try:
+                    entry = plan_item(project, plan)
+                except Exception as error:  # noqa: BLE001 - one plan's problem must not hide the others
+                    entry = item("high", "changes", f"Change {plan.get('plan_id')} cannot be shown",
+                                 f"{type(error).__name__}: {error}", code="plan_error",
+                                 page=f"gate:{project.get('project')}:{plan.get('plan_id')}", plan=plan.get("plan_id"))
                 if entry:
                     needs.append(entry)
                     counts["changes"] += 1
@@ -199,10 +204,12 @@ def build(app) -> dict:
 
 def plan_item(project: dict, plan: dict) -> dict | None:
     """The one queue entry of a plan, for the step it stops at (or None): the plan version to
-    approve, a gate that is not GO, or a finished GO change without a valid "released" signature."""
-    if plan.get("error"):
-        return None
+    approve, a gate that is not GO, or a finished GO change without a valid "released" signature. A plan
+    that cannot be evaluated, or whose finish record cannot be tied to it, is an entry too."""
     index, plan_id, decision = project.get("project"), plan["plan_id"], plan.get("decision")
+    if plan.get("error"):
+        return item("high", "changes", f"Change {plan_id} cannot be shown", plan["error"], ref=plan_id,
+                    code="plan_error", page=f"gate:{index}:{plan_id}", plan=plan_id)
     approval, release = plan.get("approval") or {}, plan.get("release") or {}
     first = (plan.get("reasons") or [{}])[0]
     waits = {r.get("code") for r in plan.get("reasons") or []} & {"approval_unsigned", "approval_stale"}
@@ -215,6 +222,10 @@ def plan_item(project: dict, plan: dict) -> dict | None:
         return item("high", "changes", f"Gate {decision} for {plan_id}", first.get("text", ""), ref=plan_id,
                     code=first.get("code", ""), key="gate", page=f"gate:{index}:{plan_id}",
                     since=plan.get("approval_time"), decision=decision, plan=plan_id, reason_code=first.get("code"))
+    if decision == "GO" and plan.get("finish_problem"):
+        return item("high", "changes", f"Finish record of {plan_id} not tied to the change", plan["finish_problem"],
+                    ref=plan_id, code="finish_unbound", page=f"release:{index}:{plan_id}", plan=plan_id,
+                    record=plan["finish"])
     if decision == "GO" and plan.get("finish") and release.get("state") == "unreleased":
         return item("high", "changes", f"Release to sign: {plan_id}",
                     f"Gate GO and finished ({plan['finish']}); no valid released signature yet", ref=plan_id,

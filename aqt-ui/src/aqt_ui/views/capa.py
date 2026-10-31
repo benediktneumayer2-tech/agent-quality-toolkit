@@ -21,7 +21,7 @@ from typing import Callable
 from aqt_evidence import Text
 
 from . import NotFound, Stale, UsageProblem, coded_fields, coded_list, message, require
-from .changes import _signers, signoff_call
+from .changes import CLAIMED, _signers, guard_first, signoff_call
 from .signatures import open_signoff
 
 ATTEMPTED = {"accept": "candidate.accept", "dismiss": "candidate.dismiss", "close": "deviation.close"}
@@ -85,15 +85,15 @@ class CapaView:
         from aqt_signoff import SignoffError
         if kind not in ATTEMPTED:
             raise UsageProblem(f"unknown decision {kind}")
-        if not (reason or "").strip():
-            raise UsageProblem("a reason is required")
         so = open_signoff(passphrase=passphrase)
         try:
-            signer = so.signer_entry(signer_id or None)
-        except SignoffError as error:
-            raise UsageProblem(message(error)) from error
-        config = dataclasses.replace(load_config(), identity_id=signer.id, identity_role=signer.role or None,
-                                     identity_display=signer.name or None)
+            signer, unknown = so.signer_entry(signer_id or None), None
+        except SignoffError as error:          # refused after the human check below, so an agent is recorded
+            signer, unknown = None, error
+        claimed = str(signer_id or "")
+        config = dataclasses.replace(load_config(), identity_id=signer.id if signer else claimed if CLAIMED.fullmatch(
+            claimed) else "human:unknown", identity_role=(signer.role if signer else None) or None,
+            identity_display=(signer.name if signer else None) or None)
         capa = Capa(config, guard=human_check)
         written: list[dict] = []
         original = capa.write
@@ -110,6 +110,10 @@ class CapaView:
             return {"ok": False, "message": message(error), **coded_fields("message", error),
                     "record_id": last.get("id"), "reason_code": (last.get("data") or {}).get("reason_code"),
                     "markers": (last.get("data") or {}).get("agent_markers", [])}
+        if unknown is not None:
+            raise UsageProblem(message(unknown))
+        if not (reason or "").strip():
+            raise UsageProblem("a reason is required")
         if kind == "close":
             try:
                 current = capa.show(ref)
@@ -156,8 +160,8 @@ class CapaView:
         so = open_signoff(passphrase=passphrase, human_check=human_check)
 
         def sign():
+            guard_first(so, "sign", signer_id)                         # before anything else; refusals are recorded
             signer = so.signer_entry(signer_id or None)
-            so.require_human("sign", so.signer_actor(signer))         # the guard first; refusals are recorded
             if act is None:
                 raise NotFound(f"unknown action {action_id}")
             if act["state"] != "implemented" or not act["implemented_record"]:

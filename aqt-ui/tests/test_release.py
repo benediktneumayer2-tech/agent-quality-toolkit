@@ -76,14 +76,12 @@ def git(root: Path, *args: str) -> None:
     subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, text=True)
 
 
-@pytest.fixture
-def finished(trail, signer, env, monkeypatch):
-    """A Git project whose plan s01 was begun, checked (a passing receipt in the trail) and finished:
-    the gate is GO and the change.finish record waits for a "released" signature."""
+def finish_project(root: Path, env: Path, monkeypatch) -> Path:
+    """A Git project at ``root`` whose plan s01 was begun, checked (a passing receipt) and finished: the gate is
+    GO and the change.finish record waits for a "released" signature."""
     from aqt_change import plans, receipts
     from aqt_change.finish import finish
     from aqt_change.ledger import Ledger
-    root = env / "project"
     for sub in ("src", "tests", "plans"):
         (root / sub).mkdir(parents=True)
     (root / "src" / "calc.py").write_text("def add(a, b):\n    return a + b\n")
@@ -108,6 +106,12 @@ def finished(trail, signer, env, monkeypatch):
     return root
 
 
+@pytest.fixture
+def finished(trail, signer, env, monkeypatch):
+    """A finished GO change in a trail (see ``finish_project``)."""
+    return finish_project(env / "project", env, monkeypatch)
+
+
 def change_of(client, fresh=True):
     status, data, _ = client.get(f"/api/change/0/s01{'?fresh=1' if fresh else ''}")
     assert status == 200, data
@@ -117,7 +121,7 @@ def change_of(client, fresh=True):
 def body(data, **extra):
     release = data["plan"]["release"]
     return {"reason": "Approved plan, passing receipts", "passphrase": PASSPHRASE, "signer_id": SIGNER,
-            "record": release["record"], "sha256": release["sha256"], **extra}
+            "record": release["record"], "sha256": release.get("sha256", ""), "path": data["plan"]["path"], **extra}
 
 
 def steps(data):

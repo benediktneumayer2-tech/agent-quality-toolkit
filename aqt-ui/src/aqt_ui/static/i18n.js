@@ -339,7 +339,6 @@ export const DE = {
   "You sign this version of the plan. The agent works within its scope; a later change of its scope or checks makes the approval stale.": "Sie unterschreiben diese Version des Plans. Der Agent arbeitet in ihrem Umfang; eine spätere Änderung von Umfang oder Prüfpunkten macht die Genehmigung veraltet.",
   "any role": "jede Rolle",
   "case {n} of {total}": "Fall {n} von {total}",
-  "change {plan}, finish record {record}": "Änderung {plan}, Abschlusseintrag {record}",
   "due": "fällig",
   "none needed": "keines nötig",
   "not begun": "nicht begonnen",
@@ -363,6 +362,10 @@ export const DE = {
   "fresh-context": "frischer Kontext",
   "different-model": "anderes Modell",
   "human": "Mensch",
+  "not tied to this change": "dieser Änderung nicht zugeordnet",
+  "The finish record that aqt-change's local copy names cannot be released here: it must be this plan's change.finish record in the evidence (with a trail, in the trail), the same as the local copy, with a commit of this repository. Check the project with aqt-change gate and the trail with aqt-trail verify.": "Der Abschlusseintrag, den die lokale Kopie von aqt-change nennt, kann hier nicht freigegeben werden: Er muss der Eintrag change.finish dieses Plans in den Nachweisen sein (mit Audit Trail: im Audit Trail), gleich der lokalen Kopie, mit einem Commit dieses Repositorys. Das Projekt mit aqt-change gate und den Audit Trail mit aqt-trail verify prüfen.",
+  "change {plan}, finish record {record}, commit {commit}": "Änderung {plan}, Abschlusseintrag {record}, Commit {commit}",
+  "Waits for you: the finish record is not tied to this change; nothing can be signed": "Wartet auf Sie: Der Abschlusseintrag ist dieser Änderung nicht zugeordnet; es kann nichts unterschrieben werden",
 };
 
 // "Needs you" entries by key: [title, detail]; {name} takes the entry's values, null keeps the
@@ -391,6 +394,8 @@ export const NEEDS = {
   qualification_expiring: ["Qualifizierung von {subject} läuft in {days} Tag(en) ab", "{kind}, gültig bis {until}"],
   qualification_triggered: ["Requalifizierung von {subject} ausgelöst: {triggers}", "{kind}, gültig bis {until}"],
   plan_approval: ["Planversion von {plan} zu genehmigen", "Version {record} wartet auf Ihre Genehmigung; Freigabeprüfung {decision}"],
+  plan_error: ["Änderung {plan} kann nicht angezeigt werden", null],
+  finish_unbound: ["Abschlusseintrag von {plan} ist der Änderung nicht zugeordnet", null],
   release: ["Freigabe zu unterschreiben: {plan}", "Freigabeprüfung GO und abgeschlossen ({record}); noch keine gültige Unterschrift „freigegeben“"],
 };
 

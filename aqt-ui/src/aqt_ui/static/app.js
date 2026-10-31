@@ -540,7 +540,7 @@ function setQuery(params) {
 
 function setTitle(text) {
   $("title").textContent = vis(text);
-  document.title = `${text} · ${t("AQT quality desk")}`;
+  document.title = vis(`${text} · ${t("AQT quality desk")}`);
 }
 async function route(keepInspector) {
   const path = location.pathname;
@@ -573,9 +573,11 @@ const SEVERITY_KIND = { critical: "fail", high: "warn", medium: "info", low: "ne
 function needText(item) {
   const de = LANG === "de" && NEEDS[item.key];
   if (!de) return [item.title, msgOf(item, "detail")];
+  // Only enumerated words are translated (ALCOA++ attributes, validate kinds and triggers); ids, sources and
+  // names are data and stay as they are.
   const word = (key, value) => (key === "kind" ? codeWord("validate.kind.", value)
     : key === "triggers" ? String(value).split(", ").map((x) => codeWord("validate.trigger.", x)).join(", ")
-      : typeof value === "number" ? num(value) : t(String(value)));
+      : key === "attribute" ? t(String(value)) : typeof value === "number" ? num(value) : String(value));
   const fill = (text) => text.replace(/\{(\w+)\}/g, (all, key) => (item.args[key] === undefined ? all : word(key, item.args[key])));
   const detail = de[1] === null ? msgOf(item, "detail") : de[1] === "@reason" ? (REASONS_DE[item.args.reason_code] || item.detail) : fill(de[1]);
   return [fill(de[0]), detail];
@@ -749,7 +751,7 @@ function caseFrame(main, item, { title, stop, links, settled }) {
   const body = h("div", { class: "case-body" });
   const decideBox = h("section", { class: "case-decide" });
   put(main, h("article", { class: "case", "aria-label": needTitle || title }, head, body, decideBox));
-  document.title = `${needTitle || title} · ${t("AQT quality desk")}`;
+  document.title = vis(`${needTitle || title} · ${t("AQT quality desk")}`);
   return {
     body: (...children) => put(body, ...children),
     decide: (heading, ...children) => { put(clear(decideBox), heading ? h("h3", { class: "decide-title", text: heading }) : null, ...children); },
@@ -786,8 +788,22 @@ function resolveSteps(steps) {
 }
 function caseEmpty(frame, words) { frame.decide(t("Decide"), h("p", { class: "muted", text: words || t("No decision is open for this case.") })); }
 
+// A project is named by its position in ui.toml, a plan by its id; a case id never holds a query, a
+// fragment, a backslash, control characters or a ".." part. Every part that goes into an API address is
+// checked and encoded on its own.
+const PROJECT_PART = /^[0-9]{1,4}$/;
+const PLAN_PART = /^(?!\.\.?$)[A-Za-z0-9._-]{1,200}$/;
+const UNSAFE_CASE_ID = /[?#\\\u0000-\u001f\u007f]|(^|[:/])\.\.?([:/]|$)/;
+function changeApi(project, planId, tail) {
+  if (!PROJECT_PART.test(String(project)) || !PLAN_PART.test(String(planId))) throw new Error(t("Unknown case"));
+  return `/api/change/${encodeURIComponent(project)}/${encodeURIComponent(planId)}${tail || ""}`;
+}
+function changePath(project, planId) {
+  return PROJECT_PART.test(String(project)) && PLAN_PART.test(String(planId)) ? `/change/${encodeURIComponent(project)}/${encodeURIComponent(planId)}` : "/changes";
+}
 async function renderCase(main, notice) {
-  const id = decodeURIComponent(location.pathname.slice("/case/".length));
+  let id;
+  try { id = decodeURIComponent(location.pathname.slice("/case/".length)); } catch (e) { id = ""; }
   let data = S.overview || (await refresh());
   if (!notice && !data.needs.some((n) => n.id === id)) data = await refresh();   // a case newer than the last check
   const at = data.needs.findIndex((n) => n.id === id);
@@ -795,7 +811,7 @@ async function renderCase(main, notice) {
   S.caseId = id;
   if (at >= 0) S.queueAt = at;
   const [kind, ...rest] = id.split(":");
-  if (!CASES[kind]) { clear(main); put(main, empty(t("Unknown case"), id)); return; }
+  if (!Object.hasOwn(CASES, kind) || UNSAFE_CASE_ID.test(id)) { clear(main); put(main, empty(t("Unknown case"), id)); return; }
   await CASES[kind]({ main, id, item, rest, notice, done: caseDone(main) });
 }
 
@@ -955,7 +971,7 @@ const CASES = {
 async function planCase({ main, item, rest, notice, done }, kind) {
   const [project, ...plan] = rest;
   const planId = plan.join(":");
-  const d = await api(`/api/change/${project}/${encodeURIComponent(planId)}`);
+  const d = await api(changeApi(project, planId));
   const p = d.plan;
   const g = gateParts(p, d.root, d.signers, { onDone: done });
   const manual = p.decision === "MANUAL_VERIFY_REQUIRED";
@@ -964,9 +980,9 @@ async function planCase({ main, item, rest, notice, done }, kind) {
     stop: kind === "plan" ? ["person", t("Waits for you: approve this plan version")]
       : manual ? ["person", t("Waits for a person: the gate needs a manual check")] : ["evidence", t("Waits for evidence: checks, a review or the finish")],
     settled: p.decision === "GO" ? st("pass", "GO") : null,
-    links: [[t("Change page"), `/change/${project}/${encodeURIComponent(planId)}`]],
+    links: [[t("Change page"), changePath(project, planId)]],
   });
-  f.body(inspSection(t("Steps of the change"), timelineView(d.steps, p, (step) => go(`/change/${project}/${encodeURIComponent(planId)}#step-${step}`))),
+  f.body(inspSection(t("Steps of the change"), timelineView(d.steps, p, (step) => go(`${changePath(project, planId)}#step-${step}`))),
     g.reasons, g.receipts, g.approval);
   if (notice) f.decide(t("Decided"), recordedBlock(notice));
   else if (kind === "plan" && g.decision) f.decide(null, g.decision);
@@ -1004,6 +1020,7 @@ function stepLine(step, p) {
   }
   if (step.id === "gate") return p.decision || t("not evaluated");
   if (release.state === "released") return t("released");
+  if (release.state === "unbound") return t("not tied to this change");
   if (!p.finish) return t("not finished");
   return p.decision === "GO" ? t("ready to sign") : t("waits for GO");
 }
@@ -1023,12 +1040,18 @@ const STEP_STOPS = {
   evidence: { plan: "Waits for evidence: the plan was not begun", checks: "Waits for evidence: the declared checks must pass on the current code",
     review: "Waits for evidence: a review that counts", gate: "Waits for evidence: the gate is NO-GO", release: "Waits for evidence: the change is not finished, or its gate is not GO" },
 };
+function stopWords(step) {
+  return step.id === "release" && step.unbound ? t("Waits for you: the finish record is not tied to this change; nothing can be signed")
+    : t(STEP_STOPS[step.state][step.id]);
+}
 async function renderChangeRoute(main) {
   const [, , project, plan] = location.pathname.split("/");
-  await renderChange(main, { project, planId: decodeURIComponent(plan || "") });
+  let planId = "";
+  try { planId = decodeURIComponent(plan || ""); } catch (e) { /* not a plan id: refused below */ }
+  await renderChange(main, { project, planId });
 }
 async function renderChange(main, { project, planId, item, notice, done, fresh }) {
-  const d = await api(`/api/change/${project}/${encodeURIComponent(planId)}${fresh ? "?fresh=1" : ""}`);
+  const d = await api(changeApi(project, planId, fresh ? "?fresh=1" : ""));
   const p = d.plan;
   const asCase = location.pathname.startsWith("/case/");
   const onDone = done || (async (data, chosen) => { await refresh().catch(() => null); await renderChange(main, { project, planId, notice: { data, chosen } }); });
@@ -1036,19 +1059,19 @@ async function renderChange(main, { project, planId, item, notice, done, fresh }
   const title = t("Change {plan}", { plan: p.plan_id });
   let f;
   if (asCase) {
-    f = caseFrame(main, item, { title, stop: current ? [current.state, t(STEP_STOPS[current.state][current.id])] : null,
+    f = caseFrame(main, item, { title, stop: current ? [current.state, stopWords(current)] : null,
       settled: (p.release || {}).state === "released" ? stWord("released") : null,
-      links: [[t("Change page"), `/change/${project}/${encodeURIComponent(planId)}`]] });
+      links: [[t("Change page"), changePath(project, planId)]] });
   } else {
     clear(main);
-    document.title = `${title} · ${t("AQT quality desk")}`;
+    document.title = vis(`${title} · ${t("AQT quality desk")}`);
     const body = h("div", { class: "case-body" });
     const decideBox = h("section", { class: "case-decide" });
     put(main, h("article", { class: "case change" }, h("header", { class: "case-head" },
       h("nav", { class: "crumbs", "aria-label": t("Where you are") }, link(t("Changes"), "/changes")),
       h("h2", { class: "case-title", text: title }),
       h("p", { class: "case-why" }, h("span", { class: "mono small", text: d.root }), " ", h("span", { class: "mono small muted", text: p.path })),
-      current ? h("p", { class: `stopline ${current.state}` }, stopMark(current.state), h("span", { text: t(STEP_STOPS[current.state][current.id]) }))
+      current ? h("p", { class: `stopline ${current.state}` }, stopMark(current.state), h("span", { text: stopWords(current) }))
         : h("p", { class: "stopline settled" }, stWord("released"))), body, decideBox));
     f = { body: (...c) => put(body, ...c), decide: (heading, ...c) => put(clear(decideBox), h("h3", { class: "decide-title", text: heading }), ...c) };
   }
@@ -1087,8 +1110,14 @@ function releaseSection(step, d, p, { onDone, notice }) {
   const release = p.release;
   const fin = p.finish_record || {};
   if (!p.finish) return step("release", h("p", { class: "muted", text: t("Not finished yet: the change.finish record is written by aqt-change finish.") }));
-  const parts = [kv([[t("Finish record"), h("code", { text: p.finish })], [t("Time"), fmtTime(fin.time)], [t("By"), fin.by || "–"], [t("Commit"), fin.commit ? h("code", { text: String(fin.commit).slice(0, 12) }) : "–"],
-    [t("Hash"), hashButton(release && release.sha256, 16)]])];
+  if (p.finish_problem || (release && release.state === "unbound")) {
+    // the record the gate names is not tied to this change: nothing to show as released, nothing to sign
+    return step("release", kv([[t("Finish record"), h("code", { text: p.finish })]]),
+      h("p", { class: "flag", role: "alert" }, stWord("fail", t("not tied to this change")), " ", msgOf(p, "finish_problem")),
+      h("p", { class: "small muted", text: t("The finish record that aqt-change's local copy names cannot be released here: it must be this plan's change.finish record in the evidence (with a trail, in the trail), the same as the local copy, with a commit of this repository. Check the project with aqt-change gate and the trail with aqt-trail verify.") }));
+  }
+  const parts = [kv([[t("Finish record"), h("code", { text: p.finish })], [t("Time"), fmtTime(fin.time)], [t("By"), fin.by || "–"],
+    [t("Commit"), fin.commit || fin.head ? hashButton(fin.commit || fin.head, 40) : "–"], [t("Hash"), hashButton(fin.sha256 || (release && release.sha256), 16)]])];
   if (!d.installed["aqt-signoff"] || (release && release.state === "unavailable")) {
     parts.push(h("p", { class: "small" }, t("aqt-signoff is not installed"), ": ", h("code", { text: "uv pip install -e aqt-signoff" })));
     return step("release", ...parts);
@@ -1119,9 +1148,9 @@ function releaseSection(step, d, p, { onDone, notice }) {
       title: t("Sign released"),
       actions: [{ id: "release", label: t("Sign released"), meaning: "released", button: t("Sign and release the change"),
         consequence: t("You sign the finished change as released. The signature is bound to its change.finish record and that record's hash; the gate is checked again before anything is signed.") }],
-      signers, subject: { label: t("change {plan}, finish record {record}", { plan: p.plan_id, record: p.finish }), hash: release.sha256 },
+      signers, subject: { label: t("change {plan}, finish record {record}, commit {commit}", { plan: p.plan_id, record: p.finish, commit: fin.commit || fin.head || "–" }), hash: release.sha256 },
       noSigners: pol.roles.length ? t("No registered signer may sign this release: [policy.released] allows the roles {list}.", { list: pol.roles.join(", ") }) : null,
-      onDone, submit: (x, values) => post(`/api/change/${d.project}/${encodeURIComponent(p.plan_id)}/release`, { ...values, record: p.finish, sha256: release.sha256 }),
+      onDone, submit: (x, values) => post(changeApi(d.project, p.plan_id, "/release"), { ...values, record: p.finish, sha256: release.sha256, path: p.path }),
     }));
   } else if (release.state !== "released") parts.push(h("p", { class: "small muted", text: t("Sign released is offered when the gate is GO.") }));
   return step("release", ...parts);
@@ -1549,7 +1578,7 @@ function openGate(p, root, signers, project) {
   const g = gateParts(p, root, signers, {});
   setInspector(g.gate, g.reasons, g.receipts, g.approval,
     project !== null && project !== undefined ? inspSection(null, h("div", { class: "actions" }, h("button", { class: "btn small", type: "button", text: t("Open the change page"),
-      onclick: () => go(`/change/${project}/${encodeURIComponent(p.plan_id)}`) }))) : null,
+      onclick: () => go(changePath(project, p.plan_id)) }))) : null,
     g.decision);
 }
 function reasonList(reasons) {

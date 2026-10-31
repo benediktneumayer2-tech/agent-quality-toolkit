@@ -39,8 +39,19 @@ STATIC = Path(__file__).parent / "static"
 STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
                 ".svg": "image/svg+xml", ".html": "text/html; charset=utf-8"}
 PAGES = {"/", "/health", "/trail", "/quarantine", "/changes", "/signatures", "/capa", "/qualifications"}
-# a case page (/case/<case id>) and a change page (/change/<project>/<plan>): the same page shell
-PAGE_ROUTE = re.compile(r"/(case/[A-Za-z0-9._~:%@+-]{1,300}|change/[0-9]{1,4}/[A-Za-z0-9._~%@+-]{1,200})")
+# a case page (/case/<case id>) and a change page (/change/<project>/<plan id>): the same page shell
+CASE_ROUTE = re.compile(r"/case/([A-Za-z0-9._~:%@+-]{1,300})")
+CHANGE_ROUTE = re.compile(r"/change/[0-9]{1,4}/(?!\.\.?$)[A-Za-z0-9._-]{1,200}")
+# what a decoded case id never holds: a query, a fragment, a backslash, control characters, a .. part
+UNSAFE_CASE_ID = re.compile(r"[?#\\\x00-\x1f\x7f]|(^|[:/])\.\.?([:/]|$)")
+
+
+def page_route(path: str) -> bool:
+    """A case or change page the shell is served for."""
+    found = CASE_ROUTE.fullmatch(path)
+    if found:
+        return not UNSAFE_CASE_ID.search(unquote(found.group(1)))
+    return bool(CHANGE_ROUTE.fullmatch(path))
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; "
        "connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'")
 MAX_BODY = 64 * 1024
@@ -317,7 +328,7 @@ class Handler(BaseHTTPRequestHandler):
             if method == "GET" and path.startswith("/static/"):
                 self.static(path[len("/static/"):])
                 return
-            if method == "GET" and (path in PAGES or PAGE_ROUTE.fullmatch(path)):
+            if method == "GET" and (path in PAGES or page_route(path)):
                 self.static("index.html")         # the page shell holds no data; the API needs the session
                 return
             if not path.startswith("/api/"):
@@ -465,7 +476,8 @@ class Handler(BaseHTTPRequestHandler):
         elif len(route) == 5 and route[:2] == ("POST", "change") and route[4] == "release":
             self.decide(lambda body, check: app.changes.sign_release(
                 route[2], unquote(route[3]), shown_record=str(body.get("record") or ""),
-                shown_sha256=str(body.get("sha256") or ""), reason=str(body.get("reason") or ""),
+                shown_sha256=str(body.get("sha256") or ""), shown_path=str(body.get("path") or ""),
+                reason=str(body.get("reason") or ""),
                 passphrase=self._secret or "", signer_id=body.get("signer_id"), human_check=check))
         elif route == ("GET", "signatures"):
             self.send_json(200, app.signatures().registry())

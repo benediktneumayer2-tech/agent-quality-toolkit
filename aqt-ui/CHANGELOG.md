@@ -4,6 +4,23 @@
 
 First version.
 
+Second review of the flow (same version, not yet released):
+
+- Sign released signs only this change's finish record: the copy in the evidence aqt-signoff reads must be a
+  `change.finish` record of the plan and file, equal to aqt-change's local copy, in the trail when one is in
+  use (aqt-change's `TrailCheck`), with a commit of this repository's history carrying the `AQT-Finish`
+  trailer, and the plan's latest finish; otherwise nothing is signed (409), the change page shows the
+  discrepancy instead of a release state and the queue lists it (`finish_unbound`). Commit, author and time on
+  the page come from that copy; the commit is shown in full.
+- The release state is cached on the files aqt-signoff itself reads (its configured evidence or sink).
+- Case and change pages check and encode every part of an API address; the server serves no case page whose
+  id holds a query, fragment, backslash or `..` part, and takes only a plain project index and plan id.
+- A malformed line in aqt-change's local copy makes one plan an error entry (`plan_error`); the queue stays.
+- The agent check runs before the signer is looked up (Sign released, plan and action approval, CAPA), so an
+  agent naming an unknown signer is refused and recorded too.
+- Display and signing pick the plan by its registered id, and signing checks the file shown; one release of
+  a record is signed at a time; tab titles show hidden characters; ids in queue titles are not translated.
+
 One flow (same version, not yet released):
 
 - Home is the *Needs you* queue: one line per case with how long it has been waiting, an empty queue
