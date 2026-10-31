@@ -659,7 +659,7 @@ def check_committed(ctx: ProjectContext) -> Result:
                               "--", *names], capture_output=True, text=True, check=True).stdout
         for entry in out.split("\0"):
             if len(entry) > 3 and entry[3:] in names:
-                pending[entry[3:]] = "untracked" if entry[:2] == "??" else "not committed"
+                pending[entry[3:]] = "untracked" if entry[:2] == "??" else "changed"
     unignored = False
     if (ctx.root / LOCAL_SETTINGS).exists() and installed("aqt-change"):
         from aqt_change.gitio import Git
