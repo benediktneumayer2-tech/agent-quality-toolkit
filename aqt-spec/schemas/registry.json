@@ -179,6 +179,7 @@
       "summary": "Outbound request or connection seen by the checkpoint, with the sending process",
       "schema": "data/egress.request.schema.json",
       "actions": [
+        "opened",
         "observed"
       ],
       "meanings": [],

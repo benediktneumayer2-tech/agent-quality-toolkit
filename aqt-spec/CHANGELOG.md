@@ -6,6 +6,8 @@
 - Record types for aqt-egress (additive, spec §11): `egress.session` (`started`, `ended`), `egress.request`
   (`observed`; required `session`, `destination` `{host, port}`, `mode`, `decision`), `egress.lookup`,
   `egress.pruned` and `egress.refused`, with payload schemas.
+- `egress.request` gets the action `opened` (written when the upstream connection opens, before data flows) and
+  `destination.host_header` (what the client claimed, when it differs from where the proxy connected).
 - §3.5 clarified (additive): masked excerpts of what an agent sent to a non-LLM destination are evidence of
   outbound data, not stored prompts; LLM API requests are recorded by structure only.
 - Message codes (`aqt_evidence.messages`): `Text(code, template, **args)` is a `str` that is exactly the English
