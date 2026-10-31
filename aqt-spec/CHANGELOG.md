@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Added
+- Message codes (`aqt_evidence.messages`): `Text(code, template, **args)` is a `str` that is exactly the English
+  sentence (printed, in JSON or in a record) and carries `.code` and `.args`; `text_join(sep, parts)` keeps the
+  parts (code `aqt.join`); `coded(value)` gives `{code, args}` as plain JSON for a `Text` or an exception whose
+  message is one. Chain break reasons, `ChainResult.summary()` and the human-check refusals carry codes
+  (`evidence.chain.*`, `evidence.human.*`); their English is unchanged.
 - Sink discovery (spec §10.1): without `AQT_SINK`, `open_sink()` finds the aqt-trail writer socket at its
   default place (`[writer] socket` in `trail.toml`, `$XDG_RUNTIME_DIR/aqt/trail.sock`). An initialised trail
   whose writer is down gets the records through the spool; the fallback file is used only when no trail is

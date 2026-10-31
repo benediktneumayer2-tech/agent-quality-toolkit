@@ -16,6 +16,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from .canonical import CanonicalError, canonical_json
 from .crypto import Signer, verify_record_signatures, verify_signature
+from .messages import Text
 from .record import is_hash, is_time, record_hash, utc_now, validate_record
 
 GENESIS = "sha256:" + "0" * 64
@@ -40,8 +41,10 @@ class ChainResult:
 
     def summary(self) -> str:
         if self.ok:
-            return f"intact: {self.count} records, head seq {self.head_seq} {self.head_hash}"
-        return f"broken from seq {self.first_bad_seq}: {self.reason}"
+            return Text("evidence.chain.intact", "intact: {count} records, head seq {seq} {head}", count=self.count,
+                        seq=self.head_seq, head=self.head_hash)
+        return Text("evidence.chain.broken", "broken from seq {seq}: {reason}", seq=self.first_bad_seq,
+                    reason=self.reason)
 
 
 def verify_chain(records: Iterable[dict], *, keys: dict[str, Ed25519PublicKey] | None = None,
@@ -54,7 +57,8 @@ def verify_chain(records: Iterable[dict], *, keys: dict[str, Ed25519PublicKey] |
     prev, expected, count, head = start_prev, start_seq, 0, None
     warnings: list[str] = []
     if require_signature and not keys:
-        return ChainResult(False, 0, None, None, start_seq, "signatures required, but no pinned public key given")
+        return ChainResult(False, 0, None, None, start_seq, Text("evidence.chain.no_pinned_key", "signatures "
+                                                                 "required, but no pinned public key given"))
     for record in records:
         chain = record.get("chain") if isinstance(record, dict) else None
         seq = chain.get("seq") if isinstance(chain, dict) else None
@@ -63,19 +67,25 @@ def verify_chain(records: Iterable[dict], *, keys: dict[str, Ed25519PublicKey] |
         if problems:
             return ChainResult(False, count, expected - 1 if count else None, head, bad, "; ".join(problems), warnings)
         if chain is None:
-            return ChainResult(False, count, None, head, bad, "record is not chained", warnings)
+            return ChainResult(False, count, None, head, bad, Text("evidence.chain.not_chained",
+                                                                   "record is not chained"), warnings)
         if seq != expected:
-            return ChainResult(False, count, expected - 1, head, expected, f"expected seq {expected}, found {seq}", warnings)
+            return ChainResult(False, count, expected - 1, head, expected,
+                               Text("evidence.chain.seq_mismatch", "expected seq {expected}, found {found}",
+                                    expected=expected, found=seq), warnings)
         if chain["prev"] != prev:
-            return ChainResult(False, count, expected - 1, head, seq, "prev does not match the previous record hash", warnings)
+            return ChainResult(False, count, expected - 1, head, seq, Text(
+                "evidence.chain.prev_mismatch", "prev does not match the previous record hash"), warnings)
         if keys is not None:
             results = verify_record_signatures(record, keys)
             if any(ok is False for _, ok in results):
-                return ChainResult(False, count, expected - 1, head, seq, "invalid signature", warnings)
+                return ChainResult(False, count, expected - 1, head, seq,
+                                   Text("evidence.chain.invalid_signature", "invalid signature"), warnings)
             if require_signature and not any(ok for _, ok in results):
-                return ChainResult(False, count, expected - 1, head, seq, "no valid signature from a known key", warnings)
+                return ChainResult(False, count, expected - 1, head, seq, Text(
+                    "evidence.chain.no_valid_signature", "no valid signature from a known key"), warnings)
             if any(ok is None for _, ok in results):
-                warnings.append(f"seq {seq}: signature by an unknown key")
+                warnings.append(Text("evidence.chain.unknown_key", "seq {seq}: signature by an unknown key", seq=seq))
         head = record_hash(record)
         prev, expected, count = head, expected + 1, count + 1
     return ChainResult(True, count, expected - 1 if count else None, head, None, None, warnings)

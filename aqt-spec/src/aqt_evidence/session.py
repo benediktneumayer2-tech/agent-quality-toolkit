@@ -16,6 +16,8 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .messages import Text
+
 # Environment variables set by agent harnesses (name -> harness).
 ENV_MARKERS = {
     "AQT_AGENT_SESSION": "aqt",          # set by AQT tools when they launch an agent
@@ -90,9 +92,11 @@ def require_human(*, environ: dict | None = None, chain: list[str] | None = None
     """Raise ``HumanCheckError`` unless the caller looks like a human at a terminal."""
     context = detect_agent_context(environ, chain=chain)
     if context.is_agent:
-        raise HumanCheckError(context, "refused: this command looks like it runs inside an agent session "
-                                       f"({', '.join(context.markers)}); run it yourself in a terminal")
+        raise HumanCheckError(context, Text("evidence.human.agent_context", "refused: this command looks like it "
+                                            "runs inside an agent session ({markers}); run it yourself in a terminal",
+                                            markers=", ".join(context.markers)))
     stdin = sys.stdin if stdin is None else stdin
     if require_tty and not (hasattr(stdin, "isatty") and stdin.isatty()):
-        raise HumanCheckError(context, "refused: a human decision needs an interactive terminal")
+        raise HumanCheckError(context, Text("evidence.human.no_tty",
+                                            "refused: a human decision needs an interactive terminal"))
     return context
