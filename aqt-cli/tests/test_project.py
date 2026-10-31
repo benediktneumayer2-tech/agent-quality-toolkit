@@ -62,6 +62,11 @@ def backups(root):
     return sorted(folder.iterdir()) if folder.exists() else []
 
 
+def user_backups(root):
+    folder = project.backup_dir(root).parent / "user"
+    return sorted(folder.iterdir()) if folder.exists() else []
+
+
 # -- the whole run -----------------------------------------------------------------------------
 def test_fresh_repo_init_then_rerun_changes_nothing(repo):
     said = []
@@ -128,6 +133,7 @@ def test_without_a_terminal_and_without_yes_nothing_is_written(repo):
     assert init(repo, yes=False, say=said.append) == 1
     assert "no terminal to confirm the steps: they are skipped; rerun with --yes to apply them" in said
     assert "claude.hooks: skipped (no terminal; --yes applies it)" in said
+    assert not any(line.startswith("claude.deny:") for line in said)     # part of claude.hooks: listed once
     assert tree(repo) == {} and not ui_toml().exists()
 
 
@@ -252,6 +258,14 @@ def test_block_appended_replaced_and_both_files(repo):
     assert status(repo)["instructions"].result == "ok"
 
 
+def test_only_agents_md_also_gets_a_new_claude_md(repo):
+    (repo / "AGENTS.md").write_text("Rules\n")
+    assert init(repo) == 0
+    block = project.instructions_block()
+    assert (repo / "AGENTS.md").read_text() == f"Rules\n\n{block}\n"
+    assert (repo / "CLAUDE.md").read_text() == f"{block}\n"          # Claude Code does not read AGENTS.md
+
+
 def test_linked_claude_md_is_edited_once_and_stays_a_link(repo):
     (repo / "AGENTS.md").write_text("Rules\n")
     (repo / "CLAUDE.md").symlink_to("AGENTS.md")
@@ -318,7 +332,7 @@ def test_ui_toml_append_rewrite_listed_and_other_shapes(repo, tmp_path):
     path.write_text(f'port = 1\n\n[changes]\nprojects = ["{other}", ]  # mine\n\n[x]\ny = 2\n')
     init(repo)
     assert path.read_text() == f'port = 1\n\n[changes]\nprojects = ["{other}", "{repo}"]  # mine\n\n[x]\ny = 2\n'
-    assert ui_config().projects == [other, repo] and len(backups(repo)) == 2
+    assert ui_config().projects == [other, repo] and len(user_backups(repo)) == 2 and backups(repo) == []
     assert status(repo)["ui.project"].result == "ok"
     path.write_text(f'[changes]\nprojects = [\n  "{other}",\n]\n')
     result = status(repo)["ui.project"]

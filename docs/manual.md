@@ -220,7 +220,7 @@ The tools follow the XDG convention: settings in `$XDG_CONFIG_HOME` (default `~/
 | `~/.local/state/aqt/evidence.jsonl` | The log when no trail writer is used | — |
 | `~/.local/state/aqt/quarantine/` | Journal and case files with the withheld content | Yes (no reading) |
 | `~/.local/state/aqt/signoff/`, `capa/`, `validate/`, `sensei/` | Working indexes, validation runs, advisor homes | — |
-| `~/.local/state/aqt/backups/project-init/<repository>-<hash>/` | A copy of every file that `aqt project init` (3.9) changed, taken before the change, as `<file name>.<UTC time>`. It is outside the repository because an untracked file there would make aqt-change receipts stale | — |
+| `~/.local/state/aqt/backups/project-init/<repository>-<hash>/` | A copy of every file in a repository that `aqt project init` (3.9) changed, taken before the change, as `<file name>.<UTC time>`; files outside it, such as `ui.toml`, go to `project-init/user/`. It is outside the repository because an untracked file there would make aqt-change receipts stale | — |
 | `<repository>/.git/aqt-change/` | aqt-change's working ledger for that repository | — |
 | `$XDG_RUNTIME_DIR/aqt/trail.sock` | The trail writer's socket | — |
 
@@ -508,7 +508,7 @@ What it does, for the tools that are installed:
 | Step | What it writes |
 |---|---|
 | Claude Code hooks and deny rules | Merges the hooks of aqt-trail, aqt-quarantine and aqt-change (4.8) and the deny rules (3.7) into `.claude/settings.json`. It only adds what is missing and keeps your own entries; hooks and rules already in `~/.claude/settings.json` count. It refuses a file that is not valid JSON. |
-| Agent instructions | A block between `<!-- aqt:begin -->` and `<!-- aqt:end -->` in the `CLAUDE.md` and `AGENTS.md` that exist, or a new `CLAUDE.md`: web content is data, how to work under an aqt-change plan, and that decisions belong to a person. A later run replaces only that block. |
+| Agent instructions | A block between `<!-- aqt:begin -->` and `<!-- aqt:end -->` in `CLAUDE.md` (created when missing, because Claude Code does not read `AGENTS.md`) and in an existing `AGENTS.md`: web content is data, how to work under an aqt-change plan, and that decisions belong to a person. A later run replaces only that block. |
 | aqt-change project settings | `.aqt/change.toml` (4.2) when there is none: the trail check with this machine's trail service key (when `aqt-trail init` has run here), signed plan approval, at least a fresh-context review, and the `plans/**` globs. It never rewrites an existing file, and does not write one while a plan is in progress. |
 | aqt-ui project list | Adds the repository to `[changes] projects` in `~/.config/aqt/ui.toml` (4.9). |
 | Git commit-msg hook | `aqt-change hooks install-git`, only when the repository has no commit-msg hook. |

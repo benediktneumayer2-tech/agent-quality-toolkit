@@ -64,6 +64,7 @@ def apply_steps(ctx: Context, checks, name: str, title: str) -> int:
             ctx.say("no terminal to confirm the steps: they are skipped; rerun with --yes to apply them")
     else:
         ctx.say(f"{name}: nothing to do")
+    skipped: set[str] = set()
     for check in checks:
         if check.step is None:
             continue
@@ -74,7 +75,9 @@ def apply_steps(ctx: Context, checks, name: str, title: str) -> int:
             continue
         if not check.personal and not ctx.yes:
             if not ctx.interactive:
-                ctx.say(f"{check.id}: skipped (no terminal; --yes applies it)")
+                if check.part_of not in skipped:      # its step was skipped as part of that one already
+                    ctx.say(f"{check.id}: skipped (no terminal; --yes applies it)")
+                skipped.add(check.id)
                 continue
             if not ctx.confirm(f"{_capital(result.explanation)}. {_capital(check.describe(ctx))}?"):
                 ctx.say(f"{check.id}: skipped")

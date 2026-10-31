@@ -41,7 +41,7 @@ aqt status                                 # one verdict, and the fix for each p
 cd ~/code/my-project && aqt project init   # in each repository where agents work
 ```
 
-`aqt project init` adds the Claude Code hooks, rules that stop Claude Code from running the decision commands that belong to a person (a first fence, not a boundary: [manual 3.7](docs/manual.md#37-back-up-and-keep-secrets-out-of-the-agents-reach)), a short block of agent instructions in `CLAUDE.md` (or `AGENTS.md`) and aqt-change's project settings. It asks before each step and is safe to run again. It never commits, so commit the files it lists: the last line of its output gives the command, for example `git add .claude/settings.json CLAUDE.md .aqt/change.toml && git commit -m "AQT project setup"`.
+`aqt project init` adds the Claude Code hooks, rules that stop Claude Code from running the decision commands that belong to a person (a first fence, not a boundary: [manual 3.7](docs/manual.md#37-back-up-and-keep-secrets-out-of-the-agents-reach)), a short block of agent instructions in `CLAUDE.md` (and in `AGENTS.md`, if there is one) and aqt-change's project settings. It asks before each step and is safe to run again. It never commits, so commit the files it lists: the last line of its output gives the command, for example `git add .claude/settings.json CLAUDE.md .aqt/change.toml && git commit -m "AQT project setup"`.
 
 ## The parts
 
@@ -181,7 +181,7 @@ The [catalogues](aqt-spec/catalogues/) hold 121 paraphrased requirements from 11
 - **Some checks are manual.** The Claude Code hooks, a live advisor pairing and the AI-reviewer command lines have documented manual checks, not automated tests. The trail's separate-user mode is not yet tested.
 - **Demo shortcuts.** The demo's people use fixed passphrases (DEMO ONLY), and its time stamps come from a local test authority (TEST ONLY).
 - **Preview.** Version 0.1; interfaces may change before 1.0. Linux only. Not on PyPI (the Python package index) yet: install from this repository. Ready-made hooks exist for Claude Code only; with Codex or pi you run the commands yourself, and aqt-trail imports their session logs.
-- **Tests.** `scripts/test_all.sh` runs 1011 offline tests (1010 in the ten packages, including the optional aqt-ui and the `aqt` command, and one for the demo) with a throw-away home folder. `scripts/clean_install_check.sh` builds every package, installs only the built packages into a fresh environment outside the checkout and runs every tool, `aqt status` and the demo there (`--docker` does the same in a throw-away container). GitHub's automatic checks (CI) run both, the tests on Python 3.11, 3.12 and 3.13.
+- **Tests.** `scripts/test_all.sh` runs 1012 offline tests (1011 in the ten packages, including the optional aqt-ui and the `aqt` command, and one for the demo) with a throw-away home folder. `scripts/clean_install_check.sh` builds every package, installs only the built packages into a fresh environment outside the checkout and runs every tool, `aqt status` and the demo there (`--docker` does the same in a throw-away container). GitHub's automatic checks (CI) run both, the tests on Python 3.11, 3.12 and 3.13.
 
 ## Privacy and security
 

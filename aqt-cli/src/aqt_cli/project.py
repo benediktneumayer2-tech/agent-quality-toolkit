@@ -148,7 +148,8 @@ def backup_dir(root: Path) -> Path:
 
 # -- writing ---------------------------------------------------------------------------------
 def _backup(ctx: ProjectContext, path: Path) -> Path:
-    folder = backup_dir(ctx.root)
+    inside = Path(os.path.abspath(path)).is_relative_to(ctx.root)
+    folder = backup_dir(ctx.root) if inside else backup_dir(ctx.root).parent / "user"   # e.g. ui.toml
     folder.mkdir(parents=True, exist_ok=True)
     folder.chmod(0o700)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -394,15 +395,15 @@ def with_block(text: str, block: str) -> str:
 
 
 def instruction_files(ctx: ProjectContext) -> list[Path]:
-    """The existing CLAUDE.md and AGENTS.md at the root (one of them when one links to the other), else a new
-    CLAUDE.md."""
-    found, seen = [], set()
-    for name in ("CLAUDE.md", "AGENTS.md"):
-        path = ctx.root / name
-        if path.is_file() and path.resolve() not in seen:
-            seen.add(path.resolve())
-            found.append(path)
-    return found or [ctx.root / "CLAUDE.md"]
+    """CLAUDE.md at the root (new when missing: Claude Code does not read AGENTS.md) and an existing AGENTS.md;
+    one of them when one links to the other."""
+    found, seen = [ctx.root / "CLAUDE.md"], set()
+    if found[0].is_file():
+        seen.add(found[0].resolve())
+    agents = ctx.root / "AGENTS.md"
+    if agents.is_file() and agents.resolve() not in seen:
+        found.append(agents)
+    return found
 
 
 def _instruction_edits(ctx: ProjectContext) -> list[tuple[Path, str, str]]:
