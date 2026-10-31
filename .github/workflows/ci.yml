@@ -12,9 +12,9 @@ jobs:
       - uses: astral-sh/setup-uv@v10.3.3
         with:
           python-version: ${{ matrix.python }}
-      - name: Install bubblewrap and tmux for optional checks
-        run: sudo apt-get update && sudo apt-get install -y bubblewrap tmux
-      - name: All package suites and the integration demo
+      - name: Install bubblewrap, tmux and nftables for optional checks and the aqt-egress box
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap tmux nftables
+      - name: All package suites and the integration demo (aqt-egress on Python 3.12+ only)
         run: scripts/test_all.sh
   clean-install:
     runs-on: ubuntu-latest
@@ -38,7 +38,7 @@ jobs:
           uv pip install --python /tmp/audit/bin/python -e "./aqt-spec[schema,test]" -e "./aqt-trail[test]" \
             -e "./aqt-signoff[schema,test]" -e "./aqt-change[test]" -e "./aqt-sensei[test]" \
             -e "./aqt-quarantine[hf,test]" -e "./aqt-validate[test]" -e "./aqt-capa[test]" -e "./aqt-ui[test]" \
-            -e "./aqt-cli[test]"
+            -e "./aqt-cli[test]" -e "./aqt-egress[test]"
           # the aqt-* packages are editable and left out: they are not on PyPI
           uv pip freeze --python /tmp/audit/bin/python --exclude-editable > /tmp/audit-requirements.txt
           uvx pip-audit@2.9.0 -r /tmp/audit-requirements.txt --no-deps --disable-pip --progress-spinner off

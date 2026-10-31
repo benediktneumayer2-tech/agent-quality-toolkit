@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Clean-install check: prove that the packages work installed, without the repository.
 #
-# 1. Build every aqt-* package that has a pyproject.toml (sdist, then the wheel from that sdist).
+# 1. Build every aqt-* package that has a pyproject.toml (sdist, then the wheel from that sdist);
+#    aqt-egress only when the interpreter is Python 3.12 or newer.
 # 2. Install only the built wheels into a fresh venv outside the repository (third-party
 #    dependencies such as cryptography come from PyPI; no editable installs).
 # 3. From a directory outside the checkout, with throw-away HOME and XDG directories (as in
@@ -57,7 +58,17 @@ run_isolated() {  # throw-away HOME/XDG dirs, no AQT_* overrides, no PYTHONPATH,
 
 # ---- 1. build ---------------------------------------------------------------------------------------
 PACKAGES=()
-for project in "$REPO"/aqt-*/pyproject.toml; do PACKAGES+=("$(basename "$(dirname "$project")")"); done
+NEW_PYTHON=0
+"$(uv python find ${UV_PYTHON:+"$UV_PYTHON"})" -c 'import sys; sys.exit(sys.version_info < (3, 12))' 2>/dev/null \
+    && NEW_PYTHON=1                                # the interpreter uv venv takes below
+for project in "$REPO"/aqt-*/pyproject.toml; do
+    pkg="$(basename "$(dirname "$project")")"
+    if [ "$pkg" = aqt-egress ] && [ "$NEW_PYTHON" = 0 ]; then
+        echo "== aqt-egress left out: it needs Python 3.12 or newer"
+        continue
+    fi
+    PACKAGES+=("$pkg")
+done
 [ ${#PACKAGES[@]} -gt 0 ] || { echo "no aqt-* packages found in $REPO" >&2; exit 2; }
 echo "== build: ${PACKAGES[*]}"
 for pkg in "${PACKAGES[@]}"; do

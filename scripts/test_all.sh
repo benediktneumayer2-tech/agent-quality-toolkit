@@ -4,12 +4,15 @@
 # All runs see throw-away HOME and XDG directories, so nothing is
 # written to the real ~/.local/state/aqt or ~/.config/aqt.
 #
+# aqt-egress needs Python 3.12+: with an older interpreter its suite is skipped (shown in the table).
+#
 # Usage: scripts/test_all.sh [PACKAGE...]      e.g. scripts/test_all.sh aqt-trail aqt-signoff
 # Exit 0 when every suite passed.
 set -uo pipefail
 
 SUITE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PACKAGES=(aqt-spec aqt-trail aqt-signoff aqt-change aqt-sensei aqt-quarantine aqt-validate aqt-capa aqt-ui aqt-cli)
+PACKAGES=(aqt-spec aqt-trail aqt-signoff aqt-change aqt-sensei aqt-quarantine aqt-validate aqt-capa aqt-ui aqt-cli
+          aqt-egress)
 [ $# -gt 0 ] && PACKAGES=("$@")
 REAL_HOME="$HOME"
 REAL_DIRS=("$REAL_HOME/.local/state/aqt" "$REAL_HOME/.config/aqt")
@@ -26,6 +29,7 @@ ensure_venv() {   # $1 = package directory name
     case "$pkg" in
         aqt-spec) ;;
         aqt-validate) extra=(-e ../aqt-spec -e ../aqt-quarantine) ;;   # detector plug-in tests
+        aqt-egress) extra=(-e "../aqt-spec[schema]" -e ../aqt-trail) ;;   # records verified by a real writer
         aqt-ui) extra=(-e ../aqt-spec -e ../aqt-trail -e ../aqt-quarantine -e ../aqt-signoff -e ../aqt-change
                        -e ../aqt-capa -e ../aqt-validate) ;;                  # every view
         aqt-cli) extra=(-e "../aqt-spec[schema]" -e ../aqt-trail -e ../aqt-signoff -e ../aqt-change -e ../aqt-sensei
@@ -33,6 +37,13 @@ ensure_venv() {   # $1 = package directory name
         *) extra=(-e ../aqt-spec) ;;
     esac
     (cd "$dir" && uv venv -q .venv && uv pip install -q --python .venv/bin/python "${extra[@]}" -e ".[test]")
+}
+
+python_ok() {  # $1 = package directory name; aqt-egress needs Python 3.12 or newer
+    [ "$1" = aqt-egress ] || return 0
+    local py="$SUITE/$1/.venv/bin/python"
+    [ -x "$py" ] || py="$(uv python find ${UV_PYTHON:+"$UV_PYTHON"} 2>/dev/null)"   # what uv venv would take
+    [ -n "$py" ] && "$py" -c 'import sys; sys.exit(sys.version_info < (3, 12))'
 }
 
 ensure_demo_venv() {
@@ -88,6 +99,11 @@ run_suite() {  # $1 = label, $2 = directory, $3 = python, $4... = pytest args
 
 for pkg in "${PACKAGES[@]}"; do
     [ -d "$SUITE/$pkg" ] || { echo "no package $pkg" >&2; STATUS=1; continue; }
+    if ! python_ok "$pkg"; then
+        echo "$pkg: skipped (needs Python 3.12 or newer)"
+        ROWS+=("$(printf '%-16s %s' "$pkg" "skipped: needs Python 3.12 or newer")")
+        continue
+    fi
     ensure_venv "$pkg" || { ROWS+=("$(printf '%-16s %s' "$pkg" "venv setup FAILED")"); STATUS=1; continue; }
     run_suite "$pkg" "$SUITE/$pkg" "$SUITE/$pkg/.venv/bin/python"
 done
