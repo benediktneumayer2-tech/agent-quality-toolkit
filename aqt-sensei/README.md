@@ -31,6 +31,8 @@ aqt-sensei approve m-1a2b3c4d5e6f --reason "clear question"
 
 The worker asks with `aqt-sensei ask "…" [--file notes.md]` and ends its turn. Inside its sandbox the advisor answers with `sensei reply "…" [--file PLAN.md]`. The intro message the bridge sends to the worker explains both commands.
 
+In Herdr, the separate plugin [aqt-sensei-herdr](https://github.com/benediktneumayer2-tech/aqt-sensei-herdr) runs `pair`, `approve`, `list` and `end` from popups.
+
 Offline, without tmux, bwrap or a model: `python examples/demo_offline.py` runs one confirm-mode exchange on a fake host and prints the ledger.
 
 ## How it works
