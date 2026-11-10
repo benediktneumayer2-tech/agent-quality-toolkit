@@ -91,3 +91,17 @@ def test_the_route_is_read_from_the_environment(tmp_path, monkeypatch):
     assert tools.install_route() == "pipx"
     (tmp_path / "uv-receipt.toml").write_text("[tool]\n")
     assert tools.install_route() == "uv-tool"
+
+
+def test_the_toolkit_declares_every_tool_command_as_its_package_does():
+    """uv tool / pipx link only the toolkit's own scripts; the hooks call aqt-trail etc. by name."""
+    from importlib import metadata
+    scripts = lambda dist: {ep.name: ep.value for ep in metadata.distribution(dist).entry_points
+                            if ep.group == "console_scripts"}
+    own = scripts("agent-quality-toolkit")
+    assert own.pop("aqt") == own.pop("aqt-toolkit") == "aqt_cli.cli:main"
+    expected = {}
+    for _module, script, dist in tools.TOOLS.values():
+        if dist != "aqt-egress":        # its script cannot depend on the [egress] extra
+            expected[script] = scripts(dist)[script]
+    assert own == expected and len(own) == 9

@@ -21,6 +21,8 @@ aqt setup                                  # do it, step by step
 
 `aqt-toolkit` is the same command under a second name, for systems where another `aqt` (from aqtinstall) comes first on `PATH`: `aqt-toolkit status`, `aqt-toolkit setup`, and so on. The optional outbound checkpoint, aqt-egress (Python 3.12+, bubblewrap), is the extra `egress`: `uv tool install "agent-quality-toolkit[egress]"`. In an existing virtual environment, `pip install agent-quality-toolkit` works as well.
 
+The toolkit also installs the tools' own commands (`aqt-trail`, `aqt-signoff`, `aqt-change`, `aqt-sensei`, `aqt-quarantine`, `aqt-validate`, `aqt-capa`, `aqt-ui`, `aqt-evidence`), so a uv tool or pipx install puts them on `PATH`, where the Claude Code hooks of `aqt project init` find them. `aqt-egress` is the exception, because a command cannot depend on an extra: with a uv tool or pipx it runs as `aqt egress` (or add `--with-executables-from aqt-egress` to `uv tool install`). In one virtual environment the toolkit and each package install the same command, so `pip uninstall agent-quality-toolkit` also removes the tools' commands while their packages stay; `pip install --force-reinstall --no-deps aqt-trail aqt-signoff …` brings them back.
+
 Then, once in each repository where agents work:
 
 ```bash

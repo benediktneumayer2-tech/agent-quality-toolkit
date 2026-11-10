@@ -54,6 +54,19 @@ Issues = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/issues
 [project.scripts]
 aqt = "aqt_cli.cli:main"
 aqt-toolkit = "aqt_cli.cli:main"      # the same command, where aqtinstall's aqt comes first on PATH
+# The tools' own commands again, with the same entry points as their packages declare: `uv tool install` and
+# `pipx install` link only the scripts of the package named, and the Claude Code hooks call aqt-trail,
+# aqt-quarantine and aqt-change by name. aqt-egress is left to its own package: a script cannot depend on
+# the [egress] extra (with a uv tool or pipx, it runs as `aqt egress`).
+aqt-trail = "aqt_trail.cli:main"
+aqt-signoff = "aqt_signoff.cli:main"
+aqt-change = "aqt_change.cli:main"
+aqt-sensei = "aqt_sensei.cli:main"
+aqt-quarantine = "aqt_quarantine.cli:main"
+aqt-validate = "aqt_validate.cli:main"
+aqt-capa = "aqt_capa.cli:main"
+aqt-ui = "aqt_ui.cli:main"
+aqt-evidence = "aqt_evidence.cli:main"
 
 [tool.uv.sources]
 aqt-spec = { path = "../aqt-spec", editable = true }

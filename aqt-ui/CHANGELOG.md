@@ -5,6 +5,7 @@
 First version.
 
 - Packaging: published on PyPI (`pip install aqt-ui`) at 0.2.0, the version of every AQT package; the other AQT packages it needs are required at `>=0.2,<0.3`; the licence is an SPDX expression with the licence files in the package (PEP 639); `aqt-ui[all]` installs every view.
+- A missing package's install command fits how aqt-ui was installed (as `aqt`'s hints): the toolkit again for a uv tool or pipx, `pip install …` elsewhere, the editable install in a clone; the page shows the command the server sends.
 
 Verification of the third review (same version, not yet released):
 

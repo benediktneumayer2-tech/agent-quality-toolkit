@@ -32,7 +32,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from . import __version__
 from .config import UiConfig
 from .guard import Guard, Mode
-from .views import NotInstalled, UsageProblem, ViewProblem, coded_fields, installed
+from .views import NotInstalled, UsageProblem, ViewProblem, coded_fields, install_command, installed
 from .views.trail import PAGE
 
 STATIC = Path(__file__).parent / "static"
@@ -350,7 +350,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
             self.api(method, path, query, session)
         except ViewProblem as error:
-            self.problem(error.status, str(error), **({"install": error.package} if isinstance(error, NotInstalled)
+            self.problem(error.status, str(error), **({"install": error.install} if isinstance(error, NotInstalled)
                                                       else {}), **coded_fields("message", error))
         except (BrokenPipeError, ConnectionResetError):
             pass
@@ -397,10 +397,11 @@ class Handler(BaseHTTPRequestHandler):
         parts = [part for part in path.split("/")[2:] if part]
         route = (method, *parts)
         if route == ("GET", "session"):
+            views = ("aqt_quarantine", "aqt_signoff", "aqt_change", "aqt_capa", "aqt_validate")
             self.send_json(200, {"mode": app.mode.as_dict(), "version": __version__,
-                                 "installed": {name: installed(name) for name in
-                                               ("aqt_quarantine", "aqt_signoff", "aqt_change", "aqt_capa",
-                                                "aqt_validate")},
+                                 "installed": {name: installed(name) for name in views},
+                                 "install": {name.replace("_", "-"): install_command(name.replace("_", "-"))
+                                             for name in views if not installed(name)},
                                  "projects": [str(p) for p in app.config.projects]})
         elif route == ("GET", "overview"):
             from .views.overview import build

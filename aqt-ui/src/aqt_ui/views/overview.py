@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 
 from aqt_evidence import Text, text_join
 
-from . import ViewProblem, coded_fields, evidence_fingerprint, fingerprint, installed
+from . import ViewProblem, coded_fields, evidence_fingerprint, fingerprint, install_command, installed
 from .trail import TrailView, parse_time
 
 SEVERITY = {"critical": 0, "high": 1, "medium": 2, "low": 3}
@@ -259,7 +259,7 @@ def tool_health(trail: TrailView, problems: dict) -> list[dict]:
         present = installed(module)
         out.append({"package": package, "installed": present, "last_record": last.get(prefix),
                     "problem": problems.get(package),
-                    "install": None if present else f"uv pip install -e {package}"})
+                    "install": None if present else install_command(package)})
     return out
 
 

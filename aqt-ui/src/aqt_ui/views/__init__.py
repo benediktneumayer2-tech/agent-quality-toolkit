@@ -6,6 +6,12 @@ Each adapter imports its package lazily, so a missing package only disables its 
 from __future__ import annotations
 
 import importlib.util
+import json
+import shlex
+import sys
+from importlib import metadata
+from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 
 class ViewProblem(Exception):
@@ -29,8 +35,49 @@ class NotInstalled(ViewProblem):
     status = 501
 
     def __init__(self, package: str):
-        super().__init__(f"{package} is not installed: uv pip install -e {package}  (or pip install {package})")
         self.package = package
+        self.install = install_command(package)
+        super().__init__(f"{package} is not installed: {self.install}")
+
+
+TOOLKIT = "agent-quality-toolkit"
+VIEW_PACKAGES = ("aqt-quarantine", "aqt-signoff", "aqt-change", "aqt-capa", "aqt-validate")   # aqt-ui[all]
+
+
+def _has(dist: str) -> bool:
+    try:
+        metadata.version(dist)
+    except metadata.PackageNotFoundError:
+        return False
+    return True
+
+
+def _clone() -> Path | None:
+    """The repository clone aqt-ui is installed from (editable install), or None."""
+    try:
+        origin = json.loads(metadata.distribution("aqt-ui").read_text("direct_url.json") or "{}")
+    except (metadata.PackageNotFoundError, ValueError):
+        return None
+    url = urlsplit(origin.get("url", ""))
+    if not origin.get("dir_info", {}).get("editable") or url.scheme != "file":
+        return None
+    return Path(unquote(url.path)).parent
+
+
+def install_command(package: str) -> str:
+    """The command that adds ``package`` to the installation aqt-ui runs in, as aqt's own hints: the toolkit (or
+    aqt-ui[all]) again for a uv tool or pipx, ``pip install`` elsewhere, the editable install in a clone."""
+    prefix = Path(sys.prefix)
+    toolkit = _has(TOOLKIT)
+    spec = (f'"{TOOLKIT}[egress]"' if _has("aqt-egress") else TOOLKIT) if toolkit else '"aqt-ui[all]"'
+    if (prefix / "uv-receipt.toml").is_file():
+        return f"uv tool install {spec}" + ("" if toolkit or package in VIEW_PACKAGES else f" --with {package}")
+    if (prefix / "pipx_metadata.json").is_file():
+        return f"pipx install --force {spec}" if toolkit else f"pipx inject aqt-ui {package}"
+    clone = _clone()
+    if clone is not None:
+        return f"uv pip install --python {shlex.quote(sys.executable)} -e {shlex.quote(str(clone / package))}"
+    return f"pip install {package}"
 
 
 # Refusal codes of aqt-signoff and of the aqt-trail review in words; the code stays visible next to them.

@@ -6,6 +6,7 @@ First version.
 
 - Packaging: published on PyPI as `agent-quality-toolkit` (`uv tool install agent-quality-toolkit`, `pipx install agent-quality-toolkit` or `pip install agent-quality-toolkit`) at 0.2.0, the version of every AQT package; it requires the nine packages at `>=0.2,<0.3`, and the extra `egress` adds aqt-egress (Python 3.12+); the licence is an SPDX expression with the licence files in the package (PEP 639).
 - `aqt-toolkit`: the same command under a second name, for systems where another `aqt` (aqtinstall's) comes first on `PATH`; `--version` and `--help` name both.
+- The toolkit declares the tools' commands too (`aqt-trail` … `aqt-evidence`, the same entry points as their packages), so `uv tool install` and `pipx install` put them on `PATH` and the Claude Code hooks find them; `aqt-egress` stays with its package (with a uv tool or pipx: `aqt egress`).
 - A missing package's fix is the command for this installation: `uv tool install "agent-quality-toolkit[egress]"` for a uv tool (with `--python 3.12` when the tool runs on 3.11), `pipx install --force …` for pipx, `pip install aqt-egress` in another environment, and the editable install only in a clone of the repository.
 - `aqt status` (`--json`, `--verify`): one verdict for the setup of this machine, with a result,
   a one-line explanation and the fix for each check: packages, trail, systemd user service, writer,

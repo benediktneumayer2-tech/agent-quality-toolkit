@@ -22,7 +22,7 @@ uv venv .venv && uv pip install --python .venv/bin/python \
 .venv/bin/aqt-ui
 ```
 
-`aqt-ui` prints a login link that works once and opens it in your browser. Press Enter in its terminal for a fresh link (older unused links stop working); Ctrl+C stops the server and ends every session. Each browser tab needs its own login link. Only `aqt-spec` and `aqt-trail` are required; a view whose package is missing says "not installed" and shows the install command.
+`aqt-ui` prints a login link that works once and opens it in your browser. Press Enter in its terminal for a fresh link (older unused links stop working); Ctrl+C stops the server and ends every session. Each browser tab needs its own login link. Only `aqt-spec` and `aqt-trail` are required; a view whose package is missing says "not installed" and shows the command that adds it to this installation.
 
 | Option | Meaning |
 |---|---|
