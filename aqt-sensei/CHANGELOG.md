@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The bridge notifies the owner (a Herdr notification, or the tmux status line) once when a message starts waiting for approval or forwarding.
+- Fix (Herdr): the context digest and `sensei worker-log` were empty, because `herdr pane read --format text` prints the text itself rather than JSON.
+- Fix: a worker's pane hint that names no pane of the bridge's host is ignored. Herdr inside tmux passes the outer `TMUX_PANE` to its panes, so `aqt-sensei ask` was refused with "the declared pane does not match the calling process".
 - Fix: `data.peer` leaves out `client_time` and unknown process start times instead of writing `null`, as the
   trail's `observed` does; records with a peer now pass the aqt-spec payload schemas.
 - Sandbox: runs without `bwrap --new-session`, so the advisor keeps its pane's terminal.

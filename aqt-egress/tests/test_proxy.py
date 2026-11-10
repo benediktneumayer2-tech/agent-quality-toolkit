@@ -159,8 +159,14 @@ def test_raw_tcp_through_the_redirect_listener(make_proxy, upstream):
     proxy = make_proxy(test_hosts={"203.0.113.9:25": f"127.0.0.1:{echo.getsockname()[1]}"})
     client = socket.create_connection(("127.0.0.1", proxy.port))
     client.sendall(b"CONNECT 203.0.113.9:25 HTTP/1.1\r\nHost: 203.0.113.9:25\r\n\r\n")
-    assert client.recv(100).startswith(b"HTTP/1.1 200")
-    assert client.recv(100) == b"220 hello\r\n"
+    client.settimeout(10)
+    received = b""                      # the 200 and the greeting may arrive in one read or several
+    while b"220 hello\r\n" not in received:
+        chunk = client.recv(100)
+        assert chunk, f"connection closed after {received!r}"
+        received += chunk
+    head, _, rest = received.partition(b"\r\n\r\n")
+    assert head.startswith(b"HTTP/1.1 200") and rest == b"220 hello\r\n"
     client.sendall(b"QUIT\r\n")
     time.sleep(0.3)
     client.close()

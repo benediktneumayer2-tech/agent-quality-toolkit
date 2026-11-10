@@ -115,6 +115,9 @@ def test_herdr_parsing_and_errors(tmp_path):
     assert panes["w1:p1"].root_pid == 4100 and panes["w1:p1"].tty == "/dev/pts/4"
     assert panes["w1:p2"].agent is False and panes["w1:p2"].status == "unknown"
     assert host.capture("w1:p1", 50) == "line one\nline two"
+    (tmp_path / "plain").mkdir()
+    plain = fake_binary(tmp_path / "plain", "herdr", "import sys\nprint('worker ready')\nprint('> ')\n")
+    assert HerdrHost(binary=str(plain)).capture("w1:p1", 50) == "worker ready\n> \n"  # Herdr 0.9 prints text
     with pytest.raises(HostError, match="blocked"):
         host.deliver("w1:p1", "hello")
 

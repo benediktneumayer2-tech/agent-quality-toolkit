@@ -41,6 +41,16 @@ def test_pair_splits_launches_and_introduces(bridge, host, project, sink_path):
     assert attached["reason"] == "test pair" and attached["data"]["sandbox_argv_sha256"].startswith("sha256:")
 
 
+def test_waiting_messages_notify_the_owner_once(bridge, host, project):
+    pair = pair_up(bridge, project, mode="confirm")
+    bridge.tick()
+    out = ask(bridge, pair)
+    bridge.tick()
+    bridge.tick()
+    waiting = [n for n in host.notifications if n[0] == "Sensei: a message waits for you"]
+    assert len(waiting) == 1 and out["message_id"] in waiting[0][1]
+
+
 def test_pair_requires_reason_and_existing_pane(bridge, project):
     with pytest.raises(BridgeError, match="reason"):
         bridge.owner_op({"op": "pair", "worker": "%1", "advisor": "claude", "project": str(project)}, None)
@@ -249,6 +259,8 @@ def test_worker_resolution_by_ancestry(bridge, project):
         bridge.worker_for([9999, 1], "%1")  # a declared pane alone is not enough
     with pytest.raises(Refused):
         bridge.worker_for([9999, 4100, 1], "%2")
+    # Herdr inside tmux: the pane inherits the outer TMUX_PANE, which is no pane of this host
+    assert bridge.worker_for([9999, 4100, 1], "%77")["id"] == pair["id"]
 
 
 def test_independence_classes():

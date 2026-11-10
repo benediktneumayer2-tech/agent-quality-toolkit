@@ -243,7 +243,9 @@ class Bridge:
             for pair in self.live_pairs():
                 pane = self.panes.get(pair["worker"]["pane_id"])
                 if pane and pane.root_pid is not None and pane.root_pid in chain:
-                    if hint and hint != pane.pane_id:
+                    # A hint that names no pane of this host comes from another terminal host around it,
+                    # e.g. the TMUX_PANE that Herdr panes inherit when Herdr runs inside tmux: ignored.
+                    if hint and hint in self.panes and hint != pane.pane_id:
                         raise Refused("the declared pane does not match the calling process", "pane-mismatch")
                     return pair
             if attempt == 0:
@@ -296,6 +298,7 @@ class Bridge:
             if message["state"] != "held":
                 message["state"] = "held"
                 self._put(message)
+                self._notify_waiting(pair, message)
             return False
         if pair["mode"] == "auto":
             hits = self._limits_hit(pair, message)
@@ -306,7 +309,13 @@ class Bridge:
         if message["state"] != "awaiting_approval":
             message["state"] = "awaiting_approval"
             self._put(message)
+            self._notify_waiting(pair, message)
         return False
+
+    def _notify_waiting(self, pair: dict, message: dict) -> None:
+        """Once per message: it now waits for the owner (Herdr notification or tmux status line)."""
+        self.host.notify("Sensei: a message waits for you",
+                         f"{pair['name']}: {message['from']} → {message['to']}, {message['id']}")
 
     def enqueue(self, pair: dict, sender: str, receiver: str, kind: str, text: str, files=(),
                 peer: dict | None = None, **extra) -> dict:

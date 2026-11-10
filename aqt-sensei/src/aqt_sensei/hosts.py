@@ -199,7 +199,7 @@ class HerdrHost:
     def set_prompt_pattern(self, pane_id: str, pattern: str | None) -> None:
         pass  # Herdr detects agent states itself
 
-    def call(self, *args: str, timeout: float = 20) -> dict:
+    def call(self, *args: str, timeout: float = 20, text: bool = False) -> dict:
         try:
             done = subprocess.run([self.binary, *args], capture_output=True, text=True, timeout=timeout)
         except (OSError, subprocess.TimeoutExpired) as error:
@@ -207,6 +207,10 @@ class HerdrHost:
         try:
             reply = json.loads(done.stdout or "{}")
         except ValueError:
+            reply = None
+        if text and done.returncode == 0 and not (isinstance(reply, dict) and ("result" in reply or "error" in reply)):
+            return {"read": {"text": done.stdout}}  # `pane read --format text` prints the text itself (Herdr 0.9)
+        if not isinstance(reply, dict):
             reply = {}
         error = reply.get("error") if isinstance(reply, dict) else None
         if done.returncode != 0 or error:
@@ -242,7 +246,7 @@ class HerdrHost:
         args = ["pane", "read", pane_id, "--source", "recent", "--format", "text"]
         if lines:
             args += ["--lines", str(int(lines))]
-        result = self.call(*args)
+        result = self.call(*args, text=True)
         return (result.get("read") or {}).get("text", "")
 
     def deliver(self, pane_id: str, text: str) -> None:
