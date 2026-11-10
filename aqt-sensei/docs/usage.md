@@ -19,7 +19,7 @@ aqt-sensei login codex      # device sign-in into the advisor's own CODEX_HOME
 
 ## Running the bridge
 
-`aqt-sensei serve [--backend tmux|herdr]` runs in the foreground. Without `--backend` it picks tmux, or Herdr when started inside Herdr outside tmux. `examples/aqt-sensei.service` is a systemd user unit template. One bridge serves one backend.
+`aqt-sensei serve [--backend tmux|herdr]` runs in the foreground. Without `--backend` it picks tmux, or Herdr when started inside Herdr outside tmux. `examples/aqt-sensei.service` is a systemd user unit template. One bridge serves one backend. In Herdr, the separate plugin [aqt-sensei-herdr](https://github.com/benediktneumayer2-tech/aqt-sensei-herdr) starts the bridge in a tab and runs the owner commands below from popups.
 
 ## Pairing
 
