@@ -133,9 +133,8 @@ jobs:
             sleep 30
           done
           ls wheels
-          executables="$(IFS=,; echo "${packages[*]:1}")"
-          uv tool install --find-links wheels "agent-quality-toolkit[egress]==$VERSION" \
-              --with-executables-from "$executables"
+          # the toolkit links every tool's command itself; aqt-egress, an optional extra, only when asked for
+          uv tool install --find-links wheels "agent-quality-toolkit[egress]==$VERSION" --with-executables-from aqt-egress
           tool_bin="$(uv tool dir --bin)"
           export PATH="$tool_bin:$PATH"
           aqt --version

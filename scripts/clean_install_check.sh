@@ -114,6 +114,7 @@ assert not bad, f"repository paths on sys.path: {bad}"
 ours = lambda name: name.startswith("aqt-") or name == "agent-quality-toolkit"   # the umbrella package
 dists = {d.metadata["Name"]: d for d in md.distributions() if ours(d.metadata["Name"])}
 assert len(dists) == expected, f"{len(dists)} toolkit distributions installed, {expected} built: {sorted(dists)}"
+scripts = set()            # the toolkit declares the tools' commands again, so names repeat across packages
 for name, dist in sorted(dists.items()):
     origin = json.loads(dist.read_text("direct_url.json") or "{}")
     assert not origin.get("dir_info", {}).get("editable"), f"{name} is an editable install"
@@ -122,7 +123,8 @@ for name, dist in sorted(dists.items()):
             module = importlib.import_module(ep.module.split(".")[0])
             where = os.path.realpath(module.__file__)
             assert where.startswith(venv + os.sep), f"{module.__name__} imported from {where}"
-            print(ep.name)
+            scripts.add(ep.name)
+print("\n".join(sorted(scripts)))
 EOF
 )" || { fail "installed packages"; exit 1; }
 echo "   $(echo "$SCRIPTS" | wc -l) console scripts, all modules load from the venv"
