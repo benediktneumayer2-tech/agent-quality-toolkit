@@ -78,10 +78,12 @@ def test_fresh_repo_init_then_rerun_changes_nothing(repo):
     assert [group["hooks"][0]["command"] for group in data["hooks"]["Stop"]] == [
         "aqt-trail hook claude-code", "aqt-change hook claude-code"]
     deny = data["permissions"]["deny"]
-    for sub in ("release", "trust-source", "declare-threat", "init"):           # both spellings
-        assert f"Bash(aqt-quarantine {sub}:*)" in deny and f"Bash(aqt quarantine {sub}:*)" in deny
+    for sub in ("release", "trust-source", "declare-threat", "init"):           # every spelling
+        assert {f"Bash(aqt-quarantine {sub}:*)", f"Bash(aqt quarantine {sub}:*)",
+                f"Bash(aqt-toolkit quarantine {sub}:*)"} <= set(deny)
     assert {"Bash(aqt-signoff signers approve:*)", "Bash(aqt trail review sign:*)", "Bash(aqt-capa close:*)",
-            "Bash(aqt validate qualify:*)", "Bash(aqt-ui:*)", "Bash(aqt ui:*)"} <= set(deny)
+            "Bash(aqt validate qualify:*)", "Bash(aqt-toolkit signoff sign:*)", "Bash(aqt-ui:*)", "Bash(aqt ui:*)",
+            "Bash(aqt-toolkit ui:*)"} <= set(deny)
     assert not any("aqt-change" in rule or "aqt change" in rule for rule in deny)  # agents run aqt-change
     assert (repo / "CLAUDE.md").read_text() == project.instructions_block() + "\n"
     change = (repo / ".aqt/change.toml").read_text()

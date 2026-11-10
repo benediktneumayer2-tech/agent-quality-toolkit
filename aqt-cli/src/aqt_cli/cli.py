@@ -11,6 +11,9 @@
                                      quarantine, validate, capa, ui, spec (or evidence), and the
                                      optional egress (outbound checkpoint: agent-quality-toolkit[egress])
 
+The same command is also installed as aqt-toolkit, for systems where another aqt (aqtinstall's)
+comes first on PATH: aqt-toolkit status, aqt-toolkit setup, and so on.
+
 Exit codes: 0 ok (warnings allowed), 1 a check failed, 2 usage or runtime error.
 """
 
@@ -18,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 
 from . import __version__, project
@@ -134,9 +138,11 @@ def cmd_project(args) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="aqt", description=__doc__,
+    prog = "aqt-toolkit" if os.path.basename(sys.argv[0]) == "aqt-toolkit" else "aqt"
+    parser = argparse.ArgumentParser(prog=prog, description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--version", action="version", version=f"aqt (agent-quality-toolkit) {__version__}")
+    parser.add_argument("--version", action="version",
+                        version=f"agent-quality-toolkit {__version__} (commands aqt and aqt-toolkit)")
     sub = parser.add_subparsers(dest="command", metavar="{status,setup,project,<tool>}")
     p = sub.add_parser("status", help="one verdict for the whole setup, with the fix for each problem")
     p.add_argument("--json", action="store_true", help="machine-readable output")
