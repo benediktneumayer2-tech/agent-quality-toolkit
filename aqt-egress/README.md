@@ -19,13 +19,13 @@ A coding agent can send what it reads to any host it can reach: in a `curl` it w
 ## 60-second quick start
 
 ```bash
-uv pip install -e ../aqt-spec -e .        # Python 3.12+; needs bubblewrap (bwrap)
+uv tool install "agent-quality-toolkit[egress]"   # Python 3.12+; needs bubblewrap (bwrap)
 aqt egress run -- claude                   # any command: the agent, a shell, a build ...
 aqt egress report                          # who talked to whom, per session
 aqt egress status                          # box support, CA, last session
 ```
 
-`aqt egress …` and `aqt-egress …` are the same command. With the umbrella package: `agent-quality-toolkit[egress]`.
+`aqt egress …` and `aqt-egress …` are the same command. The line above installs the whole toolkit with this optional part; on its own: `pip install aqt-egress` (then the command is `aqt-egress`). For development, from a clone of the repository, in this folder: `uv pip install -e ../aqt-spec -e .`.
 
 Records go where all AQT records go (`aqt_evidence.open_sink()`): to the aqt-trail writer when it runs, otherwise to the fallback file. While a trail's writer does not answer, they wait in aqt-egress's own spool (hidden in the box, never the shared spool the box can write) and are drained into the trail at the next session or with `aqt egress drain`. `aqt-trail verify` checks them like any other record.
 

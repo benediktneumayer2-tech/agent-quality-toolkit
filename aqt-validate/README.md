@@ -13,12 +13,14 @@ Part of the **Agent Quality Toolkit**. Before you trust a prompt-injection detec
 ## 60-second quick start
 
 ```bash
-uv venv .venv && uv pip install --python .venv/bin/python -e ../aqt-spec -e .
+pip install aqt-validate                       # Python 3.11+, Linux
 export AQT_SINK=file:$PWD/evidence.jsonl
 
-# offline demo: synthetic data, toy detector, stub reviewer, full lifecycle
-.venv/bin/python examples/demo.py /tmp/aqt-validate-demo
+# offline demo (in a clone of the repository): synthetic data, toy detector, stub reviewer, full lifecycle
+python examples/demo.py /tmp/aqt-validate-demo
 ```
+
+Or the whole toolkit: `pip install agent-quality-toolkit` (it adds the `aqt` command; `aqt validate …` runs this tool). For development, from a clone of the repository, in this folder: `uv venv .venv && uv pip install --python .venv/bin/python -e ../aqt-spec -e .`.
 
 With your own detector:
 

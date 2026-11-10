@@ -58,3 +58,22 @@ def test_segments_highlight_evidence_and_keep_text_inert():
     assert [p.get("mark") for p in pieces] == [None, "override", None]
     assert "<script>" in pieces[0]["text"]          # passed on as text; the browser renders it inertly
     assert "<U+200B>" in "".join(p["text"] for p in pieces)
+
+
+def test_install_hints_fit_how_aqt_ui_was_installed(tmp_path, monkeypatch):
+    import sys
+
+    from aqt_ui import views
+    monkeypatch.setattr(sys, "prefix", str(tmp_path))
+    here = views.install_command("aqt-signoff")                     # this test venv: an editable clone install
+    assert here.startswith("uv pip install --python ") and here.endswith("/aqt-signoff")
+    monkeypatch.setattr(views, "_clone", lambda: None)
+    assert views.install_command("aqt-signoff") == "pip install aqt-signoff"
+    (tmp_path / "pipx_metadata.json").write_text("{}")
+    assert views.install_command("aqt-signoff") == "pipx inject aqt-ui aqt-signoff"
+    (tmp_path / "uv-receipt.toml").write_text("[tool]\n")
+    assert views.install_command("aqt-signoff") == 'uv tool install "aqt-ui[all]"'
+    assert views.install_command("aqt-sensei") == 'uv tool install "aqt-ui[all]" --with aqt-sensei'
+    monkeypatch.setattr(views, "_has", lambda dist: dist == "agent-quality-toolkit")
+    assert views.install_command("aqt-sensei") == "uv tool install agent-quality-toolkit"
+    assert str(views.NotInstalled("aqt-capa")) == "aqt-capa is not installed: uv tool install agent-quality-toolkit"

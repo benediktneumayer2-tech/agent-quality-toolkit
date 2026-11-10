@@ -33,8 +33,7 @@ aqt-trail applies audit-trail practice to agent work on a developer machine:
 ## 60-second quick start
 
 ```sh
-uv venv .venv && uv pip install --python .venv/bin/python -e ../aqt-spec -e .
-export PATH=$PWD/.venv/bin:$PATH
+pip install aqt-trail                           # Python 3.11+, Linux
 
 aqt-trail init                                   # state dir + service key
 aqt-trail serve &                                # the writer (Unix socket, 0600); as a service: examples/aqt-trail.service
@@ -52,6 +51,8 @@ aqt-trail review sign <worksheet.json> --reviewer human:dora \
     --disposition all=ok --reason "weekly audit-trail review"   # dora enrolled with aqt-signoff init
 aqt-trail export --out trail-bundle              # copy with checksums; verify it with your own trust anchors
 ```
+
+Or the whole toolkit: `pip install agent-quality-toolkit` (it adds the `aqt` command; `aqt trail …` runs this tool, and `aqt setup` sets the trail up step by step). For development, from a clone of the repository, in this folder: `uv venv .venv && uv pip install --python .venv/bin/python -e ../aqt-spec -e .`.
 
 For Claude Code, merge [`examples/claude-code-hooks.json`](examples/claude-code-hooks.json) into your settings:
 every prompt, tool call, tool result, stop and session start/end becomes a `trail.import` record. The hook never

@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — unreleased
+
+### Packaging
+- Published on PyPI (`pip install aqt-signoff`) at 0.2.0, the version of every AQT package; the other AQT packages it needs are required at `>=0.2,<0.3`; the licence is an SPDX expression with the licence files in the package (PEP 639).
 
 ### Added
 - Message codes (`aqt_evidence.Text`, English unchanged) on the verify summary (`signoff.verify.*`), the policy

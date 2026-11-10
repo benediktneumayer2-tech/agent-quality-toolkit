@@ -1,6 +1,8 @@
 import json
 
-from aqt_cli import tools
+import pytest
+
+from aqt_cli import __version__, tools
 from aqt_cli.cli import main
 
 
@@ -39,7 +41,7 @@ def test_a_missing_tool_prints_its_install_command(monkeypatch, capsys):
 
 def test_own_usage(capsys):
     assert main(["--version"]) == 0
-    assert "agent-quality-toolkit" in capsys.readouterr().out
+    assert capsys.readouterr().out.strip() == f"agent-quality-toolkit {__version__} (commands aqt and aqt-toolkit)"
     assert main([]) == 2
     assert main(["status", "--bogus"]) == 2
 
@@ -50,3 +52,56 @@ def test_egress_is_optional_and_says_what_it_needs(monkeypatch, capsys):
     assert main(["egress", "report"]) == 2
     err = capsys.readouterr().err
     assert "aqt-egress is not installed" in err and "-e ./aqt-egress" in err and "Python 3.12" in err
+
+
+def test_the_second_name_aqt_toolkit_names_itself(monkeypatch, capsys):
+    monkeypatch.setattr("sys.argv", ["/somewhere/bin/aqt-toolkit"])
+    assert main(["status", "--bogus"]) == 2
+    err = capsys.readouterr().err
+    assert err.startswith("usage: aqt-toolkit [-h]") and "aqt-toolkit: error:" in err
+
+
+@pytest.mark.parametrize("route, missing, egress_installed, expected", [
+    ("uv-tool", ["aqt-egress"], False, 'uv tool install "agent-quality-toolkit[egress]"'),
+    ("uv-tool", ["aqt-capa"], False, "uv tool install agent-quality-toolkit"),
+    ("uv-tool", ["aqt-capa"], True, 'uv tool install "agent-quality-toolkit[egress]"'),  # keeps it
+    ("pipx", ["aqt-egress"], False, 'pipx install --force "agent-quality-toolkit[egress]"'),
+    ("pip", ["aqt-capa", "aqt-ui"], False, "pip install aqt-capa aqt-ui"),
+    ("clone", ["aqt-capa"], False, "uv pip install -e ./aqt-capa   (in the repository clone)"),
+])
+def test_the_install_command_fits_how_the_toolkit_was_installed(monkeypatch, route, missing, egress_installed,
+                                                                 expected):
+    monkeypatch.setattr(tools, "install_route", lambda: route)
+    monkeypatch.setattr(tools, "_installed", lambda dist: egress_installed and dist == "aqt-egress")
+    monkeypatch.setattr("sys.version_info", (3, 12, 0))
+    assert tools.install_command(*missing).split("   (aqt-egress needs")[0] == expected
+
+
+def test_egress_on_python_3_11_asks_uv_for_python_3_12(monkeypatch):
+    monkeypatch.setattr(tools, "install_route", lambda: "uv-tool")
+    monkeypatch.setattr("sys.version_info", (3, 11, 9))
+    assert tools.install_command("aqt-egress") == ('uv tool install --python 3.12 '
+                                                   '"agent-quality-toolkit[egress]"   (aqt-egress needs Python 3.12 '
+                                                   'or newer, bubblewrap)')
+
+
+def test_the_route_is_read_from_the_environment(tmp_path, monkeypatch):
+    monkeypatch.setattr("sys.prefix", str(tmp_path))
+    (tmp_path / "pipx_metadata.json").write_text("{}")
+    assert tools.install_route() == "pipx"
+    (tmp_path / "uv-receipt.toml").write_text("[tool]\n")
+    assert tools.install_route() == "uv-tool"
+
+
+def test_the_toolkit_declares_every_tool_command_as_its_package_does():
+    """uv tool / pipx link only the toolkit's own scripts; the hooks call aqt-trail etc. by name."""
+    from importlib import metadata
+    scripts = lambda dist: {ep.name: ep.value for ep in metadata.distribution(dist).entry_points
+                            if ep.group == "console_scripts"}
+    own = scripts("agent-quality-toolkit")
+    assert own.pop("aqt") == own.pop("aqt-toolkit") == "aqt_cli.cli:main"
+    expected = {}
+    for _module, script, dist in tools.TOOLS.values():
+        if dist != "aqt-egress":        # its script cannot depend on the [egress] extra
+            expected[script] = scripts(dist)[script]
+    assert own == expected and len(own) == 9

@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — unreleased
 
+- Packaging: published on PyPI (`pip install aqt-capa`) at 0.2.0, the version of every AQT package; the other AQT packages it needs are required at `>=0.2,<0.3`; the licence is an SPDX expression with the licence files in the package (PEP 639).
 - Message codes (`aqt_evidence.Text`, English unchanged) on candidate titles (`capa.candidate.<rule>`; the stored
   title stays the English text), effectiveness reasons (`capa.effectiveness.*`) and the accept, dismiss and close
   errors (`capa.blocked.*`, `capa.error.*`, `capa.refused.not_human`).

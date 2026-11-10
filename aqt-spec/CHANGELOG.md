@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — unreleased
+
+### Packaging
+- Published on PyPI (`pip install aqt-spec`) at 0.2.0, the version of every AQT package; the licence is an SPDX expression with the licence files in the package (PEP 639): `Apache-2.0 AND CC-BY-4.0`, both texts included.
 
 ### Added
 - Record types for aqt-egress (additive, spec §11): `egress.session` (`started`, `ended`), `egress.request`

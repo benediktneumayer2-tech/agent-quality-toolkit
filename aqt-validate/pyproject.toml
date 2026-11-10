@@ -1,21 +1,46 @@
 [build-system]
-requires = ["hatchling>=1.24"]
+requires = ["hatchling>=1.27"]   # PEP 639 licence metadata
 build-backend = "hatchling.build"
 
 [project]
 name = "aqt-validate"
-version = "0.1.0"
-description = "Validation of AI controls: detector calibration with exact bounds and AI reviewer qualification, with evidence records"
+version = "0.2.0"
+description = "Validation of AI controls: detector calibration with exact confidence bounds and AI reviewer qualification (Agent Quality Toolkit)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Benedikt Neumayer" }]
-dependencies = ["aqt-spec>=0.1"]
+keywords = ["ai-agents", "coding-agents", "quality-management", "gxp", "calibration", "clopper-pearson", "qualification", "prompt-injection", "code-review"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Healthcare Industry",
+    "Intended Audience :: Information Technology",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
+]
+dependencies = ["aqt-spec>=0.2,<0.3"]
 
 [project.optional-dependencies]
 test = ["pytest>=8", "jsonschema>=4.18"]
 # detector plugins from the aqt.detectors entry-point group (see aqt-quarantine docs/detectors.md)
-quarantine = ["aqt-quarantine>=0.1"]
+quarantine = ["aqt-quarantine>=0.2,<0.3"]
+
+[project.urls]
+Homepage = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/tree/main/aqt-validate"
+Repository = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit"
+Documentation = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/blob/main/docs/manual.md"
+Changelog = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/blob/main/aqt-validate/CHANGELOG.md"
+Issues = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/issues"
 
 [project.scripts]
 aqt-validate = "aqt_validate.cli:main"

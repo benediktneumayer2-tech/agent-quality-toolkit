@@ -40,7 +40,8 @@ EVENT_ORDER = ("SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", 
                "TaskCompleted", "SessionEnd")
 
 # The human-decision subcommands of each tool: they refuse in an agent session (aqt_evidence.require_human),
-# need the signer's passphrase, or (aqt-sensei) the owner token. Denied in both spellings, aqt-<tool> and aqt <tool>.
+# need the signer's passphrase, or (aqt-sensei) the owner token. Denied in every spelling: aqt-<tool>, aqt <tool>
+# and aqt-toolkit <tool> (the second name of aqt).
 DECISIONS = {
     "aqt-quarantine": ("release", "declare-threat", "trust-source", "init"),
     "aqt-signoff": ("init", "signers approve", "signers import", "rekey", "revoke", "sign", "invalidate",
@@ -271,9 +272,9 @@ def deny_rules() -> list[str]:
         if installed(dist):
             tool = dist.removeprefix("aqt-")
             for sub in subcommands:
-                rules += [f"Bash({dist} {sub}:*)", f"Bash(aqt {tool} {sub}:*)"]
+                rules += [f"Bash({dist} {sub}:*)", f"Bash(aqt {tool} {sub}:*)", f"Bash(aqt-toolkit {tool} {sub}:*)"]
     if installed("aqt-ui"):
-        rules += ["Bash(aqt-ui:*)", "Bash(aqt ui:*)"]
+        rules += ["Bash(aqt-ui:*)", "Bash(aqt ui:*)", "Bash(aqt-toolkit ui:*)"]
     from aqt_evidence import state_dir
     edit = [state_dir(), config_dir()]
     if installed("aqt-quarantine"):

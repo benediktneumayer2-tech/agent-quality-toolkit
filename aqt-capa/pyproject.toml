@@ -1,19 +1,43 @@
 [build-system]
-requires = ["hatchling>=1.24"]
+requires = ["hatchling>=1.27"]   # PEP 639 licence metadata
 build-backend = "hatchling.build"
 
 [project]
 name = "aqt-capa"
-version = "0.1.0"
-description = "Deviations and CAPA for AI coding agent work: evidence-driven intake, root cause, hash-bound corrective actions, effectiveness checks and trends"
+version = "0.2.0"
+description = "Deviations and CAPA for AI coding agent work: evidence-driven intake, root cause, hash-bound actions and effectiveness checks (Agent Quality Toolkit)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Benedikt Neumayer" }]
-dependencies = ["aqt-spec>=0.1", "cryptography>=41"]
+keywords = ["ai-agents", "coding-agents", "quality-management", "gxp", "capa", "deviations", "root-cause", "corrective-action"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Healthcare Industry",
+    "Intended Audience :: Information Technology",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = ["aqt-spec>=0.2,<0.3", "cryptography>=41"]
 
 [project.optional-dependencies]
 test = ["pytest>=8"]
+
+[project.urls]
+Homepage = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/tree/main/aqt-capa"
+Repository = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit"
+Documentation = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/blob/main/docs/manual.md"
+Changelog = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/blob/main/aqt-capa/CHANGELOG.md"
+Issues = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/issues"
 
 [project.scripts]
 aqt-capa = "aqt_capa.cli:main"

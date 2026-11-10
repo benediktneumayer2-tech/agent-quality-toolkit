@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — unreleased
 
+- Packaging: published on PyPI (`pip install aqt-validate`) at 0.2.0, the version of every AQT package; the other AQT packages it needs are required at `>=0.2,<0.3`; the licence is an SPDX expression with the licence files in the package (PEP 639).
 - Reports cite only catalogue IDs that exist: `annex22-2025d:6.2` and `annex22-2025d:10` instead of
   sub-clauses that the catalogue groups, and `iso9001-2015:7.1.5` instead of 7.1.5.1/7.1.5.2.
 

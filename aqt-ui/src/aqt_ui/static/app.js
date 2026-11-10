@@ -98,7 +98,9 @@ const VIEWS = [
   { id: "capa", path: "/capa", label: "CAPA", tool: true, inspector: true },
   { id: "qualifications", path: "/qualifications", label: "Qualifications", tool: true, inspector: true },
 ];
-const S = { csrf: "", mode: null, overview: null, view: "home", installed: {} };
+const S = { csrf: "", mode: null, overview: null, view: "home", installed: {}, install: {} };
+// the command that adds a package to this installation (the server knows how it was installed)
+function installOf(pkg) { return S.install[pkg] || `pip install ${pkg}`; }
 const TEXT_ATTRS = new Set(["title", "aria-label", "placeholder"]);
 const $ = (id) => document.getElementById(id);
 
@@ -202,7 +204,7 @@ function inspSection(title, ...children) { return h("section", { class: "insp-se
 function empty(title, text) { return h("div", { class: "empty" }, h("strong", { text: title }), text ? h("span", { text }) : null); }
 function errorBox(error) {
   const box = h("div", { class: "error-box", role: "alert" }, (error.data && error.data.message_code ? msgOf(error.data, "message") : error.message) || String(error));
-  if (error.data && error.data.install) put(box, h("div", { class: "small" }, t("Install:"), " ", h("code", { text: `uv pip install -e ${error.data.install}` })));
+  if (error.data && error.data.install) put(box, h("div", { class: "small" }, t("Install:"), " ", h("code", { text: error.data.install })));
   return box;
 }
 function tabs(items, current, onPick) {
@@ -1132,7 +1134,7 @@ function releaseSection(step, d, p, { onDone, notice }) {
     [t("HEAD now"), p.head ? [hashButton(p.head, 40), fin.commit ? ` ${sameHead ? t("(the finished commit)") : t("(same files as the finished commit)")}` : ""] : "–"],
     [t("Hash"), hashButton(fin.sha256 || (release && release.sha256), 16)]]), open];
   if (!d.installed["aqt-signoff"] || (release && release.state === "unavailable")) {
-    parts.push(h("p", { class: "small" }, t("aqt-signoff is not installed"), ": ", h("code", { text: "uv pip install -e aqt-signoff" })));
+    parts.push(h("p", { class: "small" }, t("aqt-signoff is not installed"), ": ", h("code", { text: installOf("aqt-signoff") })));
     return step("release", ...parts);
   }
   if (release.state === "missing") {
@@ -1547,7 +1549,7 @@ async function renderChanges(main) {
   clear(main);
   put(main, tabs([["gates", t("Gates")], ["actions", t("Prepared actions ({n})", { n: data.actions.length })]], tab, (id) => { setQuery({ tab: id }); route(); }));
   if (tab === "actions") {
-    if (!data.installed["aqt-signoff"]) { put(main, empty(t("aqt-signoff is not installed"), "uv pip install -e aqt-signoff")); return; }
+    if (!data.installed["aqt-signoff"]) { put(main, empty(t("aqt-signoff is not installed"), installOf("aqt-signoff"))); return; }
     if (!data.actions.length) { put(main, empty(t("No prepared actions"), t("Actions appear here when an agent prepares one with aqt-signoff action prepare."))); return; }
     const order = { prepared: 0, expired: 0, unknown: 1, approved: 2, claimed: 3 };
     const actions = data.actions.slice().sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9));
@@ -1560,7 +1562,7 @@ async function renderChanges(main) {
     if (i >= 0) x.tbody.children[i].click();
     return;
   }
-  if (!data.installed["aqt-change"]) { put(main, empty(t("aqt-change is not installed"), "uv pip install -e aqt-change")); return; }
+  if (!data.installed["aqt-change"]) { put(main, empty(t("aqt-change is not installed"), installOf("aqt-change"))); return; }
   if (!data.projects.length) { put(main, empty(t("No projects configured"), t("Add repository roots to ~/.config/aqt/ui.toml:") + '  [changes] projects = ["~/code/project"]')); return; }
   for (const project of data.projects) {
     const box = section(h("span", { class: "path", text: project.root }));
@@ -1652,7 +1654,7 @@ function actionParts(a, signers, { onDone }) {
 // ---- Signatures --------------------------------------------------------------------------------------
 async function renderSignatures(main) {
   clear(main);
-  if (!S.installed.aqt_signoff) { put(main, empty(t("aqt-signoff is not installed"), "uv pip install -e aqt-signoff")); return; }
+  if (!S.installed.aqt_signoff) { put(main, empty(t("aqt-signoff is not installed"), installOf("aqt-signoff"))); return; }
   const kind = h("select", { "aria-label": t("What to verify") }, [["file", t("Local file path")], ["record", t("Record ID")], ["sha256", t("SHA-256 hash")]].map(([v, x]) => h("option", { value: v, text: x })));
   const value = h("input", { class: "grow", type: "text", placeholder: "/home/me/project/plan.md", "aria-label": t("Value to verify") });
   const out = h("div");
@@ -1808,6 +1810,7 @@ async function start() {
     const session = await api("/api/session");
     S.mode = session.mode;
     S.installed = session.installed;
+    S.install = session.install || {};
     renderTopbar();
     await refresh();
   } catch (error) {

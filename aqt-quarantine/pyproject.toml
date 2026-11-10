@@ -1,21 +1,46 @@
 [build-system]
-requires = ["hatchling>=1.24"]
+requires = ["hatchling>=1.27"]   # PEP 639 licence metadata
 build-backend = "hatchling.build"
 
 [project]
 name = "aqt-quarantine"
-version = "0.1.0"
-description = "Quarantine and release of untrusted AI agent inputs: risk bands, withheld content, signed human decisions and case files"
+version = "0.2.0"
+description = "Quarantine for untrusted inputs to AI agents: risk bands, withheld content and signed human release decisions (Agent Quality Toolkit)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Benedikt Neumayer" }]
-dependencies = ["aqt-spec>=0.1", "cryptography>=41"]
+keywords = ["ai-agents", "coding-agents", "quality-management", "gxp", "prompt-injection", "quarantine", "untrusted-input", "claude-code"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Healthcare Industry",
+    "Intended Audience :: Information Technology",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = ["aqt-spec>=0.2,<0.3", "cryptography>=41"]
 
 [project.optional-dependencies]
 # Transformer detectors as local ONNX exports (Horizon, Wolf Defender, PIGuard, deepset ...).
 hf = ["onnxruntime>=1.17", "tokenizers>=0.15", "numpy>=1.24"]
 test = ["pytest>=8", "jsonschema>=4.18"]  # jsonschema: payload checks of the records
+
+[project.urls]
+Homepage = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/tree/main/aqt-quarantine"
+Repository = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit"
+Documentation = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/blob/main/docs/manual.md"
+Changelog = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/blob/main/aqt-quarantine/CHANGELOG.md"
+Issues = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/issues"
 
 [project.scripts]
 aqt-quarantine = "aqt_quarantine.cli:main"

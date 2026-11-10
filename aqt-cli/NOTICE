@@ -6,4 +6,5 @@ from elsewhere. The approach (setup knowledge as self-checking code) comes from 
 Agent Platform Next; no private paths, hosts, names or data were copied.
 
 Runtime dependencies: the eight Agent Quality Toolkit packages and aqt-ui (Apache-2.0), and through
-aqt-spec[schema]: jsonschema (MIT). Test-only: pytest (MIT).
+aqt-spec[schema]: jsonschema (MIT). Optional extra egress: aqt-egress (Apache-2.0),
+with mitmproxy (MIT) and its dependencies. Test-only: pytest (MIT).

@@ -1,33 +1,72 @@
 [build-system]
-requires = ["hatchling>=1.24"]
+requires = ["hatchling>=1.27"]   # PEP 639 licence metadata
 build-backend = "hatchling.build"
 
 [project]
 name = "agent-quality-toolkit"
-version = "0.2.0.dev0"
-description = "Agent Quality Toolkit: the aqt command with guided setup, a one-screen status and every tool behind one name"
+version = "0.2.0"
+description = "Agent Quality Toolkit: quality management controls for AI coding agents, with the aqt command for guided setup, a one-screen status and every tool"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Benedikt Neumayer" }]
+keywords = ["ai-agents", "coding-agents", "quality-management", "gxp", "audit-trail", "change-control", "electronic-signatures", "capa", "claude-code"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Healthcare Industry",
+    "Intended Audience :: Information Technology",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+]
 dependencies = [
-    "aqt-spec[schema]>=0.1",
-    "aqt-trail>=0.1",
-    "aqt-signoff>=0.1",
-    "aqt-change>=0.1",
-    "aqt-sensei>=0.1",
-    "aqt-quarantine>=0.1",
-    "aqt-validate>=0.1",
-    "aqt-capa>=0.1",
-    "aqt-ui>=0.1",
+    "aqt-spec[schema]>=0.2,<0.3",
+    "aqt-trail>=0.2,<0.3",
+    "aqt-signoff>=0.2,<0.3",
+    "aqt-change>=0.2,<0.3",
+    "aqt-sensei>=0.2,<0.3",
+    "aqt-quarantine>=0.2,<0.3",
+    "aqt-validate>=0.2,<0.3",
+    "aqt-capa>=0.2,<0.3",
+    "aqt-ui>=0.2,<0.3",
 ]
 
 [project.optional-dependencies]
 test = ["pytest>=8"]
-egress = ["aqt-egress>=0.1.0.dev0; python_version >= '3.12'"]   # the outbound checkpoint (Python 3.12+)
+egress = ["aqt-egress>=0.2,<0.3; python_version >= '3.12'"]   # the outbound checkpoint (Python 3.12+)
+
+[project.urls]
+Homepage = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit"
+Repository = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit"
+Documentation = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/blob/main/docs/manual.md"
+Changelog = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/blob/main/aqt-cli/CHANGELOG.md"
+Issues = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/issues"
 
 [project.scripts]
 aqt = "aqt_cli.cli:main"
+aqt-toolkit = "aqt_cli.cli:main"      # the same command, where aqtinstall's aqt comes first on PATH
+# The tools' own commands again, with the same entry points as their packages declare: `uv tool install` and
+# `pipx install` link only the scripts of the package named, and the Claude Code hooks call aqt-trail,
+# aqt-quarantine and aqt-change by name. aqt-egress is left to its own package: a script cannot depend on
+# the [egress] extra (with a uv tool or pipx, it runs as `aqt egress`).
+aqt-trail = "aqt_trail.cli:main"
+aqt-signoff = "aqt_signoff.cli:main"
+aqt-change = "aqt_change.cli:main"
+aqt-sensei = "aqt_sensei.cli:main"
+aqt-quarantine = "aqt_quarantine.cli:main"
+aqt-validate = "aqt_validate.cli:main"
+aqt-capa = "aqt_capa.cli:main"
+aqt-ui = "aqt_ui.cli:main"
+aqt-evidence = "aqt_evidence.cli:main"
 
 [tool.uv.sources]
 aqt-spec = { path = "../aqt-spec", editable = true }

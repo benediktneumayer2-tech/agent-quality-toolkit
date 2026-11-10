@@ -1,19 +1,45 @@
 [build-system]
-requires = ["hatchling>=1.24"]
+requires = ["hatchling>=1.27"]   # PEP 639 licence metadata
 build-backend = "hatchling.build"
 
 [project]
 name = "aqt-egress"
-version = "0.1.0.dev0"
-description = "Agent Quality Toolkit: outbound checkpoint for AI coding agents; every request leaves a box through one proxy and is recorded with the process that sent it"
+version = "0.2.0"
+description = "Outbound checkpoint for AI coding agents: every request leaves a sandbox through one proxy and is recorded with the process that sent it (Agent Quality Toolkit)"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Benedikt Neumayer" }]
-dependencies = ["aqt-spec>=0.1", "mitmproxy>=12.2,<13"]
+keywords = ["ai-agents", "coding-agents", "quality-management", "gxp", "egress", "proxy", "mitmproxy", "sandbox", "bubblewrap", "network-monitoring"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Healthcare Industry",
+    "Intended Audience :: Information Technology",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: Proxy Servers",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: System :: Networking :: Monitoring",
+]
+dependencies = ["aqt-spec>=0.2,<0.3", "mitmproxy>=12.2,<13"]
 
 [project.optional-dependencies]
-test = ["pytest>=8", "jsonschema>=4.18", "aqt-trail>=0.1"]  # records checked against the schemas, written through a real writer and verified
+test = ["pytest>=8", "jsonschema>=4.18", "aqt-trail>=0.2,<0.3"]  # records checked against the schemas, written through a real writer and verified
+
+[project.urls]
+Homepage = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/tree/main/aqt-egress"
+Repository = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit"
+Documentation = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/blob/main/docs/manual.md"
+Changelog = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/blob/main/aqt-egress/CHANGELOG.md"
+Issues = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/issues"
 
 [project.scripts]
 aqt-egress = "aqt_egress.cli:main"
