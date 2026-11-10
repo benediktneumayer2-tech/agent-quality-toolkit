@@ -1,5 +1,7 @@
 name: ci
 on: [push, pull_request]
+permissions:
+  contents: read
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -7,7 +9,7 @@ jobs:
       matrix:
         python: ["3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       # setup-uv publishes no major tags since v8; v10.3.3 is an immutable release tag
       - uses: astral-sh/setup-uv@v10.3.3
         with:
@@ -19,16 +21,25 @@ jobs:
   clean-install:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: astral-sh/setup-uv@v10.3.3
         with:
           python-version: "3.12"
       - name: Built wheels in a fresh venv outside the checkout, the tools and the demo
         run: scripts/clean_install_check.sh
+  packaging:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          python-version: "3.12"
+      - name: As the release build, in a throw-away copy - one version, README links for PyPI, build, twine check
+        run: scripts/build_dist.sh "$RUNNER_TEMP/dist"
   pip-audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: astral-sh/setup-uv@v10.3.3
         with:
           python-version: "3.12"
@@ -39,7 +50,7 @@ jobs:
             -e "./aqt-signoff[schema,test]" -e "./aqt-change[test]" -e "./aqt-sensei[test]" \
             -e "./aqt-quarantine[hf,test]" -e "./aqt-validate[test]" -e "./aqt-capa[test]" -e "./aqt-ui[test]" \
             -e "./aqt-cli[test]" -e "./aqt-egress[test]"
-          # the aqt-* packages are editable and left out: they are not on PyPI
+          # the aqt-* packages are editable and left out: they are this repository's own code
           uv pip freeze --python /tmp/audit/bin/python --exclude-editable > /tmp/audit-requirements.txt
           # tornado comes only with mitmproxy (aqt-egress), for mitmproxy's own web interface, which aqt-egress
           # never imports or starts; mitmproxy 12.3.1 pins tornado<=6.5.10, so 6.6 cannot be installed yet.
