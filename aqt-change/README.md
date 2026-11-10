@@ -22,9 +22,11 @@ Each step writes an [aqt-spec](../aqt-spec) evidence record (`change.plan.reconc
 ## Quick start (60 seconds)
 
 ```sh
-uv venv .venv && uv pip install --python .venv/bin/python -e ../aqt-spec -e .
-sh examples/quickstart.sh      # offline demo in a temporary Git repository
+pip install aqt-change         # Python 3.11+, Linux
+sh examples/quickstart.sh      # in a clone of the repository: offline demo in a temporary Git repository
 ```
+
+Or the whole toolkit: `pip install agent-quality-toolkit` (it adds the `aqt` command; `aqt change …` runs this tool). For development, from a clone of the repository, in this folder: `uv venv .venv && uv pip install --python .venv/bin/python -e ../aqt-spec -e .`.
 
 In your own repository:
 

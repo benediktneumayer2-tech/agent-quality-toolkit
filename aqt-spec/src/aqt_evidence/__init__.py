@@ -14,7 +14,7 @@ from .session import AgentContext, HumanCheckError, detect_agent_context, proces
 from .sink import (ERROR_CODES, JsonlSink, RecordLineError, Sink, SinkError, SinkUnavailable, SocketSink,
                    evidence_sources, iter_evidence, open_sink, read_jsonl, resolve_sink, spool_file, state_dir)
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "ACTOR_KINDS", "AgentContext", "GENESIS", "HumanCheckError", "MEANINGS", "SPEC_VERSION", "CanonicalError", "ChainResult", "JsonlSink",

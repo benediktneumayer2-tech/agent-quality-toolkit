@@ -17,12 +17,14 @@ Coding agents act faster than anyone can watch. Many projects now log agent acti
 ## Quick start (60 seconds)
 
 ```bash
-uv venv .venv && uv pip install --python .venv/bin/python -e ".[schema]"
-.venv/bin/aqt-evidence vectors                       # the library agrees with every test vector
-.venv/bin/python examples/quickstart.py demo         # create, sign, chain and checkpoint two records
-.venv/bin/aqt-evidence conform demo/trail.jsonl --level 3 --key demo/writer.key.pub --checkpoint demo/checkpoint.json
-.venv/bin/aqt-evidence verify demo/trail.jsonl --key demo/writer.key.pub
+pip install "aqt-spec[schema]"                     # Python 3.11+
+aqt-evidence vectors                                # the library agrees with every test vector
+python examples/quickstart.py demo                  # from the repository: create, sign, chain and checkpoint two records
+aqt-evidence conform demo/trail.jsonl --level 3 --key demo/writer.key.pub --checkpoint demo/checkpoint.json
+aqt-evidence verify demo/trail.jsonl --key demo/writer.key.pub
 ```
+
+Every other AQT package installs it. For development, from a clone of the repository, in this folder: `uv venv .venv && uv pip install --python .venv/bin/python -e ".[schema]"`. Then the commands above run as `.venv/bin/aqt-evidence` and `.venv/bin/python`.
 
 In Python:
 

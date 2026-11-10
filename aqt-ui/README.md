@@ -9,6 +9,13 @@ It is optional. It reads the same files and calls the same package functions as 
 ## Start
 
 ```bash
+pip install "aqt-ui[all]"     # every view; Python 3.11+, Linux
+aqt-ui
+```
+
+It is part of the whole toolkit as well (`pip install agent-quality-toolkit`; `aqt ui` starts it). For development, from a clone of the repository, in this folder:
+
+```bash
 uv venv .venv && uv pip install --python .venv/bin/python \
     -e ../aqt-spec -e ../aqt-trail -e ../aqt-quarantine -e ../aqt-signoff \
     -e ../aqt-change -e ../aqt-capa -e ../aqt-validate -e .
@@ -101,7 +108,7 @@ A detached signature in the record inspector is shown with its status against th
 
 What this does not protect against, as for the rest of the toolkit: an agent that learns your passphrase; an agent that drives your own browser and gets you to type the passphrase into a decision it prepared (the decision panel therefore shows plainly who signs, with which meaning, over which content); and a same-user process that deliberately works around the checks, for example one that detaches from the agent and clears its environment, reads the private login page before the browser does, or swaps the trail file exactly while it is being verified. A same-user process can read the files the page shows anyway. The agent checks are a guard, not a boundary. The passphrase is the real control.
 
-## Limits of version 0.1
+## Limits of version 0.2
 
 - Linux only (the agent check and the connection lookup read `/proc`). A light design; a quiet dark variant follows the system setting.
 - Signing a file or a record other than a plan version or a finished change, resolving an action whose outcome is unknown, the CAPA steps of the person handling a deviation (investigation, action plan, implementation, extending a window) and qualifying a detector stay in the terminal for now.

@@ -13,25 +13,31 @@ Setting up AQT by hand means following a checklist: create the trail, write a sy
 
 ## 60-second quick start
 
-From a clone of the repository (the packages are not on PyPI yet):
-
 ```bash
-uv venv .venv
-uv pip install --python .venv/bin/python -e "aqt-spec[schema]" -e aqt-trail -e aqt-signoff -e aqt-change \
-    -e aqt-sensei -e aqt-quarantine -e aqt-validate -e aqt-capa -e aqt-ui -e aqt-cli
-.venv/bin/aqt status          # what is missing
-.venv/bin/aqt setup           # do it, step by step
+uv tool install agent-quality-toolkit      # or: pipx install agent-quality-toolkit (Python 3.11+, Linux)
+aqt status                                 # what is missing
+aqt setup                                  # do it, step by step
 ```
+
+`aqt-toolkit` is the same command under a second name, for systems where another `aqt` (from aqtinstall) comes first on `PATH`: `aqt-toolkit status`, `aqt-toolkit setup`, and so on. The optional outbound checkpoint, aqt-egress (Python 3.12+, bubblewrap), is the extra `egress`: `uv tool install "agent-quality-toolkit[egress]"`. In an existing virtual environment, `pip install agent-quality-toolkit` works as well.
 
 Then, once in each repository where agents work:
 
 ```bash
-.venv/bin/aqt project init ~/code/my-project    # asks before each step; --yes applies them all
+aqt project init ~/code/my-project         # asks before each step; --yes applies them all
 ```
 
 It never commits: its last lines print the `git add … && git commit` command for the files it wrote.
 
 `aqt setup` asks before each step. `aqt setup --yes` applies every step that does not need you without asking. Enrolling your signing identity always needs you: you choose the ID (or pass `--id human:alice --name "Alice Example" --role quality-manager`) and type the passphrase at aqt-signoff's own prompt, also under `--yes`.
+
+For development, from a clone of the repository (editable installs; `.venv/bin/aqt` instead of `aqt`):
+
+```bash
+uv venv .venv
+uv pip install --python .venv/bin/python -e "aqt-spec[schema]" -e aqt-trail -e aqt-signoff -e aqt-change \
+    -e aqt-sensei -e aqt-quarantine -e aqt-validate -e aqt-capa -e aqt-ui -e aqt-cli
+```
 
 ## How it works
 
@@ -48,7 +54,7 @@ Each check has a result (`ok`, `warn`, `fail` or `skip`), a one-line explanation
 
 | Check | Tests | Step in `aqt setup` |
 |---|---|---|
-| `packages` | the eight packages and aqt-ui are installed (with versions) | – (prints the install command) |
+| `packages` | the eight packages and aqt-ui are installed (with versions) | – (prints the command that adds the missing ones) |
 | `trail.init` | the trail state exists | `aqt-trail init` |
 | `service` | the systemd user unit is installed and enabled (skipped without `systemd --user`) | writes `~/.config/systemd/user/aqt-trail.service` with the `aqt-trail` of this environment, then `systemctl --user enable --now aqt-trail` |
 | `writer` | the writer answers on its socket | `systemctl --user start aqt-trail`; without systemd it prints the foreground command |
@@ -83,7 +89,7 @@ Every fix needs a passphrase, so `aqt setup` cannot apply it. Check that the fir
 |---|---|---|
 | `project` | the folder is a git repository (aqt-change needs git; without it, its checks are skipped) | – |
 | `claude.hooks` (fail) | the hooks of aqt-trail, aqt-quarantine and aqt-change (manual 4.8) are in `~/.claude/settings.json`, `.claude/settings.json` or `.claude/settings.local.json`: same event, matcher and command | merges the missing ones, and the missing deny rules, into `.claude/settings.json` (`settings.local.json` with `--local`) |
-| `claude.deny` (warn) | deny rules for every decision command, as `aqt-<tool> <sub>` and `aqt <tool> <sub>` (below), for `aqt-ui`, for reading the quarantine folder, the trail's `keys/` folder and aqt-sensei's owner token, and for editing the AQT configuration and state folders | the same step |
+| `claude.deny` (warn) | deny rules for every decision command, as `aqt-<tool> <sub>`, `aqt <tool> <sub>` and `aqt-toolkit <tool> <sub>` (below), for `aqt-ui`, for reading the quarantine folder, the trail's `keys/` folder and aqt-sensei's owner token, and for editing the AQT configuration and state folders | the same step |
 | `instructions` (warn) | `CLAUDE.md` and an existing `AGENTS.md` at the root hold the current block between `<!-- aqt:begin -->` and `<!-- aqt:end -->` | replaces an outdated block, appends a missing one, or creates `CLAUDE.md` (Claude Code does not read `AGENTS.md`); the rest of the file stays as it is |
 | `change.settings` | `.aqt/change.toml` parses; warns when `require_trail` is off or `trail_keys` lacks this machine's trail service key | writes it when missing (with `require_trail` and `trail_keys` when the service key is known), never while a plan is in progress |
 | `ui.project` (warn) | this repository is in `[changes] projects` of aqt-ui's `ui.toml` | creates the file, appends `[changes]`, or extends a one-line `projects = [...]` |
@@ -94,7 +100,7 @@ The denied decision commands: aqt-quarantine `release`, `declare-threat`, `trust
 
 A settings file that is not valid JSON, or whose `hooks`, an event, `permissions` or `deny` has another shape, is refused. Otherwise every other key and the key order are kept; the file is written with 2-space indentation, atomically and with its mode. Every changed file is backed up first to `$XDG_STATE_HOME/aqt/backups/project-init/<repository>-<hash>/` (a file outside the repository, such as `ui.toml`, to `project-init/user/`), outside the repository, because an untracked file in it would make aqt-change receipts stale. An existing `.aqt/change.toml` is never rewritten.
 
-Pass-through: `aqt trail`, `aqt signoff`, `aqt change`, `aqt sensei`, `aqt quarantine`, `aqt validate`, `aqt capa`, `aqt ui` and `aqt spec` (or `aqt evidence`) run that tool's command line in the same process, with the same arguments and exit code. A tool that is not installed prints its install command.
+Pass-through: `aqt trail`, `aqt signoff`, `aqt change`, `aqt sensei`, `aqt quarantine`, `aqt validate`, `aqt capa`, `aqt ui` and `aqt spec` (or `aqt evidence`) run that tool's command line in the same process, with the same arguments and exit code (also as `aqt-toolkit <tool>`). A tool that is not installed prints the command that adds it to this installation: `uv tool install "agent-quality-toolkit[egress]"` for a uv tool, `pipx install --force …` for pipx, `pip install aqt-egress` in another environment, and the editable install in a clone of the repository.
 
 ## Threat model and limits
 

@@ -4,6 +4,9 @@
 
 First version.
 
+- Packaging: published on PyPI as `agent-quality-toolkit` (`uv tool install agent-quality-toolkit`, `pipx install agent-quality-toolkit` or `pip install agent-quality-toolkit`) at 0.2.0, the version of every AQT package; it requires the nine packages at `>=0.2,<0.3`, and the extra `egress` adds aqt-egress (Python 3.12+); the licence is an SPDX expression with the licence files in the package (PEP 639).
+- `aqt-toolkit`: the same command under a second name, for systems where another `aqt` (aqtinstall's) comes first on `PATH`; `--version` and `--help` name both.
+- A missing package's fix is the command for this installation: `uv tool install "agent-quality-toolkit[egress]"` for a uv tool (with `--python 3.12` when the tool runs on 3.11), `pipx install --force …` for pipx, `pip install aqt-egress` in another environment, and the editable install only in a clone of the repository.
 - `aqt status` (`--json`, `--verify`): one verdict for the setup of this machine, with a result,
   a one-line explanation and the fix for each check: packages, trail, systemd user service, writer,
   spool, where records go, signer, `signoff.toml`, `trail.toml`, the end of the trail, test vectors.
@@ -18,7 +21,7 @@ First version.
   before it were not signed (`rebootstrap[].unsigned_revocations`).
 - `aqt project init [DIR] [--yes] [--local]` and `aqt project status [DIR] [--json]`: set up one
   repository and show what is in place there: the Claude Code hooks of the installed tools and deny
-  rules for every decision command (both `aqt-<tool>` and `aqt <tool>`) and for the AQT folders, merged
+  rules for every decision command (as `aqt-<tool>`, `aqt <tool>` and `aqt-toolkit <tool>`) and for the AQT folders, merged
   into `.claude/settings.json` (or `settings.local.json`); the agent-instruction block in `CLAUDE.md` (created when missing) and an
   existing `AGENTS.md`; `.aqt/change.toml`; this repository in aqt-ui's `[changes] projects`; the aqt-change
   commit-msg hook; and whether the files are committed. Additive edits only, backups outside the

@@ -9,8 +9,8 @@ Coding agents fail in recognisable ways: they act on a poisoned web page, report
 ## 60-second quick start
 
 ```bash
-uv venv .venv && uv pip install --python .venv/bin/python -e ../aqt-spec -e ".[test]"
-cp examples/capa.toml ~/.config/aqt/capa.toml        # set identity, project root, repos
+pip install aqt-capa                                 # Python 3.11+, Linux
+cp examples/capa.toml ~/.config/aqt/capa.toml        # from the repository; set identity, project root, repos
 
 aqt-capa scan                                        # candidates from evidence + git reverts
 aqt-capa candidate accept C-1a2b3c4d --category instructions --reason "agent reported done with red tests"
@@ -27,7 +27,7 @@ aqt-capa close DEV-0001 --reason "no recurrence in 20 sessions"
 aqt-capa trends --since 90d
 ```
 
-`python examples/demo.py` runs the whole loop offline on synthetic data.
+Or the whole toolkit: `pip install agent-quality-toolkit` (it adds the `aqt` command; `aqt capa …` runs this tool). For development, from a clone of the repository, in this folder: `uv venv .venv && uv pip install --python .venv/bin/python -e ../aqt-spec -e ".[test]"`. There, `python examples/demo.py` runs the whole loop offline on synthetic data.
 
 ## How it works
 

@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — unreleased
 
+- Packaging: published on PyPI (`pip install aqt-quarantine`) at 0.2.0, the version of every AQT package; the other AQT packages it needs are required at `>=0.2,<0.3`; the licence is an SPDX expression with the licence files in the package (PEP 639).
 - Message codes (`aqt_evidence.Text`, English unchanged) on decision notes (`quarantine.decision.*`), outcomes
   (`quarantine.outcome.*`), decision errors and refusal details (`quarantine.error.*`, `quarantine.refused.*`)
   and thresholds errors (`quarantine.thresholds.*`). The detectors stay free of aqt-spec: their reasons are plain

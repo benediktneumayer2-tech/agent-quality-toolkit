@@ -1,20 +1,45 @@
 [build-system]
-requires = ["hatchling>=1.24"]
+requires = ["hatchling>=1.27"]   # PEP 639 licence metadata
 build-backend = "hatchling.build"
 
 [project]
 name = "aqt-spec"
-version = "0.1.0"
-description = "Agent Quality Toolkit evidence records: specification, JSON Schemas, conformance vectors, GxP catalogues and the reference library"
+version = "0.2.0"
+description = "Evidence records for AI coding agents: specification, JSON Schemas, test vectors, GxP catalogues and the Python reference library (Agent Quality Toolkit)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0 AND CC-BY-4.0"
+license-files = ["LICENSE", "NOTICE", "LICENSES/CC-BY-4.0.txt"]
 authors = [{ name = "Benedikt Neumayer" }]
+keywords = ["ai-agents", "coding-agents", "quality-management", "gxp", "evidence", "audit-trail", "json-schema", "ed25519", "alcoa", "part-11", "annex-11"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Healthcare Industry",
+    "Intended Audience :: Information Technology",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Security :: Cryptography",
+    "Topic :: Software Development :: Quality Assurance",
+]
 dependencies = ["cryptography>=41"]
 
 [project.optional-dependencies]
 schema = ["jsonschema>=4.18"]
 test = ["pytest>=8", "jsonschema>=4.18", "pyyaml>=6", "hypothesis>=6.100"]  # hypothesis: property tests only
+
+[project.urls]
+Homepage = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/tree/main/aqt-spec"
+Repository = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit"
+Documentation = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/blob/main/docs/manual.md"
+Changelog = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/blob/main/aqt-spec/CHANGELOG.md"
+Issues = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/issues"
 
 [project.scripts]
 aqt-evidence = "aqt_evidence.cli:main"
@@ -29,7 +54,7 @@ packages = ["src/aqt_evidence"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src", "schemas", "vectors", "catalogues", "spec", "scripts", "tests", "docs", "examples",
-           "crosswalk.md", "README.md", "CHANGELOG.md", "NOTICE", "LICENSE"]
+           "crosswalk.md", "README.md", "CHANGELOG.md", "NOTICE", "LICENSE", "LICENSES"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

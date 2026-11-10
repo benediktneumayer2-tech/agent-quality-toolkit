@@ -1,21 +1,47 @@
 [build-system]
-requires = ["hatchling>=1.24"]
+requires = ["hatchling>=1.27"]   # PEP 639 licence metadata
 build-backend = "hatchling.build"
 
 [project]
 name = "aqt-ui"
-version = "0.1.0"
-description = "Local web page for the responsible person: trail status, quarantine cases, change gates, signatures, CAPA and qualifications, with signed human decisions"
+version = "0.2.0"
+description = "Local web page for the person supervising AI coding agents: trail, quarantine, changes, signatures, CAPA and qualifications (Agent Quality Toolkit)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Benedikt Neumayer" }]
-dependencies = ["aqt-spec>=0.1", "aqt-trail>=0.1"]
+keywords = ["ai-agents", "coding-agents", "quality-management", "gxp", "dashboard", "review", "human-in-the-loop"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Healthcare Industry",
+    "Intended Audience :: Information Technology",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = ["aqt-spec>=0.2,<0.3", "aqt-trail>=0.2,<0.3"]
 
 [project.optional-dependencies]
 # Every view imports its package lazily; a missing one shows "not installed".
-all = ["aqt-quarantine>=0.1", "aqt-signoff>=0.1", "aqt-change>=0.1", "aqt-capa>=0.1", "aqt-validate>=0.1"]
+all = ["aqt-quarantine>=0.2,<0.3", "aqt-signoff>=0.2,<0.3", "aqt-change>=0.2,<0.3", "aqt-capa>=0.2,<0.3",
+       "aqt-validate>=0.2,<0.3"]
 test = ["pytest>=8"]
+
+[project.urls]
+Homepage = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/tree/main/aqt-ui"
+Repository = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit"
+Documentation = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/blob/main/docs/manual.md"
+Changelog = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/blob/main/aqt-ui/CHANGELOG.md"
+Issues = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/issues"
 
 [project.scripts]
 aqt-ui = "aqt_ui.cli:main"

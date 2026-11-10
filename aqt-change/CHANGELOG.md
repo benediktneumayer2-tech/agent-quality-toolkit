@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — unreleased
 
+- Packaging: published on PyPI (`pip install aqt-change`) at 0.2.0, the version of every AQT package; the other AQT packages it needs are required at `>=0.2,<0.3`; the licence is an SPDX expression with the licence files in the package (PEP 639).
 - `TrailCheck(..., types=...)`: the record types it looks up in the trail log (default unchanged: receipts and
   reviews), so another tool can confirm, for example, a `change.finish` record before it is signed.
 - Message codes on the gate reason details and the trail trust texts (`change.gate.*`, `change.trust.*`; English

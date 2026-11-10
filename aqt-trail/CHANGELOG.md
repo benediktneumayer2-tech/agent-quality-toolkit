@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — unreleased
 
+- Packaging: published on PyPI (`pip install aqt-trail`) at 0.2.0, the version of every AQT package; the other AQT packages it needs are required at `>=0.2,<0.3`; the licence is an SPDX expression with the licence files in the package (PEP 639).
 - Message codes (`aqt_evidence.Text`, English unchanged) on the verification summary, break reasons, problems and
   warnings (`trail.verify.*`), detached-signature details (`trail.signature.*`, `trail.review_check.*`), ALCOA++
   details (`trail.alcoa.*`), `observed.chain_detail` (`trail.observe.*`), review findings (`trail.finding.*`),
