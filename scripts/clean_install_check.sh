@@ -2,7 +2,8 @@
 # Clean-install check: prove that the packages work installed, without the repository.
 #
 # 1. Build every aqt-* package that has a pyproject.toml (sdist, then the wheel from that sdist);
-#    aqt-egress only when the interpreter is Python 3.12 or newer.
+#    aqt-egress only when the interpreter is Python 3.12 or newer. With --dist, take the wheels
+#    from that folder instead (the release workflow checks the files it is about to publish).
 # 2. Install only the built wheels into a fresh venv outside the repository (third-party
 #    dependencies such as cryptography come from PyPI; no editable installs).
 # 3. From a directory outside the checkout, with throw-away HOME and XDG directories (as in
@@ -11,6 +12,7 @@
 #    run from a copy of examples/demo.
 #
 # Usage: scripts/clean_install_check.sh            needs uv, git and network for package downloads
+#        scripts/clean_install_check.sh --dist DIR the wheels in DIR (one per package) instead of building
 #        scripts/clean_install_check.sh --docker   the same in a fresh python:3.12-slim container
 #                                                  (repository mounted read-only, removed afterwards)
 # Exit 0 when every check passed.
@@ -28,7 +30,12 @@ if [ "${1:-}" = "--docker" ]; then
         useradd -m checker
         exec su checker -c "/src/scripts/clean_install_check.sh"'
 fi
-[ $# -eq 0 ] || { echo "usage: $0 [--docker]" >&2; exit 2; }
+GIVEN=""
+if [ "${1:-}" = "--dist" ] && [ $# -eq 2 ] && [ -d "$2" ]; then
+    GIVEN="$(cd "$2" && pwd)"
+    shift 2
+fi
+[ $# -eq 0 ] || { echo "usage: $0 [--docker | --dist DIR]" >&2; exit 2; }
 
 for tool in uv git; do
     command -v "$tool" >/dev/null || { echo "$tool is required" >&2; exit 2; }
@@ -70,15 +77,28 @@ for project in "$REPO"/aqt-*/pyproject.toml; do
     PACKAGES+=("$pkg")
 done
 [ ${#PACKAGES[@]} -gt 0 ] || { echo "no aqt-* packages found in $REPO" >&2; exit 2; }
-echo "== build: ${PACKAGES[*]}"
-for pkg in "${PACKAGES[@]}"; do
-    (cd "$WORK" && uv build -q --no-sources --out-dir "$DIST" "$REPO/$pkg") || fail "build $pkg"
-done
-WHEELS=("$DIST"/*.whl)
-SDISTS=("$DIST"/*.tar.gz)
-echo "   ${#WHEELS[@]} wheels, ${#SDISTS[@]} sdists"
-[ ${#WHEELS[@]} -eq ${#PACKAGES[@]} ] && [ ${#SDISTS[@]} -eq ${#PACKAGES[@]} ] \
-    || fail "expected ${#PACKAGES[@]} wheels and sdists"
+if [ -n "$GIVEN" ]; then
+    echo "== wheels from $GIVEN"
+    for wheel in "$GIVEN"/*.whl; do
+        case "$(basename "$wheel")" in aqt_egress-*) [ "$NEW_PYTHON" = 1 ] || continue ;; esac
+        cp "$wheel" "$DIST/"
+    done
+    shopt -s nullglob
+    WHEELS=("$DIST"/*.whl)
+    shopt -u nullglob
+    echo "   ${#WHEELS[@]} wheels"
+    [ ${#WHEELS[@]} -eq ${#PACKAGES[@]} ] || { fail "expected ${#PACKAGES[@]} wheels (${PACKAGES[*]})"; exit 1; }
+else
+    echo "== build: ${PACKAGES[*]}"
+    for pkg in "${PACKAGES[@]}"; do
+        (cd "$WORK" && uv build -q --no-sources --out-dir "$DIST" "$REPO/$pkg") || fail "build $pkg"
+    done
+    WHEELS=("$DIST"/*.whl)
+    SDISTS=("$DIST"/*.tar.gz)
+    echo "   ${#WHEELS[@]} wheels, ${#SDISTS[@]} sdists"
+    [ ${#WHEELS[@]} -eq ${#PACKAGES[@]} ] && [ ${#SDISTS[@]} -eq ${#PACKAGES[@]} ] \
+        || fail "expected ${#PACKAGES[@]} wheels and sdists"
+fi
 
 # ---- 2. install the wheels only ----------------------------------------------------------------------
 echo "== install into a fresh venv outside the repository"

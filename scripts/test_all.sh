@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Run every package's offline test suite (each in its own .venv), then the integration demo test,
-# and print a summary table. Missing virtual environments are created with uv.
+# Run every package's offline test suite (each in its own .venv), then the integration demo test and
+# the tests of the release scripts (scripts/tests), and print a summary table. Missing virtual
+# environments are created with uv.
 # All runs see throw-away HOME and XDG directories, so nothing is
 # written to the real ~/.local/state/aqt or ~/.config/aqt.
 #
@@ -109,6 +110,8 @@ for pkg in "${PACKAGES[@]}"; do
 done
 if [ $# -eq 0 ]; then
     ensure_demo_venv && run_suite "demo" "$SUITE" "$SUITE/examples/demo/.venv/bin/python" examples/demo/test_demo.py
+    # the release helpers (README links for PyPI, versions, release notes): standard library only
+    ensure_demo_venv && run_suite "scripts" "$SUITE/scripts" "$SUITE/examples/demo/.venv/bin/python" tests
 fi
 
 echo
