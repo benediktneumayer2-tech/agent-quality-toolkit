@@ -1,6 +1,6 @@
 # Agent Quality Toolkit: user manual
 
-Version 0.1 (preview), October 2026.
+Version 0.2 (preview), November 2026.
 
 This manual shows you how to install the Agent Quality Toolkit (AQT), set it up on one developer machine, and use its tools in the right order. It is written for developers and QA people who are comfortable on the command line. You do not need to know anything about large language models, GMP/GDP or cryptography. Every term is explained when it first appears, and the [glossary](#7-glossary) at the end repeats the short definitions.
 
@@ -52,49 +52,72 @@ The examples use two people: `human:alice` (quality manager) and `human:dave` (d
 |---|---|---|
 | Linux | The trail writer asks the kernel which process sent a record; the advisor sandbox uses Linux namespaces | `uname -s` prints `Linux` |
 | Python 3.11 or newer | All packages | `python3 --version` |
-| [uv](https://docs.astral.sh/uv/) | Creates the virtual environment and installs the packages | `uv --version` |
-| git | Getting the code; aqt-change and aqt-capa work on git repositories | `git --version` |
+| [uv](https://docs.astral.sh/uv/) | Installs the packages (pipx or pip work too, 1.3) | `uv --version` |
+| git | aqt-change and aqt-capa work on git repositories; the demo, the examples and the developer install need a clone | `git --version` |
 | bubblewrap (optional) | For aqt-sensei (keeps the advisor agent read-only) and aqt-egress (the box around the agent) | `bwrap --version` |
 | tmux (optional) | Only for aqt-sensei: the two agents run in terminal panes | `tmux -V` |
 | Python 3.12, nftables and iproute2 (optional) | Only for aqt-egress (4.10): it needs Python 3.12 or newer; `nft` and `ip` let the box catch programs that ignore the proxy | `nft --version`, `ip -V` |
 
-On Debian or Ubuntu, the optional tools come with `sudo apt install bubblewrap tmux nftables iproute2`. If your Python is older than 3.11, uv can fetch a newer one: use `uv venv --python 3.12 .venv` in step 1.3.
+On Debian or Ubuntu, the optional tools come with `sudo apt install bubblewrap tmux nftables iproute2`. If your Python is older than 3.11, uv fetches a newer one: add `--python 3.12` to the install command of 1.3.
 
-### 1.2 Get the code
+### 1.2 Two ways to install
 
-The packages are not on PyPI yet. Install them from a clone of the repository:
+- **From PyPI** (the Python package index), for using the tools: one command installs every package into a private environment and puts the commands on your `PATH` (1.3). This is the recommended way, and the rest of this manual assumes it.
+- **From a clone of the repository**, for changing the code, running the test suites, the integration demo (1.6) and the examples that the package READMEs mention (developer route, end of 1.3). Everything else works the same either way.
 
-```bash
-git clone https://github.com/benediktneumayer2-tech/agent-quality-toolkit.git ~/agent-quality-toolkit
-cd ~/agent-quality-toolkit
-```
-
-This manual assumes the clone is in `~/agent-quality-toolkit`.
+The packages on PyPI: `agent-quality-toolkit` (the `aqt` command, and with it all the others), `aqt-spec`, `aqt-trail`, `aqt-signoff`, `aqt-change`, `aqt-sensei`, `aqt-quarantine`, `aqt-validate`, `aqt-capa`, `aqt-ui` and the optional `aqt-egress`. They are released together and always share one version number.
 
 ### 1.3 Install everything (recommended)
 
-One virtual environment (a private Python folder) holds all eight packages, the optional web page and the `aqt` command:
+One environment (a private Python folder) holds all eight packages, the optional web page and the `aqt` command:
 
 ```bash
+uv tool install agent-quality-toolkit
+```
+
+- uv creates the environment under `~/.local/share/uv/tools/agent-quality-toolkit` and links the commands into `~/.local/bin` (1.4): `aqt`, `aqt-toolkit` and the command of every tool (`aqt-evidence`, `aqt-trail`, `aqt-signoff`, `aqt-change`, `aqt-sensei`, `aqt-quarantine`, `aqt-validate`, `aqt-capa`, `aqt-ui`). The toolkit package declares these commands itself, because uv and pipx link only the commands of the package you name, and the agent hooks call `aqt-trail`, `aqt-quarantine` and `aqt-change` by name.
+- `aqt` provides `aqt setup` and `aqt status` (chapter 3), `aqt project init` and `aqt project status` for each repository (3.9), and every tool as `aqt <tool> …`, for example `aqt trail verify` for `aqt-trail verify`. It is also installed as `aqt-toolkit`: another Python package (aqtinstall, an installer for the Qt libraries) has an `aqt` command too, and `aqt-toolkit` works whichever of the two comes first on your `PATH`.
+- Optional: the outbound checkpoint aqt-egress (4.10) needs Python 3.12 or newer. Install with the `egress` extra; the same command also adds it to an existing install:
+
+  ```bash
+  uv tool install --python ">=3.12" "agent-quality-toolkit[egress]" --with-executables-from aqt-egress
+  ```
+
+  The toolkit does not declare the `aqt-egress` command (the package is optional), so `--with-executables-from aqt-egress` links it; without that option it runs as `aqt egress …`, which is the same command.
+- Optional: aqt-quarantine's ONNX detector (a local machine-learning model in addition to the built-in pattern rules) needs `--with "aqt-quarantine[hf]"` in the same command. See `aqt-quarantine/docs/detectors.md`.
+
+**With pipx** instead of uv: `pipx install agent-quality-toolkit`, for aqt-egress `pipx install --python python3.12 "agent-quality-toolkit[egress]"` (aqt-egress then runs as `aqt egress …`).
+
+**With pip in a virtual environment** of your own, for example in `~/.local/share/aqt-venv`:
+
+```bash
+python3 -m venv ~/.local/share/aqt-venv
+~/.local/share/aqt-venv/bin/pip install agent-quality-toolkit      # or "agent-quality-toolkit[egress]"
+```
+
+The commands are then in `~/.local/share/aqt-venv/bin`; link them as in 1.4. The toolkit and each tool's package install the same nine commands there, so `pip uninstall agent-quality-toolkit` alone removes them while the packages stay; uninstall the tools' packages too, or reinstall one (`pip install --force-reinstall aqt-trail`) to get its command back.
+
+**Developer route: from a clone.** Editable installs (`-e`) use the code in the clone directly, so after a `git pull` the new code is used without reinstalling:
+
+```bash
+git clone https://github.com/benediktneumayer2-tech/agent-quality-toolkit.git ~/agent-quality-toolkit
 cd ~/agent-quality-toolkit
 uv venv .venv
 uv pip install --python .venv/bin/python -e "aqt-spec[schema]" -e aqt-trail -e aqt-signoff \
     -e aqt-change -e aqt-sensei -e aqt-quarantine -e aqt-validate -e aqt-capa -e aqt-ui -e aqt-cli
 ```
 
-- `aqt-cli` provides the `aqt` command: `aqt setup` and `aqt status` (chapter 3), `aqt project init` and `aqt project status` for each repository (3.9), and every tool as `aqt <tool> …`, for example `aqt trail verify` for `aqt-trail verify`.
-- `-e` installs in editable mode: after a `git pull` the new code is used without reinstalling.
-- The `[schema]` extra lets `aqt-evidence conform` check the content of every record against its schema.
-- Optional: aqt-quarantine's ONNX detector (a local machine-learning model in addition to the built-in pattern rules) needs `-e "aqt-quarantine[hf]"`. See `aqt-quarantine/docs/detectors.md`.
-- Optional: the outbound checkpoint aqt-egress needs Python 3.12 or newer and `-e "aqt-cli[egress]"` (4.10).
+The `aqt-cli` folder is the `agent-quality-toolkit` package. Add `-e "aqt-cli[egress]"` for aqt-egress (the environment needs Python 3.12 or newer: `uv venv --python 3.12 .venv`) and `-e "aqt-quarantine[hf]"` for the ONNX detector. The `[schema]` extra lets `aqt-evidence conform` check the content of every record against its schema; the PyPI install includes it. Link the commands as in 1.4. Where this manual says "a clone", it means this folder, `~/agent-quality-toolkit`.
 
 ### 1.4 Put the commands on your PATH
 
-Agent hooks call the tools by name, for example `aqt-quarantine hook claude-code`. The commands must therefore be on the `PATH` of the agent program, not only of your shell. Link only `aqt` and the `aqt-*` commands into `~/.local/bin`, so that the virtual environment's `python` does not hide your own:
+Agent hooks call the tools by name, for example `aqt-quarantine hook claude-code`. The commands must therefore be on the `PATH` of the agent program, not only of your shell.
+
+With `uv tool install` (1.3) the commands are already linked into `~/.local/bin`; `uv tool update-shell` adds that folder to your `PATH` if it is missing. pipx does the same (`pipx ensurepath`). For a virtual environment of your own (pip or a clone), link only `aqt` and the `aqt-*` commands into `~/.local/bin`, so that the environment's `python` does not hide your own:
 
 ```bash
 mkdir -p ~/.local/bin
-ln -sf ~/agent-quality-toolkit/.venv/bin/aqt ~/agent-quality-toolkit/.venv/bin/aqt-* ~/.local/bin/
+ln -sf ~/agent-quality-toolkit/.venv/bin/aqt ~/agent-quality-toolkit/.venv/bin/aqt-* ~/.local/bin/   # a clone
 ```
 
 Most Linux distributions put `~/.local/bin` on the `PATH` at login. If `command -v aqt-trail` prints nothing in a new terminal, add `export PATH="$HOME/.local/bin:$PATH"` to `~/.profile`, then log out and in again.
@@ -103,11 +126,13 @@ The Claude Code hooks that `aqt project init` writes (3.9) call the commands by 
 
 ### 1.5 Install only some packages
 
-Every package needs `aqt-spec`, the shared record library. Install it together with what you want. For example, change control only:
+Every package needs `aqt-spec`, the shared record library, which comes with it as a dependency. Install the packages you want into one environment, so that they can use each other: the first one by name, the others with `--with-executables-from`, which also links their commands. For example, change control with the trail and signatures:
 
 ```bash
-uv pip install --python .venv/bin/python -e "aqt-spec[schema]" -e aqt-change
+uv tool install aqt-change --with-executables-from "aqt-spec[schema],aqt-trail,aqt-signoff"
 ```
+
+From a clone: `uv pip install --python .venv/bin/python -e "aqt-spec[schema]" -e aqt-change`.
 
 | You want | Install | Works better with |
 |---|---|---|
@@ -130,9 +155,10 @@ aqt status
 
 `aqt status` checks every package, the trail, its writer, where records go, your signing identity, the settings and the specification's test vectors, and names a fix for each problem. Right after installing, it lists the setup that chapter 3 does (no trail, no signer yet); the line `packages` and the line `vectors` (the record library computes every hash and signature exactly as the test vectors require) must already say `ok`. `aqt status --json` gives the same for scripts; the exit code is 0 when nothing failed.
 
-To see all tools working together on synthetic data, run the integration demo. It takes about ten seconds, runs offline in a temporary folder and never touches your real configuration:
+To see all tools working together on synthetic data, run the integration demo from a clone. It takes about ten seconds, runs offline in a temporary folder and never touches your real configuration:
 
 ```bash
+git clone https://github.com/benediktneumayer2-tech/agent-quality-toolkit.git ~/agent-quality-toolkit   # if not done yet
 cd ~/agent-quality-toolkit
 uv venv examples/demo/.venv
 uv pip install --python examples/demo/.venv/bin/python -e "aqt-spec[schema]" -e aqt-trail -e aqt-signoff \
@@ -145,10 +171,12 @@ It ends with `== Summary: 43/43 expected outcomes`. `examples/demo/README.md` ex
 ### 1.7 Update
 
 ```bash
-cd ~/agent-quality-toolkit && git pull
+uv tool upgrade agent-quality-toolkit
 ```
 
-Editable installs use the new code at once. If a package's dependencies changed, run the install command from 1.3 again. After a Claude Code upgrade, repeat the manual hook checks (4.1 and 4.2).
+It keeps the options of the install (the `egress` extra, `--with-executables-from`) and updates every package of the toolkit together. pip and pipx update only the named package unless told otherwise, so ask for the eager strategy: `pipx upgrade --pip-args="--upgrade-strategy eager" agent-quality-toolkit`, or `~/.local/share/aqt-venv/bin/pip install --upgrade --upgrade-strategy eager agent-quality-toolkit`. In a clone: `git pull`; editable installs use the new code at once, and if a package's dependencies changed, run the install command of 1.3 again.
+
+Afterwards restart the trail writer, which still runs the old code: `systemctl --user restart aqt-trail` (3.2). After a Claude Code upgrade, repeat the manual hook checks (4.1 and 4.2).
 
 ## 2. Concepts in five minutes
 
@@ -282,14 +310,7 @@ Before you start, write down:
    aqt-trail serve
    ```
 
-3. Run it permanently as a **systemd user service**: it starts with your login and restarts after a failure. Copy the shipped unit [`aqt-trail/examples/aqt-trail.service`](../aqt-trail/examples/aqt-trail.service) to `~/.config/systemd/user/aqt-trail.service`:
-
-   ```bash
-   mkdir -p ~/.config/systemd/user
-   cp ~/agent-quality-toolkit/aqt-trail/examples/aqt-trail.service ~/.config/systemd/user/
-   ```
-
-   Its content, without the comments:
+3. Run it permanently as a **systemd user service**: it starts with your login and restarts after a failure. `aqt setup` writes this unit for you. By hand, create `~/.config/systemd/user/aqt-trail.service` (`mkdir -p ~/.config/systemd/user` first) with the content of the shipped unit [`aqt-trail/examples/aqt-trail.service`](../aqt-trail/examples/aqt-trail.service), without its comments:
 
    ```ini
    [Unit]
@@ -297,7 +318,7 @@ Before you start, write down:
 
    [Service]
    Type=simple
-   ExecStart=%h/agent-quality-toolkit/.venv/bin/aqt-trail serve
+   ExecStart=%h/.local/bin/aqt-trail serve
    Restart=on-failure
    RestartSec=3
 
@@ -305,7 +326,7 @@ Before you start, write down:
    WantedBy=default.target
    ```
 
-   `%h` stands for your home folder; adjust the path if your clone lives elsewhere. Then:
+   `%h` stands for your home folder. `ExecStart` needs the full path of `aqt-trail`: `%h/.local/bin/aqt-trail` for the install of 1.3 (check with `command -v aqt-trail`), `%h/agent-quality-toolkit/.venv/bin/aqt-trail` for a clone. Then:
 
    ```bash
    systemctl --user daemon-reload
@@ -463,7 +484,7 @@ If a passphrase is lost: **[you]** `aqt-signoff revoke human:alice --reason "pas
 - `~/.config/aqt/`: an agent that edits the registry could add a key of its own. With aqt-signoff installed, such a key does not count: without its enrolment request it is ignored, and with a request it stays pending until an enrolled person approves it (3.4). What remains is first use (enrol yourself first) and the re-bootstrap above. Without aqt-signoff installed, aqt-quarantine and aqt-trail cannot check enrolments;
 - `~/.local/state/aqt/quarantine/` (withheld content) and the trail's `service.key`.
 
-For Claude Code, `aqt project init` (3.9) writes **deny rules** into the repository's `.claude/settings.json`: Claude Code refuses to run the decision commands of every installed tool, in both spellings (`aqt-signoff sign …` and `aqt signoff sign …`), and `aqt-ui`, to read the quarantine folder, the trail's `keys/` folder (the unencrypted service key) and aqt-sensei's owner token, and to edit the AQT configuration and state folders. The rules use your real `XDG_CONFIG_HOME` and `XDG_STATE_HOME`.
+For Claude Code, `aqt project init` (3.9) writes **deny rules** into the repository's `.claude/settings.json`: Claude Code refuses to run the decision commands of every installed tool, in all three spellings (`aqt-signoff sign …`, `aqt signoff sign …` and `aqt-toolkit signoff sign …`), and `aqt-ui`, to read the quarantine folder, the trail's `keys/` folder (the unencrypted service key) and aqt-sensei's owner token, and to edit the AQT configuration and state folders. The rules use your real `XDG_CONFIG_HOME` and `XDG_STATE_HOME`.
 
 Deny rules are a first fence, not a boundary. Claude Code matches a Bash rule against the command as it is written, so `aqt-signoff sign …` is stopped, but a full path (`~/.local/bin/aqt-signoff sign …`), `sh -c '…'`, `python -m …` or an option before the subcommand (`aqt-trail --json review sign …`) is not. A Read rule does not stop a script that opens the file itself. The real protection stays the agent-session guard and, above all, the passphrase (2.4).
 
@@ -473,7 +494,7 @@ Stronger options are a sandbox for agents (for example bubblewrap) that hides `~
 
 In the default user mode the writer runs as you. A same-user agent could, in principle, edit the log or use the service key. With a pinned key and external heads this is **detected**, not prevented. Separate-user mode moves the log and the key to a system user `aqt-trail` that agents cannot become. Read `aqt-trail/docs/separate-user.md` and the script first.
 
-The service runs with `ProtectHome=true`, so it cannot start the `aqt-trail` of your home-folder install (1.3), nor one whose Python lives in your home folder (as uv-managed Pythons do); the script refuses such a path. Install `aqt-spec` and `aqt-trail` into a virtual environment outside `/home` once, then run the script:
+The service runs with `ProtectHome=true`, so it cannot start the `aqt-trail` of your home-folder install (1.3), nor one whose Python lives in your home folder (as uv-managed Pythons do); the script refuses such a path. Install `aqt-spec` and `aqt-trail` into a virtual environment outside `/home` once, then run the script. Both come from a clone (1.3, developer route):
 
 ```bash
 cd ~/agent-quality-toolkit
@@ -1448,7 +1469,7 @@ The hooks of aqt-trail (record everything), aqt-quarantine (scan web results) an
 ```
 
 - The aqt-change hook does nothing outside a git repository with plans, so it is safe in the user-wide settings.
-- The deny list here is the minimum, aqt-quarantine's rules with the default folders. `aqt project init` writes the full list (3.7): the decision commands of every installed tool in both spellings, `aqt-ui`, and the folder rules for your real `XDG_*` folders (71 rules with every tool installed and the default folders). `aqt project status --json` lists the rules still missing under the check `claude.deny`; in a repository that is not set up yet, that is the full list.
+- The deny list here is the minimum, aqt-quarantine's rules with the default folders. `aqt project init` writes the full list (3.7): the decision commands of every installed tool in all three spellings, `aqt-ui`, and the folder rules for your real `XDG_*` folders (104 rules with every tool installed and the default folders). `aqt project status --json` lists the rules still missing under the check `claude.deny`; in a repository that is not set up yet, that is the full list.
 - If you moved `XDG_CONFIG_HOME` or `XDG_STATE_HOME`, the folder rules name your own folders: by hand, adjust them; with `aqt project init`, a folder outside your home folder becomes an absolute path (`//…`) that fits only your machine, so use `aqt project init --local` to keep the rules in `.claude/settings.local.json`, which stays out of git (3.9).
 - Restart Claude Code after editing. `aqt-quarantine doctor` reports whether its hook is found.
 - If you use aqt-sensei with tmux, also merge `aqt-sensei/examples/claude-code-hooks.json` in the worker's project.
@@ -1457,13 +1478,12 @@ The hooks of aqt-trail (record everything), aqt-quarantine (scan web results) an
 
 `aqt-ui` is an optional web page on your own machine that shows the state of all tools in one place and lets you make the most frequent decisions without remembering commands. It reads the same files and settings as the commands above and writes decisions through the same package code into the same trail.
 
-Add it to the environment of section 1.3 and start it yourself in a terminal, not from an agent:
+It comes with the install of section 1.3 (in a clone, add `-e aqt-ui` to the environment). Start it yourself in a terminal, not from an agent:
 
 ```bash
-uv pip install --python .venv/bin/python -e aqt-ui
 aqt-ui
 # aqt-ui: decisions are on (each one asks for your passphrase)
-# aqt-ui 0.1.0 on http://127.0.0.1:41377/
+# aqt-ui 0.2.0 on http://127.0.0.1:41377/
 # login link (works once): http://127.0.0.1:41377/login?t=…
 ```
 
@@ -1497,18 +1517,17 @@ It records only what runs inside `aqt egress run`. An agent you start the usual 
 
 aqt-egress needs Linux, Python 3.12 or newer, and bubblewrap with unprivileged user namespaces. With `nft` (nftables) and `ip` (iproute2) installed, the box also catches programs that ignore the proxy settings; without them only proxy-aware programs and the ports 80 and 443 work.
 
-Add it to the environment of section 1.3. That environment must use Python 3.12 or newer: if `.venv/bin/python --version` says 3.11, create it again with `uv venv --python 3.12 .venv` and repeat the install of 1.3.
+Install the toolkit with the `egress` extra, on Python 3.12 or newer (1.3); the same command adds it to an existing install:
 
 ```bash
-cd ~/agent-quality-toolkit
-uv pip install --python .venv/bin/python -e "aqt-cli[egress]"
+uv tool install --python ">=3.12" "agent-quality-toolkit[egress]" --with-executables-from aqt-egress
 aqt egress status
-# aqt-egress 0.1.0.dev0: box ok (bubblewrap with user and network namespaces works)
+# aqt-egress 0.2.0: box ok (bubblewrap with user and network namespaces works)
 #   CA: not created yet (the first run creates it)
 #   last session: none
 ```
 
-`aqt egress …` and `aqt-egress …` are the same command. The extra is called `egress` on the `agent-quality-toolkit` package (the `aqt-cli` folder). `aqt status` gets a line `egress` with the version, the CA, whether the box can start and the last session; that line never fails the verdict, and without the package it says `skip`. If the box cannot start, `aqt egress status` says why. If the cause is Ubuntu's AppArmor restriction of user namespaces, the remedy is an AppArmor profile for the system's bwrap, as for aqt-sensei (6.4); aqt-egress uses only a bwrap in a system folder such as `/usr/bin`.
+In a clone, add `-e "aqt-cli[egress]"` to an environment with Python 3.12 or newer (`uv venv --python 3.12 .venv`). `aqt egress …` and `aqt-egress …` are the same command. The extra is called `egress` on the `agent-quality-toolkit` package (the `aqt-cli` folder). `aqt status` gets a line `egress` with the version, the CA, whether the box can start and the last session; that line never fails the verdict, and without the package it says `skip`. If the box cannot start, `aqt egress status` says why. If the cause is Ubuntu's AppArmor restriction of user namespaces, the remedy is an AppArmor profile for the system's bwrap, as for aqt-sensei (6.4); aqt-egress uses only a bwrap in a system folder such as `/usr/bin`.
 
 #### Steps
 
@@ -1540,7 +1559,7 @@ aqt egress status
 - **A private certificate authority (CA).** The first run creates it in `~/.local/state/aqt/egress/ca/`. The proxy uses it to read TLS (HTTPS) traffic, and the box trusts it through `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, `GIT_SSL_CAINFO`, `PIP_CERT` (all `/run/aqt-egress/bundle.pem`), `NODE_EXTRA_CA_CERTS` (`/run/aqt-egress/ca.pem`) and a system certificate bundle that includes it. Its key is not visible inside the box.
 - **Name lookups.** `/etc/resolv.conf` names the box's own resolver, which answers every name with the box's own address and records it. Only the proxy resolves names for real. With nftables, every other TCP connection is redirected to the proxy too, DNS queries to any server are answered by the box resolver, and all other traffic to outside addresses is dropped (QUIC and other UDP: programs fall back to TCP).
 - **`/run` is empty**, apart from the box's own files and the trail writer's socket, which is put back read-only. The host's service sockets (D-Bus, systemd, docker, your runtime folder) are not reachable.
-- **Read-only:** the AQT configuration and state folders (the shared spool stays writable, so that records of agent hooks still reach the trail), `/sys/fs/cgroup`, and the folders aqt-egress runs from: its Python, its packages and, with the editable install of 1.3, the `aqt-egress` and `aqt-spec` source folders. The box therefore cannot change the next session's recorder.
+- **Read-only:** the AQT configuration and state folders (the shared spool stays writable, so that records of agent hooks still reach the trail), `/sys/fs/cgroup`, and the folders aqt-egress runs from: its Python, its packages and, with an editable install from a clone (1.3), the `aqt-egress` and `aqt-spec` source folders. The box therefore cannot change the next session's recorder.
 - **Hidden** (empty folders): the egress state (CA key, body store, fingerprint key), the quarantine state, and the X11 and tmux socket folders in `/tmp`. With `--private-tmp` the whole `/tmp` is fresh; the project, the home folder and the AQT folders are put back if they live under `/tmp`.
 - **No way to this machine itself.** The box's `localhost` is its own. The proxy refuses to connect for the box to this machine's loopback or to any address of its network interfaces (LAN, VPN, bridges), except the local endpoints you configured; such a request is refused and recorded (`host-loopback`, `host-local`). This protects aqt-ui and other local services. The client sees a `502 Bad Gateway` with `Connection killed: aqt-egress: the host's own loopback is outside the box`.
 - **The box counts as an agent session.** `AQT_AGENT_SESSION` and `AQT_EGRESS_SESSION` hold the egress session ID, so records from agent hooks inside the box can be matched to it, and every **[you]** step refuses there. Make decisions in a terminal outside the box.
@@ -1640,10 +1659,10 @@ The `egress.request` record of the first session, shortened:
 #### Common mistakes
 
 - **A keyring under `/run`.** `gh`, git's libsecret credential helper and other secret-service clients reach their keyring over the session D-Bus in `/run/user/<uid>`, which is empty in the box, so they fail there. Use file-based credentials for work in the box. aqt-sensei's bridge sockets are not reachable either. Agents that keep their credentials in files (Claude Code, Codex, pi) are not affected.
-- **An editable install is read-only in the box.** With the editable install of 1.3, the virtual environment aqt-egress runs from and the `aqt-egress` and `aqt-spec` source folders are read-only inside the box: a `git pull` of the toolkit, `uv pip install` into that environment or an edit of those sources fails there with `Read-only file system`. Do it outside the box. The same holds for the AQT configuration and state folders.
+- **An editable install is read-only in the box.** With an editable install from a clone (1.3), the virtual environment aqt-egress runs from and the `aqt-egress` and `aqt-spec` source folders are read-only inside the box: a `git pull` of the toolkit, `uv pip install` into that environment or an edit of those sources fails there with `Read-only file system`. Do it outside the box. The same holds for the AQT configuration and state folders.
 - **A program that ignores the proxy variables.** It still ends at the proxy: its name lookups return the box's own address, where the proxy listens on ports 80 and 443 and takes the destination from the TLS server name or the Host header, and with nftables every other TCP connection is redirected too (the record's `via` says `direct443`, `direct80` or `redirect`). Without nftables its connections to other ports fail at once with "network unreachable". A program that brings its own certificate list instead of the CA variables rejects the private CA: list its host under `passthrough`.
 - **A local server is refused.** A request to this machine's loopback or LAN address ends in `502 Bad Gateway … the host's own loopback is outside the box` (or `this host's own addresses`). Add the server under `local_endpoints` or `--local-endpoint`; the agent keeps its usual base URL.
-- **Python 3.11.** The `egress` extra installs nothing there, and `aqt egress` answers that aqt-egress is not installed and needs Python 3.12 or newer. Create the environment with Python 3.12 (see the setup above).
+- **Python 3.11.** The `egress` extra installs nothing there, and `aqt egress` answers that aqt-egress is not installed and needs Python 3.12 or newer. Install again with `--python ">=3.12"` (see the setup above); in a clone, create the environment with Python 3.12.
 - **A decision inside the box.** `aqt-signoff sign` or a quarantine release refuses inside the box, because it is an agent session. Run it in another terminal.
 
 #### Limits

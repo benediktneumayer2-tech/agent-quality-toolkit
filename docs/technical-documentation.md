@@ -1,6 +1,6 @@
 # Agent Quality Toolkit: technical documentation
 
-This document explains how the Agent Quality Toolkit (AQT) works inside. It is for developers who want to integrate or extend the suite, and for technically minded QA people who want to judge how far its evidence can be trusted. It describes version 0.1.0 (a preview, October 2026) as implemented in this repository.
+This document explains how the Agent Quality Toolkit (AQT) works inside. It is for developers who want to integrate or extend the suite, and for technically minded QA people who want to judge how far its evidence can be trusted. It describes version 0.2.0 (a preview, November 2026) as implemented in this repository.
 
 - For step-by-step use of the tools, read the [user manual](manual.md).
 - For the project overview and the one-command demo, read the [README](../README.md).
@@ -766,7 +766,7 @@ Case IDs are `Q` plus six characters from a Crockford-style alphabet (`Q7SEGGW`)
 **`aqt project init` / `aqt project status`** (`project.py`). `resolve_root` turns `DIR` into its git top level. Only installed tools count (`importlib.util.find_spec`).
 
 - *Hooks.* The wanted hooks are aqt-trail's six events, `aqt_quarantine.cli.CLAUDE_SNIPPET` and `aqt_change.hooks.SNIPPET`. A hook is present when any of `~/.claude/settings.json` (`CLAUDE_CONFIG_DIR`), `.claude/settings.json` and `.claude/settings.local.json` has a group for the same event and matcher (`None`, `""` and `"*"` are equal) with the same command (the first word compared by its base name, so `/path/to/aqt-trail hook claude-code` counts).
-- *Deny rules* (`deny_rules`). `Bash(aqt-<tool> <sub>:*)` and `Bash(aqt <tool> <sub>:*)` for each subcommand in `DECISIONS`, `Bash(aqt-ui:*)` and `Bash(aqt ui:*)`, `Read` rules for the quarantine state folder (as aqt-quarantine's configuration names it), the trail's `keys/` and aqt-sensei's owner token, and `Edit` rules for the AQT state and configuration folders plus any quarantine or trail state folder outside them. Paths come from the real `XDG_*` values: `~/…` under the home folder, else `//…` (Claude Code reads a single leading `/` as relative to the settings file). A rule present in any of the three settings files counts. The rules are a first fence, not a boundary: Claude Code matches a Bash rule against the command as written, so a full path, `sh -c`, `python -m …` or an option before the subcommand (`aqt-trail --json review sign`) is not stopped; the human check (section 4.3) and the passphrase remain the protection.
+- *Deny rules* (`deny_rules`). `Bash(aqt-<tool> <sub>:*)`, `Bash(aqt <tool> <sub>:*)` and `Bash(aqt-toolkit <tool> <sub>:*)` for each subcommand in `DECISIONS`, `Bash(aqt-ui:*)`, `Bash(aqt ui:*)` and `Bash(aqt-toolkit ui:*)`, `Read` rules for the quarantine state folder (as aqt-quarantine's configuration names it), the trail's `keys/` and aqt-sensei's owner token, and `Edit` rules for the AQT state and configuration folders plus any quarantine or trail state folder outside them. Paths come from the real `XDG_*` values: `~/…` under the home folder, else `//…` (Claude Code reads a single leading `/` as relative to the settings file). A rule present in any of the three settings files counts. The rules are a first fence, not a boundary: Claude Code matches a Bash rule against the command as written, so a full path, `sh -c`, `python -m …` or an option before the subcommand (`aqt-trail --json review sign`) is not stopped; the human check (section 4.3) and the passphrase remain the protection.
 - *Settings files.* A file that is not JSON, or whose `hooks`, an event list, a group's `hooks`, `permissions` or `permissions.deny` has another shape, fails with `can_apply = False`. Otherwise missing groups are appended per event and missing rules to `permissions.deny`; other keys keep their order; output is 2-space JSON.
 - *Instructions.* `with_block` replaces the single `<!-- aqt:begin -->` … `<!-- aqt:end -->` pair or appends one; repeated or unmatched markers fail. It edits the root `CLAUDE.md`, created when missing because Claude Code does not read `AGENTS.md`, and an existing `AGENTS.md` (one of them when both resolve to the same file).
 - *`.aqt/change.toml`.* Written only when missing (`change_settings_text`), with `trail_keys` set to the `key_id` in `trail.json` when this account has a trail, else with both trail lines as comments; refused while `aqt_change.plans.active_plans` names a plan. An existing file is parsed with `parse_project_settings` and only warned about (trail key not named, `require_trail` off).
@@ -1060,7 +1060,7 @@ Tamper evidence is not tamper prevention. A record set is trustworthy to the deg
 
 ### 9.1 Suites
 
-Each package has an offline pytest suite in `<package>/tests/` with synthetic fixtures: no network, no real agents or models, no GPU. Counts observed on 2026-10-31 (Python 3.13), after the four fix rounds of the security review, `aqt project init` and aqt-egress:
+Each package has an offline pytest suite in `<package>/tests/` with synthetic fixtures: no network, no real agents or models, no GPU. Counts observed on 2026-11-10 (Python 3.13), for the 0.2.0 release:
 
 | Suite | Passed | Skipped | Notes |
 |---|---|---|---|
@@ -1068,22 +1068,23 @@ Each package has an offline pytest suite in `<package>/tests/` with synthetic fi
 | aqt-trail | 200 | 0 | Writer, server, tamper cases, TSA and test mode, importers, review and profile parameters, enrolment-backed registry keys, ALCOA++, bundles |
 | aqt-signoff | 79 | 0 | Signatures, statuses, replays, counter-signed enrolment (bootstrap, approval, roles, rotation, re-bootstrap and its confirmation, unsigned revocations, replayed requests, one import, export with enrolment evidence), key format, actions, CLI, L1 conformance of its records |
 | aqt-change | 124 | 0 | Plan format, reconciliation, receipts, content fingerprint, hidden changes, ignore rules and the fresh bytecode cache, trail confirmation, project settings and the plan's base commit, finish, gate, hooks, quick start |
-| aqt-sensei | 55 | 3 | The skipped tests need real tmux and bubblewrap (opt-in) |
+| aqt-sensei | 56 | 3 | The skipped tests need real tmux and bubblewrap (opt-in) |
 | aqt-quarantine | 89 | 0 | Detectors, engine, decisions and their replays, enrolment-checked keys, journal problems, Claude Code adapter, payload conformance of every record type |
 | aqt-validate | 110 | 0 | Statistics against reference values, loaders, detector and reviewer runs |
 | aqt-capa | 25 | 0 | Units, CLI, end to end, signature-based approval |
-| aqt-ui | 153 | 0 | Queue, case and change pages, Sign released bound to the change's own finish (record, plan version, receipts, HEAD), message codes and the German catalogue; login, Host, CSRF and Origin, session key, request limits, read-only and peer checks for every decision, substituted content, release only after every page was shown, the record inspector, test mode and review parameters, each decision end to end, German labels, paging and a 50,000-record trail |
-| aqt-cli | 57 | 0 | `aqt status` (including the signer check and the optional `egress` line), `aqt setup`, `aqt project init` and `aqt project status` (merging into existing settings, user-level hooks, `--local`, instruction blocks and links, `.aqt/change.toml`, `ui.toml` shapes, no terminal), tool pass-through, the install hint for aqt-egress |
+| aqt-ui | 154 | 0 | Queue, case and change pages, Sign released bound to the change's own finish (record, plan version, receipts, HEAD), message codes and the German catalogue; login, Host, CSRF and Origin, session key, request limits, read-only and peer checks for every decision, substituted content, release only after every page was shown, the record inspector, test mode and review parameters, each decision end to end, German labels, paging and a 50,000-record trail |
+| aqt-cli | 67 | 0 | `aqt status` (including the signer check and the optional `egress` line), `aqt setup`, `aqt project init` and `aqt project status` (merging into existing settings, user-level hooks, `--local`, instruction blocks and links, `.aqt/change.toml`, `ui.toml` shapes, no terminal), tool pass-through, the install hints for the installation at hand, the second name `aqt-toolkit` |
 | aqt-egress | 83 | 0 | Settings, masking, fingerprints, the body store, the resolver and the `/proc` parsing; the proxy against local test servers (records per request, `opened` before data, loopback and host-address refusal, TLS pass-through, LLM structure, local endpoints, full mode, hook and store errors); the report, `prune`, `drain` and `status`; real boxes (attribution, escape attempts, read-only and hidden folders, redirect, `--private-tmp`), with records through a real aqt-trail writer and a verified trail. The box tests skip themselves without bubblewrap or user namespaces; `test_all.sh` skips the suite on Python 3.11 |
 | demo | 1 | 0 | `examples/demo/test_demo.py`: the full story, 43 expected outcomes |
+| scripts | 10 | 0 | `scripts/tests/`: the release helpers (README links for PyPI, one version, release notes), with the real package READMEs |
 
-In total 1182 tests pass: 1181 package tests (including the optional aqt-ui and aqt-egress, and aqt-cli) plus the demo test. Some tests skip themselves when a tool is missing: `openssl` (aqt-trail token cross-check) and `git` (aqt-change quick start).
+In total 1204 tests pass: 1193 package tests (including the optional aqt-ui and aqt-egress, and aqt-cli), the demo test and 10 tests of the release scripts. Some tests skip themselves when a tool is missing: `openssl` (aqt-trail token cross-check) and `git` (aqt-change quick start).
 
 ### 9.2 Running them
 
 ```sh
-scripts/test_all.sh                 # every package, then the demo; prints a summary table
-scripts/test_all.sh aqt-trail       # one or more packages (the demo runs only without arguments)
+scripts/test_all.sh                 # every package, then the demo and the release scripts; a summary table
+scripts/test_all.sh aqt-trail       # one or more packages (demo and scripts run only without arguments)
 cd aqt-trail && .venv/bin/python -m pytest -q     # directly, inside a package
 ```
 
@@ -1107,7 +1108,15 @@ Started from inside an agent session, the demo's ALCOA++ report fails *attributa
 
 ### 9.4 CI
 
-`.github/workflows/ci.yml` runs on every push and pull request on `ubuntu-latest` with Python 3.11, 3.12 and 3.13. It installs `uv`, `bubblewrap`, `tmux` and `nftables`, then runs `scripts/test_all.sh` (aqt-egress is skipped on Python 3.11); further jobs run `scripts/clean_install_check.sh` and audit the third-party dependencies of all packages with `pip-audit`. The `.github/workflows/ci.yml` files inside the package folders are path-filtered workflows for a package that lives in its own repository; GitHub Actions runs only the root workflow in this monorepo.
+`.github/workflows/ci.yml` runs on every push and pull request on `ubuntu-latest` with Python 3.11, 3.12 and 3.13. It installs `uv`, `bubblewrap`, `tmux` and `nftables`, then runs `scripts/test_all.sh` (aqt-egress is skipped on Python 3.11); further jobs run `scripts/clean_install_check.sh`, build the PyPI files as a release does (`scripts/build_dist.sh`, 9.5) and audit the third-party dependencies of all packages with `pip-audit`. The `.github/workflows/ci.yml` files inside the package folders are path-filtered workflows for a package that lives in its own repository; GitHub Actions runs only the root workflow in this monorepo.
+
+### 9.5 Packaging and releases
+
+Each package folder is one distribution on PyPI, built by hatchling; the umbrella `agent-quality-toolkit` (folder `aqt-cli`) depends on the eight packages and aqt-ui, and on aqt-egress through its `egress` extra (Python 3.12+). The `[tool.uv.sources]` tables point the dependencies between the packages at the neighbouring folders for development; builds use `uv build --no-sources`, so the published metadata names only the PyPI packages. All packages are released together under one version, the tag `v<version>`.
+
+`.github/workflows/release.yml` runs on such a tag (or by hand as a dry run that stops before PyPI): `scripts/check_versions.py` (one version, equal to the tag), `scripts/release_notes.py` (the version's section of every CHANGELOG), `scripts/build_dist.sh` (README links, build, `twine check --strict`), `scripts/clean_install_check.sh --dist` on the built wheels, the upload to TestPyPI and an install from there with `uv tool install`, then PyPI behind the `pypi` environment, which waits for the owner's approval, and a GitHub release. Uploads use trusted publishing (OpenID Connect between GitHub and PyPI, with attestations); each job has only the permissions it needs, and every action is pinned to an exact release tag. [RELEASING.md](../RELEASING.md) has the one-time setup and the steps of a release.
+
+PyPI shows each README as the project page, where links relative to the repository lead nowhere. `scripts/pypi_readmes.py --ref REF` rewrites the relative links and images of every package README (the file its `pyproject.toml` names) to absolute URLs at that tag or commit: files and folders on `github.com/…/blob|tree/REF/…`, images on `raw.githubusercontent.com/…/REF/…`. It leaves code blocks, code spans, absolute URLs and `#` anchors alone, and fails, writing nothing, when a link points at a missing file or outside the repository or would stay relative. `build_dist.sh` runs it in a throw-away copy of the committed tree (`git archive HEAD`), so the repository's READMEs keep their relative links.
 
 ---
 

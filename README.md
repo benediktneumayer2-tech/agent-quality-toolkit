@@ -11,11 +11,11 @@
 
 **Two ways in.** *From quality or validation:* no install needed. Read the demo's [signature manifest](examples/demo/sample-output/release-manifest.md), [ALCOA++ report](examples/demo/sample-output/alcoa-report.md) and [CAPA record](examples/demo/sample-output/capa-DEV-0001.md), then the [map to the regulations](#how-it-maps-to-regulations). *From software development:* run the quick start below. For Claude Code, ready-made [hooks](docs/manual.md#48-combining-the-claude-code-hooks) call the tools automatically. Unfamiliar terms are explained in the [glossary](#glossary).
 
-[![ci](https://github.com/benediktneumayer2-tech/agent-quality-toolkit/actions/workflows/ci.yml/badge.svg)](https://github.com/benediktneumayer2-tech/agent-quality-toolkit/actions/workflows/ci.yml) ![python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue) ![licence](https://img.shields.io/badge/licence-Apache--2.0%20%2F%20CC%20BY%204.0-green) ![status](https://img.shields.io/badge/status-0.1%20preview-orange)
+[![ci](https://github.com/benediktneumayer2-tech/agent-quality-toolkit/actions/workflows/ci.yml/badge.svg)](https://github.com/benediktneumayer2-tech/agent-quality-toolkit/actions/workflows/ci.yml) ![python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue) ![licence](https://img.shields.io/badge/licence-Apache--2.0%20%2F%20CC%20BY%204.0-green) ![status](https://img.shields.io/badge/status-0.2%20preview-orange)
 
 ## Quick start: install in about a minute, run in about ten seconds
 
-You need Linux, Python 3.11 or newer, [uv](https://docs.astral.sh/uv/) (a Python installer) and git. You do not need an account, an API key, an AI model or a GPU.
+You need Linux, Python 3.11 or newer, [uv](https://docs.astral.sh/uv/) (a Python installer) and git. You do not need an account, an API key, an AI model or a GPU. The demo runs from a clone of this repository:
 
 ```bash
 git clone https://github.com/benediktneumayer2-tech/agent-quality-toolkit.git
@@ -33,7 +33,13 @@ The demo prints each check as `[ok  ]` while it runs. Each line is one control d
 
 After the install it runs offline, with made-up data, in a temporary folder, and never touches your own settings. [The worked example](#the-worked-example-one-poisoned-web-page) explains what you just saw.
 
-**To use it on your own work,** install everything with the `aqt` command and put the commands on your `PATH` ([manual 1.3](docs/manual.md#13-install-everything-recommended) and [1.4](docs/manual.md#14-put-the-commands-on-your-path)), then run, in your own terminal (not inside an agent session):
+**To use it on your own work,** install the toolkit from PyPI (the Python package index); no clone is needed. This one command installs every tool and puts `aqt` and every tool's command (`aqt-trail`, `aqt-quarantine`, …) on your `PATH`:
+
+```bash
+uv tool install agent-quality-toolkit
+```
+
+The command `aqt` is also installed as `aqt-toolkit`, because another Python package (aqtinstall, an installer for the Qt libraries) has an `aqt` command too. The outbound checkpoint aqt-egress needs Python 3.12 or newer: `uv tool install --python ">=3.12" "agent-quality-toolkit[egress]" --with-executables-from aqt-egress` (without the last option it runs as `aqt egress`). pipx, pip, updates and the developer install from a clone are in [manual 1.3](docs/manual.md#13-install-everything-recommended) and [1.7](docs/manual.md#17-update). Then run, in your own terminal (not inside an agent session):
 
 ```bash
 aqt setup                                  # once per machine: the audit trail, its writer, your signing identity
@@ -92,7 +98,7 @@ The editable draw.io sources and their generator are in [`docs/diagrams/`](docs/
 | Show later what happened | [aqt-trail](aqt-trail/README.md) | the Claude Code hooks, which call the tools automatically ([manual 4.8](docs/manual.md#48-combining-the-claude-code-hooks)) |
 | See what an agent sends out, and to which hosts | [aqt-egress](aqt-egress/README.md): `aqt egress run -- claude`, then `aqt egress report` ([manual 4.10](docs/manual.md#410-watching-what-an-agent-sends-out-aqt-egress)) | aqt-trail, so that the records are chained and their sender is observed |
 | Check the mapping to pharma regulations | the [crosswalk](aqt-spec/crosswalk.md) | the [catalogues](aqt-spec/catalogues/) |
-| Set up all tools for daily work | install everything ([manual 1.3](docs/manual.md#13-install-everything-recommended)), then `aqt setup` in your own terminal | `aqt project init` in each repository ([manual 3.9](docs/manual.md#39-set-up-each-repository-where-agents-work)), then the daily and weekly routine in [manual chapter 5](docs/manual.md) |
+| Set up all tools for daily work | `uv tool install agent-quality-toolkit` ([manual 1.3](docs/manual.md#13-install-everything-recommended)), then `aqt setup` in your own terminal | `aqt project init` in each repository ([manual 3.9](docs/manual.md#39-set-up-each-repository-where-agents-work)), then the daily and weekly routine in [manual chapter 5](docs/manual.md) |
 
 ## The worked example: one poisoned web page
 
@@ -121,7 +127,7 @@ The demo follows one change from start to finish. A simulated agent works; a sim
 
 ## Use one part on its own
 
-Install `aqt-spec` and the part you want, from the repository folder. For aqt-change:
+Every part is also its own package on PyPI, for example `uv tool install aqt-change` ([manual 1.5](docs/manual.md#15-install-only-some-packages)). The first results below use the examples in the repository, so install from a clone, in the repository folder. For aqt-change:
 
 ```bash
 uv venv .venv && uv pip install --python .venv/bin/python -e "aqt-spec[schema]" -e aqt-change
@@ -183,8 +189,8 @@ The [catalogues](aqt-spec/catalogues/) hold 121 paraphrased requirements from 11
 - **The outbound box records; it does not block.** aqt-egress sees only agents started with `aqt egress run`. Data can still leave inside traffic that looks normal (a git push, a package download), your LLM provider still receives the whole context, files stay writable for later use outside the box, and Unix sockets outside `/run` stay reachable. It needs bubblewrap and unprivileged user namespaces, and nftables to catch programs that ignore the proxy ([its limits](aqt-egress/README.md#threat-model-and-limits)).
 - **Some checks are manual.** The Claude Code hooks, a live advisor pairing and the AI-reviewer command lines have documented manual checks, not automated tests. The trail's separate-user mode is not yet tested.
 - **Demo shortcuts.** The demo's people use fixed passphrases (DEMO ONLY), and its time stamps come from a local test authority (TEST ONLY).
-- **Preview.** Version 0.1; interfaces may change before 1.0. Linux only. Not on PyPI (the Python package index) yet: install from this repository. Ready-made hooks exist for Claude Code only; with Codex or pi you run the commands yourself, and aqt-trail imports their session logs.
-- **Tests.** `scripts/test_all.sh` runs 1182 offline tests (1181 in the eleven packages, including the optional aqt-ui and aqt-egress and the `aqt` command, and one for the demo) with a throw-away home folder. `scripts/clean_install_check.sh` builds every package, installs only the built packages into a fresh environment outside the checkout and runs every tool, `aqt status` and the demo there (`--docker` does the same in a throw-away container). GitHub's automatic checks (CI) run both, the tests on Python 3.11, 3.12 and 3.13 (aqt-egress on 3.12 and 3.13 only).
+- **Preview.** Version 0.2; interfaces may change before 1.0. Linux only. On PyPI as `agent-quality-toolkit` (every tool and the `aqt` command) and one package per tool, all released together with one version ([RELEASING.md](RELEASING.md)); a clone of this repository is for the demo, the examples and development. Ready-made hooks exist for Claude Code only; with Codex or pi you run the commands yourself, and aqt-trail imports their session logs.
+- **Tests.** `scripts/test_all.sh` runs 1204 offline tests (1193 in the eleven packages, including the optional aqt-ui and aqt-egress and the `aqt` command, one for the demo and 10 for the release scripts) with a throw-away home folder. `scripts/clean_install_check.sh` builds every package, installs only the built packages into a fresh environment outside the checkout and runs every tool, `aqt status` and the demo there (`--docker` does the same in a throw-away container). GitHub's automatic checks (CI) run both, the tests on Python 3.11, 3.12 and 3.13 (aqt-egress on 3.12 and 3.13 only), and build the PyPI files exactly as a release does.
 
 ## Privacy and security
 
@@ -203,6 +209,7 @@ The [catalogues](aqt-spec/catalogues/) hold 121 paraphrased requirements from 11
 | Rule → feature → evidence → what you still must do | [GxP crosswalk](aqt-spec/crosswalk.md) |
 | The shared record format, for any language | [Evidence record specification](aqt-spec/spec/evidence-records-0.1.md) |
 | The demo step by step, its outputs and its isolation | [Integration demo](examples/demo/README.md) |
+| How a release reaches PyPI | [RELEASING.md](RELEASING.md) |
 
 ## Glossary
 
