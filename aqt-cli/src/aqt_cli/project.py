@@ -27,13 +27,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .checks import FAIL, OK, SKIP, WARN, Check, Context, Result, StepSkipped, _trail
+from .tools import TOOLS
 
 MODULES = {"aqt-trail": "aqt_trail", "aqt-quarantine": "aqt_quarantine", "aqt-change": "aqt_change",
            "aqt-signoff": "aqt_signoff", "aqt-capa": "aqt_capa", "aqt-validate": "aqt_validate",
            "aqt-sensei": "aqt_sensei", "aqt-ui": "aqt_ui"}
 
 # aqt-trail's Claude Code hooks (manual 4.8, aqt-trail/examples/claude-code-hooks.json): (event, matcher).
-TRAIL_HOOK = "aqt-trail hook claude-code"
+# Hooks call the one stable command `aqt <tool> ...`: the same name for a pip or uv install and for the
+# desktop app's runtime (/usr/bin/aqt from the .deb, ~/.local/bin/aqt for the AppImage), never the path of an
+# interpreter or of an app folder that can move.
+TRAIL_HOOK = "aqt trail hook claude-code"
+SCRIPTS = {script: name for name, (_module, script, _dist) in TOOLS.items()}      # aqt-trail -> trail
 TRAIL_EVENTS = (("SessionStart", None), ("UserPromptSubmit", None), ("PreToolUse", "*"), ("PostToolUse", "*"),
                 ("Stop", None), ("SessionEnd", None))
 EVENT_ORDER = ("SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "SubagentStop",
@@ -226,8 +231,14 @@ def read_settings(ctx: ProjectContext, path: Path) -> dict | None:
     return data
 
 
+def stable_command(command: str) -> str:
+    """``aqt-quarantine hook claude-code`` -> ``aqt quarantine hook claude-code``."""
+    first, _, rest = command.partition(" ")
+    return f"aqt {SCRIPTS[first]} {rest}".rstrip() if first in SCRIPTS else command
+
+
 def _snippet_hooks(tool: str, snippet: dict) -> list[tuple]:
-    return [(tool, event, group.get("matcher"), handler["command"])
+    return [(tool, event, group.get("matcher"), stable_command(handler["command"]))
             for event, groups in snippet.get("hooks", {}).items() for group in groups for handler in group["hooks"]]
 
 
@@ -251,12 +262,18 @@ def _matcher(value) -> str:
 
 
 def _command(value) -> str:
-    """``/path/to/aqt-trail hook claude-code`` and ``aqt-trail hook claude-code`` are the same hook."""
+    """``/path/to/aqt-trail hook claude-code``, ``aqt-trail hook claude-code``, ``aqt trail hook claude-code``
+    and ``aqt-toolkit trail hook claude-code`` are the same hook."""
     try:
         parts = shlex.split(str(value))
     except ValueError:
         return str(value)
-    return " ".join([os.path.basename(parts[0]), *parts[1:]]) if parts else ""
+    if not parts:
+        return ""
+    program = os.path.basename(parts[0])
+    if program in SCRIPTS:
+        return " ".join(["aqt", SCRIPTS[program], *parts[1:]])
+    return " ".join(["aqt" if program == "aqt-toolkit" else program, *parts[1:]])
 
 
 def _has_hook(data: dict, event: str, matcher, command: str) -> bool:
@@ -638,7 +655,7 @@ def check_git_hook(ctx: ProjectContext) -> Result:
         return Result(WARN, "no git commit-msg hook: commits are not checked for valid AQT-* trailers (optional)",
                       "aqt-change hooks install-git")
     text = hook.read_text(encoding="utf-8", errors="replace")
-    if "aqt_change.cli hook commit-msg" in text or "aqt-change hook commit-msg" in text:
+    if any(f"{program} hook commit-msg" in text for program in ("aqt_change.cli", "aqt-change", "aqt change")):
         return Result(OK, f"the commit-msg hook runs aqt-change ({show(ctx, hook)})")
     return Result(WARN, f"{show(ctx, hook)} does not run aqt-change: AQT-* trailers are not checked (optional)",
                   f"add the line  aqt-change hook commit-msg \"$1\"  to {show(ctx, hook)}", can_apply=False)

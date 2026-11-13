@@ -3,6 +3,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod core;
+mod desktop;
 
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
@@ -11,7 +12,8 @@ use std::time::{Duration, Instant};
 use base64::Engine;
 use serde_json::{json, Value};
 use tauri::webview::{NewWindowResponse, PageLoadEvent};
-use tauri::{AppHandle, Manager, RunEvent, State, Url, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, RunEvent, State, Url, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
@@ -130,24 +132,92 @@ async fn smoke(app: AppHandle, core: Arc<Core>) {
     app.exit(if ok { 0 } else { 1 });
 }
 
+/// CLI mode: `aqt-desktop --cli ARGS`, or the AppImage called through a link named `aqt` (the AppImage
+/// runtime sets ARGV0 and APPDIR), runs the bundled `aqt` with these arguments in place of this process, in
+/// the caller's folder: an AppImage's AppRun changes into its own `usr/`; the caller's folder is in OWD (set
+/// by the AppImage runtime when mounted) or else in PWD (set by AppRun's shell, also when extracted).
+#[cfg(unix)]
+fn cli_mode<R: tauri::Runtime>(context: &tauri::Context<R>) -> Option<std::io::Error> {
+    use std::os::unix::process::CommandExt;
+    let mut args: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    let in_appimage = match (std::env::var_os("APPDIR"), std::env::current_exe()) {
+        (Some(dir), Ok(exe)) => exe.starts_with(dir),
+        _ => false,
+    };
+    let named_aqt = std::env::var_os("ARGV0").is_some_and(|name| Path::new(&name).file_name() == Some("aqt".as_ref()));
+    let rest = if args.get(1).is_some_and(|a| a == "--cli") {
+        args.split_off(2)
+    } else if in_appimage && named_aqt {
+        args.split_off(1)
+    } else {
+        return None;
+    };
+    let runtime = match tauri::utils::platform::resource_dir(context.package_info(), &tauri::Env::default()) {
+        Ok(dir) => dir.join("runtime").join("aqt").join("aqt"),
+        Err(error) => return Some(std::io::Error::other(error.to_string())),
+    };
+    let mut command = std::process::Command::new(runtime);
+    if let Some(folder) = ["OWD", "PWD"].iter().find_map(std::env::var_os).filter(|_| in_appimage) {
+        command.current_dir(folder);
+    }
+    Some(command.args(rest).exec())
+}
+
 fn main() {
     STARTED.get_or_init(Instant::now);
+    let context = tauri::generate_context!();
+    #[cfg(unix)]
+    if let Some(error) = cli_mode(&context) {
+        eprintln!("aqt: cannot run the bundled aqt: {error}");
+        std::process::exit(127);
+    }
     let args: Vec<String> = std::env::args().collect();
     let smoke_mode = args.iter().any(|a| a == "--smoke") || std::env::var("AQT_DESKTOP_SMOKE").is_ok_and(|v| v == "1");
     let read_only = args.iter().any(|a| a == "--read-only");
+    let hidden = args.iter().any(|a| a == "--hidden"); // started at login: only the tray icon, if there is one
 
-    let app = tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    if !smoke_mode {
+        // a second start hands its arguments (and so its aqt:// link) to the running app and ends
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if !args.iter().any(|a| a == "--hidden") {
+                desktop::show(app);
+            }
+        }));
+    }
+    let app = builder
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::Builder::new().open_js_links_on_click(false).build())
-        .invoke_handler(tauri::generate_handler![core_session, core_request, save_file])
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
+        .invoke_handler(tauri::generate_handler![core_session, core_request, save_file, desktop::desktop_settings])
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if desktop::keep_running(window.app_handle()) {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .setup(move |app| {
-            let core = Core::start(core_command(app.handle(), read_only));
+            let events = app.handle().clone();
+            let core = Core::start(core_command(app.handle(), read_only), move |event, body| {
+                if event == "queue" {
+                    desktop::queue(&events, body);
+                }
+            });
             app.manage(core.clone());
+            let tray = !smoke_mode && desktop::wait_for_tray_host(if hidden { 10 } else { 0 });
+            let tray = tray && desktop::create_tray(app.handle()).map_err(|e| eprintln!("[aqt desktop] no tray: {e}")).is_ok();
+            if !tray && !smoke_mode {
+                eprintln!("[aqt desktop] no tray icon here: closing the window quits the app");
+            }
             let (nav, popup) = (app.handle().clone(), app.handle().clone());
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App("/".into()))
                 .title("Agent Quality Toolkit")
                 .inner_size(1280.0, 820.0)
                 .min_inner_size(720.0, 480.0)
+                .visible(!(hidden && tray))
                 .on_navigation(move |url| {
                     let inside = is_app_page(url);
                     if !inside {
@@ -159,22 +229,36 @@ fn main() {
                     open_outside(&popup, &url);
                     NewWindowResponse::Deny
                 })
-                .on_page_load(|_, payload| {
+                .on_page_load(|window, payload| {
                     if payload.event() == PageLoadEvent::Finished {
                         let _ = PAGE_LOADED.set(ms());
+                        desktop::page_loaded(&window);
                     }
                 })
                 .build()?;
+            // aqt:// links: the one this start was given, and those of later starts and clicks
+            let links = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                for url in event.urls() {
+                    desktop::open_link(&links, url.as_str());
+                }
+            });
+            if let Ok(Some(urls)) = app.deep_link().get_current() {
+                if let Some(url) = urls.first().filter(|_| !smoke_mode) {
+                    desktop::open_link(app.handle(), url.as_str());
+                }
+            }
             if smoke_mode {
                 tauri::async_runtime::spawn(smoke(app.handle().clone(), core));
             }
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("could not build the app");
-    app.run(|app, event| {
-        if let RunEvent::Exit = event {
-            app.state::<Arc<Core>>().stop();
-        }
+    app.run(|app, event| match event {
+        RunEvent::Exit => app.state::<Arc<Core>>().stop(),
+        #[cfg(target_os = "macos")]
+        RunEvent::Reopen { .. } => desktop::show(app), // a click on the Dock icon
+        _ => {}
     });
 }
