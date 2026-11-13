@@ -15,7 +15,7 @@ from aqt_cli import checks
 from aqt_ui.config import UiConfig
 from aqt_ui.core import Core
 from aqt_ui.guard import Guard, Mode
-from conftest import PASSPHRASE
+from conftest import LINUX_SYSTEMD, PASSPHRASE
 
 APP = ["aqt-desktop", "gnome-shell", "systemd"]          # the process that started the core: the app
 AGENT = ["bash", "claude", "gnome-terminal-server", "systemd"]
@@ -89,6 +89,7 @@ def test_the_signer_id_is_derived_from_the_name_and_checked_live():
                                                                  "suggestion": None}
 
 
+@LINUX_SYSTEMD
 def test_onboarding_sets_up_trail_writer_and_signer_and_never_keeps_the_passphrase(systemd, start_writer):
     core = core_for()
     set_up_machine(core, systemd, start_writer)
@@ -111,6 +112,7 @@ def test_onboarding_sets_up_trail_writer_and_signer_and_never_keeps_the_passphra
     assert any("aqt-ui decision /api/setup/enrol from pid" in line and "recorded" in line for line in core.log_lines)
 
 
+@LINUX_SYSTEMD
 def test_a_short_passphrase_or_a_bad_id_creates_nothing(systemd, start_writer):
     core = core_for()
     set_up_machine(core, systemd, start_writer)
