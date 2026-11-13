@@ -26,6 +26,8 @@ from importlib import metadata
 from pathlib import Path
 from typing import Callable
 
+from aqt_evidence import platform
+
 from . import tools
 
 OK, WARN, FAIL, SKIP = "ok", "warn", "fail", "skip"
@@ -94,7 +96,7 @@ class Context:
 
     def systemd_available(self) -> bool:
         if self._systemd is None:
-            self._systemd = self.systemd("show-environment")[0] == 0
+            self._systemd = platform.IS_LINUX and self.systemd("show-environment")[0] == 0
         return self._systemd
 
     def confirm(self, question: str) -> bool:
@@ -162,7 +164,15 @@ def unit_path() -> Path:
 
 
 def trail_command() -> list[str]:
-    """The ``aqt-trail`` of the environment ``aqt`` runs in."""
+    """The ``aqt-trail`` of the environment ``aqt`` runs in. From the desktop app's frozen runtime: ``aqt trail``
+    by a path that stays valid (the ``aqt`` on PATH when it is this one, else the AppImage file in CLI mode),
+    because an AppImage is mounted at a new place on every start."""
+    if getattr(sys, "frozen", False):
+        found, mine = shutil.which("aqt"), this_command()
+        if found and mine and Path(found).resolve() == mine.resolve():
+            return [found, "trail"]
+        image = os.environ.get("APPIMAGE")
+        return [image, "--cli", "trail"] if image else [sys.executable, "trail"]
     beside = Path(sys.executable).parent / "aqt-trail"
     if beside.exists():
         return [str(beside)]
@@ -292,6 +302,39 @@ def check_packages(ctx: Context) -> Result:
     return Result(OK, text, data={"versions": versions})
 
 
+def this_command() -> Path | None:
+    """The program of this ``aqt``: the desktop app's frozen runtime (from an AppImage: the AppImage file,
+    which runs it), else the console script beside this interpreter."""
+    if getattr(sys, "frozen", False):
+        return Path(os.environ.get("APPIMAGE") or sys.executable)
+    beside = Path(sys.executable).parent / ("aqt.exe" if os.name == "nt" else "aqt")
+    return beside if beside.exists() else None
+
+
+def _command_fix(mine: Path | None) -> str:
+    if getattr(sys, "frozen", False) and os.environ.get("APPIMAGE"):
+        return f"in the app: Settings, install the aqt command (or: ln -s {_quote(str(mine))} ~/.local/bin/aqt)"
+    if getattr(sys, "frozen", False):
+        return f"put {_quote(str(mine))} on PATH (the .deb package installs it as /usr/bin/aqt)"
+    return f"add {_quote(str(Path(sys.executable).parent))} to PATH"
+
+
+def check_command(ctx: Context) -> Result:
+    """Which ``aqt`` agents run: hooks and agent instructions call the command ``aqt`` from PATH."""
+    found = shutil.which("aqt")
+    mine = this_command()
+    data = {"path": found, "this": str(mine) if mine else None}
+    if not found:
+        return Result(WARN, "no aqt command on PATH: the hooks aqt project init writes cannot run",
+                      _command_fix(mine), data=data, can_apply=False)
+    if mine and Path(found).resolve() == mine.resolve():
+        return Result(OK, f"agents run this aqt ({found})", data=data)
+    return Result(WARN, f"agents run another aqt: {found} comes first on PATH, not this one "
+                        f"({mine or sys.executable})",
+                  "remove or move the other aqt, or reorder PATH, if this one should run", data=data,
+                  can_apply=False)
+
+
 def check_trail_init(ctx: Context) -> Result:
     config = _trail()
     if config.meta_path.exists():
@@ -308,7 +351,19 @@ def step_trail_init(ctx: Context) -> None:
         raise StepFailed("aqt-trail init did not succeed")
 
 
+def service_unavailable() -> str | None:
+    """None where ``aqt setup`` can install the writer as a user service (Linux: systemd), else why not.
+    A launchd agent (macOS) and a logon task (Windows) will plug in here."""
+    if platform.IS_LINUX:
+        return None
+    return platform.not_available("the writer as a background service", "it is installed with systemd, which "
+                                  "this system does not have; start the writer by hand")
+
+
 def check_service(ctx: Context) -> Result:
+    unavailable = service_unavailable()
+    if unavailable:
+        return Result(SKIP, unavailable)
     if not ctx.systemd_available():
         return Result(SKIP, "systemd --user is not available here; the writer is started by hand")
     unit = unit_path()
@@ -691,6 +746,9 @@ def check_egress(ctx: Context) -> Result:
                             f"{error}", tools.install_command("aqt-egress"))
     if value is None:
         return Result(SKIP, "aqt-egress (optional outbound checkpoint) is not installed")
+    if not value.get("box") and not platform.IS_LINUX:   # the box needs Linux: no fix to offer elsewhere
+        return Result(SKIP, f"aqt-egress {value.get('version')} is installed, but {value.get('box_detail')}",
+                      data=value)
     last = value.get("last_session")
     parts = [f"aqt-egress {value.get('version')}",
              "CA present" if value.get("ca") else "no CA yet (the first run creates it)",
@@ -704,6 +762,7 @@ def check_egress(ctx: Context) -> Result:
 
 CHECKS: list[Check] = [
     Check("packages", check_packages),
+    Check("command", check_command),
     Check("trail.init", check_trail_init, step_trail_init, "create the trail (aqt-trail init)"),
     Check("service", check_service, step_service, f"install and start the systemd user service {UNIT}"),
     Check("writer", check_writer, step_writer, "start the writer (systemctl --user start aqt-trail)"),

@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 import pytest
+from aqt_evidence import platform
 from conftest import INJECTION, PASSPHRASE, SIGNER, trail_records
 
 from aqt_ui.guard import Guard, Mode
@@ -646,6 +647,7 @@ def test_peer_with_agent_environment_or_of_another_user_is_refused():
     assert refusal and context.markers == ["peer:other-user"]
 
 
+@pytest.mark.skipif(not platform.IS_LINUX, reason="the web server's loopback peer lookup reads /proc/net/tcp (Linux only)")
 def test_real_peer_lookup_reads_pid_uid_and_the_peers_agent_markers():
     from aqt_ui.guard import find_peer
     listener = socket.socket()

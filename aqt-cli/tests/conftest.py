@@ -1,15 +1,21 @@
 import os
 import shutil
+import sys
 import tempfile
 import threading
 from pathlib import Path
 
 import pytest
 
+from aqt_evidence import platform
+
 from aqt_cli import checks
 
 PASSPHRASE = "correct-horse-battery-1"
 _SESSION_HOME: str | None = None
+
+# aqt setup installs the writer as a systemd user service only on Linux (launchd and Windows follow)
+LINUX_SYSTEMD = pytest.mark.skipif(not platform.IS_LINUX, reason="systemd user services exist only on Linux")
 
 
 def pytest_configure(config):
@@ -63,6 +69,9 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("TZ", "Europe/Vienna")
     for name in [name for name in os.environ if name.startswith("AQT_")]:
         monkeypatch.delenv(name)
+    monkeypatch.delenv("APPIMAGE", raising=False)
+    # this environment's aqt comes first on PATH, as after an install (the "command" check)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(Path(sys.executable).parent), os.environ.get("PATH", "")]))
     fake = FakeSystemd()
     monkeypatch.setattr(checks, "systemctl_user", fake)
     yield tmp_path

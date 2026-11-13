@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from aqt_evidence import actor, bytes_hash, new_record, subject, utc_now
+from aqt_evidence import actor, bytes_hash, new_record, platform, subject, utc_now
 
 
 class ImportError_(ValueError):
@@ -108,12 +108,12 @@ def safe_lines(path: str | os.PathLike) -> list[tuple[int, bytes]]:
     if not path.is_absolute():
         path = Path.cwd() / path
     try:
-        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        fd = platform.open_nofollow(path, os.O_RDONLY)
     except OSError as error:
         raise ImportError_(f"{path}: cannot open ({error.strerror})") from error
     with os.fdopen(fd, "rb") as handle:
         info = os.fstat(handle.fileno())
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1:
+        if not stat.S_ISREG(info.st_mode) or not platform.owned_by_user(info) or info.st_nlink != 1:
             raise ImportError_(f"{path}: not a regular file owned by you with a single link")
         data = handle.read()
     end = data.rfind(b"\n") + 1  # a partly written last line is left for the next import

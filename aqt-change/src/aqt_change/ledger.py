@@ -16,7 +16,6 @@ valid signature by a pinned service key, so a log the agent wrote itself does no
 
 from __future__ import annotations
 
-import fcntl
 import hashlib
 import json
 import os
@@ -25,7 +24,7 @@ from pathlib import Path
 from typing import Iterable, Iterator
 
 from aqt_evidence import (SinkError, Text, canonical_json, evidence_sources, load_public_key, open_sink,
-                          record_content_hash, resolve_sink, spool_file, state_dir, verify_record_signatures)
+                          platform, record_content_hash, resolve_sink, spool_file, state_dir, verify_record_signatures)
 
 from .config import INDEPENDENCE, PROJECT_FILE, Config, load_config, parse_project_settings
 from .errors import ChangeError, usage
@@ -339,13 +338,13 @@ class Ledger:
         mirror.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(mirror, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
         with os.fdopen(fd, "ab") as handle:
-            fcntl.flock(handle, fcntl.LOCK_EX)
+            platform.lock(handle)
             try:
                 handle.write(canonical_json(stored) + b"\n")
                 handle.flush()
                 os.fsync(handle.fileno())
             finally:
-                fcntl.flock(handle, fcntl.LOCK_UN)
+                platform.unlock(handle)
         return stored
 
     def records(self, type: str | None = None, plan_id: str | None = None) -> Iterator[dict]:

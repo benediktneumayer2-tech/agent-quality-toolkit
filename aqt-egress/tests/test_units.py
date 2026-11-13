@@ -347,3 +347,15 @@ def test_x2_14_dns_names_keep_every_byte():
     response, name, _qtype = resolver.answer(
         struct.pack("!HHHHHH", 1, 0x0100, 1, 0, 0, 0) + b"\x05A\xffb.c\x07example\x00" + struct.pack("!HH", 1, 1))
     assert name == "a\\255b\\.c.example"
+
+
+def test_off_linux_the_box_is_not_available_and_says_why(monkeypatch):
+    from aqt_evidence import platform
+    from aqt_egress import box
+    monkeypatch.setattr(platform, "IS_LINUX", False)
+    monkeypatch.setattr(platform, "IS_MACOS", True)
+    monkeypatch.setattr(platform, "SYSTEM_NAME", "macOS")
+    ok, why = box.available()
+    assert not ok and why.startswith("the egress box is not available on macOS")
+    with pytest.raises(box.BoxUnavailable, match="not available on macOS"):
+        box.bwrap_argv(["true"], project=Path("/"), public={}, info_fd=0, block_fd=0)

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Runs on macOS: the writer reads the peer with `LOCAL_PEERPID`/`LOCAL_PEERCRED` and walks the process chain with
+  `sysctl` (through `aqt_evidence.platform`); `start_time` is then in microseconds since 1970, and the pidfd check
+  (`SO_PEERPIDFD`) exists only on Linux. Locks, the import's no-follow open and the folders come from the same
+  module. Linux behaviour and the `observed` fields are unchanged.
+
 ## 0.2.0 — 2026-11-13
 
 - Packaging: released at 0.2.0, the version of every AQT package; the other AQT packages it needs are required at `>=0.2,<0.3`; the licence is an SPDX expression with the licence files in the package (PEP 639).

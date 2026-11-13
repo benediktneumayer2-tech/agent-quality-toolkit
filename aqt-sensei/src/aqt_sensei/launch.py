@@ -11,7 +11,8 @@ import os
 from dataclasses import fields
 
 from .config import Config, Paths
-from .sandbox import Profile, SandboxError, build_argv, resolve_cli, start_herdr_proxy, write_prompt
+from .sandbox import (Profile, SandboxError, build_argv, require_sandbox, resolve_cli, start_herdr_proxy,
+                      write_prompt)
 
 
 def load_pair(paths: Paths, pair_id: str) -> dict:
@@ -54,6 +55,7 @@ def prepare(pair: dict, *, paths: Paths, config: Config, command: list[str] | No
 
 
 def launch(pair_id: str, *, paths: Paths, config: Config, command: list[str] | None = None) -> int:
+    require_sandbox()
     pair = load_pair(paths, pair_id)
     if pair.get("state") == "ended":
         raise SandboxError("the pair has ended")

@@ -11,7 +11,6 @@ fsyncs. Refused attempts are themselves recorded as ``trail.refused``.
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import re
@@ -22,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 
 from aqt_evidence import (ACTOR_KINDS, GENESIS, Signer, actor, bytes_hash, canonical_json, content_hash, link,
-                          new_record, record_content_hash, record_hash, sign_record, utc_now, validate_record)
+                          new_record, platform, record_content_hash, record_hash, sign_record, utc_now, validate_record)
 
 from .observe import agent_markers, observe_self, unobserved
 from .review import DISPOSITIONS
@@ -160,7 +159,7 @@ class TrailWriter:
         os.fchmod(lock_fd, 0o600)
         self._lock_file = os.fdopen(lock_fd, "r+")
         try:
-            fcntl.flock(self._lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            platform.lock(self._lock_file, blocking=False)
         except BlockingIOError as error:
             self._lock_file.close()
             self._lock_file = None
@@ -178,7 +177,7 @@ class TrailWriter:
             os.close(self._fd)
             self._fd = None
         if self._lock_file is not None:
-            fcntl.flock(self._lock_file, fcntl.LOCK_UN)
+            platform.unlock(self._lock_file)
             self._lock_file.close()
             self._lock_file = None
 

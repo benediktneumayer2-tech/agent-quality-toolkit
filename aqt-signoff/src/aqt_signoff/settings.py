@@ -14,19 +14,17 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from aqt_evidence import MEANINGS
+from aqt_evidence import MEANINGS, platform
 
 from .errors import UsageError
 
 
 def config_home(environ=None) -> Path:
-    environ = os.environ if environ is None else environ
-    return Path(environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "aqt"
+    return platform.config_dir(environ)
 
 
 def state_home(environ=None) -> Path:
-    environ = os.environ if environ is None else environ
-    return Path(environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "aqt"
+    return platform.state_dir(environ)
 
 
 @dataclass

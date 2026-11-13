@@ -2,8 +2,8 @@
 
 Human-only decisions (release a quarantined input, approve a CAPA, sign a
 review) refuse to run when the caller looks like an agent. The check reads
-environment markers that agent harnesses set and the process ancestry from
-``/proc``. It is a guard against agents deciding for themselves by accident or
+environment markers that agent harnesses set and the process ancestry (``/proc`` on
+Linux, ``aqt_evidence.platform`` elsewhere). It is a guard against agents deciding for themselves by accident or
 by injected instruction, **not** a security boundary: a same-user process can
 clear its environment. Tools say so in their threat model and record every
 refusal.
@@ -16,6 +16,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import platform
 from .messages import Text
 
 # Environment variables set by agent harnesses (name -> harness).
@@ -48,21 +49,10 @@ class AgentContext:
     process_chain: list[str] = field(default_factory=list)
 
 
-def process_chain(pid: int | None = None, *, proc: Path = Path("/proc"), limit: int = 32) -> list[str]:
-    """Command names from ``pid`` (default: this process) up to init, nearest first."""
-    names, current = [], pid or os.getpid()
-    for _ in range(limit):
-        try:
-            status = (proc / str(current) / "status").read_text(errors="replace")
-        except OSError:
-            break
-        fields = dict(line.split(":\t", 1) for line in status.splitlines() if ":\t" in line)
-        names.append(fields.get("Name", "?").strip())
-        parent = int(fields.get("PPid", "0").strip() or 0)
-        if parent <= 1:
-            break
-        current = parent
-    return names
+def process_chain(pid: int | None = None, *, proc: Path | None = None, limit: int = 32) -> list[str]:
+    """Command names from ``pid`` (default: this process) up to init, nearest first. ``proc`` reads
+    a Linux-style ``/proc`` tree at that path instead of asking the system."""
+    return [info.name for info in platform.process_chain(pid, limit=limit, proc=proc)]
 
 
 def detect_agent_context(environ: dict | None = None, *, chain: list[str] | None = None) -> AgentContext:

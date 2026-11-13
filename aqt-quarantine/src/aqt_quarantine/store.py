@@ -10,7 +10,6 @@ their hash.
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import re
@@ -22,7 +21,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Callable, Iterator
 
-from aqt_evidence import JsonlSink, SinkError, Text, canonical_json, content_hash, open_sink
+from aqt_evidence import JsonlSink, SinkError, Text, canonical_json, content_hash, open_sink, platform
 
 CASE_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 CASE_RE = re.compile(r"^Q[0-9A-HJKMNP-TV-Z]{6}$")
@@ -133,7 +132,7 @@ class Store:
     def ensure(self) -> None:
         for directory in (self.root, self.cases_dir):
             directory.mkdir(parents=True, exist_ok=True)
-            os.chmod(directory, 0o700)
+            platform.make_private(directory, directory=True)
 
     def _sink_is_journal(self) -> bool:
         spec = self.sink_spec
@@ -160,7 +159,7 @@ class Store:
     def _to_outbox(self, record: dict) -> None:
         fd = os.open(self.outbox, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
         with os.fdopen(fd, "ab") as handle:
-            fcntl.flock(handle, fcntl.LOCK_EX)
+            platform.lock(handle)
             handle.write(canonical_json(record) + b"\n")
             handle.flush()
             os.fsync(handle.fileno())
@@ -170,7 +169,7 @@ class Store:
         if not self.outbox.exists() or self._sink_is_journal():
             return 0, 0
         with open(self.outbox, "r+b") as handle:
-            fcntl.flock(handle, fcntl.LOCK_EX)
+            platform.lock(handle)
             lines = [line for line in handle.read().splitlines() if line.strip()]
             if not lines:
                 return 0, 0
@@ -211,7 +210,7 @@ class Store:
     def save_original(self, case_id: str, text: str) -> str:
         path = self.cases_dir / case_id / "original.txt"
         temporary = path.with_name(f".original.{os.getpid()}.tmp")
-        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        fd = platform.open_nofollow(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         try:
             with os.fdopen(fd, "w", encoding="utf-8", errors="surrogatepass", newline="") as handle:
                 handle.write(text)
@@ -228,9 +227,9 @@ class Store:
             info = path.lstat()
         except FileNotFoundError as error:
             raise StoreError(f"case {case_id} has no stored original") from error
-        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != os.getuid():
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or not platform.owned_by_user(info):
             raise StoreError(f"{path}: unsafe file type or owner")
-        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        fd = platform.open_nofollow(path, os.O_RDONLY)
         with os.fdopen(fd, "r", encoding="utf-8", errors="surrogatepass", newline="") as handle:
             if (os.fstat(handle.fileno()).st_ino) != info.st_ino:
                 raise StoreError(f"{path}: changed while opening")

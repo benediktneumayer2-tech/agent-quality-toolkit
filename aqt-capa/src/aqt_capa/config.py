@@ -7,13 +7,13 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from aqt_evidence import state_dir
+from aqt_evidence import platform, state_dir
 
 DEFAULT_DUE_DAYS = {"critical": 2, "major": 7, "minor": 30}
 
 
 def config_dir() -> Path:
-    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "aqt"
+    return platform.config_dir()
 
 
 @dataclass

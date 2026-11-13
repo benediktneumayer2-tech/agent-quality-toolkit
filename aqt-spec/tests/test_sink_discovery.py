@@ -14,6 +14,9 @@ from aqt_evidence import (JsonlSink, SinkError, SocketSink, actor, evidence_sour
                           read_jsonl, resolve_sink, spool_file, state_dir)
 from aqt_evidence import sink as sink_module
 
+# Discovery looks for an aqt-trail writer on a Unix socket; Windows will use a named pipe (a later stage).
+pytestmark = pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="no Unix sockets (Windows)")
+
 
 def record():
     return new_record("trail.event", actor("agent", "agent:claude-code:s1"), "step")

@@ -7,7 +7,7 @@ import os
 import tomllib
 from pathlib import Path
 
-from aqt_evidence import actor, detect_agent_context, evidence_sources, iter_evidence, open_sink, state_dir
+from aqt_evidence import actor, detect_agent_context, evidence_sources, iter_evidence, open_sink, platform, state_dir
 
 TOOL = "aqt-validate"
 
@@ -15,8 +15,7 @@ TOOL = "aqt-validate"
 def config_path() -> Path:
     if os.environ.get("AQT_VALIDATE_CONFIG"):
         return Path(os.environ["AQT_VALIDATE_CONFIG"])
-    base = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
-    return base / "aqt" / "validate.toml"
+    return platform.config_dir() / "validate.toml"
 
 
 def load_config(path: str | Path | None = None) -> dict:

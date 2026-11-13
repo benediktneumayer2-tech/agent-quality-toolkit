@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `aqt status` on macOS and Windows: the writer service and the egress box say that they are not available on this
+  system and why (systemd and bubblewrap are Linux only), as a skipped line instead of a warning with a Linux fix.
+  The AQT configuration folder comes from `aqt_evidence.platform` (unchanged on Linux).
+- `aqt open CASE-OR-LINK`: shows a case in the AQT desktop app through the system (`xdg-open`, `open`, `start`): a case id such as `quarantine:Q7SEGGW`, or a link `aqt://case/<id>` or `aqt://change/<project>/<plan>`; anything else is refused. It only opens the view.
+- `aqt project init` writes the Claude Code hooks as `aqt <tool> ...` (e.g. `aqt trail hook claude-code`), the one command that a pip or uv install and the desktop app both put on `PATH`. Hooks written as `aqt-<tool> ...` or `aqt-toolkit <tool> ...` still count and are not added twice.
+- `aqt status` has a `command` check: which `aqt` agents run, and a warning when there is none on `PATH` or another one comes first.
+- From the desktop app's frozen runtime, `aqt setup` writes the trail writer's systemd unit with a path that stays valid (the `aqt` on `PATH`, or the AppImage file with `--cli`), not the AppImage's changing mount point.
 - `aqt core --stdio [--read-only]`: the core of the AQT desktop app, aqt-ui's API as JSON lines on stdin and stdout with no network; the same as `aqt-ui core --stdio`.
 - The desktop app's first-run setup, Settings and Projects area run `aqt status`, `aqt setup` and `aqt project status/init` through the same checks and steps (`checks.CHECKS`, `project.PROJECT_CHECKS`). The project step that writes the Claude Code hooks can leave the deny rules out when the person deselects them.
 - `aqt setup` checks the signer ID as soon as it is typed (lower case letters, digits, `.`, `_`, `-`; `alice` becomes `human:alice`), suggests a valid one and asks again, before the name, the role and the passphrase. An invalid `--id` fails before anything is asked.

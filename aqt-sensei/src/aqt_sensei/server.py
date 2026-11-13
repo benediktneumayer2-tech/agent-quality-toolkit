@@ -59,7 +59,7 @@ class _UnixServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
 
 
 class Server:
-    def __init__(self, bridge: Bridge, paths: Paths, *, proc: Path = PROC, daemon_uid: int | None = None,
+    def __init__(self, bridge: Bridge, paths: Paths, *, proc: Path | None = PROC, daemon_uid: int | None = None,
                  describe=describe_pid):
         self.bridge, self.paths = bridge, paths
         self.proc = proc

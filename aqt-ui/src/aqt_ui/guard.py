@@ -32,8 +32,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from aqt_evidence import AgentContext, HumanCheckError, detect_agent_context, process_chain, require_human
+from aqt_evidence import AgentContext, HumanCheckError, detect_agent_context, platform, process_chain, require_human
 from aqt_evidence.session import ENV_MARKERS
+
+PROC = Path("/proc")   # the loopback peer lookup of the web server reads it (Linux only)
 
 
 @dataclass
@@ -92,11 +94,11 @@ class Peer:
 
 
 def socket_entry(client: tuple[str, int], server: tuple[str, int], *,
-                 proc: Path = Path("/proc")) -> tuple[int, int] | None:
+                 proc: Path | None = None) -> tuple[int, int] | None:
     """(inode, uid) of the client's end of the TCP connection ``client`` -> ``server``."""
     local, remote = _hex_address(*client[:2]), _hex_address(*server[:2])
     try:
-        lines = (proc / "net" / "tcp").read_text().splitlines()[1:]
+        lines = ((proc or PROC) / "net" / "tcp").read_text().splitlines()[1:]
     except OSError:
         return None
     for line in lines:
@@ -109,16 +111,16 @@ def socket_entry(client: tuple[str, int], server: tuple[str, int], *,
     return None
 
 
-def socket_inode(client: tuple[str, int], server: tuple[str, int], *, proc: Path = Path("/proc")) -> int | None:
+def socket_inode(client: tuple[str, int], server: tuple[str, int], *, proc: Path | None = None) -> int | None:
     """Inode of the client's end of the TCP connection ``client`` -> ``server``."""
     entry = socket_entry(client, server, proc=proc)
     return (entry[0] or None) if entry else None
 
 
-def socket_owner(inode: int, *, proc: Path = Path("/proc")) -> int | None:
+def socket_owner(inode: int, *, proc: Path | None = None) -> int | None:
     """PID of a process that holds the socket ``inode`` (only this user's processes are readable)."""
     target = f"socket:[{inode}]"
-    for entry in os.scandir(proc):
+    for entry in os.scandir(proc or PROC):
         if not entry.name.isdigit():
             continue
         fd_dir = Path(entry.path) / "fd"
@@ -135,22 +137,13 @@ def socket_owner(inode: int, *, proc: Path = Path("/proc")) -> int | None:
     return None
 
 
-def agent_environ(pid: int, *, proc: Path = Path("/proc")) -> dict[str, str]:
+def agent_environ(pid: int, *, proc: Path | None = None) -> dict[str, str]:
     """The agent marker variables in the environment ``pid`` started with (other variables are not kept)."""
-    try:
-        raw = (proc / str(pid) / "environ").read_bytes()
-    except OSError:
-        return {}
-    found = {}
-    for item in raw.split(b"\0"):
-        name, sep, value = item.partition(b"=")
-        key = name.decode("utf-8", "replace")
-        if sep and key in ENV_MARKERS:
-            found[key] = value.decode("utf-8", "replace")
-    return found
+    environ = platform.process_environ(pid, proc=proc) or {}
+    return {key: value for key, value in environ.items() if key in ENV_MARKERS}
 
 
-def find_peer(client: tuple[str, int], server: tuple[str, int], *, proc: Path = Path("/proc")) -> Peer | None:
+def find_peer(client: tuple[str, int], server: tuple[str, int], *, proc: Path | None = None) -> Peer | None:
     """The peer process of a loopback connection; ``None`` when the connection is not found."""
     entry = socket_entry(client, server, proc=proc)
     if entry is None:
@@ -162,14 +155,14 @@ def find_peer(client: tuple[str, int], server: tuple[str, int], *, proc: Path = 
     return Peer(uid=uid, pid=pid, chain=process_chain(pid, proc=proc), environ=agent_environ(pid, proc=proc))
 
 
-def parent_peer(_client=None, _server=None, *, proc: Path = Path("/proc")) -> Peer:
+def parent_peer(_client=None, _server=None, *, proc: Path | None = None) -> Peer:
     """The process that started this one, with its ancestry and agent markers: the one peer of
     ``aqt core --stdio`` (the desktop app). Usable as a ``Guard`` peer lookup."""
     pid = os.getppid()
     return Peer(pid=pid, chain=process_chain(pid, proc=proc), environ=agent_environ(pid, proc=proc))
 
 
-def peer_chain(client: tuple[str, int], server: tuple[str, int], *, proc: Path = Path("/proc")) -> list[str] | None:
+def peer_chain(client: tuple[str, int], server: tuple[str, int], *, proc: Path | None = None) -> list[str] | None:
     """Process names from the peer up to init, nearest first; ``None`` when the peer is not found."""
     peer = find_peer(client, server, proc=proc)
     return peer.chain if peer and peer.pid is not None else None
@@ -186,7 +179,7 @@ class Guard:
         self.mode = mode
         self.environ = dict(os.environ if environ is None else environ)
         self.peer_lookup = peer_lookup or find_peer
-        self.uid = os.getuid()
+        self.uid = platform.user_id()
 
     def peer(self, client: tuple, server: tuple) -> Peer | None:
         found = self.peer_lookup(client, server)

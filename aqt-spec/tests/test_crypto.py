@@ -9,7 +9,9 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from aqt_evidence import crypto, generate_key, key_id, load_signer
+from aqt_evidence import crypto, generate_key, key_id, load_signer, platform
+
+POSIX = not platform.IS_WINDOWS   # Windows has no POSIX file modes
 
 PASS = b"correct horse battery"
 
@@ -29,7 +31,8 @@ def _body(path):
 
 def _rewrite(path, body):
     lines = path.read_text().splitlines()
-    path.write_text(f"{lines[0]}\n{base64.b64encode(json.dumps(body).encode()).decode()}\n{lines[-1]}\n")
+    path.write_text(f"{lines[0]}\n{base64.b64encode(json.dumps(body).encode()).decode()}\n{lines[-1]}\n",
+                    newline="\n")
 
 
 def test_new_key_uses_scrypt_and_aes_gcm(tmp_path):
@@ -47,8 +50,8 @@ def test_new_key_uses_scrypt_and_aes_gcm(tmp_path):
         load_signer(path, passphrase=b"wrong passphrase!")
     with pytest.raises(TypeError):
         load_signer(path)
-    assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
-    assert stat.S_IMODE(os.stat(path.parent).st_mode) == 0o700
+    assert not POSIX or stat.S_IMODE(os.stat(path).st_mode) == 0o600
+    assert not POSIX or stat.S_IMODE(os.stat(path.parent).st_mode) == 0o700
 
 
 def test_unprotected_service_key_stays_pkcs8(tmp_path):
@@ -84,7 +87,7 @@ def test_earlier_pkcs8_key_loads_and_upgrades_in_place(tmp_path):
     assert crypto.upgrade_key(path, PASS) is True
     assert crypto.key_file_format(path) == "aqt-key"
     assert load_signer(path, passphrase=PASS).key_id == kid
-    assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
+    assert not POSIX or stat.S_IMODE(os.stat(path).st_mode) == 0o600
     assert crypto.upgrade_key(path, PASS) is False
     assert sorted(p.name for p in tmp_path.iterdir()) == ["old.key"]   # no temporary file left
 

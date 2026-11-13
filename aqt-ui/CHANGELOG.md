@@ -2,9 +2,12 @@
 
 ## Unreleased
 
+- The stdio core sends a `queue` event whenever the "Needs you" queue changes (`count`, the `new` cases with id, title and kind, the `removed` ids); it looks every 5 s (`AQT_CORE_QUEUE_SECONDS`, 0 turns it off) with the overview's data, without verifying the trail again. The first event after a start only carries the count. The desktop app shows the count in its tray and a notification per new case.
 - `aqt-ui core --stdio` (also `aqt core --stdio`): the JSON API without a web server, as JSON lines on stdin and stdout, for a desktop app that starts the core as its child process (protocol 1, described in `aqt_ui/core.py`). Decisions are on only when neither the core's environment nor its ancestors show an agent; no terminal is needed. Each decision request checks the parent process again, and `--read-only` refuses decisions as the web server does.
 - The API itself moved from the HTTP handler to `aqt_ui.core.Core`, which the web server's `App` extends; the web server behaves as before.
 - The page also runs in the desktop app (`aqt-desktop`): there it sends its requests through the app to the core, takes the session information from the core's ready event and saves downloads with the system's save dialog; in a browser it uses `fetch` as before.
+- The configuration folder comes from `aqt_evidence.platform` (unchanged on Linux).
+- The agent guard reads process ancestry, environments and the user through `aqt_evidence.platform`, so `aqt core` checks its parent on macOS too. The web server's loopback peer lookup still needs `/proc/net/tcp`: outside Linux it cannot identify the sender, so the browser page refuses decisions there (use the desktop app).
 - Navigation by tasks: Needs you, Changes, Projects, Evidence (audit trail, signatures, held pages, deviations and CAPA, qualifications, export for auditors) and Settings. The old addresses (`/health`, `/trail`, `/quarantine`, `/signatures`, `/capa`, `/qualifications`) redirect to their new place.
 - A status pill in the top bar: *Everything in order*, or the most important problem with its one fix.
 - First-run setup in six steps while there is no trail or no signer (welcome and language, who you are, passphrase, audit trail and writer, first project, done), backed by aqt-cli's own checks and steps; read-only explains why and offers nothing.

@@ -18,7 +18,13 @@ Protocol 1 of ``--stdio``: newline-delimited UTF-8 JSON, one object per line.
   answered with status 400 (405 for another method) and the ``id`` it carried, ``null`` if none.
 - Requests may overlap: a small thread pool answers them, each response is written as one line under a
   lock, so responses can arrive in another order than the requests; match them by ``id``.
-- Lines with ``"event"`` are messages the core sends unasked; ``ready`` is the only one so far.
+- Lines with ``"event"`` are messages the core sends unasked: ``ready``, then ``queue`` whenever the "Needs
+  you" queue changes: ``{"event": "queue", "body": {"count": n, "new": [{"id", "title", "kind"}, ...],
+  "removed": ["<id>", ...]}}``. ``id`` is the case id (its page is ``/case/<id>``), ``kind`` the area
+  (``quarantine``, ``changes``, ``trail``, ``capa``, ``qualifications``), ``title`` one English line. The core
+  looks every few seconds (``AQT_CORE_QUEUE_SECONDS``, default 5; 0 turns it off) with the overview's own
+  data, which the trail's state answers without verifying the trail again. The first ``queue`` event after
+  the start carries the count with ``new`` and ``removed`` empty, so a restart announces nothing.
 - End of input (stdin closed) lets running requests finish, then the core exits with code 0.
 
 Stdout carries protocol lines only: at start the real stdout is kept for them and file descriptor 1 is
@@ -60,6 +66,7 @@ from .views.trail import PAGE
 JSON_TYPE = "application/json; charset=utf-8"
 PROTOCOL = 1
 WORKERS = 4                    # stdio requests answered at once
+QUEUE_SECONDS = 5.0            # how often the core looks at the "Needs you" queue
 REMOVED = "[passphrase removed]"
 
 
@@ -413,14 +420,69 @@ def signer_list() -> list[dict]:
     return _signers()
 
 
+# -- the queue event -------------------------------------------------------------------------------------
+def notice_title(entry: dict) -> str:
+    """One line for a system notification about a queue entry."""
+    args = entry.get("args") or {}
+    if entry.get("view") == "quarantine" and entry.get("code") in ("held", "warned"):
+        verb = "holds" if entry["code"] == "held" else "warns about"
+        return f"Quarantine {verb} content from {args.get('source') or 'an unknown source'}"
+    return str(entry.get("title") or entry.get("id"))
+
+
+class QueueWatch:
+    """What changed in the "Needs you" queue since the last look (``poll``). The queue comes from the
+    overview, which reads the tools' stored state; the trail is not verified for it."""
+
+    def __init__(self, core: Core):
+        self.core = core
+        self.known: dict[str, dict] | None = None
+
+    def poll(self) -> dict | None:
+        """The body of a ``queue`` event, or None when nothing changed. The first look reports only the count."""
+        from .views.overview import build
+        current = {entry["id"]: {"id": entry["id"], "title": notice_title(entry), "kind": entry["view"]}
+                   for entry in build(self.core)["needs"]}
+        known, self.known = self.known, current
+        if known is None:
+            return {"count": len(current), "new": [], "removed": []}
+        new = [entry for key, entry in current.items() if key not in known]
+        removed = [key for key in known if key not in current]
+        return {"count": len(current), "new": new, "removed": removed} if new or removed else None
+
+
+def watch_queue(core: Core, write: Callable[[dict], None], stop: threading.Event, seconds: float) -> None:
+    """Every ``seconds`` until ``stop`` is set: a ``queue`` event when the queue changed."""
+    watch = QueueWatch(core)
+    while True:
+        try:
+            body = watch.poll()
+        except Exception:  # noqa: BLE001 - the next look tries again; the requests go on
+            core.log(f"aqt core: the queue could not be read: {traceback.format_exc()}")
+            body = None
+        if body is not None:
+            write({"event": "queue", "body": body})
+        if stop.wait(seconds):
+            return
+
+
+def queue_seconds(environ=os.environ) -> float:
+    try:
+        return max(0.0, float(environ.get("AQT_CORE_QUEUE_SECONDS", QUEUE_SECONDS)))
+    except ValueError:
+        return QUEUE_SECONDS
+
+
 # -- stdio -----------------------------------------------------------------------------------------------
 def _line(message: dict) -> bytes:
     return json.dumps(message, default=str, ensure_ascii=False).encode("utf-8") + b"\n"
 
 
-def serve(core: Core, stdin, stdout, *, workers: int = WORKERS) -> int:
-    """Answer protocol lines from ``stdin`` (bytes) on ``stdout`` (bytes) until end of input; returns 0."""
+def serve(core: Core, stdin, stdout, *, workers: int = WORKERS, queue_seconds: float = 0) -> int:
+    """Answer protocol lines from ``stdin`` (bytes) on ``stdout`` (bytes) until end of input; returns 0.
+    With ``queue_seconds`` > 0 a ``queue`` event follows the ready event, and again on every change."""
     lock = threading.Lock()
+    stop = threading.Event()
 
     def write(message: dict) -> None:
         try:
@@ -447,6 +509,17 @@ def serve(core: Core, stdin, stdout, *, workers: int = WORKERS) -> int:
         write(response.message(request_id))
 
     write({"event": "ready", "body": {**core.session_info(), "protocol": PROTOCOL}})
+    if queue_seconds > 0:
+        threading.Thread(target=watch_queue, args=(core, write, stop, queue_seconds), daemon=True,
+                         name="aqt-core-queue").start()
+    try:
+        _answer_lines(stdin, write, answer, workers)
+    finally:
+        stop.set()
+    return 0
+
+
+def _answer_lines(stdin, write, answer, workers: int) -> None:
     with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="aqt-core") as pool:
         for raw in stdin:
             if not raw.strip():
@@ -470,7 +543,6 @@ def serve(core: Core, stdin, stdout, *, workers: int = WORKERS) -> int:
                 write(problem(404, "not found").message(request_id))
             else:
                 pool.submit(answer, request_id, method, path, request.get("body"))
-    return 0
 
 
 def _protocol_streams():
@@ -512,6 +584,6 @@ def main(argv: list[str] | None = None) -> int:
     stdin, stdout = _protocol_streams()
     core.trail.verify_now()          # full verification once at start, in the background
     try:
-        return serve(core, stdin, stdout)
+        return serve(core, stdin, stdout, queue_seconds=queue_seconds())
     except KeyboardInterrupt:
         return 0
