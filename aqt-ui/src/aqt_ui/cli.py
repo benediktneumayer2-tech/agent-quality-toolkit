@@ -1,6 +1,7 @@
-"""``aqt-ui``: start the local web UI.
+"""``aqt-ui``: start the local web UI, or the core of a desktop app.
 
     aqt-ui [--port N] [--read-only] [--no-browser] [--config PATH]
+    aqt-ui core --stdio [--read-only] [--config PATH]      (also: aqt core --stdio; see ``core.py``)
 
 Prints a one-time login link. Press Enter for a fresh link; Ctrl+C stops the server and
 ends every session. Exit codes: 0 stopped normally, 2 usage or start-up error.
@@ -75,6 +76,10 @@ def open_browser(app: App, link: str, *, opener=webbrowser.open) -> Path:
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv[:1] == ["core"]:
+        from .core import main as core_main
+        return core_main(argv[1:])
     parser = argparse.ArgumentParser(prog="aqt-ui", description="Local web UI of the Agent Quality Toolkit "
                                      "(127.0.0.1 only).")
     parser.add_argument("--port", type=int, default=None, help="TCP port (default: ui.toml or a free port)")

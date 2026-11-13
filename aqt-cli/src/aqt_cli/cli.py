@@ -7,6 +7,8 @@
   aqt project init [DIR] [--yes] [--local]
                                      set this repository up (hooks, deny rules, agent instructions,
                                      aqt-change settings); safe to rerun, never commits
+  aqt core --stdio [--read-only]     the core of the AQT desktop app: aqt-ui's API as JSON lines on
+                                     stdin and stdout, no network (the same as aqt ui core --stdio)
   aqt <tool> ARGS...                 run a tool with these arguments: trail, signoff, change, sensei,
                                      quarantine, validate, capa, ui, spec (or evidence), and the
                                      optional egress (outbound checkpoint: agent-quality-toolkit[egress])
@@ -143,7 +145,7 @@ def build_parser() -> argparse.ArgumentParser:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--version", action="version",
                         version=f"agent-quality-toolkit {__version__} (commands aqt and aqt-toolkit)")
-    sub = parser.add_subparsers(dest="command", metavar="{status,setup,project,<tool>}")
+    sub = parser.add_subparsers(dest="command", metavar="{status,setup,project,core,<tool>}")
     p = sub.add_parser("status", help="one verdict for the whole setup, with the fix for each problem")
     p.add_argument("--json", action="store_true", help="machine-readable output")
     p.add_argument("--verify", action="store_true", help="verify the whole trail (slower on large trails)")
@@ -174,6 +176,8 @@ def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else list(argv)
     if argv and argv[0] in TOOLS:
         return run_tool(argv[0], argv[1:])
+    if argv and argv[0] == "core":         # aqt-ui's: aqt core --stdio is aqt-ui core --stdio
+        return run_tool("ui", argv)
     parser = build_parser()
     try:
         args = parser.parse_args(argv)

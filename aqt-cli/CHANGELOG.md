@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `aqt core --stdio [--read-only]`: the core of the AQT desktop app, aqt-ui's API as JSON lines on stdin and stdout with no network; the same as `aqt-ui core --stdio`.
 - `aqt setup` checks the signer ID as soon as it is typed (lower case letters, digits, `.`, `_`, `-`; `alice` becomes `human:alice`), suggests a valid one and asks again, before the name, the role and the passphrase. An invalid `--id` fails before anything is asked.
 - `aqt status`: when the egress box cannot start because Ubuntu's AppArmor blocks bubblewrap's user namespaces, the fix names the AppArmor profile (manual 6.4) instead of "allow unprivileged user namespaces".
 

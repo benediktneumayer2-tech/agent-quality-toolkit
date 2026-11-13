@@ -1,4 +1,6 @@
 import json
+import subprocess
+import sys
 
 import pytest
 
@@ -105,3 +107,23 @@ def test_the_toolkit_declares_every_tool_command_as_its_package_does():
         if dist != "aqt-egress":        # its script cannot depend on the [egress] extra
             expected[script] = scripts(dist)[script]
     assert own == expected and len(own) == 9
+
+
+def test_aqt_core_speaks_json_lines_on_stdio_and_ends_with_its_input():
+    secret = "read-only-passphrase-9"
+    requests = [{"id": "s", "method": "GET", "path": "/api/session", "body": None},
+                {"id": "d", "method": "POST", "path": "/api/capa/candidates/C1/accept", "body": {"passphrase": secret}}]
+    done = subprocess.run([sys.executable, "-m", "aqt_cli.cli", "core", "--stdio", "--read-only"], capture_output=True,
+                          input=b"".join(json.dumps(r).encode() + b"\n" for r in requests), timeout=60)
+    assert done.returncode == 0, done.stderr.decode()
+    lines = [json.loads(line) for line in done.stdout.splitlines()]
+    assert lines[0]["event"] == "ready" and lines[0]["body"]["protocol"] == 1
+    answers = {line["id"]: line for line in lines[1:]}
+    assert len(lines) == 3 and answers["s"]["status"] == 200 and answers["s"]["body"]["version"] == __version__
+    assert answers["d"]["status"] == 403 and "--read-only" in answers["d"]["body"]["message"]
+    assert secret.encode() not in done.stdout + done.stderr
+
+
+def test_aqt_core_needs_stdio(capsys):
+    assert main(["core"]) == 2
+    assert "--stdio" in capsys.readouterr().err

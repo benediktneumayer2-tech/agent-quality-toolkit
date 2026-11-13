@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- `aqt-ui core --stdio` (also `aqt core --stdio`): the JSON API without a web server, as JSON lines on stdin and stdout, for a desktop app that starts the core as its child process (protocol 1, described in `aqt_ui/core.py`). Decisions are on only when neither the core's environment nor its ancestors show an agent; no terminal is needed. Each decision request checks the parent process again, and `--read-only` refuses decisions as the web server does.
+- The API itself moved from the HTTP handler to `aqt_ui.core.Core`, which the web server's `App` extends; the web server behaves as before.
+
 ## 0.2.0 — 2026-11-13
 
 First version.

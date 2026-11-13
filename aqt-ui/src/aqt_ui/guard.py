@@ -14,6 +14,10 @@ Two checks, both the toolkit's own ``aqt_evidence`` agent detection:
    identified, is refused too. The server's log names the peer (pid, uid, parents) of every
    decision request.
 
+``aqt core --stdio`` has no connection to look up: its one peer is the process that started it
+(the desktop app). The start-up check there needs no terminal, and each decision request checks
+that parent process, its ancestry and markers (``parent_peer``).
+
 The check is handed to the owning package as its human check, so the package itself
 records ``<tool>.refused`` with the markers. Like the CLI checks this is a guard, not a
 security boundary: a same-user process that detaches from the agent and clears its
@@ -46,18 +50,20 @@ class Mode:
 
 
 def startup_mode(read_only: bool = False, *, environ: dict | None = None, chain: list[str] | None = None,
-                 stdin=None) -> Mode:
-    """Decisions on only when the start-up human check passes (terminal required)."""
+                 stdin=None, terminal: bool = True) -> Mode:
+    """Decisions on only when the start-up human check passes: no agent markers in the environment
+    or the ancestry and, unless ``terminal`` is False (``aqt core``, started by the desktop app), a terminal."""
     if read_only:
         return Mode(False, "started with --read-only", explicit=True)
     try:
-        context = require_human(environ=environ, chain=chain, stdin=stdin)
+        context = require_human(environ=environ, chain=chain, stdin=stdin, require_tty=terminal)
     except HumanCheckError as error:
         context = error.context
         if context.is_agent:
             where = f"inside {context.harness}" if context.harness else "inside an agent session"
             reason = (f"Started {where} ({', '.join(context.markers)}). Decisions are off; "
-                      "start aqt-ui yourself in a terminal to decide.")
+                      + ("start aqt-ui yourself in a terminal to decide." if terminal
+                         else "start AQT yourself, outside any agent session, to decide."))
         else:
             reason = "Started without an interactive terminal. Decisions are off; start aqt-ui yourself in a terminal."
         return Mode(False, reason, list(context.markers), context)
@@ -154,6 +160,13 @@ def find_peer(client: tuple[str, int], server: tuple[str, int], *, proc: Path = 
     if pid is None:
         return Peer(uid=uid)
     return Peer(uid=uid, pid=pid, chain=process_chain(pid, proc=proc), environ=agent_environ(pid, proc=proc))
+
+
+def parent_peer(_client=None, _server=None, *, proc: Path = Path("/proc")) -> Peer:
+    """The process that started this one, with its ancestry and agent markers: the one peer of
+    ``aqt core --stdio`` (the desktop app). Usable as a ``Guard`` peer lookup."""
+    pid = os.getppid()
+    return Peer(pid=pid, chain=process_chain(pid, proc=proc), environ=agent_environ(pid, proc=proc))
 
 
 def peer_chain(client: tuple[str, int], server: tuple[str, int], *, proc: Path = Path("/proc")) -> list[str] | None:

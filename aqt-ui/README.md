@@ -40,6 +40,10 @@ projects = ["~/code/my-project"]   # repositories whose aqt-change gates to show
 
 Everything else (trail location, evidence sink, signer registry) comes from the other tools' own settings and environment variables, so the page sees what the command line sees.
 
+### For app builders: `aqt core --stdio`
+
+`aqt core --stdio` (also `aqt-ui core --stdio`) answers the same JSON API without a web server, for a desktop app that starts it as its child process. It speaks newline-delimited JSON on stdin and stdout (protocol 1): first a `ready` event with what `GET /api/session` returns, then one response line per request `{"id", "method", "path", "body"}`, with the same `id`, the HTTP API's status and content type, and the answer as `body` (JSON), `text` or `base64`, plus `filename` for downloads. Requests may overlap, so match responses by `id`; closing stdin ends the core with exit code 0. There is no login, cookie or CSRF token, because only the parent process holds the pipes. The agent guard stays: if an agent's environment markers or an agent among the core's ancestors show up, the core is read-only, and `--read-only` turns decisions off on purpose. The full protocol is in the docstring of `aqt_ui/core.py`.
+
 ## What the page shows
 
 The page is one flow: the queue of what needs you, one page per case, and one page per change.
