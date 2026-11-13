@@ -87,6 +87,14 @@ The full mapping for the whole suite, including what each clause still requires 
 - [`docs/api.md`](docs/api.md): the Python API (stable since 0.1.0; changes are additive).
 - [`docs/implementers.md`](docs/implementers.md): implementing the spec in another language and running the vectors.
 - CLI `aqt-evidence`: `validate`, `hash`, `verify`, `keygen`, `conform`, `vectors`; exit 0 ok, 1 check failed, 2 usage or runtime error.
+- `aqt_evidence.platform`: what differs between Linux, macOS and Windows, used by every AQT package: the AQT
+  folders (`config_dir()`, `state_dir()`, `runtime_base()` for sockets), file locks, no-follow opens, private
+  file modes, the current user, the peer of a Unix socket and process information (parent chain, name,
+  executable, command line). Linux keeps its XDG folders, `flock`, `SO_PEERCRED` and `/proc`; macOS uses
+  `~/Library/Application Support/AQT/{config,state}`, `LOCAL_PEERCRED` and `sysctl`/`libproc`; Windows uses
+  `%APPDATA%\AQT` and `%LOCALAPPDATA%\AQT`, `msvcrt` locks and Toolhelp. `XDG_CONFIG_HOME`, `XDG_STATE_HOME` and
+  `XDG_RUNTIME_DIR` win on every system when they are set. The module text lists the limits (no POSIX file
+  modes on Windows; start times in each system's own unit).
 
 Runtime dependency: `cryptography`. Optional: `jsonschema` (`[schema]` extra) for payload validation. Development (the `[test]` extra includes Hypothesis for the property tests): `uv pip install --python .venv/bin/python -e ".[test]"`, then `.venv/bin/python -m pytest -q`. Generated files are rebuilt with `scripts/build_schemas.py`, `scripts/gen_vectors.py` and `scripts/build_crosswalk.py`; tests fail when they are out of date.
 

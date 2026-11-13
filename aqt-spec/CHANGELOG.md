@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- `aqt_evidence.platform`: one module for what differs between Linux, macOS and Windows (folders, file locks,
+  no-follow opens, private modes, user and socket-peer identity, process information). Linux behaviour and
+  folders are unchanged; on macOS the folders are `~/Library/Application Support/AQT/config` and `…/state`,
+  sockets go to the per-user cache folder, and the agent check reads the process ancestry with `sysctl`
+  instead of `/proc` (it found none on macOS before). The `XDG_*` variables win on every system.
+- `AQT_EVIDENCE` separates paths with `os.pathsep` (a colon as before; a semicolon on Windows).
+
 ## 0.2.0 — 2026-11-13
 
 ### Packaging
