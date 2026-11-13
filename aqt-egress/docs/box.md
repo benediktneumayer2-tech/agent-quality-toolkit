@@ -47,9 +47,16 @@ missing.
 | Write to the AQT state (trail folder) | read-only file system |
 | `resolvectl query`, D-Bus, systemd user manager, docker | not reachable: `/run` is an empty tmpfs |
 
-A real run through the box worked for curl, git (`ls-remote` over HTTPS), pip (`download`), npm (`view`),
+A real run through the box worked for curl, git (`ls-remote` and `clone` over HTTPS), pip (`download`), npm (`view`),
 Python `urllib` and Node `fetch` (Node 22 honours the proxy variables with `NODE_USE_ENV_PROXY=1`; without it,
-`fetch` reaches the box's port 443 through the resolver).
+`fetch` reaches the box's port 443 through the resolver). Because of that variable, Node prints
+`[UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental` once per process; the warning is harmless.
+
+A Claude Code 2.1 session (`claude -p` running git, npm, pip and curl) worked through the box with its normal login.
+The report showed its API calls to `api.anthropic.com` (structure only), its MCP connector calls, its telemetry
+upload, and each tool's chain, for example `git-remote-http < git < git < bash < claude`. Measured on a desktop with
+30 new HTTPS connections per host (each one a TLS handshake on both sides of the proxy), the proxy added 5–14 ms at
+the median and 3–17 ms at the 95th percentile.
 
 ## Fallbacks
 
