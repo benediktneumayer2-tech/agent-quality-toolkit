@@ -2076,8 +2076,10 @@ function checkRow(row, { words, fixes, onFix } = {}) {
     action = h("div", { class: "fix" }, button, h("span", { class: "small muted", text: t(fix[1]) }));
   } else if (problem && row.id === "signer" && S.mode && S.mode.decisions && !(S.setup && S.setup.signer)) {
     action = h("div", { class: "fix" }, h("button", { class: "btn small primary", type: "button", text: t("Set up your identity"), onclick: () => go("/welcome") }));
-  } else if (problem && row.fix) {
-    action = h("div", { class: "fix" }, h("span", { class: "small muted", text: t("In a terminal:") }), commandLine(row.fix));
+  } else if (problem && row.fix) {        // a command to run, or advice in words
+    action = /^(aqt|aqt-[a-z]+|systemctl|journalctl|git|uv|pip|pipx|cd|echo)\b/.test(row.fix)
+      ? h("div", { class: "fix" }, h("span", { class: "small muted", text: t("In a terminal:") }), commandLine(row.fix))
+      : h("p", { class: "small" }, h("strong", { text: `${t("What to do:")} ` }), row.fix);
   }
   return h("li", { class: `check-row ${row.result}`, id: `check-${row.id}` },
     st(RESULT_KIND[row.result] || "neutral", t(RESULT_WORDS[row.result] || row.result)),
