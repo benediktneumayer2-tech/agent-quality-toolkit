@@ -4,13 +4,16 @@ import json
 import os
 import socket
 
-from aqt_evidence import process_chain
+import pytest
+
+from aqt_evidence import platform, process_chain
 
 from aqt_ui.guard import Guard, Mode, peer_chain, socket_inode
 from aqt_ui.views.quarantine import segments
 from aqt_ui.views.trail import TrailIndex
 
 
+@pytest.mark.skipif(not platform.IS_LINUX, reason="the web server's loopback peer lookup reads /proc/net/tcp (Linux only)")
 def test_peer_of_a_real_loopback_connection_is_this_process():
     listener = socket.socket()
     listener.bind(("127.0.0.1", 0))

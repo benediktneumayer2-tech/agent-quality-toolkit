@@ -6,6 +6,7 @@
 - The API itself moved from the HTTP handler to `aqt_ui.core.Core`, which the web server's `App` extends; the web server behaves as before.
 - The page also runs in the desktop app (`aqt-desktop`): there it sends its requests through the app to the core, takes the session information from the core's ready event and saves downloads with the system's save dialog; in a browser it uses `fetch` as before.
 - The configuration folder comes from `aqt_evidence.platform` (unchanged on Linux).
+- The agent guard reads process ancestry, environments and the user through `aqt_evidence.platform`, so `aqt core` checks its parent on macOS too. The web server's loopback peer lookup still needs `/proc/net/tcp`: outside Linux it cannot identify the sender, so the browser page refuses decisions there (use the desktop app).
 
 ## 0.2.0 — 2026-11-13
 
