@@ -11,7 +11,6 @@ without following symlinks), never in the shared spool, which the box can write 
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import queue
@@ -19,7 +18,7 @@ import sys
 import threading
 from pathlib import Path
 
-from aqt_evidence import SinkUnavailable, SocketSink, actor, canonical_json, new_record, open_sink
+from aqt_evidence import SinkUnavailable, SocketSink, actor, canonical_json, new_record, open_sink, platform
 
 from .settings import egress_state, private_dir
 
@@ -33,13 +32,13 @@ def spool_path() -> Path:
 
 def _open_spool(path: Path, flags: int) -> int:
     private_dir(path.parent)
-    return os.open(path, flags | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    return platform.open_nofollow(path, flags | platform.O_CLOEXEC, 0o600)
 
 
 def spool_append(record: dict, path: Path | None = None) -> None:
     fd = _open_spool(path or spool_path(), os.O_WRONLY | os.O_CREAT | os.O_APPEND)
     with os.fdopen(fd, "ab") as handle:
-        fcntl.flock(handle, fcntl.LOCK_EX)
+        platform.lock(handle)
         handle.write(canonical_json(record) + b"\n")
         handle.flush()
         os.fsync(handle.fileno())
@@ -74,7 +73,7 @@ def drain_spool(sink: EgressSink | None = None) -> dict:
         return {"drained": 0}
     fd = _open_spool(sink.spool, os.O_RDWR)
     with os.fdopen(fd, "r+b") as handle:
-        fcntl.flock(handle, fcntl.LOCK_EX)
+        platform.lock(handle)
         entries = [json.loads(line) for line in handle.read().splitlines() if line.strip()]
         if not entries:
             return {"drained": 0}

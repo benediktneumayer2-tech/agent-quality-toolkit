@@ -15,7 +15,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from aqt_evidence import content_hash
+from aqt_evidence import content_hash, platform
 
 from .errors import usage
 
@@ -57,8 +57,7 @@ class Config:
 def config_path() -> Path:
     if os.environ.get("AQT_CHANGE_CONFIG"):
         return Path(os.environ["AQT_CHANGE_CONFIG"])
-    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(base) / "aqt" / "change.toml"
+    return platform.config_dir() / "change.toml"
 
 
 def load_config(path: str | os.PathLike | None = None) -> Config:

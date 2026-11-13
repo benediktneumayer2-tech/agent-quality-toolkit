@@ -26,6 +26,8 @@ from importlib import metadata
 from pathlib import Path
 from typing import Callable
 
+from aqt_evidence import platform
+
 from . import tools
 
 OK, WARN, FAIL, SKIP = "ok", "warn", "fail", "skip"
@@ -94,7 +96,7 @@ class Context:
 
     def systemd_available(self) -> bool:
         if self._systemd is None:
-            self._systemd = self.systemd("show-environment")[0] == 0
+            self._systemd = platform.IS_LINUX and self.systemd("show-environment")[0] == 0
         return self._systemd
 
     def confirm(self, question: str) -> bool:
@@ -308,7 +310,19 @@ def step_trail_init(ctx: Context) -> None:
         raise StepFailed("aqt-trail init did not succeed")
 
 
+def service_unavailable() -> str | None:
+    """None where ``aqt setup`` can install the writer as a user service (Linux: systemd), else why not.
+    A launchd agent (macOS) and a logon task (Windows) will plug in here."""
+    if platform.IS_LINUX:
+        return None
+    return platform.not_available("the writer as a background service", "it is installed with systemd, which "
+                                  "this system does not have; start the writer by hand")
+
+
 def check_service(ctx: Context) -> Result:
+    unavailable = service_unavailable()
+    if unavailable:
+        return Result(SKIP, unavailable)
     if not ctx.systemd_available():
         return Result(SKIP, "systemd --user is not available here; the writer is started by hand")
     unit = unit_path()
@@ -691,6 +705,9 @@ def check_egress(ctx: Context) -> Result:
                             f"{error}", tools.install_command("aqt-egress"))
     if value is None:
         return Result(SKIP, "aqt-egress (optional outbound checkpoint) is not installed")
+    if not value.get("box") and not platform.IS_LINUX:   # the box needs Linux: no fix to offer elsewhere
+        return Result(SKIP, f"aqt-egress {value.get('version')} is installed, but {value.get('box_detail')}",
+                      data=value)
     last = value.get("last_session")
     parts = [f"aqt-egress {value.get('version')}",
              "CA present" if value.get("ca") else "no CA yet (the first run creates it)",

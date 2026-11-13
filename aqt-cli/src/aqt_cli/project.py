@@ -131,7 +131,8 @@ def rule_path(path: Path) -> str:
 
 
 def config_dir() -> Path:
-    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "aqt"
+    from aqt_evidence import platform
+    return platform.config_dir()
 
 
 def user_settings() -> Path:

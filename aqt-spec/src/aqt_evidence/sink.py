@@ -9,6 +9,8 @@
    trail has been initialised (``trail.json`` in the trail state directory). A trail
    whose writer is down gets the records through the spool below.
 3. The fallback file ``$XDG_STATE_HOME/aqt/evidence.jsonl`` (not chained, not in a trail).
+The folders are those of ``aqt_evidence.platform`` (XDG on Linux; macOS and Windows have their own,
+and the XDG variables win where they are set).
 Degraded routes carry a warning in ``resolve_sink()``; spooling also prints one line on
 stderr per process.
 
@@ -27,7 +29,6 @@ drains the spool later behind a ``trail.gap`` record. ``spool=False`` raises ins
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import socket
@@ -36,6 +37,7 @@ import tomllib
 from pathlib import Path
 from typing import Iterator, Protocol
 
+from . import platform
 from .canonical import CanonicalError, canonical_json, parse_canonical_line
 from .record import record_content_hash, validate_record
 
@@ -77,7 +79,8 @@ class Sink(Protocol):
 
 
 def state_dir() -> Path:
-    return Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "aqt"
+    """The AQT state folder (``platform.state_dir()``): ``$XDG_STATE_HOME/aqt`` on Linux."""
+    return platform.state_dir()
 
 
 def spool_file() -> Path:
@@ -96,15 +99,15 @@ class JsonlSink:
         if errors:
             raise SinkError("; ".join(errors))
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | platform.O_BINARY, 0o600)
         with os.fdopen(fd, "ab") as handle:
-            fcntl.flock(handle, fcntl.LOCK_EX)
+            platform.lock(handle)
             try:
                 handle.write(canonical_json(record) + b"\n")
                 handle.flush()
                 os.fsync(handle.fileno())
             finally:
-                fcntl.flock(handle, fcntl.LOCK_UN)
+                platform.unlock(handle)
         return record
 
 
@@ -118,6 +121,8 @@ class SocketSink:
         self.last_spooled = False
 
     def request(self, payload: dict) -> dict:
+        if not hasattr(socket, "AF_UNIX"):   # Windows: the writer will be reached through a named pipe later
+            raise SinkUnavailable(platform.not_available("the aqt-trail socket", "no Unix sockets"))
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
             client.settimeout(self.timeout)
             try:
@@ -156,7 +161,7 @@ class SocketSink:
 def _trail_location(environ) -> tuple[Path, Path]:
     """aqt-trail's state directory and writer socket, computed as ``aqt_trail.config`` does
     (``trail.toml`` ``[trail] state`` and ``[writer] socket``, ``AQT_TRAIL_STATE``, XDG dirs)."""
-    config = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "aqt" / "trail.toml"
+    config = platform.config_dir() / "trail.toml"
     try:
         with open(config, "rb") as handle:
             values = tomllib.load(handle)
@@ -166,8 +171,8 @@ def _trail_location(environ) -> tuple[Path, Path]:
     state = Path(trail.get("state") or environ.get("AQT_TRAIL_STATE") or state_dir() / "trail")
     if writer.get("socket"):
         return state, Path(writer["socket"])
-    runtime = os.environ.get("XDG_RUNTIME_DIR")
-    return state, (Path(runtime) / "aqt" / "trail.sock" if runtime else state / "aqt-trail.sock")
+    runtime = platform.runtime_base()
+    return state, (runtime / "aqt" / "trail.sock" if runtime else state / "aqt-trail.sock")
 
 
 def _ping(path) -> dict | None:
@@ -267,12 +272,13 @@ TRAIL_LOG_NAME = "trail.jsonl"
 
 
 def evidence_sources(environ: dict | None = None) -> list[Path]:
-    """Files other tools read records from: ``AQT_EVIDENCE`` (colon-separated paths) or, by
+    """Files other tools read records from: ``AQT_EVIDENCE`` (paths separated by ``os.pathsep``:
+    a colon, a semicolon on Windows) or, by
     default, the aqt-trail log, the sink file and the spool (records not yet in the trail),
     when they exist."""
     environ = os.environ if environ is None else environ
     if environ.get("AQT_EVIDENCE"):
-        return [Path(part) for part in environ["AQT_EVIDENCE"].split(":") if part]
+        return [Path(part) for part in environ["AQT_EVIDENCE"].split(os.pathsep) if part]
     sink = environ.get("AQT_SINK", "")
     candidates = [_trail_location(environ)[0] / TRAIL_LOG_NAME]
     candidates.append(Path(sink[5:]) if sink.startswith("file:") else state_dir() / "evidence.jsonl")

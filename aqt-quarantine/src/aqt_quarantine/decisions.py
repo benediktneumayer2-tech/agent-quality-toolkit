@@ -19,7 +19,6 @@ alone, and ``Decider.enrolment_note`` says so.
 from __future__ import annotations
 
 import base64
-import fcntl
 import getpass
 import json
 import os
@@ -35,7 +34,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from aqt_evidence import (HumanCheckError, Text, actor, canonical_json, content_hash, generate_key, load_public_key,
-                          load_signer, require_human, subject, utc_now)
+                          load_signer, platform, require_human, subject, utc_now)
 
 from . import records
 from .config import Config
@@ -86,7 +85,7 @@ def enrol(path: Path, *, signer_id: str, name: str, role: str, key_id: str, publ
     path.parent.mkdir(parents=True, exist_ok=True)
     lock = path.with_name(path.name + ".lock")
     with open(lock, "a") as handle:
-        fcntl.flock(handle, fcntl.LOCK_EX)
+        platform.lock(handle)
         try:
             doc = json.loads(path.read_text(encoding="utf-8"))
         except FileNotFoundError:
@@ -491,7 +490,7 @@ def create_identity(config: Config, *, signer_id: str, name: str, role: str,
     if ask("Repeat the passphrase: ") != first:
         raise DecisionError("passphrases differ", 2)
     config.keys_dir.mkdir(parents=True, exist_ok=True)
-    os.chmod(config.keys_dir, 0o700)
+    platform.make_private(config.keys_dir, directory=True)
     key_path = config.keys_dir / f"{slug(signer_id)}.key"
     key_id = generate_key(key_path, passphrase=first.encode())
     # aqt_evidence writes <slug>.key.pub; aqt-signoff uses the same name, so it is kept as is.

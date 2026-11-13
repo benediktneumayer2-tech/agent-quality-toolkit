@@ -21,9 +21,11 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from aqt_evidence import platform
+
 
 def config_home() -> Path:
-    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "aqt"
+    return platform.config_dir()
 
 
 @dataclass

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from aqt_change.config import parse_project_settings
+from aqt_evidence import platform
 
 from aqt_cli import project, tools
 from aqt_cli.checks import run_checks
@@ -234,12 +235,18 @@ def test_only_the_installed_tools(repo, monkeypatch):
 
 def test_rule_paths_follow_xdg_dirs(tmp_path, monkeypatch):
     home = Path(os.environ["HOME"])
-    monkeypatch.setenv("XDG_STATE_HOME", str(home / ".local/state"))
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
+    if platform.IS_LINUX:
+        monkeypatch.setenv("XDG_STATE_HOME", str(home / ".local/state"))
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
+    else:                                                          # the system's own AQT folders
+        monkeypatch.delenv("XDG_STATE_HOME", raising=False)
+        monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     from aqt_quarantine.cli import CLAUDE_SNIPPET
     file_rules = [rule for rule in CLAUDE_SNIPPET["permissions"]["deny"] if not rule.startswith("Bash(")]
     assert set(file_rules) <= set(project.deny_rules())          # the defaults: the same rules as aqt-quarantine's
-    assert "Read(~/.local/state/aqt/trail/keys/**)" in project.deny_rules()
+    state = "~/" + platform.state_dir().relative_to(home).as_posix()
+    assert state == "~/.local/state/aqt" or not platform.IS_LINUX
+    assert f"Read({state}/trail/keys/**)" in project.deny_rules()
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "elsewhere"))
     rules = project.deny_rules()
     assert f"Read(/{tmp_path}/elsewhere/aqt/quarantine/**)" in rules and f"Edit(/{tmp_path}/elsewhere/aqt/**)" in rules

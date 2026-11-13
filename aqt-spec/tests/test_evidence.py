@@ -9,6 +9,7 @@ from aqt_evidence import (GENESIS, CanonicalError, JsonlSink, SinkError, SocketS
                           checkpoint_matches, generate_key, link, load_public_key, load_signer,
                           make_checkpoint, new_record, read_jsonl, record_hash, sign_record, subject,
                           validate_record, verify_chain, verify_checkpoint, verify_record_signatures)
+from aqt_evidence import platform
 from aqt_evidence.cli import main
 
 
@@ -95,17 +96,18 @@ def test_jsonl_sink_and_cli(tmp_path, signer, capsys):
     sink = JsonlSink(path)
     for record in chained(records(3), signer):
         sink.append(record)
-    assert oct(os.stat(path).st_mode & 0o777) == "0o600"
+    assert platform.IS_WINDOWS or oct(os.stat(path).st_mode & 0o777) == "0o600"   # no POSIX modes there
     assert len(list(read_jsonl(path))) == 3
     assert main(["verify", str(path), "--key", str(tmp_path / "k.pub"), "--require-signature"]) == 0
     assert "intact: 3 records" in capsys.readouterr().out
     lines = path.read_text().splitlines()
-    path.write_text("\n".join([lines[0], lines[2]]) + "\n")
+    path.write_text("\n".join([lines[0], lines[2]]) + "\n", newline="\n")
     assert main(["verify", str(path)]) == 1
     with pytest.raises(SinkError):
         sink.append({"not": "a record"})
 
 
+@pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="no Unix sockets (Windows)")
 def test_socket_sink_protocol(tmp_path):
     path = str(tmp_path / "t.sock")
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)

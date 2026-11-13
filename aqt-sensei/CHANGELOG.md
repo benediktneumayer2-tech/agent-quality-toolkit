@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Runs on macOS except the advisor sandbox: the bridge identifies callers with `LOCAL_PEERCRED` and `sysctl`
+  (through `aqt_evidence.platform`). Pairing, `launch`, `login` and `doctor` say that the sandbox is not available
+  on this system and why (bubblewrap is Linux only; a Seatbelt profile follows); the fake backend still pairs.
+  Linux behaviour is unchanged.
+
 ## 0.2.0 — 2026-11-13
 
 - Packaging: released at 0.2.0, the version of every AQT package; the other AQT packages it needs are required at `>=0.2,<0.3`; the licence is an SPDX expression with the licence files in the package (PEP 639).

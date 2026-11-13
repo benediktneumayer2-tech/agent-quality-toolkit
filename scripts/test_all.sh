@@ -16,9 +16,9 @@ PACKAGES=(aqt-spec aqt-trail aqt-signoff aqt-change aqt-sensei aqt-quarantine aq
           aqt-egress)
 [ $# -gt 0 ] && PACKAGES=("$@")
 REAL_HOME="$HOME"
-REAL_DIRS=("$REAL_HOME/.local/state/aqt" "$REAL_HOME/.config/aqt")
-declare -A EXISTED
-for dir in "${REAL_DIRS[@]}"; do [ -e "$dir" ] && EXISTED[$dir]=1 || EXISTED[$dir]=0; done
+REAL_DIRS=("$REAL_HOME/.local/state/aqt" "$REAL_HOME/.config/aqt" "$REAL_HOME/Library/Application Support/AQT")
+EXISTED=()   # parallel to REAL_DIRS (indexed, not associative: macOS ships bash 3.2)
+for dir in "${REAL_DIRS[@]}"; do [ -e "$dir" ] && EXISTED+=(1) || EXISTED+=(0); done
 
 command -v uv >/dev/null || { echo "uv is required (https://docs.astral.sh/uv/)" >&2; exit 2; }
 
@@ -37,7 +37,7 @@ ensure_venv() {   # $1 = package directory name
                         -e ../aqt-quarantine -e ../aqt-validate -e ../aqt-capa -e ../aqt-ui) ;;   # the umbrella: all
         *) extra=(-e ../aqt-spec) ;;
     esac
-    (cd "$dir" && uv venv -q .venv && uv pip install -q --python .venv/bin/python "${extra[@]}" -e ".[test]")
+    (cd "$dir" && uv venv -q .venv && uv pip install -q --python .venv/bin/python ${extra[@]+"${extra[@]}"} -e ".[test]")
 }
 
 python_ok() {  # $1 = package directory name; aqt-egress needs Python 3.12 or newer
@@ -55,7 +55,10 @@ ensure_demo_venv() {
         -e aqt-trail -e aqt-signoff -e aqt-change -e aqt-sensei -e aqt-quarantine -e aqt-validate -e aqt-capa pytest)
 }
 
-SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/aqt-test-all-XXXXXX")"
+SANDBOX_BASE="${TMPDIR:-/tmp}"
+# macOS: $TMPDIR is about 50 bytes long and AF_UNIX socket paths are limited to 104 bytes
+[ "$(uname)" = Darwin ] && SANDBOX_BASE=/tmp
+SANDBOX="$(mktemp -d "$SANDBOX_BASE/aqt-test-all-XXXXXX")"
 RUNTIME="$(mktemp -d /tmp/aqtr-XXXXXX)"           # short path: AF_UNIX socket paths are limited
 chmod 700 "$RUNTIME"
 trap 'rm -rf "$SANDBOX" "$RUNTIME"' EXIT
@@ -64,7 +67,7 @@ run_isolated() {  # run a command with throw-away HOME/XDG dirs and without AQT_
     local name
     local unset_args=()
     for name in $(env | sed -n 's/^\(AQT_[A-Za-z0-9_]*\)=.*/\1/p'); do unset_args+=(-u "$name"); done
-    env "${unset_args[@]}" HOME="$SANDBOX/home" XDG_STATE_HOME="$SANDBOX/state" XDG_CONFIG_HOME="$SANDBOX/config" \
+    env ${unset_args[@]+"${unset_args[@]}"} HOME="$SANDBOX/home" XDG_STATE_HOME="$SANDBOX/state" XDG_CONFIG_HOME="$SANDBOX/config" \
         XDG_CACHE_HOME="$SANDBOX/cache" XDG_RUNTIME_DIR="$RUNTIME" TMPDIR="$SANDBOX/tmp" GIT_CONFIG_NOSYSTEM=1 \
         GIT_CONFIG_GLOBAL="$SANDBOX/gitconfig" PYTHONDONTWRITEBYTECODE=1 "$@"
 }
@@ -118,8 +121,9 @@ echo
 printf '%-16s %7s %7s %7s %7s %7s  %s\n' "suite" "passed" "failed" "errors" "skipped" "time" "result"
 printf '%s\n' "${ROWS[@]}"
 
-for dir in "${REAL_DIRS[@]}"; do
-    if [ -e "$dir" ] && [ "${EXISTED[$dir]}" = 0 ]; then
+for i in "${!REAL_DIRS[@]}"; do
+    dir="${REAL_DIRS[$i]}"
+    if [ -e "$dir" ] && [ "${EXISTED[$i]}" = 0 ]; then
         echo "ERROR: $dir was created during the test run" >&2
         STATUS=1
     fi

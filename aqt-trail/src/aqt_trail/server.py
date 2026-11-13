@@ -10,7 +10,6 @@ Errors use the spec §10.2 codes ``invalid_record``, ``unauthorized``, ``duplica
 
 from __future__ import annotations
 
-import grp
 import json
 import os
 import signal
@@ -159,6 +158,7 @@ class TrailServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
         finally:
             os.umask(old)
         if group:
+            import grp   # POSIX only, and only for the separate-user mode
             os.chown(path, -1, grp.getgrnam(group).gr_gid)
         os.chmod(path, mode)
 

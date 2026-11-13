@@ -1,7 +1,7 @@
 import json
 
 import aqt_evidence
-from aqt_evidence import spool_file
+from aqt_evidence import platform, spool_file
 from aqt_trail import anchors
 from aqt_trail.config import load_config
 from aqt_trail.state import init_state, open_writer
@@ -9,7 +9,7 @@ from aqt_trail.state import init_state, open_writer
 from aqt_cli import checks
 from aqt_cli.checks import Context, run_checks
 from aqt_cli.cli import main
-from conftest import PASSPHRASE, by_id, enrol
+from conftest import LINUX_SYSTEMD, PASSPHRASE, by_id, enrol
 
 
 def _trail_with_records(count=3, checkpoint=True):
@@ -92,6 +92,7 @@ def test_cut_short_trail_is_found_without_full_verification():
     assert intact.result == "fail" and "cut short" in intact.explanation
 
 
+@LINUX_SYSTEMD
 def test_writer_and_service_with_systemd(systemd, start_writer):
     _trail_with_records(checkpoint=False)
     systemd.available = True
@@ -104,6 +105,7 @@ def test_writer_and_service_with_systemd(systemd, start_writer):
     assert results["trail.intact"].result == "ok" and "matches the writer" in results["trail.intact"].explanation
 
 
+@LINUX_SYSTEMD
 def test_unit_with_a_missing_program_is_reported_not_rewritten(systemd):
     _trail_with_records(checkpoint=False)
     systemd.available = True
@@ -210,9 +212,21 @@ def test_egress_line_never_fails_the_verdict(monkeypatch):
     monkeypatch.setattr(checks, "_egress_status", lambda: {"version": "0.1", "ca": False, "box": False,
                                                             "box_detail": "bwrap missing", "last_session": None})
     line = by_id(run_checks(Context()))["egress"]
-    assert line.result == "warn" and "bwrap missing" in line.explanation
+    assert line.result == ("warn" if platform.IS_LINUX else "skip") and "bwrap missing" in line.explanation
 
     def broken():
         raise ModuleNotFoundError("No module named 'mitmproxy'", name="mitmproxy")
     monkeypatch.setattr(checks, "_egress_status", broken)
     assert by_id(run_checks(Context()))["egress"].result == "warn"
+
+
+def test_off_linux_the_service_and_the_box_are_reported_as_not_available(monkeypatch):
+    monkeypatch.setattr(platform, "IS_LINUX", False)
+    monkeypatch.setattr(platform, "SYSTEM_NAME", "macOS")
+    monkeypatch.setattr(checks, "_egress_status", lambda: {"version": "0.2", "ca": False, "box": False,
+                                                            "box_detail": "the egress box is not available on macOS",
+                                                            "last_session": None})
+    results = by_id(run_checks(Context()))
+    assert results["service"].result == "skip" and "not available on macOS" in results["service"].explanation
+    assert results["egress"].result == "skip" and "not available on macOS" in results["egress"].explanation
+    assert results["egress"].fix is None

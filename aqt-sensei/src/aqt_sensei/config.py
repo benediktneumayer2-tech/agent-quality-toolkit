@@ -1,7 +1,8 @@
 """Paths, configuration and the owner token.
 
-Every path follows XDG and can be overridden by environment variables, so tests
-and several installations never collide:
+Every path follows XDG (on macOS and Windows the folders of ``aqt_evidence.platform``)
+and can be overridden by environment variables, so tests and several installations
+never collide:
 
 - ``AQT_SENSEI_CONFIG``  config file (default ``$XDG_CONFIG_HOME/aqt/sensei.toml``)
 - ``AQT_SENSEI_STATE``   state folder (default ``$XDG_STATE_HOME/aqt/sensei``)
@@ -17,13 +18,11 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from aqt_evidence import platform
+
 MODES = ("manual", "confirm", "auto")
 BACKENDS = ("tmux", "herdr", "fake")
 PATH_ENV = ("AQT_SENSEI_CONFIG", "AQT_SENSEI_STATE", "AQT_SENSEI_RUNTIME", "AQT_SENSEI_TOKEN")
-
-
-def _xdg(name: str, default: str) -> Path:
-    return Path(os.environ.get(name) or Path.home() / default)
 
 
 @dataclass
@@ -35,11 +34,11 @@ class Paths:
 
     @classmethod
     def default(cls) -> "Paths":
-        config = _xdg("XDG_CONFIG_HOME", ".config") / "aqt"
-        state = Path(os.environ.get("AQT_SENSEI_STATE") or _xdg("XDG_STATE_HOME", ".local/state") / "aqt" / "sensei")
-        runtime_base = os.environ.get("XDG_RUNTIME_DIR")
+        config = platform.config_dir()
+        state = Path(os.environ.get("AQT_SENSEI_STATE") or platform.state_dir() / "sensei")
+        runtime_base = platform.runtime_base()
         runtime = Path(os.environ.get("AQT_SENSEI_RUNTIME")
-                       or (Path(runtime_base) / "aqt-sensei" if runtime_base else state / "run"))
+                       or (runtime_base / "aqt-sensei" if runtime_base else state / "run"))
         return cls(
             config_file=Path(os.environ.get("AQT_SENSEI_CONFIG") or config / "sensei.toml"),
             token_file=Path(os.environ.get("AQT_SENSEI_TOKEN") or config / "sensei" / "owner.token"),
@@ -75,8 +74,7 @@ class Paths:
 
     def ensure(self) -> None:
         for folder in (self.state, self.runtime, self.runtime / "pairs", self.pane_state):
-            folder.mkdir(parents=True, exist_ok=True, mode=0o700)
-            os.chmod(folder, 0o700)
+            platform.ensure_private_dir(folder)
 
 
 @dataclass

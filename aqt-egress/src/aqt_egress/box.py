@@ -36,6 +36,7 @@ import sys
 import tomllib
 from pathlib import Path
 
+from aqt_evidence import platform as aqt_platform
 from aqt_evidence import spool_file, state_dir
 
 from .netns import PROXY_PORT, system_tool
@@ -82,8 +83,21 @@ def installation() -> list[str]:
     return [str(path) for path in kept if path != Path("/")]
 
 
+def unsupported() -> str | None:
+    """None on Linux, else why the box cannot run on this system (macOS gets a Seatbelt profile later)."""
+    if aqt_platform.IS_LINUX:
+        return None
+    if aqt_platform.IS_MACOS:
+        return aqt_platform.not_available("the egress box", "it needs Linux network namespaces (bubblewrap); "
+                                          "a Seatbelt profile follows in a later version")
+    return aqt_platform.not_available("the egress box", "it needs Linux network namespaces (bubblewrap), and the "
+                                      "system has no equivalent that works without administrator rights")
+
+
 def available() -> tuple[bool, str]:
-    """Can a box start here? (bubblewrap present, user and network namespaces allowed)."""
+    """Can a box start here? (Linux, bubblewrap present, user and network namespaces allowed)."""
+    if unsupported():
+        return False, unsupported()
     bwrap = bwrap_path()
     if not bwrap:
         return False, "bubblewrap (bwrap) is not installed"
@@ -171,6 +185,8 @@ def _under_tmp(path: Path) -> bool:
 def bwrap_argv(command: list[str], *, project: Path, public: dict[str, Path], info_fd: int,
                block_fd: int, token: str = "go", private_tmp: bool = False) -> tuple[list[str], dict]:
     """The bwrap command line and the facts about it (for the session record)."""
+    if unsupported():
+        raise BoxUnavailable(unsupported())
     bwrap = bwrap_path()
     if not bwrap:
         raise BoxUnavailable("bubblewrap (bwrap) is not installed in a system folder (/usr/bin, /bin)")

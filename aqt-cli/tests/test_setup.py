@@ -8,7 +8,7 @@ from aqt_trail.config import config_dir, load_config
 from aqt_cli import checks, tools
 from aqt_cli.checks import Context
 from aqt_cli.cli import main, setup
-from conftest import enrol
+from conftest import LINUX_SYSTEMD, enrol
 
 
 class Tools:
@@ -32,6 +32,7 @@ def _ctx(**kw):
     return Context(**kw)
 
 
+@LINUX_SYSTEMD
 def test_setup_yes_reaches_green_status_and_a_rerun_changes_nothing(systemd, start_writer, capsys):
     systemd.available = True
     systemd.on_start = start_writer
@@ -74,6 +75,7 @@ def test_without_systemd_or_a_person_setup_does_the_rest_and_says_what_is_left(s
     assert (config_dir() / "trail.toml").exists()
 
 
+@LINUX_SYSTEMD
 def test_existing_files_are_never_overwritten(systemd):
     systemd.available = True
     mine = {checks.unit_path(): "[Service]\nExecStart=/bin/true\n",

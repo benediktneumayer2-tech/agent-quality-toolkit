@@ -35,6 +35,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey,
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
+from . import platform
 from .canonical import canonical_json
 from .record import unsigned
 
@@ -74,7 +75,7 @@ def generate_key(path: str | os.PathLike, *, passphrase: bytes | None = None) ->
         raise FileExistsError(f"{path} already exists")
     if not path.parent.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
-        os.chmod(path.parent, 0o700)
+        platform.make_private(path.parent, directory=True)
     private = Ed25519PrivateKey.generate()
     _write_secret(path, private_key_bytes(private, passphrase), replace=False)
     Path(f"{path}.pub").write_bytes(public_pem(private.public_key()))
@@ -122,7 +123,7 @@ def _b64(data: bytes) -> str:
 
 def _write_secret(path: Path, data: bytes, *, replace: bool) -> None:
     target = path.with_name(f".{path.name}.{os.getpid()}.tmp") if replace else path
-    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | platform.O_BINARY, 0o600)
     try:
         with os.fdopen(fd, "wb") as handle:
             handle.write(data)
