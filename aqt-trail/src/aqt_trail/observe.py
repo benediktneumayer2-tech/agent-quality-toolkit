@@ -99,8 +99,9 @@ def processes(pid: int, *, proc: Path | None = None, limit: int = MAX_DEPTH) -> 
 def chain_status(chain: list[dict], sessions: list[int], end: str) -> tuple[str, str | None]:
     """(``complete`` | ``partial`` | ``unavailable``, why not complete) for a walk (see the module text)."""
     if not chain or chain[0].get("comm") == "?":
-        return "unavailable", Text("trail.observe.unreadable", "the sender's {entry} could not be read (exited or "
-                                   "hidden)", entry="/proc entry" if platform.IS_LINUX else "process entry")
+        # the same words on macOS (no /proc there): the catalogue of aqt-ui holds this English template
+        return "unavailable", Text("trail.observe.unreadable",
+                                   "the sender's /proc entry could not be read (exited or hidden)")
     if end == "gone":
         return "partial", Text("trail.observe.exited", "process {pid} exited before it could be read",
                                pid=chain[-1]["pid"])

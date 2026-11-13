@@ -189,7 +189,7 @@ def test_deep_nesting_is_reported_not_raised(tmp_path, capsys):
     with pytest.raises(CanonicalError):
         parse_record(text)
     path = tmp_path / "deep.jsonl"
-    path.write_text(text + "\n")
+    path.write_text(text + "\n", newline="\n")
     with pytest.raises(RecordLineError):
         list(read_jsonl(path))
     assert main(["conform", str(path)]) == 1

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `examples/quickstart.sh` runs with BSD `sed` (macOS) too.
 - The configuration folder, and the lock of the records mirror, come from `aqt_evidence.platform` (unchanged on
   Linux; macOS and Windows get their own folders).
 

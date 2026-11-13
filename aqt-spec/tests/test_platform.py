@@ -81,7 +81,7 @@ def test_lock_excludes_a_second_open_file_until_unlocked(tmp_path):
 
 def test_lock_works_on_an_append_only_descriptor_and_keeps_the_position(tmp_path):
     path = tmp_path / "log"
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | platform.O_BINARY, 0o600)
     with os.fdopen(fd, "ab") as handle:
         handle.write(b"one\n")
         handle.flush()

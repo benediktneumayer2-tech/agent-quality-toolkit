@@ -10,7 +10,12 @@ import pytest
 from aqt_evidence import (GENESIS, CanonicalError, SinkError, SocketSink, actor, canonical_json, conformance,
                           generate_key, link, load_public_key, load_signer, make_checkpoint, new_record, open_sink,
                           parse_record, read_jsonl, record_hash, sign_record, spool_file, validate_record)
+from aqt_evidence import SinkUnavailable, platform
 from aqt_evidence.cli import main
+
+
+POSIX = not platform.IS_WINDOWS   # Windows has no POSIX file modes
+UNIX_SOCKETS = pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="no Unix sockets (Windows)")
 
 
 def record(type_="trail.event", **extra):
@@ -44,13 +49,14 @@ def test_socket_sink_spools_when_unavailable(state):
     assert sink.append(first) == first and sink.last_spooled
     assert spool_file() == state / "state" / "aqt" / "spool" / "spool.jsonl"
     assert [r["id"] for r in read_jsonl(spool_file())] == [first["id"]]
-    assert oct(os.stat(spool_file()).st_mode & 0o777) == "0o600"
+    assert not POSIX or oct(os.stat(spool_file()).st_mode & 0o777) == "0o600"
     with pytest.raises(SinkError):
         sink.append({"not": "a record"})  # invalid records are never spooled
     with pytest.raises(SinkError):
         SocketSink(state / "missing.sock", spool=False).append(record())
 
 
+@UNIX_SOCKETS
 def test_socket_sink_does_not_spool_refusals(state):
     path = str(state / "t.sock")
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -120,8 +126,14 @@ def test_cli_conform_and_vectors(tmp_path, keyed, capsys):
     cp.write_text(json.dumps(make_checkpoint(log_id="t", seq=1, head=record_hash(records[1]), signer=signer)))
     assert main(["conform", str(path), "--level", "3", "--key", str(pub), "--checkpoint", str(cp)]) == 0
     assert "L3 reached" in capsys.readouterr().out
-    path.write_text(path.read_text().replace('"action":"step"', '"action":"step","action":"x"', 1))
+    path.write_text(path.read_text().replace('"action":"step"', '"action":"step","action":"x"', 1), newline="\n")
     assert main(["conform", str(path), "--json"]) == 1
     assert "duplicate object key" in json.loads(capsys.readouterr().out)["problems"][0]
     assert main(["vectors"]) == 0
     assert "vectors agree" in capsys.readouterr().out
+
+
+def test_socket_sink_without_unix_sockets_is_unavailable(state, monkeypatch):
+    monkeypatch.delattr(socket, "AF_UNIX", raising=False)
+    with pytest.raises(SinkUnavailable, match="not available"):
+        SocketSink(state / "trail.sock", spool=False).append(record())

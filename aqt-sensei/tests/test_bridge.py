@@ -269,3 +269,20 @@ def test_independence_classes():
     assert independence({"platform": "pi", "model": "openai/x"}, {"platform": "codex"}) == "same-vendor"
     assert independence({"platform": "codex"}, {"platform": "claude"}) == "different-vendor"
     assert independence({}, {"platform": "claude"}) == "unknown"
+
+
+def test_pairing_off_linux_says_the_sandbox_is_not_available(bridge, project, monkeypatch):
+    from aqt_evidence import platform
+    from aqt_sensei import sandbox
+    monkeypatch.setattr(platform, "IS_LINUX", False)
+    monkeypatch.setattr(platform, "IS_MACOS", True)
+    monkeypatch.setattr(platform, "SYSTEM_NAME", "macOS")
+    assert "Seatbelt" in sandbox.sandbox_unavailable()
+    with pytest.raises(sandbox.SandboxError, match="not available on macOS"):
+        sandbox.require_sandbox()
+    monkeypatch.setattr(type(bridge.host), "name", "tmux")
+    with pytest.raises(BridgeError, match="sensei sandbox is not available on macOS"):
+        bridge.owner_op({"op": "pair", "worker": "%1", "advisor": "claude", "project": str(project),
+                         "reason": "x"}, None)
+    monkeypatch.setattr(type(bridge.host), "name", "fake")
+    pair_up(bridge, project)                     # the fake host starts nothing: it pairs anywhere

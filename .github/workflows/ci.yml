@@ -18,6 +18,34 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y bubblewrap tmux nftables
       - name: All package suites and the integration demo (aqt-egress on Python 3.12+ only)
         run: scripts/test_all.sh
+  test-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          python-version: "3.12"
+      - name: All package suites and the integration demo (the sensei sandbox, the egress box and systemd say they are Linux only)
+        run: scripts/test_all.sh
+  test-windows:
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - name: Keep LF line endings (vectors, catalogues and schemas are hashed byte for byte)
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          python-version: "3.12"
+      - name: aqt-spec with aqt_evidence.platform (the other packages follow on Windows later)
+        shell: bash
+        working-directory: aqt-spec
+        run: |
+          uv venv -q .venv
+          uv pip install -q --python .venv/Scripts/python.exe -e ".[test]"
+          XDG_STATE_HOME="$RUNNER_TEMP/state" XDG_CONFIG_HOME="$RUNNER_TEMP/config" \
+            .venv/Scripts/python.exe -m pytest -q -p no:cacheprovider
   clean-install:
     runs-on: ubuntu-latest
     steps:

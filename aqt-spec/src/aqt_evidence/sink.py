@@ -99,7 +99,7 @@ class JsonlSink:
         if errors:
             raise SinkError("; ".join(errors))
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | platform.O_BINARY, 0o600)
         with os.fdopen(fd, "ab") as handle:
             platform.lock(handle)
             try:
@@ -121,6 +121,8 @@ class SocketSink:
         self.last_spooled = False
 
     def request(self, payload: dict) -> dict:
+        if not hasattr(socket, "AF_UNIX"):   # Windows: the writer will be reached through a named pipe later
+            raise SinkUnavailable(platform.not_available("the aqt-trail socket", "no Unix sockets"))
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
             client.settimeout(self.timeout)
             try:

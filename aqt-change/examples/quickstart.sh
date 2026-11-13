@@ -41,7 +41,7 @@ $AC begin plans/s01.md
 
 echo "== 3. implement, run the declared check (runner-captured receipt)"
 printf 'def add(a, b):\n    return a + b\n\n\ndef sub(a, b):\n    return a - b\n' > src/calc.py
-sed -i 's/- \[ \] \[T01\]/- [x] [T01]/' plans/s01.md
+sed 's/- \[ \] \[T01\]/- [x] [T01]/' plans/s01.md > plans/s01.md.new && mv plans/s01.md.new plans/s01.md   # portable: BSD sed (macOS) has no plain -i
 $AC run --plan plans/s01.md --all --quiet
 
 echo "== 4. review, finish (scoped commit with trailers), report and gate"

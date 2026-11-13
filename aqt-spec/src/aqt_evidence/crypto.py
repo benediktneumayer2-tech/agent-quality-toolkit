@@ -123,7 +123,7 @@ def _b64(data: bytes) -> str:
 
 def _write_secret(path: Path, data: bytes, *, replace: bool) -> None:
     target = path.with_name(f".{path.name}.{os.getpid()}.tmp") if replace else path
-    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | platform.O_BINARY, 0o600)
     try:
         with os.fdopen(fd, "wb") as handle:
             handle.write(data)

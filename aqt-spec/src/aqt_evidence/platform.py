@@ -171,13 +171,14 @@ else:
 
 O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 O_CLOEXEC = getattr(os, "O_CLOEXEC", 0)
+O_BINARY = getattr(os, "O_BINARY", 0)    # Windows: without it os.open() writes CRLF for LF
 _REPARSE_POINT = getattr(stat_module, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
 
 
 def open_nofollow(path, flags: int, mode: int = 0o600) -> int:
-    """``os.open`` that refuses a symbolic link as the last path part (``O_NOFOLLOW``; an
-    ``OSError`` such as ``ELOOP``). Where the flag is missing (Windows), a link or reparse point
-    found by ``lstat`` is refused instead."""
+    """``os.open`` (in binary mode) that refuses a symbolic link as the last path part
+    (``O_NOFOLLOW``; an ``OSError`` such as ``ELOOP``). Where the flag is missing (Windows), a link
+    or reparse point found by ``lstat`` is refused instead."""
     if not O_NOFOLLOW:
         try:
             info = os.lstat(path)
@@ -186,7 +187,7 @@ def open_nofollow(path, flags: int, mode: int = 0o600) -> int:
         else:
             if stat_module.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & _REPARSE_POINT:
                 raise OSError(40, "refusing to follow a link", str(path))
-    return os.open(path, flags | O_NOFOLLOW, mode)
+    return os.open(path, flags | O_NOFOLLOW | O_BINARY, mode)
 
 
 def make_private(path, *, directory: bool | None = None) -> None:

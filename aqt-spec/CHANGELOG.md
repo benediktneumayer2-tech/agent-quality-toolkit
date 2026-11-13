@@ -8,6 +8,9 @@
   sockets go to the per-user cache folder, and the agent check reads the process ancestry with `sysctl`
   instead of `/proc` (it found none on macOS before). The `XDG_*` variables win on every system.
 - `AQT_EVIDENCE` separates paths with `os.pathsep` (a colon as before; a semicolon on Windows).
+- Without Unix sockets (Windows) `SocketSink` reports the writer as unavailable instead of failing with an
+  `AttributeError`, so discovery falls back to the evidence file. Record and key files are opened in binary mode,
+  so Windows writes LF, not CRLF.
 
 ## 0.2.0 — 2026-11-13
 

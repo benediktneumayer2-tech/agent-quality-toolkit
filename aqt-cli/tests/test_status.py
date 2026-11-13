@@ -216,3 +216,16 @@ def test_egress_line_never_fails_the_verdict(monkeypatch):
         raise ModuleNotFoundError("No module named 'mitmproxy'", name="mitmproxy")
     monkeypatch.setattr(checks, "_egress_status", broken)
     assert by_id(run_checks(Context()))["egress"].result == "warn"
+
+
+def test_off_linux_the_service_and_the_box_are_reported_as_not_available(monkeypatch):
+    from aqt_evidence import platform
+    monkeypatch.setattr(platform, "IS_LINUX", False)
+    monkeypatch.setattr(platform, "SYSTEM_NAME", "macOS")
+    monkeypatch.setattr(checks, "_egress_status", lambda: {"version": "0.2", "ca": False, "box": False,
+                                                            "box_detail": "the egress box is not available on macOS",
+                                                            "last_session": None})
+    results = by_id(run_checks(Context()))
+    assert results["service"].result == "skip" and "not available on macOS" in results["service"].explanation
+    assert results["egress"].result == "skip" and "not available on macOS" in results["egress"].explanation
+    assert results["egress"].fix is None
