@@ -213,6 +213,20 @@ function tabs(items, current, onPick) {
 }
 
 // ---- API ----------------------------------------------------------------------------------------
+// Two ways to the same API. In the desktop app (aqt-desktop) there is no web server: the page hands each
+// request to the app, which passes it to the AQT core over stdin/stdout and returns the core's answer
+// (status, content type and body), so no session key or cookie is needed. In a browser the page asks the
+// aqt ui server with fetch.
+const APP = window.__TAURI__ ? window.__TAURI__.core : null;
+async function core(method, path, body) {
+  try {   // /api/session: what the core said when it started (its ready event)
+    if (path === "/api/session") return { status: 200, body: await APP.invoke("core_session") };
+    return await APP.invoke("core_request", { method, path, body: body === undefined ? null : body });
+  } catch (reason) {
+    throw new Error(t("The AQT core does not answer: {reason}", { reason: String(reason) }));
+  }
+}
+function answered(answer) { return answer.status >= 200 && answer.status < 300; }
 // The session key: handed over once by the login page (a meta tag), then kept in this tab's
 // sessionStorage, which other ports of 127.0.0.1 cannot read. Every API request carries it.
 function sessionKey() {
@@ -227,12 +241,22 @@ function sessionKey() {
   try { return sessionStorage.getItem("aqt-ui-key") || ""; } catch (e) { return ""; }
 }
 async function api(path) {
+  if (APP) {
+    const answer = await core("GET", path);
+    const data = answer.body ?? { message: answer.text || `HTTP ${answer.status}` };
+    if (!answered(answer)) throw Object.assign(new Error(data.message || `HTTP ${answer.status}`), { status: answer.status, data });
+    return data;
+  }
   const response = await fetch(path, { headers: { Accept: "application/json", "X-AQT-CSRF": S.csrf }, credentials: "same-origin" });
   const data = await response.json().catch(() => ({ message: `HTTP ${response.status}` }));
   if (!response.ok) throw Object.assign(new Error(data.message || `HTTP ${response.status}`), { status: response.status, data });
   return data;
 }
 async function post(path, body) {
+  if (APP) {
+    const answer = await core("POST", path, body || {});
+    return { status: answer.status, data: answer.body ?? { ok: false, message: answer.text || `HTTP ${answer.status}` } };
+  }
   const response = await fetch(path, {
     method: "POST", credentials: "same-origin",
     headers: { "Content-Type": "application/json", "X-AQT-CSRF": S.csrf, Accept: "application/json" },
@@ -241,8 +265,18 @@ async function post(path, body) {
   const data = await response.json().catch(() => ({ ok: false, message: `HTTP ${response.status}` }));
   return { status: response.status, data };
 }
-// A file from the API, saved through a blob link (a plain link would lack the session key).
+// A file from the API, saved through a blob link (a plain link would lack the session key); in the app,
+// through the system's save dialog.
 async function download(path, fallbackName) {
+  if (APP) {
+    const answer = await core("GET", path);
+    if (!answered(answer)) throw new Error((answer.body && answer.body.message) || answer.text || `HTTP ${answer.status}`);
+    const text = answer.text ?? (answer.base64 === undefined ? JSON.stringify(answer.body, null, 2) : null);
+    try {
+      await APP.invoke("save_file", { name: answer.filename || fallbackName, text, base64: answer.base64 ?? null });
+    } catch (reason) { throw new Error(String(reason)); }
+    return;
+  }
   const response = await fetch(path, { headers: { "X-AQT-CSRF": S.csrf }, credentials: "same-origin" });
   if (!response.ok) {
     const data = await response.json().catch(() => ({ message: `HTTP ${response.status}` }));
@@ -1805,7 +1839,7 @@ async function start() {
     $("menu-btn").setAttribute("aria-expanded", String(open));
   });
   $("refresh").addEventListener("click", async () => { await refresh(); route(); announce(t("Refreshed")); });
-  S.csrf = sessionKey();
+  S.csrf = APP ? "" : sessionKey();
   try {
     const session = await api("/api/session");
     S.mode = session.mode;

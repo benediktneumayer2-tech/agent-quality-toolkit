@@ -11,6 +11,7 @@ export const DE = {
   "AQT quality desk": "AQT-Qualitätsarbeitsplatz", "Loading…": "Wird geladen …",
   "Select an item to see its details.": "Einen Eintrag wählen, um die Details zu sehen.", "Close": "Schließen",
   "Refreshed": "Aktualisiert", "click to copy": "zum Kopieren klicken", "Copied": "Kopiert", "Install:": "Installieren:",
+  "The AQT core does not answer: {reason}": "Der AQT-Kern antwortet nicht: {reason}",
 
   // time and numbers
   "never": "nie", "just now": "gerade eben", "{n} min ago": "vor {n} Min.", "{n} h ago": "vor {n} Std.",
