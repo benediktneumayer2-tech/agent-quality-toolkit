@@ -581,7 +581,7 @@ dialog.sign-sheet::backdrop { background: rgba(23, 28, 36, 0.38); }
   .topbar { padding: 10px 16px; gap: 8px; }
   .topbar h1 { font-size: 20px; flex: 1; white-space: nowrap; }
   .topbar .spacer { display: none; }
-  .topbar .pill, .topbar .badge { order: 2; }       /* title, language and refresh share the first row */
+  .topbar .status, .topbar .badge { order: 2; }       /* title, language and refresh share the first row */
   .pill, .badge { font-size: 12.5px; white-space: normal; }
   .nav a { min-height: 44px; }
   .btn, .chip-btn, input, select { min-height: 44px; }

@@ -16,11 +16,12 @@ Builds are unsigned for now. Only Linux (AppImage and .deb) is built so far.
 
 - **The page** (`app.js`) checks for the app's IPC. In the app it sends each request through the one command
   `core_request`, and takes the session information from the core's ready event (`core_session`). In a browser
-  it uses `fetch` as before. Downloads are saved with the system's save dialog (`save_file`).
+  it uses `fetch` as before. Downloads are saved with the system's save dialog (`save_file`); connecting a
+  project opens the system's folder dialog (`pick_folder`), and a browser shows a path field instead.
 - **Routing:** the page keeps its pathname routes (`/case/...`, `/change/...`). In the app, Tauri answers
   unknown paths with `index.html`, so a reload stays on the page.
 - **Security:**
-  - the window may call only those three commands (`src-tauri/capabilities/main.json`);
+  - the window may call only those four commands (`src-tauri/capabilities/main.json`);
   - a strict Content-Security-Policy allows no inline code and no remote content
     (`scripts/sync-frontend.mjs` refuses inline code in the HTML);
   - the window cannot navigate to another origin; http(s) links open in the system browser.

@@ -589,6 +589,7 @@ export const DE = {
   "Setting up writes your keys and settings, so only you can do it.": "Die Einrichtung schreibt deine Schlüssel und Einstellungen, deshalb kannst nur du sie vornehmen.",
   "Start AQT yourself, outside any agent session, and open the setup again.": "Starte AQT selbst, außerhalb jeder Agenten-Sitzung, und öffne die Einrichtung erneut.",
   "Look around read-only": "Nur lesend umsehen",
+  "Changes appear here once a project is connected.": "Änderungen erscheinen hier, sobald ein Projekt verbunden ist.",
   "Show the {n} checks that are in order": "Die {n} Prüfungen anzeigen, die in Ordnung sind",
 };
 

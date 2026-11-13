@@ -1788,7 +1788,7 @@ async function renderChanges(main) {
     return;
   }
   if (!data.installed["aqt-change"]) { put(main, empty(t("aqt-change is not installed"), installOf("aqt-change"))); return; }
-  if (!data.projects.length) { put(main, empty(t("No projects configured"), t("Add repository roots to ~/.config/aqt/ui.toml:") + '  [changes] projects = ["~/code/project"]')); return; }
+  if (!data.projects.length) { put(main, h("div", { class: "empty" }, h("strong", { text: t("No project connected yet") }), h("span", { text: t("Changes appear here once a project is connected.") }), " ", link(t("Connect a project…"), "/projects"))); return; }
   for (const project of data.projects) {
     const box = section(h("span", { class: "path", text: project.root }));
     if (project.error) put(box, h("div", { class: "error-box", text: project.error }));
@@ -2275,7 +2275,11 @@ const SUBSTEPS = [["trail.init", "Create the audit trail"], ["service", "Install
 
 async function renderWelcome(main) {
   let setup;
-  try { setup = await loadSetup(); } catch (error) { put(clear(main), errorBox(error)); return; }
+  try { setup = await loadSetup(); } catch (error) {       // e.g. aqt-cli is not installed: say how, and a way out
+    put(clear(main), h("div", { class: "onboard-wrap" }, errorBox(error), h("div", { class: "actions" },
+      h("button", { class: "btn", type: "button", text: t("Open Needs you"), onclick: () => go("/") }))));
+    return;
+  }
   clear(main);
   const list = h("ol", { class: "steps", "aria-label": t("Setup steps") });
   const body = h("section", { class: "step-body", "aria-labelledby": "step-title" });
