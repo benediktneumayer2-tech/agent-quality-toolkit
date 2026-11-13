@@ -91,6 +91,18 @@ async fn save_file(app: AppHandle, name: String, text: Option<String>, base64: O
     Ok(Some(path.display().to_string()))
 }
 
+/// The system's folder dialog (connecting a project). The chosen folder's path, or None when the person cancelled.
+/// Choosing a folder changes nothing: the page then asks the core for a preview of what connecting would write.
+#[tauri::command]
+async fn pick_folder(app: AppHandle) -> Result<Option<String>, String> {
+    let picked = tauri::async_runtime::spawn_blocking(move || app.dialog().file().blocking_pick_folder())
+        .await
+        .map_err(|e| e.to_string())?;
+    let Some(picked) = picked else { return Ok(None) };
+    let path = picked.into_path().map_err(|e| e.to_string())?;
+    Ok(Some(path.display().to_string()))
+}
+
 /// --smoke: wait for the core, one request, the page's first answer; one JSON line; exit 0 or 1.
 async fn smoke(app: AppHandle, core: Arc<Core>) {
     let ready = core.ready().await;
@@ -139,7 +151,7 @@ fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::Builder::new().open_js_links_on_click(false).build())
-        .invoke_handler(tauri::generate_handler![core_session, core_request, save_file])
+        .invoke_handler(tauri::generate_handler![core_session, core_request, save_file, pick_folder])
         .setup(move |app| {
             let core = Core::start(core_command(app.handle(), read_only));
             app.manage(core.clone());
