@@ -9,7 +9,8 @@
 # SMOKE_RUNS=n runs it n times in the same HOME: the first run is cold (fresh files and HOME), the rest warm.
 set -euo pipefail
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/aqt-smoke-XXXXXX")"
-trap 'rm -rf "$WORK"' EXIT
+# WebKit's helper processes may still write their caches for a moment after the app exits: retry the cleanup.
+trap 'for _ in 1 2 3 4 5; do rm -rf "$WORK" 2>/dev/null && break; sleep 1; done' EXIT
 case "${1:-}" in
     --appimage) file="$(realpath "$2")"; (cd "$WORK" && "$file" --appimage-extract >/dev/null); APP=("$WORK/squashfs-root/AppRun") ;;
     --deb) dpkg-deb -x "$2" "$WORK/deb"; APP=("$WORK/deb/usr/bin/aqt-desktop") ;;
