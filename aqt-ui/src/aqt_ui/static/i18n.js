@@ -378,6 +378,12 @@ export const DE = {
   "change {plan}, finish record {record}, commit {commit}, HEAD {head}": "Änderung {plan}, Abschlusseintrag {record}, Commit {commit}, HEAD {head}",
   "change {plan}, finish record {record}, head before the change {before}, HEAD {head}": "Änderung {plan}, Abschlusseintrag {record}, HEAD vor der Änderung {before}, HEAD {head}",
   "Open tasks in the plan:": "Offene Aufgaben im Plan:",
+  // system notifications of the desktop app (app.js, aqtQueue)
+  "Quarantine holds content from {source}": "Quarantäne hält Inhalt von {source} zurück",
+  "Quarantine warns about content from {source}": "Quarantäne warnt vor Inhalt von {source}",
+  "{n} new cases need you": "{n} neue Fälle brauchen dich",
+  "Review it in Agent Quality Toolkit": "In Agent Quality Toolkit prüfen",
+  "Show the case": "Fall anzeigen",
 };
 
 // "Needs you" entries by key: [title, detail]; {name} takes the entry's values, null keeps the

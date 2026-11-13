@@ -200,8 +200,10 @@ def test_queue_watch_counts_first_then_reports_new_and_removed_cases(trail, sign
     case_id = held()
     change = watch.poll()
     assert change["count"] == first["count"] + 1 and change["removed"] == []
-    assert change["new"] == [{"id": f"quarantine:{case_id}", "kind": "quarantine",
-                              "title": "Quarantine holds content from news.example"}]
+    [entry] = change["new"]
+    assert entry["id"] == f"quarantine:{case_id}" and entry["kind"] == "quarantine" and entry["key"] == "case_held"
+    assert entry["title"] == "Quarantine holds content from news.example"
+    assert entry["args"]["source"] == "news.example" and entry["args"]["case"] == case_id
     assert watch.poll() is None
     sha = get(core, f"/api/quarantine/{case_id}")["body"]["content_sha256"]
     _, answer = release(core, case_id, sha)

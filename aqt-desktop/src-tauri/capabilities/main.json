@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "The main window may call the AQT core, save a download and read or change the app's own settings (desktop_settings); nothing else.",
+  "description": "The main window may call the AQT core, save a download, read or change the app's own settings (desktop_settings) and word the notifications of new cases (show_notifications); nothing else.",
   "windows": ["main"],
-  "permissions": ["allow-core-session", "allow-core-request", "allow-save-file", "allow-desktop-settings"]
+  "permissions": ["allow-core-session", "allow-core-request", "allow-save-file", "allow-desktop-settings", "allow-show-notifications"]
 }

@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .checks import FAIL, OK, SKIP, WARN, Check, Context, Result, StepSkipped, _trail
+from .checks import FAIL, OK, SKIP, WARN, Check, Context, Result, StepSkipped, _trail, command_name
 from .tools import TOOLS
 
 MODULES = {"aqt-trail": "aqt_trail", "aqt-quarantine": "aqt_quarantine", "aqt-change": "aqt_change",
@@ -36,7 +36,8 @@ MODULES = {"aqt-trail": "aqt_trail", "aqt-quarantine": "aqt_quarantine", "aqt-ch
 # aqt-trail's Claude Code hooks (manual 4.8, aqt-trail/examples/claude-code-hooks.json): (event, matcher).
 # Hooks call the one stable command `aqt <tool> ...`: the same name for a pip or uv install and for the
 # desktop app's runtime (/usr/bin/aqt from the .deb, ~/.local/bin/aqt for the AppImage), never the path of an
-# interpreter or of an app folder that can move.
+# interpreter or of an app folder that can move. Where another aqt (aqtinstall's) comes first on PATH they
+# call its second name, `aqt-toolkit <tool> ...` (checks.command_name).
 TRAIL_HOOK = "aqt trail hook claude-code"
 SCRIPTS = {script: name for name, (_module, script, _dist) in TOOLS.items()}      # aqt-trail -> trail
 TRAIL_EVENTS = (("SessionStart", None), ("UserPromptSubmit", None), ("PreToolUse", "*"), ("PostToolUse", "*"),
@@ -231,28 +232,32 @@ def read_settings(ctx: ProjectContext, path: Path) -> dict | None:
     return data
 
 
-def stable_command(command: str) -> str:
-    """``aqt-quarantine hook claude-code`` -> ``aqt quarantine hook claude-code``."""
+def stable_command(command: str, name: str = "aqt") -> str:
+    """``aqt-quarantine hook claude-code`` -> ``aqt quarantine hook claude-code`` (``name``: aqt or aqt-toolkit)."""
     first, _, rest = command.partition(" ")
-    return f"aqt {SCRIPTS[first]} {rest}".rstrip() if first in SCRIPTS else command
+    if first == "aqt":
+        first, _, rest = rest.partition(" ")
+        return f"{name} {first} {rest}".rstrip()
+    return f"{name} {SCRIPTS[first]} {rest}".rstrip() if first in SCRIPTS else command
 
 
-def _snippet_hooks(tool: str, snippet: dict) -> list[tuple]:
-    return [(tool, event, group.get("matcher"), stable_command(handler["command"]))
+def _snippet_hooks(tool: str, snippet: dict, name: str) -> list[tuple]:
+    return [(tool, event, group.get("matcher"), stable_command(handler["command"], name))
             for event, groups in snippet.get("hooks", {}).items() for group in groups for handler in group["hooks"]]
 
 
 def wanted_hooks() -> list[tuple[str, str, str | None, str]]:
     """(tool, event, matcher, command) for the installed tools, ordered by event as in manual 4.8."""
     hooks = []
+    name = command_name()
     if installed("aqt-trail"):
-        hooks += [("aqt-trail", event, matcher, TRAIL_HOOK) for event, matcher in TRAIL_EVENTS]
+        hooks += [("aqt-trail", event, matcher, stable_command(TRAIL_HOOK, name)) for event, matcher in TRAIL_EVENTS]
     if installed("aqt-quarantine"):
         from aqt_quarantine.cli import CLAUDE_SNIPPET
-        hooks += _snippet_hooks("aqt-quarantine", CLAUDE_SNIPPET)
+        hooks += _snippet_hooks("aqt-quarantine", CLAUDE_SNIPPET, name)
     if installed("aqt-change"):
         from aqt_change.hooks import SNIPPET
-        hooks += _snippet_hooks("aqt-change", SNIPPET)
+        hooks += _snippet_hooks("aqt-change", SNIPPET, name)
     order = {event: number for number, event in enumerate(EVENT_ORDER)}
     return sorted(hooks, key=lambda hook: order.get(hook[1], len(order)))
 
@@ -655,7 +660,8 @@ def check_git_hook(ctx: ProjectContext) -> Result:
         return Result(WARN, "no git commit-msg hook: commits are not checked for valid AQT-* trailers (optional)",
                       "aqt-change hooks install-git")
     text = hook.read_text(encoding="utf-8", errors="replace")
-    if any(f"{program} hook commit-msg" in text for program in ("aqt_change.cli", "aqt-change", "aqt change")):
+    if any(f"{program} hook commit-msg" in text
+           for program in ("aqt_change.cli", "aqt-change", "aqt change", "aqt-toolkit change")):
         return Result(OK, f"the commit-msg hook runs aqt-change ({show(ctx, hook)})")
     return Result(WARN, f"{show(ctx, hook)} does not run aqt-change: AQT-* trailers are not checked (optional)",
                   f"add the line  aqt-change hook commit-msg \"$1\"  to {show(ctx, hook)}", can_apply=False)
@@ -664,7 +670,7 @@ def check_git_hook(ctx: ProjectContext) -> Result:
 def step_git_hook(ctx: ProjectContext) -> None:
     from aqt_change.hooks import install_git_hook
     from aqt_change.ledger import Ledger
-    ctx.say(f"wrote {show(ctx, install_git_hook(Ledger.open(ctx.root)))}")
+    ctx.say(f"wrote {show(ctx, install_git_hook(Ledger.open(ctx.root), name=command_name()))}")
 
 
 # -- committed -------------------------------------------------------------------------------

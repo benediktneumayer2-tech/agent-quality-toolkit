@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- In the desktop app the page words the system notifications of new cases in its language (German or English); the `queue` event's new cases carry `key` and `args` for that.
+- From the desktop app's frozen runtime the change gates run the runtime itself (`aqt -I -m aqt_change.cli gate`), since it has no `aqt-change` program.
 - The stdio core sends a `queue` event whenever the "Needs you" queue changes (`count`, the `new` cases with id, title and kind, the `removed` ids); it looks every 5 s (`AQT_CORE_QUEUE_SECONDS`, 0 turns it off) with the overview's data, without verifying the trail again. The first event after a start only carries the count. The desktop app shows the count in its tray and a notification per new case.
 - `aqt-ui core --stdio` (also `aqt core --stdio`): the JSON API without a web server, as JSON lines on stdin and stdout, for a desktop app that starts the core as its child process (protocol 1, described in `aqt_ui/core.py`). Decisions are on only when neither the core's environment nor its ancestors show an agent; no terminal is needed. Each decision request checks the parent process again, and `--read-only` refuses decisions as the web server does.
 - The API itself moved from the HTTP handler to `aqt_ui.core.Core`, which the web server's `App` extends; the web server behaves as before.

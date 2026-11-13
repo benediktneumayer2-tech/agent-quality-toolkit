@@ -618,6 +618,17 @@ function needText(item) {
   const detail = de[1] === null ? msgOf(item, "detail") : de[1] === "@reason" ? (REASONS_DE[item.args.reason_code] || item.detail) : fill(de[1]);
   return [fill(de[0]), detail];
 }
+// The desktop app hands each "queue" event of the core here and shows the system notifications in the words
+// the page gives back in its language (show_notifications); without an answer it uses the core's English.
+const NOTICE = { case_held: "Quarantine holds content from {source}", case_warned: "Quarantine warns about content from {source}" };
+if (APP) window.aqtQueue = (seq, body) => {
+  const cases = {};
+  for (const item of body.new || []) {
+    try { cases[item.id] = NOTICE[item.key] ? t(NOTICE[item.key], item.args) : needText(item)[0]; } catch (e) { /* the core's English */ }
+  }
+  const words = { cases, many: t("{n} new cases need you", { n: (body.new || []).length }), review: t("Review it in Agent Quality Toolkit"), show: t("Show the case") };
+  APP.invoke("show_notifications", { seq, words }).catch(() => {});
+};
 // The page of a case: /case/<id> (the id is readable: "quarantine:Q7SEGGW", "plan:0:s01" ...).
 function casePath(item) { return `/case/${encodeURIComponent(item.id).replace(/%3A/gi, ":")}`; }
 // How long a case has been waiting ("waiting for 3 h"), or "" when its start is unknown.

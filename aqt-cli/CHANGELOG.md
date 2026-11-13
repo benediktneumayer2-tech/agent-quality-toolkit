@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Where the first `aqt` on `PATH` is another program (aqtinstall's), `aqt project init` writes the hooks, and from the desktop app's runtime the commit-msg hook, as `aqt-toolkit <tool> ...`; the `command` check reports which name agents run.
 - `aqt status` on macOS and Windows: the writer service and the egress box say that they are not available on this
   system and why (systemd and bubblewrap are Linux only), as a skipped line instead of a warning with a Linux fix.
   The AQT configuration folder comes from `aqt_evidence.platform` (unchanged on Linux).

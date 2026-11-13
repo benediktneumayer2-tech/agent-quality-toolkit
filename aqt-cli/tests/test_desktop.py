@@ -1,6 +1,7 @@
 """The desktop app's side of aqt: ``aqt open``, which aqt agents run (the "command" check), and the paths that
 the frozen runtime writes into persisted commands."""
 
+import json
 import os
 import subprocess
 import sys
@@ -12,10 +13,11 @@ from aqt_cli import checks, cli
 from aqt_cli.checks import Context, check_command, trail_command
 
 
-def fake_aqt(folder: Path, name="aqt") -> Path:
+def fake_aqt(folder: Path, name="aqt", version="") -> Path:
+    """A program ``name`` in ``folder`` whose --version prints ``version``."""
     folder.mkdir(parents=True, exist_ok=True)
     program = folder / name
-    program.write_text("#!/bin/sh\nexit 0\n")
+    program.write_text(f"#!/bin/sh\necho '{version}'\n")
     program.chmod(0o755)
     return program
 
@@ -57,12 +59,36 @@ def test_command_check_is_ok_when_this_aqt_comes_first():
     assert result.result == "ok" and result.data["path"] == str(Path(sys.executable).parent / "aqt")
 
 
-def test_command_check_names_the_other_aqt_that_comes_first(tmp_path, monkeypatch):
-    other = fake_aqt(tmp_path / "other")
+def test_command_check_names_another_aqt_installation_that_comes_first(tmp_path, monkeypatch):
+    other = fake_aqt(tmp_path / "other", version="agent-quality-toolkit 0.1.0 (commands aqt and aqt-toolkit)")
     monkeypatch.setenv("PATH", f"{other.parent}{os.pathsep}{os.environ['PATH']}")
     result = check_command(Context())
     assert result.result == "warn" and str(other) in result.explanation and not result.can_apply
-    assert result.data == {"path": str(other), "this": str(Path(sys.executable).parent / "aqt")}
+    assert result.data["path"] == str(other) and result.data["this"] == str(Path(sys.executable).parent / "aqt")
+    assert checks.command_name() == "aqt"                     # another AQT still answers to aqt
+
+
+def test_aqt_toolkit_stands_in_when_another_programs_aqt_comes_first(tmp_path, repo_root, monkeypatch):
+    other = fake_aqt(tmp_path / "aqtinstall", version="aqtinstall(aqt) v3.1.21 on Python 3.12")
+    monkeypatch.setenv("PATH", f"{other.parent}{os.pathsep}{os.environ['PATH']}")
+    assert checks.command_name() == "aqt-toolkit"
+    result = check_command(Context())
+    assert result.result == "ok" and "as aqt-toolkit" in result.explanation and str(other) in result.explanation
+    monkeypatch.setattr(sys, "frozen", True, raising=False)             # the app's runtime: the git hook too
+    assert cli.main(["project", "init", str(repo_root), "--yes"]) == 0
+    data = json.loads((repo_root / ".claude/settings.json").read_text())
+    commands = {h["command"] for groups in data["hooks"].values() for g in groups for h in g["hooks"]}
+    assert commands == {"aqt-toolkit trail hook claude-code", "aqt-toolkit quarantine hook claude-code",
+                        "aqt-toolkit change hook claude-code"}
+    assert 'exec aqt-toolkit change hook commit-msg "$1"' in (repo_root / ".git/hooks/commit-msg").read_text()
+
+
+@pytest.fixture
+def repo_root(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    return root.resolve()
 
 
 def test_command_check_without_aqt_on_path(tmp_path, monkeypatch):

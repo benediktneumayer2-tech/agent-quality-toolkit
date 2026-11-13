@@ -168,9 +168,10 @@ def trail_command() -> list[str]:
     by a path that stays valid (the ``aqt`` on PATH when it is this one, else the AppImage file in CLI mode),
     because an AppImage is mounted at a new place on every start."""
     if getattr(sys, "frozen", False):
-        found, mine = shutil.which("aqt"), this_command()
-        if found and mine and Path(found).resolve() == mine.resolve():
-            return [found, "trail"]
+        for name in NAMES:
+            found = shutil.which(name)
+            if is_this(found, name):
+                return [found, "trail"]
         image = os.environ.get("APPIMAGE")
         return [image, "--cli", "trail"] if image else [sys.executable, "trail"]
     beside = Path(sys.executable).parent / "aqt-trail"
@@ -302,13 +303,43 @@ def check_packages(ctx: Context) -> Result:
     return Result(OK, text, data={"versions": versions})
 
 
-def this_command() -> Path | None:
-    """The program of this ``aqt``: the desktop app's frozen runtime (from an AppImage: the AppImage file,
-    which runs it), else the console script beside this interpreter."""
+# The toolkit's command has two names: aqt-toolkit stands in where another aqt (aqtinstall's) comes first on PATH.
+NAMES = ("aqt", "aqt-toolkit")
+
+
+def this_command(name: str = "aqt") -> Path | None:
+    """The program of this ``aqt`` (or ``aqt-toolkit``): the desktop app's frozen runtime (from an AppImage: the
+    AppImage file, which runs it), else the console script beside this interpreter."""
     if getattr(sys, "frozen", False):
         return Path(os.environ.get("APPIMAGE") or sys.executable)
-    beside = Path(sys.executable).parent / ("aqt.exe" if os.name == "nt" else "aqt")
+    beside = Path(sys.executable).parent / (f"{name}.exe" if os.name == "nt" else name)
     return beside if beside.exists() else None
+
+
+def is_this(path: str | None, name: str = "aqt") -> bool:
+    """Whether the program at ``path`` is this installation's ``name`` (the same file once links are followed)."""
+    mine = this_command(name)
+    return bool(path and mine and Path(path).resolve() == mine.resolve())
+
+
+def is_toolkit(path: str) -> bool:
+    """Whether the program at ``path`` is AQT's command: this one, or another installation of the toolkit."""
+    if is_this(path):
+        return True
+    try:
+        done = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return done.stdout.startswith("agent-quality-toolkit")
+
+
+def command_name() -> str:
+    """The name that hooks call: ``aqt``, or ``aqt-toolkit`` when the first ``aqt`` on PATH is another program
+    (aqtinstall's) or missing while ``aqt-toolkit`` is there."""
+    found = shutil.which("aqt")
+    if found and is_toolkit(found):
+        return "aqt"
+    return "aqt-toolkit" if found or shutil.which("aqt-toolkit") else "aqt"
 
 
 def _command_fix(mine: Path | None) -> str:
@@ -320,18 +351,20 @@ def _command_fix(mine: Path | None) -> str:
 
 
 def check_command(ctx: Context) -> Result:
-    """Which ``aqt`` agents run: hooks and agent instructions call the command ``aqt`` from PATH."""
-    found = shutil.which("aqt")
-    mine = this_command()
-    data = {"path": found, "this": str(mine) if mine else None}
+    """Which AQT command agents run: hooks call ``aqt`` (or ``aqt-toolkit``, see ``command_name``) from PATH."""
+    name = command_name()
+    found = shutil.which(name)
+    mine = this_command(name)
+    data = {"name": name, "path": found, "this": str(mine) if mine else None, "aqt": shutil.which("aqt")}
+    other = f"; the first aqt on PATH ({data['aqt']}) is another program" if name == "aqt-toolkit" and data["aqt"] else ""
     if not found:
-        return Result(WARN, "no aqt command on PATH: the hooks aqt project init writes cannot run",
+        return Result(WARN, f"no {name} command on PATH{other}: the hooks aqt project init writes cannot run",
                       _command_fix(mine), data=data, can_apply=False)
-    if mine and Path(found).resolve() == mine.resolve():
-        return Result(OK, f"agents run this aqt ({found})", data=data)
-    return Result(WARN, f"agents run another aqt: {found} comes first on PATH, not this one "
-                        f"({mine or sys.executable})",
-                  "remove or move the other aqt, or reorder PATH, if this one should run", data=data,
+    if is_this(found, name):
+        return Result(OK, f"agents run this AQT as {name} ({found}){other}", data=data)
+    return Result(WARN, f"agents run another {name}: {found} comes first on PATH, not this one "
+                        f"({mine or sys.executable}){other}",
+                  f"remove or move the other {name}, or reorder PATH, if this one should run", data=data,
                   can_apply=False)
 
 
