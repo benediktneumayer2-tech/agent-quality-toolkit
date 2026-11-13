@@ -79,8 +79,8 @@ Python `urllib` and Node `fetch` (Node 22 honours the proxy variables with `NODE
   failed lookup never switches the refusal off.
 - **What starts aqt-egress.** Its interpreter, packages and sources are read-only in the box, but not the command
   found through `PATH` (for example a shim in `~/.local/bin`), nor, with `pip install --user`, the other packages
-  and `.pth` files in the user site folder. Install it into a venv (or with `uv tool install`) and start it by its
-  full path.
+  and `.pth` files in the user site folder. Install it into a virtual environment (as the install from a clone
+  does) and start it by its full path.
 
 ## Side effects of the empty `/run`
 

@@ -11,7 +11,8 @@ Coding agents write plans, reports and release notes, and they want to deploy, u
 ## 60-second quick start
 
 ```bash
-pip install aqt-signoff                      # Python 3.11+, Linux
+uv venv .venv && uv pip install --python .venv/bin/python -e ../aqt-spec -e .   # Python 3.11+, Linux
+source .venv/bin/activate
 export AQT_SINK=file:$PWD/evidence.jsonl
 
 aqt-signoff init --id human:alice --name "Alice Example" --role quality-manager   # asks for a passphrase twice
@@ -33,7 +34,7 @@ aqt-signoff run act_…                        # succeeded / failed / unknown; a
 aqt-signoff resolve act_… --as not-applied --reason "Checked the server: nothing was uploaded"   # only for unknown
 ```
 
-Or the whole toolkit: `pip install agent-quality-toolkit` (it adds the `aqt` command; `aqt signoff …` runs this tool). For development, from a clone of the repository, in this folder: `uv venv .venv && uv pip install --python .venv/bin/python -e ../aqt-spec -e .`.
+Run it in this folder of a clone of the repository ([manual 1.2](../docs/manual.md#12-get-the-code)); the packages are not on PyPI yet. Or install the whole toolkit ([manual 1.3](../docs/manual.md#13-install-everything-recommended)); it adds the `aqt` command, and `aqt signoff …` runs this tool.
 
 Human-only commands (`init`, `sign`, `approve`, `reject`, `resolve`, `invalidate`, `revoke`, `rekey`,
 `signers approve`, `signers import`) read the passphrase from the terminal and refuse to run inside a detected agent session.

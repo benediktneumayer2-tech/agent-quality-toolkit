@@ -19,13 +19,14 @@ A coding agent can send what it reads to any host it can reach: in a `curl` it w
 ## 60-second quick start
 
 ```bash
-uv tool install "agent-quality-toolkit[egress]"   # Python 3.12+; needs bubblewrap (bwrap)
-aqt egress run -- claude                   # any command: the agent, a shell, a build ...
-aqt egress report                          # who talked to whom, per session
-aqt egress status                          # box support, CA, last session
+uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -e ../aqt-spec -e .   # needs bubblewrap (bwrap)
+source .venv/bin/activate
+aqt-egress run -- claude                   # any command: the agent, a shell, a build ...
+aqt-egress report                          # who talked to whom, per session
+aqt-egress status                          # box support, CA, last session
 ```
 
-`aqt egress …` and `aqt-egress …` are the same command. The line above installs the whole toolkit with this optional part; on its own: `pip install aqt-egress` (then the command is `aqt-egress`). For development, from a clone of the repository, in this folder: `uv pip install -e ../aqt-spec -e .`.
+Run it in this folder of a clone of the repository ([manual 1.2](../docs/manual.md#12-get-the-code)), on Python 3.12 or newer; the packages are not on PyPI yet. aqt-egress is also the optional extra `egress` of the whole toolkit: `-e "aqt-cli[egress]"` in its install ([manual 4.10](../docs/manual.md#410-watching-what-an-agent-sends-out-aqt-egress)). `aqt egress …` and `aqt-egress …` are the same command.
 
 Records go where all AQT records go (`aqt_evidence.open_sink()`): to the aqt-trail writer when it runs, otherwise to the fallback file. While a trail's writer does not answer, they wait in aqt-egress's own spool (hidden in the box, never the shared spool the box can write) and are drained into the trail at the next session or with `aqt egress drain`. `aqt-trail verify` checks them like any other record.
 
@@ -101,7 +102,7 @@ What it does **not** do:
 - **Contain what is not network.** Files stay writable: something in the box can leave a script that runs later outside it (a shell profile, a git hook). Unix sockets outside `/run` and the hidden folders (for example an editor's IPC socket in `/tmp`, an agent socket in your home) stay reachable and may act outside the box; `--private-tmp` closes those in `/tmp`. `--die-with-parent` ends the box with the proxy, but it does not undo what was written.
 - **Watch agents that are not in the box.** It protects only what runs inside `aqt egress run`.
 - **Attribute every byte.** Attribution is read from `/proc` when the connection arrives; a process that exits at once or hands its socket on can leave the chain `partial` or `unavailable`.
-- **Protect how you start it.** The box makes aqt-egress's own Python, packages and sources read-only, but not the command you type: an `aqt` or `aqt-egress` found through `PATH` in a folder you can write (for example a shim in `~/.local/bin`) could be replaced from inside a box and run with the next session. With `pip install --user` (no venv), the other dependencies and `.pth` files in `~/.local/lib/pythonX.Y/site-packages` stay writable too. Install into a venv or with `uv tool install`, and start it by its full path when it matters.
+- **Protect how you start it.** The box makes aqt-egress's own Python, packages and sources read-only, but not the command you type: an `aqt` or `aqt-egress` found through `PATH` in a folder you can write (for example a shim in `~/.local/bin`) could be replaced from inside a box and run with the next session. With `pip install --user` (no venv), the other dependencies and `.pth` files in `~/.local/lib/pythonX.Y/site-packages` stay writable too. Install into a virtual environment, as the clone install does, and start it by its full path when it matters, for example `~/agent-quality-toolkit/.venv/bin/aqt-egress`.
 
 ## Regulatory status
 

@@ -8,17 +8,12 @@ It is optional. It reads the same files and calls the same package functions as 
 
 ## Start
 
-```bash
-pip install "aqt-ui[all]"     # every view; Python 3.11+, Linux
-aqt-ui
-```
-
-It is part of the whole toolkit as well (`pip install agent-quality-toolkit`; `aqt ui` starts it). For development, from a clone of the repository, in this folder:
+It is part of the whole toolkit ([manual 1.3](../docs/manual.md#13-install-everything-recommended)), where `aqt ui` or `aqt-ui` starts it. On its own, with every view, in this folder of a clone of the repository ([manual 1.2](../docs/manual.md#12-get-the-code); the packages are not on PyPI yet):
 
 ```bash
 uv venv .venv && uv pip install --python .venv/bin/python \
     -e ../aqt-spec -e ../aqt-trail -e ../aqt-quarantine -e ../aqt-signoff \
-    -e ../aqt-change -e ../aqt-capa -e ../aqt-validate -e .
+    -e ../aqt-change -e ../aqt-capa -e ../aqt-validate -e .      # Python 3.11+, Linux
 .venv/bin/aqt-ui
 ```
 

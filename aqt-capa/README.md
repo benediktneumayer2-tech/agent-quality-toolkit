@@ -9,8 +9,9 @@ Coding agents fail in recognisable ways: they act on a poisoned web page, report
 ## 60-second quick start
 
 ```bash
-pip install aqt-capa                                 # Python 3.11+, Linux
-cp examples/capa.toml ~/.config/aqt/capa.toml        # from the repository; set identity, project root, repos
+uv venv .venv && uv pip install --python .venv/bin/python -e ../aqt-spec -e .   # Python 3.11+, Linux
+source .venv/bin/activate
+cp examples/capa.toml ~/.config/aqt/capa.toml        # set identity, project root, repos
 
 aqt-capa scan                                        # candidates from evidence + git reverts
 aqt-capa candidate accept C-1a2b3c4d --category instructions --reason "agent reported done with red tests"
@@ -27,7 +28,7 @@ aqt-capa close DEV-0001 --reason "no recurrence in 20 sessions"
 aqt-capa trends --since 90d
 ```
 
-Or the whole toolkit: `pip install agent-quality-toolkit` (it adds the `aqt` command; `aqt capa …` runs this tool). For development, from a clone of the repository, in this folder: `uv venv .venv && uv pip install --python .venv/bin/python -e ../aqt-spec -e ".[test]"`. There, `python examples/demo.py` runs the whole loop offline on synthetic data.
+Run it in this folder of a clone of the repository ([manual 1.2](../docs/manual.md#12-get-the-code)); the packages are not on PyPI yet. Or install the whole toolkit ([manual 1.3](../docs/manual.md#13-install-everything-recommended)); it adds the `aqt` command, and `aqt capa …` runs this tool. `python examples/demo.py` runs the whole loop offline on synthetic data.
 
 ## How it works
 

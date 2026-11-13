@@ -16,7 +16,8 @@ A coding agent working alone has no second pair of eyes. You can ask another mod
 ## 60-second quick start
 
 ```bash
-pip install aqt-sensei                   # Python 3.11+, Linux
+uv venv .venv && uv pip install --python .venv/bin/python -e ../aqt-spec -e .   # Python 3.11+, Linux
+source .venv/bin/activate
 aqt-sensei init --owner-id alice         # config + owner token (0600)
 aqt-sensei doctor --profile claude --project ~/code/app   # proves the sandbox
 aqt-sensei serve &                       # the bridge (or: examples/aqt-sensei.service)
@@ -29,7 +30,7 @@ aqt-sensei show m-1a2b3c4d5e6f           # exactly what will be typed into the a
 aqt-sensei approve m-1a2b3c4d5e6f --reason "clear question"
 ```
 
-Or the whole toolkit: `pip install agent-quality-toolkit` (it adds the `aqt` command; `aqt sensei …` runs this tool). For development, from a clone of the repository, in this folder: `pip install -e ../aqt-spec -e .`.
+Run it in this folder of a clone of the repository ([manual 1.2](../docs/manual.md#12-get-the-code)); the packages are not on PyPI yet. Or install the whole toolkit ([manual 1.3](../docs/manual.md#13-install-everything-recommended)); it adds the `aqt` command, and `aqt sensei …` runs this tool.
 
 The worker asks with `aqt-sensei ask "…" [--file notes.md]` and ends its turn. Inside its sandbox the advisor answers with `sensei reply "…" [--file PLAN.md]`. The intro message the bridge sends to the worker explains both commands.
 
