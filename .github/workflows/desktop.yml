@@ -1,0 +1,48 @@
+name: desktop
+on: [push, pull_request]
+permissions:
+  contents: read
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  linux:
+    # The desktop app (aqt-desktop): the frozen AQT runtime, the Tauri bundles (AppImage, .deb), a smoke run of
+    # each bundle under xvfb, and the bundles as artifacts.
+    runs-on: ubuntu-24.04
+    env:
+      APPIMAGE_EXTRACT_AND_RUN: "1"     # the AppImage tools run without FUSE
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: "**/pyproject.toml"
+      - name: Tauri build dependencies and xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libssl-dev libxdo-dev patchelf xvfb
+      - uses: actions/cache@v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cache/tauri
+            aqt-desktop/src-tauri/target
+          key: desktop-linux-${{ hashFiles('aqt-desktop/src-tauri/Cargo.lock') }}
+          restore-keys: desktop-linux-
+      - name: Frozen runtime and bundles
+        run: aqt-desktop/scripts/build-bundles.sh
+      - name: Smoke run of the AppImage and of the .deb (a cold and a warm start each)
+        run: |
+          SMOKE_RUNS=2 aqt-desktop/scripts/smoke.sh --appimage aqt-desktop/dist/*.AppImage
+          SMOKE_RUNS=2 aqt-desktop/scripts/smoke.sh --deb aqt-desktop/dist/*.deb
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: aqt-desktop-linux
+          path: |
+            aqt-desktop/dist/*.AppImage
+            aqt-desktop/dist/*.deb
+          if-no-files-found: error

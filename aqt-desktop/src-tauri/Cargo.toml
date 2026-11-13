@@ -1,0 +1,26 @@
+[package]
+name = "aqt-desktop"
+version = "0.2.0"
+description = "Agent Quality Toolkit desktop app: a window around the aqt-ui pages, talking to the AQT core over stdin/stdout"
+authors = ["Benedikt Neumayer"]
+license = "Apache-2.0"
+edition = "2021"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+[dependencies]
+tauri = { version = "2.12", features = [] }
+tauri-plugin-dialog = "2.8"
+tauri-plugin-opener = "2.7"
+serde_json = "1"
+base64 = "0.22"
+tokio = { version = "1", features = ["sync", "time"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
