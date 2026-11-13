@@ -124,6 +124,24 @@ def test_versions_agree_and_match_the_tag(tmp_path, capsys):
     assert "expected tag v0.2.0" in capsys.readouterr().err
 
 
+def test_citation_file_carries_the_version_and_on_a_tag_the_date(tmp_path, capsys):
+    package(tmp_path, "aqt-a", "aqt-a")
+    cff = tmp_path / "CITATION.cff"
+    cff.write_text('cff-version: 1.2.0\nversion: "0.2.1"\n')
+    assert versions.main(["--root", str(tmp_path)]) == 1
+    assert "CITATION.cff 0.2.1" in capsys.readouterr().err
+    cff.write_text("cff-version: 1.2.0\nversion: 0.2.0\n")
+    assert versions.main(["--root", str(tmp_path)]) == 0
+    assert versions.main(["--root", str(tmp_path), "--tag", "v0.2.0"]) == 1
+    assert "no date-released" in capsys.readouterr().err
+    cff.write_text("cff-version: 1.2.0\nversion: 0.2.0\ndate-released: 2026-11-13\n")
+    assert versions.main(["--root", str(tmp_path), "--tag", "v0.2.0"]) == 0
+
+
+def test_the_real_citation_file_matches_the_packages():
+    assert versions.main([]) == 0
+
+
 def test_different_versions_fail(tmp_path, capsys):
     package(tmp_path, "aqt-a", "aqt-a")
     package(tmp_path, "aqt-b", "aqt-b", version="0.2.0.dev0")

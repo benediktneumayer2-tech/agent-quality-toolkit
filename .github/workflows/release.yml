@@ -1,10 +1,12 @@
 name: release
-# All eleven packages are released together under one version. RELEASING.md has the one-time setup and the steps.
-# - Tag v<version> pushed: build, verify, TestPyPI, smoke install from TestPyPI, PyPI (after the owner approves
-#   the `pypi` environment), then a GitHub release with the built files and the CHANGELOG notes.
-# - Run by hand (workflow_dispatch): a dry run that stops after the TestPyPI smoke install.
-# Every action is pinned to an exact release tag; each job has only the permissions it needs. Uploads use trusted
-# publishing (no stored credentials), except for the first release, which creates the projects (RELEASING.md).
+# All eleven packages are released together under one version. RELEASING.md has the setup and the steps.
+# - Tag v<version> pushed: build, verify (a clean install from the built files), then a GitHub release with the
+#   built files and the CHANGELOG notes. Zenodo archives that release and gives it a DOI.
+# - PyPI is off until the repository variable PUBLISH_PYPI is "true". Then the tag also goes to TestPyPI, a smoke
+#   install from TestPyPI runs, and PyPI follows after the owner approves the `pypi` environment.
+# - Run by hand (workflow_dispatch): a dry run that builds and verifies (and uploads to TestPyPI when PyPI is on).
+# Every action is pinned to an exact release tag; each job has only the permissions it needs. PyPI uploads use
+# trusted publishing (no stored credentials), except for the first one, which creates the projects (RELEASING.md).
 on:
   push:
     tags: ["v*"]
@@ -82,6 +84,7 @@ jobs:
         run: scripts/clean_install_check.sh --dist dist
 
   testpypi:
+    if: vars.PUBLISH_PYPI == 'true'
     needs: [build, verify]
     runs-on: ubuntu-latest
     environment:
@@ -146,7 +149,7 @@ jobs:
           aqt-evidence vectors
 
   pypi:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && vars.PUBLISH_PYPI == 'true'
     needs: [build, testpypi-smoke]
     runs-on: ubuntu-latest
     environment:
@@ -166,7 +169,7 @@ jobs:
 
   github-release:
     if: github.event_name == 'push'
-    needs: [build, pypi]
+    needs: [build, verify]           # not on PyPI: the GitHub release (and with it the DOI) does not wait for it
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Check that every package has the same version, and that a release tag names exactly that version.
 
-All packages are released together under one version (tag `v<version>`, for example v0.2.0).
+All packages are released together under one version (tag `v<version>`, for example v0.2.0). The root
+CITATION.cff, which Zenodo reads for the DOI record, must carry the same version, and on a tag a release date.
 
 Usage: scripts/check_versions.py [--tag TAG] [--root DIR]
 Prints the version and exits 0 when all packages agree (and the tag is `v` + that version);
@@ -11,6 +12,7 @@ exits 1 otherwise, naming each package and its version.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import tomllib
 from pathlib import Path
@@ -26,6 +28,19 @@ def package_versions(root: Path) -> dict[str, str]:
     return versions
 
 
+def citation(root: Path) -> dict[str, str]:
+    """The top-level ``version`` and ``date-released`` of the root CITATION.cff (empty if there is none)."""
+    path = root / "CITATION.cff"
+    if not path.is_file():
+        return {}
+    fields = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        match = re.match(r'^(version|date-released):\s*["\']?([^"\'\s#]+)', line)
+        if match:
+            fields[match.group(1)] = match.group(2)
+    return fields
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--tag", help="the release tag, for example v0.2.0")
@@ -35,6 +50,9 @@ def main(argv: list[str] | None = None) -> int:
     if not versions:
         print(f"no packages found under {args.root}", file=sys.stderr)
         return 1
+    cff = citation(args.root.resolve())
+    if cff:
+        versions["CITATION.cff"] = cff.get("version", "(missing)")
     found = sorted(set(versions.values()))
     if len(found) != 1:
         print("the packages have different versions:", file=sys.stderr)
@@ -45,6 +63,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.tag is not None and args.tag != f"v{version}":
         print(f"tag {args.tag} does not match the package version {version} (expected tag v{version})",
               file=sys.stderr)
+        return 1
+    if args.tag is not None and cff and "date-released" not in cff:
+        print("CITATION.cff has no date-released: set it to the release date (RELEASING.md, step 2)", file=sys.stderr)
         return 1
     print(version)
     return 0

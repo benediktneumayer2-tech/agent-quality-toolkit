@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it with the metadata in this file."
+type: software
+title: "Agent Quality Toolkit"
+abstract: >-
+  Command-line tools for Linux that put AI coding agents under the quality controls of medicine
+  manufacturing (GMP), so that developers and quality managers can check what an agent did instead of
+  taking its word for it: a quarantine for suspicious input that a person releases, signatures bound to the
+  exact content they approve, change control in which a tool runs the tests and keeps receipts, an audit
+  trail written by a separate program, a read-only advisor agent, the qualification of injection detectors
+  and AI reviewers, deviation and CAPA handling, and an optional checkpoint that records the agent's
+  outbound traffic. Version 0.2 is a preview.
+authors:
+  - family-names: Neumayer
+    given-names: Benedikt
+version: 0.2.0
+license: Apache-2.0
+repository-code: "https://github.com/benediktneumayer2-tech/agent-quality-toolkit"
+keywords:
+  - AI coding agents
+  - quality management
+  - GMP
+  - audit trail
+  - electronic signatures
+  - change control
+  - prompt injection
+  - CAPA
