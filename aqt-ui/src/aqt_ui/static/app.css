@@ -291,7 +291,7 @@ pre.text mark { background: var(--caution-soft); color: var(--ink); box-shadow: 
 .decision .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
 .decision .actions { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--ink); }
 .decision .actions .btn { min-width: 12rem; }
-.decision .off { padding: 12px 14px; border-left: 3px solid var(--caution); background: var(--caution-soft); border-radius: 0 8px 8px 0; font-size: 14px; color: var(--ink); }
+.decision .off, .step-body .off { padding: 12px 14px; border-left: 3px solid var(--caution); background: var(--caution-soft); border-radius: 0 8px 8px 0; font-size: 14px; color: var(--ink); }
 .manifest {
   display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 6px 12px;
   margin: 0 0 16px; padding: 14px 0; font-size: 14px;

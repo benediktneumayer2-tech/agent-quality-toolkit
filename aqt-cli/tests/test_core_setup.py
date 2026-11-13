@@ -147,7 +147,7 @@ def test_project_preview_writes_nothing_and_connect_applies_only_the_chosen_item
     assert status == 200 and preview["root"] == str(repo.resolve()) and preview["git"] is True
     items = {item["id"]: item for item in preview["items"]}
     assert set(items) == {"claude.hooks", "claude.deny", "instructions", "change.settings", "ui.project", "git.hook"}
-    assert items["claude.hooks"]["can_apply"] and "aqt-trail hook claude-code" in items["claude.hooks"]["preview"]
+    assert items["claude.hooks"]["can_apply"] and "SessionStart: aqt trail hook claude-code" in items["claude.hooks"]["preview"]
     assert items["instructions"]["backup"] is True and "<!-- aqt:begin -->" in items["instructions"]["preview"]
     assert items["claude.hooks"]["file"] == ".claude/settings.json" and items["claude.hooks"]["backup"] is False
     assert sorted(p.name for p in repo.iterdir()) == [".git", "CLAUDE.md"]               # nothing written yet

@@ -2050,7 +2050,7 @@ async function renderExport(main) {
 
 // ---- Settings: is everything running, who am I, language, the aqt command, the glossary ----------------
 // The checks of aqt status in everyday words (the explanation beside them is the tool's own sentence).
-const CHECK_WORDS = { packages: "Toolkit packages", "trail.init": "Audit trail", service: "Background service", writer: "Trail writer",
+const CHECK_WORDS = { packages: "Toolkit packages", command: "The aqt command", "trail.init": "Audit trail", service: "Background service", writer: "Trail writer",
   spool: "Waiting records", sink: "Where records go", signer: "Your signing identity", "signoff.config": "Signing settings",
   "trail.config": "Review settings", "trail.intact": "Trail integrity", vectors: "Self-test", egress: "Outbound checkpoint (optional)" };
 // The fix of each step the app can apply: [button, what it does].
@@ -2117,7 +2117,8 @@ async function renderSettings(main) {
   const radios = h("div", { class: "radio-row", role: "radiogroup", "aria-label": t("Language") }, [["en", "English"], ["de", "Deutsch"]].map(([value, words]) =>
     h("label", { class: "radio" }, h("input", { type: "radio", name: "settings-lang", value, checked: LANG === value, onchange: () => setLang(value) }), words)));
   put(page, section(t("Language"), radios, h("p", { class: "small muted", text: t("Labels change at once. Records and the tools' own messages keep the words they were written in.") })));
-  // 5. the aqt command
+  // 5. the app's own settings (desktop app only) and the aqt command
+  put(page, await appSection());
   put(page, section(t("Use the aqt command in a terminal"), commandSection(setup)));
   // 6. glossary
   put(page, section(t("Words used here"), glossaryList()));
@@ -2141,6 +2142,46 @@ function commandSection(setup) {
   return [h("p", { class: "lede", text: t("Everything the app does, the aqt command does too, for agents, scripts and anyone who likes the terminal. Both write to the same audit trail.") }),
     kv([[t("On your PATH"), where.on_path ? h("code", { text: where.on_path }) : t("not yet")], where.this ? [t("This app's command"), h("code", { text: where.this })] : null]),
     commandLine("aqt status"), commandLine("aqt project init <folder>"), commandLine("aqt --help")];
+}
+// ---- the app's own settings, kept by the desktop shell (desktop_settings): start at login, the tray, and in
+// an AppImage the aqt command and aqt:// links. They act at once and can be switched back.
+async function desktopSettings(change) {
+  return APP.invoke("desktop_settings", change ? { change } : {});
+}
+function appSettingRows(d, { keys, onChange }) {
+  const can = !!(S.mode && S.mode.decisions);
+  const out = h("div", { "aria-live": "polite" });
+  const fail = (error) => put(clear(out), h("div", { class: "result refused", text: String(error.message || error) }));
+  const rows = [];
+  const words = { autostart: [t("Start in the background at login"), null],
+    close_to_tray: [t("Keep running in the tray when the window is closed"), d.tray ? null : t("No tray icon shows on this desktop, so closing the window quits the app.")] };
+  for (const key of keys.filter((k) => words[k])) {
+    const input = h("input", { type: "checkbox", id: `app-${key}`, checked: !!d[key], disabled: !can });
+    input.addEventListener("change", async () => {
+      input.disabled = true;
+      try { const fresh = await desktopSettings({ [key]: input.checked }); input.checked = !!fresh[key]; announce(t("Saved")); if (onChange) onChange(fresh); }
+      catch (error) { input.checked = !input.checked; fail(error); }
+      finally { input.disabled = !can; }
+    });
+    rows.push(h("div", { class: "check" }, input, h("label", { for: input.id }, words[key][0], words[key][1] ? h("span", { class: "small muted", text: ` ${words[key][1]}` }) : null)));
+  }
+  // AppImage only: there is something to install
+  const install = (key, done, button) => {
+    if (!keys.includes(key) || !d.appimage) return null;
+    if (d[key]) return h("p", { class: "small" }, st("pass", done));
+    const b = h("button", { class: "btn small", type: "button", text: button, disabled: !can });
+    b.addEventListener("click", async () => { b.disabled = true; try { const fresh = await desktopSettings({ [key]: true }); put(b.parentNode, st(fresh[key] ? "pass" : "warn", fresh[key] ? done : t("Not done:"))); b.remove(); } catch (error) { b.disabled = false; fail(error); } });
+    return h("p", { class: "small" }, b);
+  };
+  rows.push(install("aqt_command", t("The aqt command is installed in ~/.local/bin."), t("Install the aqt command")),
+    install("links", t("aqt:// links open this app."), t("Register aqt:// links")));
+  return [...rows, can ? null : h("p", { class: "small muted", text: t("Read-only: these settings cannot be changed here.") }), out];
+}
+async function appSection() {
+  if (!APP) return null;
+  let d;
+  try { d = await desktopSettings(); } catch (error) { return section(t("This app"), errorBox(error)); }
+  return section(t("This app"), appSettingRows(d, { keys: ["autostart", "close_to_tray", "aqt_command", "links"] }));
 }
 function glossaryList() {
   return h("dl", { class: "glossary" }, Object.keys(GLOSSARY).map((key) => {
@@ -2477,9 +2518,20 @@ async function renderWelcome(main) {
   }
   function doneStepBody() {
     const p = pillState();
+    const app = h("div", { class: "app-settings" });
+    if (APP) (async () => {
+      let d;
+      try { d = await desktopSettings(); } catch (error) { return; }
+      if (!W.autostartOffered) {          // pre-checked: start in the background at login (switch it off here)
+        W.autostartOffered = true;
+        if (!d.autostart) { try { d = await desktopSettings({ autostart: true }); } catch (error) { /* shown unchecked */ } }
+      }
+      put(clear(app), appSettingRows(d, { keys: ["autostart", "aqt_command"] }));
+    })();
     return [title(p.kind === "pass" ? t("Everything is set up") : t("Almost done")),
       h("p", { class: "status-line" }, st(p.kind, p.text), p.fix && p.path ? [" ", link(p.fix, p.path)] : null),
       h("p", { class: "lede", text: t("Start your agent as usual in your project. When something needs your decision, AQT shows it under Needs you.") }),
+      app,
       h("details", { class: "as-command-box" }, h("summary", { text: t("Use the aqt command in a terminal") }), commandSection(S.setup)),
       nav(h("button", { class: "btn primary", type: "button", text: t("Open Needs you"), onclick: () => go("/") }))];
   }
