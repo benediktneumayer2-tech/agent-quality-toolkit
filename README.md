@@ -11,7 +11,7 @@
 
 **Two ways in.** *From quality or validation:* no install needed. Read the demo's [signature manifest](examples/demo/sample-output/release-manifest.md), [ALCOA++ report](examples/demo/sample-output/alcoa-report.md) and [CAPA record](examples/demo/sample-output/capa-DEV-0001.md), then the [map to the regulations](#how-it-maps-to-regulations). *From software development:* run the quick start below. For Claude Code, ready-made [hooks](docs/manual.md#48-combining-the-claude-code-hooks) call the tools automatically. Unfamiliar terms are explained in the [glossary](#glossary).
 
-[![ci](https://github.com/benediktneumayer2-tech/agent-quality-toolkit/actions/workflows/ci.yml/badge.svg)](https://github.com/benediktneumayer2-tech/agent-quality-toolkit/actions/workflows/ci.yml) ![python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue) ![licence](https://img.shields.io/badge/licence-Apache--2.0%20%2F%20CC%20BY%204.0-green) ![status](https://img.shields.io/badge/status-0.2%20preview-orange)
+[![ci](https://github.com/benediktneumayer2-tech/agent-quality-toolkit/actions/workflows/ci.yml/badge.svg)](https://github.com/benediktneumayer2-tech/agent-quality-toolkit/actions/workflows/ci.yml) ![python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue) ![licence](https://img.shields.io/badge/licence-Apache--2.0%20%2F%20CC%20BY%204.0-green) ![status](https://img.shields.io/badge/status-0.2%20preview-orange) [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24183902.svg)](https://doi.org/10.5281/zenodo.24183902)
 
 ## Quick start: install in about a minute, run in about ten seconds
 
@@ -246,5 +246,11 @@ The [manual's glossary](docs/manual.md#7-glossary) has the full list.
 Copyright 2026 Benedikt Neumayer. The code is under Apache-2.0 ([`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt)). The specification, catalogues and crosswalk in `aqt-spec` are under CC BY 4.0 ([`LICENSES/CC-BY-4.0.txt`](LICENSES/CC-BY-4.0.txt)). Each package carries its own `LICENSE` and `NOTICE`.
 
 Benedikt Neumayer built the toolkit with AI coding agents, under his product ownership, architecture and review. The only third-party library it needs at run time is `cryptography`.
+
+**How to cite.** Every release is archived on Zenodo with its own DOI. For version 0.2.0:
+
+> Neumayer, B. (2026). *Agent Quality Toolkit* (Version 0.2.0) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.24183903
+
+The DOI [10.5281/zenodo.24183902](https://doi.org/10.5281/zenodo.24183902) always points to the newest version. GitHub's *Cite this repository* button (from [`CITATION.cff`](CITATION.cff)) gives the same in APA and BibTeX.
 
 Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
