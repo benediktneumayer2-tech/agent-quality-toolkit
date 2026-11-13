@@ -9,7 +9,7 @@ from aqt_trail.state import init_state, open_writer
 from aqt_cli import checks
 from aqt_cli.checks import Context, run_checks
 from aqt_cli.cli import main
-from conftest import PASSPHRASE, by_id, enrol
+from conftest import LINUX_SYSTEMD, PASSPHRASE, by_id, enrol
 
 
 def _trail_with_records(count=3, checkpoint=True):
@@ -92,6 +92,7 @@ def test_cut_short_trail_is_found_without_full_verification():
     assert intact.result == "fail" and "cut short" in intact.explanation
 
 
+@LINUX_SYSTEMD
 def test_writer_and_service_with_systemd(systemd, start_writer):
     _trail_with_records(checkpoint=False)
     systemd.available = True
@@ -104,6 +105,7 @@ def test_writer_and_service_with_systemd(systemd, start_writer):
     assert results["trail.intact"].result == "ok" and "matches the writer" in results["trail.intact"].explanation
 
 
+@LINUX_SYSTEMD
 def test_unit_with_a_missing_program_is_reported_not_rewritten(systemd):
     _trail_with_records(checkpoint=False)
     systemd.available = True

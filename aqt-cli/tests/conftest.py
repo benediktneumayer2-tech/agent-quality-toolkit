@@ -6,10 +6,15 @@ from pathlib import Path
 
 import pytest
 
+from aqt_evidence import platform
+
 from aqt_cli import checks
 
 PASSPHRASE = "correct-horse-battery-1"
 _SESSION_HOME: str | None = None
+
+# aqt setup installs the writer as a systemd user service only on Linux (launchd and Windows follow)
+LINUX_SYSTEMD = pytest.mark.skipif(not platform.IS_LINUX, reason="systemd user services exist only on Linux")
 
 
 def pytest_configure(config):

@@ -39,8 +39,6 @@ Limits, stated rather than hidden:
 
 from __future__ import annotations
 
-import ctypes
-import ctypes.util
 import os
 import socket
 import stat as stat_module
@@ -394,7 +392,10 @@ def _linux_info(pid: int, proc: Path) -> ProcessInfo | None:
 # macOS: sysctl(KERN_PROC_PID) for struct kinfo_proc, libproc for path and open files.
 
 _libc = _libproc = None
-if IS_MACOS:
+if IS_MACOS:   # ctypes only where it is needed: hooks import this module on every tool call
+    import ctypes
+    import ctypes.util
+
     _libc = ctypes.CDLL(None, use_errno=True)
     _libproc = ctypes.CDLL(ctypes.util.find_library("proc") or "/usr/lib/libproc.dylib", use_errno=True)
 
@@ -471,6 +472,7 @@ def _mac_fd_path(pid: int, fd: int) -> str | None:
 # time, path, command line, token).
 
 if IS_WINDOWS:
+    import ctypes
     from ctypes import wintypes
 
     _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -506,7 +508,7 @@ if IS_WINDOWS:
     _shell32.CommandLineToArgvW.restype = ctypes.POINTER(wintypes.LPWSTR)
     _shell32.CommandLineToArgvW.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_int)]
 
-_INVALID_HANDLE = ctypes.c_void_p(-1).value
+    _INVALID_HANDLE = ctypes.c_void_p(-1).value
 _QUERY_LIMITED = 0x1000                             # PROCESS_QUERY_LIMITED_INFORMATION
 
 
