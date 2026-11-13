@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The hold and warning notices name the case's link in the AQT desktop app (`aqt://case/quarantine:<id>`); `doctor` also finds the hook when it is written as `aqt quarantine hook claude-code`.
+
 ## 0.2.0 — 2026-11-13
 
 - Packaging: released at 0.2.0, the version of every AQT package; the other AQT packages it needs are required at `>=0.2,<0.3`; the licence is an SPDX expression with the licence files in the package (PEP 639).

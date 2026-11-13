@@ -73,10 +73,10 @@ def test_fresh_repo_init_then_rerun_changes_nothing(repo):
     assert init(repo, say=said.append) == 0
     assert said[0] == "aqt project init: 5 step(s) to do"
     data = settings(repo)
-    assert {"command": "aqt-trail hook claude-code", "type": "command"} in data["hooks"]["SessionStart"][0]["hooks"]
+    assert {"command": "aqt trail hook claude-code", "type": "command"} in data["hooks"]["SessionStart"][0]["hooks"]
     assert [group.get("matcher") for group in data["hooks"]["PostToolUse"]] == ["*", "WebFetch|WebSearch|mcp__.*"]
     assert [group["hooks"][0]["command"] for group in data["hooks"]["Stop"]] == [
-        "aqt-trail hook claude-code", "aqt-change hook claude-code"]
+        "aqt trail hook claude-code", "aqt change hook claude-code"]
     deny = data["permissions"]["deny"]
     for sub in ("release", "trust-source", "declare-threat", "init"):           # every spelling
         assert {f"Bash(aqt-quarantine {sub}:*)", f"Bash(aqt quarantine {sub}:*)",
@@ -167,7 +167,7 @@ def test_existing_settings_keep_the_users_hooks_keys_order_and_mode(repo):
     data = settings(repo)
     assert list(data) == ["model", "hooks", "permissions", "env"] and data["env"] == {"A": "1"}
     assert data["hooks"]["PreToolUse"][0] == mine["hooks"]["PreToolUse"][0]
-    assert data["hooks"]["PreToolUse"][1]["hooks"][0]["command"] == "aqt-trail hook claude-code"
+    assert data["hooks"]["PreToolUse"][1]["hooks"][0]["command"] == "aqt trail hook claude-code"
     assert data["permissions"]["allow"] == ["Bash(ls:*)"] and data["permissions"]["deny"][0] == "Bash(rm:*)"
     assert path.read_text().endswith("}\n") and path.stat().st_mode & 0o777 == 0o640
     saved = backups(repo)
@@ -203,7 +203,7 @@ def test_hooks_and_rules_in_the_user_settings_are_not_duplicated(repo):
     assert init(repo) == 0
     data = settings(repo)
     commands = [handler["command"] for groups in data["hooks"].values() for group in groups for handler in group["hooks"]]
-    assert "aqt-trail hook claude-code" not in commands and len(commands) == 5      # quarantine 2, change 3
+    assert "aqt trail hook claude-code" not in commands and len(commands) == 5      # quarantine 2, change 3
     assert "Bash(aqt-ui:*)" not in data["permissions"]["deny"] and "Bash(aqt ui:*)" in data["permissions"]["deny"]
     assert user.read_bytes() == before
     assert status(repo)["claude.hooks"].result == "ok"
@@ -228,7 +228,7 @@ def test_only_the_installed_tools(repo, monkeypatch):
     data = settings(repo)
     text = json.dumps(data)
     assert "aqt-quarantine" not in text and "aqt quarantine" not in text and "sensei" not in text
-    assert "aqt-change hook claude-code" in text
+    assert "aqt change hook claude-code" in text
     assert "External content" not in (repo / "CLAUDE.md").read_text()
 
 
@@ -370,3 +370,31 @@ def test_not_a_git_repository(tmp_path):
     assert init(folder) == 0                                     # warnings only: the other steps still work
     assert (folder / ".claude/settings.json").exists() and (folder / "CLAUDE.md").exists()
     assert not (folder / ".aqt").exists()
+
+
+# -- stable hook commands ------------------------------------------------------------------------------
+def test_hooks_call_the_stable_aqt_command_and_older_spellings_count(repo):
+    path = repo / ".claude/settings.json"
+    path.parent.mkdir()
+    old = {"type": "command", "command": "aqt-quarantine hook claude-code"}     # written by an older aqt
+    path.write_text(json.dumps({"hooks": {"UserPromptSubmit": [{"hooks": [old]}]}}))
+    assert init(repo) == 0
+    data = settings(repo)
+    commands = [handler["command"] for groups in data["hooks"].values() for group in groups for handler in group["hooks"]]
+    assert all(command.startswith("aqt ") for command in commands if command != old["command"])
+    assert commands.count("aqt-quarantine hook claude-code") == 1                  # kept, not doubled
+    assert "aqt quarantine hook claude-code" in commands                           # the other event's hook
+    assert [g["hooks"][0]["command"] for g in data["hooks"]["UserPromptSubmit"]].count(old["command"]) == 1
+    assert not any("quarantine" in g["hooks"][0]["command"] and g["hooks"][0]["command"] != old["command"]
+                   for g in data["hooks"]["UserPromptSubmit"])
+    assert project.stable_command("aqt-change hook claude-code") == "aqt change hook claude-code"
+    assert project._command("/opt/x/aqt-toolkit trail hook claude-code") == "aqt trail hook claude-code"
+    assert project._command("aqt-trail hook claude-code") == project._command("aqt trail hook claude-code")
+
+
+def test_git_hook_from_the_frozen_runtime_calls_aqt_change(repo, monkeypatch):
+    monkeypatch.setattr("sys.frozen", True, raising=False)
+    assert init(repo) == 0
+    text = (repo / ".git/hooks/commit-msg").read_text()
+    assert 'exec aqt change hook commit-msg "$1"' in text
+    assert status(repo)["git.hook"].result == "ok"

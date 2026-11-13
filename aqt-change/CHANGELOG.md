@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The commit-msg hook written from the desktop app's frozen runtime runs `aqt change hook commit-msg` from `PATH`, not the runtime's own path, which changes with every start of an AppImage.
+
 ## 0.2.0 — 2026-11-13
 
 - Packaging: released at 0.2.0, the version of every AQT package; the other AQT packages it needs are required at `>=0.2,<0.3`; the licence is an SPDX expression with the licence files in the package (PEP 639).

@@ -9,6 +9,9 @@
                                      aqt-change settings); safe to rerun, never commits
   aqt core --stdio [--read-only]     the core of the AQT desktop app: aqt-ui's API as JSON lines on
                                      stdin and stdout, no network (the same as aqt ui core --stdio)
+  aqt open CASE-OR-LINK              show a case in the AQT desktop app: a case id such as
+                                     quarantine:Q7SEGGW, or a link aqt://case/<id> or
+                                     aqt://change/<project>/<plan>; it only opens the view
   aqt <tool> ARGS...                 run a tool with these arguments: trail, signoff, change, sensei,
                                      quarantine, validate, capa, ui, spec (or evidence), and the
                                      optional egress (outbound checkpoint: agent-quality-toolkit[egress])
@@ -24,6 +27,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
+import subprocess
 import sys
 
 from . import __version__, project
@@ -139,13 +144,49 @@ def cmd_project(args) -> int:
     return _exit(results)
 
 
+# what the desktop app opens: a case page or a change page; anything else is refused before it is handed on
+CASE = re.compile(r"[A-Za-z0-9._:@+-]{1,200}")
+CHANGE = re.compile(r"([0-9]{1,4})/([A-Za-z0-9._-]{1,200})")
+
+
+def app_link(target: str) -> str | None:
+    """``quarantine:Q7SEGGW`` -> ``aqt://case/quarantine:Q7SEGGW``; an ``aqt://`` link as it is; None if neither."""
+    link = target if target.startswith("aqt://") else f"aqt://case/{target}"
+    kind, _, rest = link[len("aqt://"):].partition("/")
+    if kind == "case" and CASE.fullmatch(rest) and not set(rest.split(":")) & {".", ".."}:
+        return link
+    change = CHANGE.fullmatch(rest) if kind == "change" else None
+    return link if change and change.group(2) not in (".", "..") else None
+
+
+def cmd_open(args) -> int:
+    link = app_link(args.target)
+    if link is None:
+        print(f"aqt open: {args.target!r} is neither a case id (e.g. quarantine:Q7SEGGW) nor a link "
+              "aqt://case/<id> or aqt://change/<project>/<plan>", file=sys.stderr)
+        return 2
+    try:
+        if sys.platform == "win32":
+            os.startfile(link)          # noqa: S606 - the system's handler for aqt://, the desktop app
+            return 0
+        done = subprocess.run(["open" if sys.platform == "darwin" else "xdg-open", link], timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        print(f"aqt open: could not open {link}: {error}", file=sys.stderr)
+        return 2
+    if done.returncode:
+        print(f"aqt open: no program opened {link}; is the AQT desktop app installed and registered for aqt:// "
+              "links?", file=sys.stderr)
+        return 2
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     prog = "aqt-toolkit" if os.path.basename(sys.argv[0]) == "aqt-toolkit" else "aqt"
     parser = argparse.ArgumentParser(prog=prog, description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--version", action="version",
                         version=f"agent-quality-toolkit {__version__} (commands aqt and aqt-toolkit)")
-    sub = parser.add_subparsers(dest="command", metavar="{status,setup,project,core,<tool>}")
+    sub = parser.add_subparsers(dest="command", metavar="{status,setup,project,core,open,<tool>}")
     p = sub.add_parser("status", help="one verdict for the whole setup, with the fix for each problem")
     p.add_argument("--json", action="store_true", help="machine-readable output")
     p.add_argument("--verify", action="store_true", help="verify the whole trail (slower on large trails)")
@@ -169,6 +210,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--local", action="store_true",
                    help="write the Claude Code hooks and deny rules into .claude/settings.local.json")
     p.set_defaults(func=cmd_project)
+    p = sub.add_parser("open", help="show a case in the AQT desktop app (it only opens the view)")
+    p.add_argument("target", help="a case id such as quarantine:Q7SEGGW, or an aqt:// link")
+    p.set_defaults(func=cmd_open)
     return parser
 
 
