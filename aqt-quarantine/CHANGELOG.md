@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Folders, locks, no-follow opens and the owner check come from `aqt_evidence.platform` (unchanged on Linux). The
-  Claude Code deny rules that `aqt-quarantine hooks` prints name this system's AQT folders on macOS.
+  Claude Code deny rules that `aqt-quarantine hooks` prints name the default AQT folders of macOS there.
 
 ## 0.2.0 — 2026-11-13
 

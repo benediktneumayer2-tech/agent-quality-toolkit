@@ -1,7 +1,7 @@
 import json
 
 import aqt_evidence
-from aqt_evidence import spool_file
+from aqt_evidence import platform, spool_file
 from aqt_trail import anchors
 from aqt_trail.config import load_config
 from aqt_trail.state import init_state, open_writer
@@ -212,7 +212,7 @@ def test_egress_line_never_fails_the_verdict(monkeypatch):
     monkeypatch.setattr(checks, "_egress_status", lambda: {"version": "0.1", "ca": False, "box": False,
                                                             "box_detail": "bwrap missing", "last_session": None})
     line = by_id(run_checks(Context()))["egress"]
-    assert line.result == "warn" and "bwrap missing" in line.explanation
+    assert line.result == ("warn" if platform.IS_LINUX else "skip") and "bwrap missing" in line.explanation
 
     def broken():
         raise ModuleNotFoundError("No module named 'mitmproxy'", name="mitmproxy")
@@ -221,7 +221,6 @@ def test_egress_line_never_fails_the_verdict(monkeypatch):
 
 
 def test_off_linux_the_service_and_the_box_are_reported_as_not_available(monkeypatch):
-    from aqt_evidence import platform
     monkeypatch.setattr(platform, "IS_LINUX", False)
     monkeypatch.setattr(platform, "SYSTEM_NAME", "macOS")
     monkeypatch.setattr(checks, "_egress_status", lambda: {"version": "0.2", "ca": False, "box": False,

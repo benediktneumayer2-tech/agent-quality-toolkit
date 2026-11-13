@@ -28,9 +28,9 @@ def _home_relative(path: Path) -> str:
         return path.as_posix()
 
 
-# Linux: the XDG defaults as always; elsewhere the AQT folders of this system (aqt_evidence.platform)
+# The default AQT folders, whatever XDG says: on Linux as always, elsewhere this system's (aqt_evidence.platform)
 _STATE, _CONFIG = (("~/.local/state/aqt", "~/.config/aqt") if platform.IS_LINUX else
-                   (_home_relative(platform.state_dir()), _home_relative(platform.config_dir())))
+                   (_home_relative(platform.state_dir({})), _home_relative(platform.config_dir({}))))
 CLAUDE_SNIPPET = {
     "hooks": {
         "PostToolUse": [{"matcher": "WebFetch|WebSearch|mcp__.*",
