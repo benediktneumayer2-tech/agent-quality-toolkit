@@ -46,7 +46,9 @@ Builds are unsigned for now. Only Linux (AppImage and .deb) is built so far.
   macOS menu bar, the tooltip on Windows). Its menu: *Open*, *Needs you (n)*, *Quit*. Closing the window keeps
   the app running there; the setting `close_to_tray: false` makes closing quit instead.
 - **Notifications:** one per new case ("Quarantine holds content from example.com"), or one for all of them
-  when four or more arrive at once. A click opens that case (or *Needs you*). Their words are English for now.
+  when four or more arrive at once. A click opens that case (or *Needs you*). The page words them in its
+  language: the app hands it the queue event (`window.aqtQueue`) and it answers with `show_notifications`.
+  Before the page has loaded, or if it does not answer within 3 s, the core's English words are used.
 - **Links** `aqt://case/<id>` (e.g. `aqt://case/quarantine:Q7SEGGW`) and `aqt://change/<project>/<plan>` open
   that view. They only navigate; every decision still needs the signing sheet and the passphrase. Other links
   are ignored. A second start of the app brings the running window to the front and hands it its link.
@@ -55,15 +57,18 @@ Builds are unsigned for now. Only Linux (AppImage and .deb) is built so far.
 - **Start at login** with `--hidden`: only the tray icon, no window. When no tray icon can show within 10 s,
   the window opens instead.
 - **The `aqt` command** is the bundled runtime, the same program as the core:
-  - the .deb installs `/usr/bin/aqt`, a link to `/usr/lib/Agent Quality Toolkit/runtime/aqt/aqt`;
-  - the AppImage runs it as `AppImage --cli ARGS`, or when it is called through a link named `aqt`
-    (Settings: install the aqt command makes `~/.local/bin/aqt`; an existing `aqt` there, e.g. from pip or uv,
-    is never replaced).
+  - the .deb installs `/usr/bin/aqt` and `/usr/bin/aqt-toolkit`, links to
+    `/usr/lib/Agent Quality Toolkit/runtime/aqt/aqt`;
+  - the AppImage runs it as `AppImage --cli ARGS`, or when it is called through a link named `aqt` or
+    `aqt-toolkit` (Settings: install the aqt command makes both in `~/.local/bin`; a name already taken there,
+    e.g. by an `aqt` from pip or uv, is never replaced).
 
-  `aqt project init` writes hooks that call `aqt <tool> ...` from `PATH`, never a path inside the app;
-  `aqt status` reports which `aqt` agents run when another one comes first on `PATH` (the `command` check).
+  `aqt project init` writes hooks that call `aqt <tool> ...` from `PATH`, never a path inside the app. When the
+  first `aqt` on `PATH` is another program (aqtinstall's), they call `aqt-toolkit <tool> ...` instead.
+  `aqt status` reports which AQT command agents run (the `command` check).
 
-**The page's settings command.** `desktop_settings` (allowed besides the three core commands) answers
+**The page's commands** besides the three of the core: `show_notifications(seq, words)` (above; it can only
+word the cases the core reported) and `desktop_settings`, which answers
 `{close_to_tray, tray, autostart, appimage, aqt_command, links}`. Called with `{"change": {...}}` it first applies
 `close_to_tray` and `autostart` (true or false), and `aqt_command: true` or `links: true` (AppImage only: make
 `~/.local/bin/aqt`, register `aqt://`). `tray` says whether a tray icon shows now; `aqt_command` is null outside

@@ -144,7 +144,7 @@ async fn smoke(app: AppHandle, core: Arc<Core>) {
     app.exit(if ok { 0 } else { 1 });
 }
 
-/// CLI mode: `aqt-desktop --cli ARGS`, or the AppImage called through a link named `aqt` (the AppImage
+/// CLI mode: `aqt-desktop --cli ARGS`, or the AppImage called through a link named `aqt` or `aqt-toolkit` (the AppImage
 /// runtime sets ARGV0 and APPDIR), runs the bundled `aqt` with these arguments in place of this process, in
 /// the caller's folder: an AppImage's AppRun changes into its own `usr/`; the caller's folder is in OWD (set
 /// by the AppImage runtime when mounted) or else in PWD (set by AppRun's shell, also when extracted).
@@ -156,19 +156,19 @@ fn cli_mode<R: tauri::Runtime>(context: &tauri::Context<R>) -> Option<std::io::E
         (Some(dir), Ok(exe)) => exe.starts_with(dir),
         _ => false,
     };
-    let named_aqt = std::env::var_os("ARGV0").is_some_and(|name| Path::new(&name).file_name() == Some("aqt".as_ref()));
-    let rest = if args.get(1).is_some_and(|a| a == "--cli") {
-        args.split_off(2)
-    } else if in_appimage && named_aqt {
-        args.split_off(1)
+    let called = std::env::var_os("ARGV0").and_then(|name| Path::new(&name).file_name().map(|n| n.to_os_string()));
+    let named = called.filter(|name| desktop::COMMAND_NAMES.iter().any(|known| name == *known));
+    let (name, rest) = if args.get(1).is_some_and(|a| a == "--cli") {
+        ("aqt".into(), args.split_off(2))
     } else {
-        return None;
+        (named.filter(|_| in_appimage)?, args.split_off(1))
     };
     let runtime = match tauri::utils::platform::resource_dir(context.package_info(), &tauri::Env::default()) {
         Ok(dir) => dir.join("runtime").join("aqt").join("aqt"),
         Err(error) => return Some(std::io::Error::other(error.to_string())),
     };
     let mut command = std::process::Command::new(runtime);
+    command.arg0(name); // aqt or aqt-toolkit, as it was called
     if let Some(folder) = ["OWD", "PWD"].iter().find_map(std::env::var_os).filter(|_| in_appimage) {
         command.current_dir(folder);
     }
@@ -202,7 +202,14 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::Builder::new().open_js_links_on_click(false).build())
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
-        .invoke_handler(tauri::generate_handler![core_session, core_request, save_file, desktop::desktop_settings, pick_folder])
+        .invoke_handler(tauri::generate_handler![
+            core_session,
+            core_request,
+            save_file,
+            desktop::desktop_settings,
+            desktop::show_notifications,
+            pick_folder
+        ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if desktop::keep_running(window.app_handle()) {

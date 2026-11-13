@@ -4,7 +4,7 @@
 # desktop's tray and notifications. The app waits for the core's ready event, makes one request
 # (GET /api/overview), waits until the page itself got an answer from the core, prints one JSON line with
 # timings and exits 0 (ok) or 1. For a bundle, the bundle's aqt command then runs --version and status --json
-# (the .deb's usr/bin/aqt, the AppImage's CLI mode).
+# (the .deb's usr/bin/aqt and usr/bin/aqt-toolkit, the AppImage's CLI mode).
 #
 # Usage: scripts/smoke.sh BINARY               e.g. src-tauri/target/debug/aqt-desktop (core: AQT_CORE or PATH)
 #        scripts/smoke.sh --appimage FILE      extracts the AppImage, then runs its AppRun
@@ -14,11 +14,12 @@ set -euo pipefail
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/aqt-smoke-XXXXXX")"
 # WebKit's helper processes may still write their caches for a moment after the app exits: retry the cleanup.
 trap 'for _ in 1 2 3 4 5; do rm -rf "$WORK" 2>/dev/null && break; sleep 1; done' EXIT
-AQT=()
+AQT=(); AQT2=()
 case "${1:-}" in
     --appimage) file="$(realpath "$2")"; (cd "$WORK" && "$file" --appimage-extract >/dev/null)
                 APP=("$WORK/squashfs-root/AppRun"); AQT=("$WORK/squashfs-root/AppRun" --cli) ;;
-    --deb) dpkg-deb -x "$2" "$WORK/deb"; APP=("$WORK/deb/usr/bin/aqt-desktop"); AQT=("$WORK/deb/usr/bin/aqt") ;;
+    --deb) dpkg-deb -x "$2" "$WORK/deb"; APP=("$WORK/deb/usr/bin/aqt-desktop"); AQT=("$WORK/deb/usr/bin/aqt")
+           AQT2=("$WORK/deb/usr/bin/aqt-toolkit") ;;
     "") echo "usage: $0 BINARY | --appimage FILE | --deb FILE" >&2; exit 2 ;;
     *) APP=("$(realpath "$1")") ;;
 esac
@@ -40,6 +41,7 @@ for _ in $(seq "${SMOKE_RUNS:-1}"); do
 done
 if [ "$status" -eq 0 ] && [ "${#AQT[@]}" -gt 0 ]; then
     isolated "${AQT[@]}" --version || status=1
+    [ "${#AQT2[@]}" -eq 0 ] || isolated "${AQT2[@]}" --version || status=1       # the second name
     code=0; isolated "${AQT[@]}" status --json >"$WORK/status.json" || code=$?
     # exit 0 (ready) or 1 (problems, as a fresh HOME has them), valid JSON either way
     if [ "$code" -le 1 ] && python3 -c 'import json, sys; print("aqt status --json:", json.load(open(sys.argv[1]))["verdict"])' \

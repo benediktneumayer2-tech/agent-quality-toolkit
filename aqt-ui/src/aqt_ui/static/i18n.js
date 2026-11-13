@@ -603,6 +603,12 @@ export const DE = {
   "Read-only: these settings cannot be changed here.": "Nur lesen: Diese Einstellungen lassen sich hier nicht ändern.",
   "Changes appear here once a project is connected.": "Änderungen erscheinen hier, sobald ein Projekt verbunden ist.",
   "Show the {n} checks that are in order": "Die {n} Prüfungen anzeigen, die in Ordnung sind",
+  // system notifications of the desktop app (app.js, aqtQueue)
+  "Quarantine holds content from {source}": "Quarantäne hält Inhalt von {source} zurück",
+  "Quarantine warns about content from {source}": "Quarantäne warnt vor Inhalt von {source}",
+  "{n} new cases need you": "{n} neue Fälle brauchen dich",
+  "Review it in Agent Quality Toolkit": "In Agent Quality Toolkit prüfen",
+  "Show the case": "Fall anzeigen",
 };
 
 // "Needs you" entries by key: [title, detail]; {name} takes the entry's values, null keeps the

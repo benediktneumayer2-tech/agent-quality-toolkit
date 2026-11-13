@@ -2,9 +2,11 @@
 //! per new case, `aqt://` links, the app's own settings (keep running in the tray, start at login) and the
 //! `aqt` command of the AppImage. Links and notifications only open a view; they never decide anything.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::time::Duration;
 
 use serde_json::{json, Value};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
@@ -13,12 +15,16 @@ use tauri::{AppHandle, Manager, WebviewWindow, Wry};
 use tauri_plugin_autostart::ManagerExt;
 
 pub const SCHEME: &str = "aqt";
+pub const COMMAND_NAMES: [&str; 2] = ["aqt", "aqt-toolkit"]; // the toolkit's command and its second name
 const TRAY: &str = "main";
 const SUMMARY_FROM: usize = 4; // this many new cases at once: one notification for all of them
 
 static COUNT: AtomicU64 = AtomicU64::new(0); // the last count, for a tray made after the first queue event
 static PAGE_READY: AtomicBool = AtomicBool::new(false);
 static PENDING: Mutex<Option<String>> = Mutex::new(None); // a view to open once the page has loaded
+static QUEUE_SEQ: AtomicU64 = AtomicU64::new(0);
+static UNANNOUNCED: Mutex<Option<HashMap<u64, Vec<Value>>>> = Mutex::new(None); // new cases waiting for words
+const WORDS_WAIT: Duration = Duration::from_secs(3); // how long the page may take to word the notifications
 
 /// The tray menu's "Needs you (n)" entry, kept to update its text.
 struct NeedsItem(MenuItem<Wry>);
@@ -178,25 +184,72 @@ fn set_count(app: &AppHandle, count: u64) {
 
 /// The core's `queue` event: the count for the tray, a notification per new case (one for all of them
 /// when many come at once). The first event after a (re)start has no new cases, so nothing is announced.
+/// The page words the notifications in its language (`window.aqtQueue`, answered by `show_notifications`);
+/// before the page has loaded, or when it does not answer within a few seconds, the core's English is used.
 pub fn queue(app: &AppHandle, body: &Value) {
     let count = body.get("count").and_then(Value::as_u64).unwrap_or(0);
     let new = body.get("new").and_then(Value::as_array).cloned().unwrap_or_default();
     eprintln!("[aqt desktop] needs you: {count} open, {} new", new.len());
     set_count(app, count);
-    if new.len() >= SUMMARY_FROM {
-        notify(app, &format!("{} new cases need you", new.len()), "/");
+    if new.is_empty() {
         return;
     }
-    for case in &new {
+    let seq = QUEUE_SEQ.fetch_add(1, Ordering::SeqCst) + 1;
+    UNANNOUNCED.lock().unwrap().get_or_insert_with(HashMap::new).insert(seq, new);
+    let window = app.get_webview_window("main").filter(|_| PAGE_READY.load(Ordering::SeqCst));
+    let asked = window.is_some_and(|window| {
+        let script = format!("window.aqtQueue && window.aqtQueue({seq}, {body})");
+        window.eval(script).is_ok()
+    });
+    let app = app.clone();
+    std::thread::spawn(move || {
+        if asked {
+            std::thread::sleep(WORDS_WAIT);
+        }
+        if let Some(new) = take_unannounced(seq) {
+            eprintln!("[aqt desktop] notifications in English: {}", if asked { "the page did not answer" } else { "no page yet" });
+            announce(&app, &new, &Value::Null);
+        }
+    });
+}
+
+fn take_unannounced(seq: u64) -> Option<Vec<Value>> {
+    UNANNOUNCED.lock().unwrap().as_mut().and_then(|waiting| waiting.remove(&seq))
+}
+
+/// The page's words for the notifications of queue event `seq`: `{"cases": {"<id>": "<title>"}, "many":
+/// "<n new cases>", "review": "<body line>", "show": "<button>"}`. Too late (English shown already): ignored.
+#[tauri::command]
+pub fn show_notifications(app: AppHandle, seq: u64, words: Value) {
+    if let Some(new) = take_unannounced(seq) {
+        eprintln!("[aqt desktop] notifications in the page's words");
+        announce(&app, &new, &words);
+    }
+}
+
+fn announce(app: &AppHandle, new: &[Value], words: &Value) {
+    let word = |value: Option<&Value>, english: &str| -> String {
+        let text = value.and_then(Value::as_str).filter(|text| !text.trim().is_empty()).unwrap_or(english);
+        text.chars().take(300).collect()
+    };
+    let review = word(words.get("review"), "Review it in Agent Quality Toolkit");
+    let show = word(words.get("show"), "Show the case");
+    if new.len() >= SUMMARY_FROM {
+        let many = word(words.get("many"), &format!("{} new cases need you", new.len()));
+        notify(app, &many, &review, &show, "/");
+        return;
+    }
+    for case in new {
         let id = case.get("id").and_then(Value::as_str).unwrap_or_default();
-        let title = case.get("title").and_then(Value::as_str).unwrap_or("A new case needs you");
+        let english = case.get("title").and_then(Value::as_str).unwrap_or("A new case needs you");
+        let title = word(words.get("cases").and_then(|cases| cases.get(id)), english);
         let path = link_path(&format!("aqt://case/{id}")).unwrap_or_else(|| "/".into());
-        notify(app, title, &path);
+        notify(app, &title, &review, &show, &path);
     }
 }
 
 /// One system notification; a click on it opens `path` where the platform reports the click.
-fn notify(app: &AppHandle, title: &str, path: &str) {
+fn notify(app: &AppHandle, title: &str, body: &str, button: &str, path: &str) {
     #[cfg(target_os = "macos")]
     {
         static NAMED: std::sync::Once = std::sync::Once::new(); // notifications in this app's name, not Terminal's
@@ -205,9 +258,11 @@ fn notify(app: &AppHandle, title: &str, path: &str) {
         });
     }
     let mut note = notify_rust::Notification::new();
-    note.summary(title).body("Review it in Agent Quality Toolkit").appname("Agent Quality Toolkit");
+    note.summary(title).body(body).appname("Agent Quality Toolkit");
     #[cfg(target_os = "linux")]
-    note.icon("aqt-desktop").action("default", "Review");
+    note.icon("aqt-desktop").action("default", button);
+    #[cfg(not(target_os = "linux"))]
+    let _ = button;
     #[cfg(target_os = "windows")]
     note.app_id(&app.config().identifier);
     match note.show() {
@@ -284,40 +339,58 @@ pub async fn desktop_settings(app: AppHandle, change: Option<Value>) -> Result<V
         "tray": app.tray_by_id(TRAY).is_some() && tray_host(),
         "autostart": app.autolaunch().is_enabled().unwrap_or(false),
         "appimage": appimage,
-        "aqt_command": appimage.as_ref().map(|_| command_link(&app).is_some_and(|(_, ours)| ours)),
+        "aqt_command": appimage.as_ref().map(|_| command_links(&app).is_some_and(|links| links.iter().any(|(_, ours)| *ours))),
         "links": appimage.is_none() || links_registered(&app),
     }))
 }
 
-/// `~/.local/bin/aqt` and whether it is this AppImage.
-fn command_link(app: &AppHandle) -> Option<(PathBuf, bool)> {
-    let link = app.path().home_dir().ok()?.join(".local").join("bin").join("aqt");
+/// `~/.local/bin/aqt` and `~/.local/bin/aqt-toolkit` (the second name, for systems where another aqt comes
+/// first on PATH), each with whether it is a link to this AppImage.
+fn command_links(app: &AppHandle) -> Option<Vec<(PathBuf, bool)>> {
+    let dir = app.path().home_dir().ok()?.join(".local").join("bin");
     let image = std::env::var_os("APPIMAGE")?;
-    let ours = std::fs::read_link(&link).is_ok_and(|target| target.as_os_str() == image);
-    Some((link, ours))
+    Some(
+        COMMAND_NAMES
+            .iter()
+            .map(|name| {
+                let link = dir.join(name);
+                let ours = std::fs::read_link(&link).is_ok_and(|target| target.as_os_str() == image);
+                (link, ours)
+            })
+            .collect(),
+    )
 }
 
-/// The AppImage's `aqt` command: a link `~/.local/bin/aqt` to the AppImage file, which runs the bundled
-/// `aqt` when it is called by that name. Another `aqt` there (pip, uv) is never replaced.
+/// The AppImage's `aqt` command: links `~/.local/bin/aqt` and `~/.local/bin/aqt-toolkit` to the AppImage file,
+/// which runs the bundled `aqt` when it is called by either name. Another program under one of these names
+/// (an `aqt` from pip or uv, or aqtinstall's) is never replaced; it fails only when neither name is free.
 fn install_command(app: &AppHandle) -> Result<(), String> {
-    let (link, ours) = command_link(app).ok_or("only the AppImage needs this: the .deb package installs /usr/bin/aqt")?;
-    if ours {
-        return Ok(());
+    let links = command_links(app).ok_or("only the AppImage needs this: the .deb package installs /usr/bin/aqt")?;
+    let mut taken = Vec::new();
+    for (link, ours) in &links {
+        if *ours {
+            continue;
+        }
+        if link.symlink_metadata().is_ok() {
+            taken.push(link.display().to_string());
+            continue;
+        }
+        #[cfg(unix)]
+        {
+            std::fs::create_dir_all(link.parent().unwrap()).map_err(|e| e.to_string())?;
+            std::os::unix::fs::symlink(std::env::var_os("APPIMAGE").unwrap(), link)
+                .map_err(|e| format!("{}: {e}", link.display()))?;
+        }
+        #[cfg(not(unix))]
+        return Err("not on this system".into());
     }
-    if link.symlink_metadata().is_ok() {
+    if taken.len() == links.len() {
         return Err(format!(
-            "{} exists already (another aqt, e.g. from pip or uv); remove it first if agents should run this app's aqt",
-            link.display()
+            "{} exist already (other programs, e.g. an aqt from pip or uv); remove one first if agents should run this app's aqt",
+            taken.join(" and ")
         ));
     }
-    #[cfg(unix)]
-    {
-        std::fs::create_dir_all(link.parent().unwrap()).map_err(|e| e.to_string())?;
-        std::os::unix::fs::symlink(std::env::var_os("APPIMAGE").unwrap(), &link)
-            .map_err(|e| format!("{}: {e}", link.display()))
-    }
-    #[cfg(not(unix))]
-    Err("not on this system".into())
+    Ok(())
 }
 
 #[cfg(any(target_os = "linux", windows))]

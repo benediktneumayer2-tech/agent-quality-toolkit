@@ -19,9 +19,10 @@ Protocol 1 of ``--stdio``: newline-delimited UTF-8 JSON, one object per line.
 - Requests may overlap: a small thread pool answers them, each response is written as one line under a
   lock, so responses can arrive in another order than the requests; match them by ``id``.
 - Lines with ``"event"`` are messages the core sends unasked: ``ready``, then ``queue`` whenever the "Needs
-  you" queue changes: ``{"event": "queue", "body": {"count": n, "new": [{"id", "title", "kind"}, ...],
-  "removed": ["<id>", ...]}}``. ``id`` is the case id (its page is ``/case/<id>``), ``kind`` the area
-  (``quarantine``, ``changes``, ``trail``, ``capa``, ``qualifications``), ``title`` one English line. The core
+  you" queue changes: ``{"event": "queue", "body": {"count": n, "new": [{"id", "title", "kind", "key",
+  "args"}, ...], "removed": ["<id>", ...]}}``. ``id`` is the case id (its page is ``/case/<id>``), ``kind`` the
+  area (``quarantine``, ``changes``, ``trail``, ``capa``, ``qualifications``), ``title`` one English line,
+  ``key`` and ``args`` what the page needs to say it in its language (as in the overview's entries). The core
   looks every few seconds (``AQT_CORE_QUEUE_SECONDS``, default 5; 0 turns it off) with the overview's own
   data, which the trail's state answers without verifying the trail again. The first ``queue`` event after
   the start carries the count with ``new`` and ``removed`` empty, so a restart announces nothing.
@@ -441,7 +442,8 @@ class QueueWatch:
     def poll(self) -> dict | None:
         """The body of a ``queue`` event, or None when nothing changed. The first look reports only the count."""
         from .views.overview import build
-        current = {entry["id"]: {"id": entry["id"], "title": notice_title(entry), "kind": entry["view"]}
+        current = {entry["id"]: {"id": entry["id"], "title": notice_title(entry), "kind": entry["view"],
+                                 "key": entry["key"], "args": entry["args"]}
                    for entry in build(self.core)["needs"]}
         known, self.known = self.known, current
         if known is None:
