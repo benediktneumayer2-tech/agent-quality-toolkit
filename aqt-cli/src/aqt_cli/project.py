@@ -350,8 +350,9 @@ def check_deny(ctx: ProjectContext) -> Result:
                   data={"target": show(ctx, settings_target(ctx)), "missing": missing})
 
 
-def _merge_settings(ctx: ProjectContext, hooks: bool) -> None:
+def _merge_settings(ctx: ProjectContext, hooks: bool, deny: bool = True) -> None:
     sources, missing_hooks, missing_deny = claude_state(ctx)
+    missing_deny = missing_deny if deny else []      # the desktop app lets the person leave the deny rules out
     target = settings_target(ctx)
     data = sources.get(target, {})
     if hooks:

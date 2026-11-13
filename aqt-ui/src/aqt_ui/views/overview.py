@@ -198,8 +198,22 @@ def build(app) -> dict:
 
     needs.sort(key=lambda n: SEVERITY[n["severity"]])
     return {"status": status, "alcoa": alcoa, "needs": needs, "counts": {"overview": len(needs), **counts},
-            "tools": tool_health(trail, tools_state), "refusals": refusals[-20:],
+            "tools": tool_health(trail, tools_state), "refusals": refusals[-20:], "setup": setup_state(trail, status),
             "checked_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")}
+
+
+def setup_state(trail: TrailView, status: dict) -> dict:
+    """Whether the first-run setup is done: a trail (its state folder, or a writer that answers) and a signer
+    with an active key. The page opens the onboarding while either is missing."""
+    has_trail = trail.config.meta_path.exists() or status["state"] != "missing" or bool(status["writer"]["running"])
+    signers = []
+    if installed("aqt_signoff"):
+        try:
+            from .changes import _signers
+            signers = [row["id"] for row in _signers()]
+        except Exception:  # noqa: BLE001 - a broken registry is shown by aqt status and Settings
+            signers = []
+    return {"needed": not (has_trail and signers), "trail": has_trail, "signer": bool(signers), "signers": signers}
 
 
 def plan_item(project: dict, plan: dict) -> dict | None:
