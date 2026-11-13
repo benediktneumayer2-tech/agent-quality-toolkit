@@ -680,6 +680,10 @@ def test_each_decision_request_is_logged_with_its_peer(trail, held_case, ui_fact
                                     {"reason": "fine", "passphrase": PASSPHRASE,
                                      "content_sha256": case["content_sha256"], "signer_id": SIGNER})
     assert status == 200
+    # the server logs the decision after it has sent the response: wait for the line
+    deadline = time.monotonic() + 5
+    while not any(line.startswith("aqt-ui decision") for line in client.log) and time.monotonic() < deadline:
+        time.sleep(0.01)
     line = next(line for line in client.log if line.startswith("aqt-ui decision"))
     assert "pid 4242" in line and "firefox" in line and result["record_id"] in line
     assert PASSPHRASE not in "\n".join(client.log)
