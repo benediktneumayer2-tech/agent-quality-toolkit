@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 — unreleased
+## 0.2.0 — 2026-11-13
 
 ### Packaging
 - Released at 0.2.0, the version of every AQT package; the licence is an SPDX expression with the licence files in the package (PEP 639): `Apache-2.0 AND CC-BY-4.0`, both texts included.

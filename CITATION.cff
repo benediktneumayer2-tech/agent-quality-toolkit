@@ -14,6 +14,7 @@ authors:
   - family-names: Neumayer
     given-names: Benedikt
 version: 0.2.0
+date-released: 2026-11-13
 license: Apache-2.0
 repository-code: "https://github.com/benediktneumayer2-tech/agent-quality-toolkit"
 keywords:
