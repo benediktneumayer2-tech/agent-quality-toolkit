@@ -1,0 +1,15 @@
+{
+  "name": "aqt-desktop",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "scripts": {
+    "sync": "node scripts/sync-frontend.mjs",
+    "build": "tauri build --config src-tauri/tauri.bundle.conf.json",
+    "build:debug": "tauri build --debug --no-bundle",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.4"
+  }
+}
