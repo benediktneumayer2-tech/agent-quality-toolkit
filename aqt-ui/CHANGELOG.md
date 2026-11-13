@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The configuration folder comes from `aqt_evidence.platform` (unchanged on Linux).
+
 ## 0.2.0 — 2026-11-13
 
 First version.

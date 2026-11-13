@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- The configuration folder, and the lock of the records mirror, come from `aqt_evidence.platform` (unchanged on
+  Linux; macOS and Windows get their own folders).
+
 ## 0.2.0 — 2026-11-13
 
 - Packaging: released at 0.2.0, the version of every AQT package; the other AQT packages it needs are required at `>=0.2,<0.3`; the licence is an SPDX expression with the licence files in the package (PEP 639).

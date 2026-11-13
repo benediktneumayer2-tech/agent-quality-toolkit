@@ -7,14 +7,13 @@ spooled by ``aqt_evidence.SocketSink`` and by this client are drained together.
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import socket
 from contextlib import contextmanager
 from pathlib import Path
 
-from aqt_evidence import SinkError, canonical_json
+from aqt_evidence import SinkError, canonical_json, platform
 
 from .config import spool_path
 
@@ -48,13 +47,13 @@ def spool_append(record: dict, path: str | os.PathLike | None = None) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     with os.fdopen(fd, "ab") as handle:
-        fcntl.flock(handle, fcntl.LOCK_EX)
+        platform.lock(handle)
         try:
             handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True).encode("utf-8") + b"\n")
             handle.flush()
             os.fsync(handle.fileno())
         finally:
-            fcntl.flock(handle, fcntl.LOCK_UN)
+            platform.unlock(handle)
     return path
 
 
@@ -71,7 +70,7 @@ def locked_spool(path: str | os.PathLike | None = None):
         return
     fd = os.open(path, os.O_RDWR)
     with os.fdopen(fd, "rb+") as handle:
-        fcntl.flock(handle, fcntl.LOCK_EX)
+        platform.lock(handle)
         try:
             entries = []
             for line in handle.read().splitlines():
@@ -90,7 +89,7 @@ def locked_spool(path: str | os.PathLike | None = None):
 
             yield entries, clear
         finally:
-            fcntl.flock(handle, fcntl.LOCK_UN)
+            platform.unlock(handle)
 
 
 class TrailClient:

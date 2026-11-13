@@ -21,12 +21,11 @@ session summary. The whole folder is hidden inside the box.
 from __future__ import annotations
 
 import ipaddress
-import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from aqt_evidence import state_dir
+from aqt_evidence import platform, state_dir
 
 STORES = ("excerpt", "full")
 RESERVED_PORTS = (53, 80, 443, 3128, 15001)       # the box's own listeners (netns)
@@ -53,7 +52,7 @@ class Settings:
 
 
 def config_home() -> Path:
-    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "aqt"
+    return platform.config_dir()
 
 
 def settings_file() -> Path:
@@ -65,9 +64,7 @@ def egress_state() -> Path:
 
 
 def private_dir(path: Path) -> Path:
-    path.mkdir(parents=True, exist_ok=True)
-    os.chmod(path, 0o700)
-    return path
+    return platform.ensure_private_dir(path)
 
 
 def parse_retention(value) -> int | None:

@@ -74,26 +74,21 @@ def _environ(environ) -> dict:
     return os.environ if environ is None else environ
 
 
-def _home(environ) -> Path:
-    # Path.home() reads HOME (POSIX) or USERPROFILE (Windows); a given environ may override it.
-    value = _environ(environ).get("USERPROFILE" if IS_WINDOWS else "HOME")
-    return Path(value) if value else Path.home()
-
-
-def _app_support(environ) -> Path:
-    return _home(environ) / "Library" / "Application Support" / "AQT"
+def _app_support() -> Path:
+    return Path.home() / "Library" / "Application Support" / "AQT"
 
 
 def config_dir(environ=None) -> Path:
-    """The AQT configuration folder: ``$XDG_CONFIG_HOME/aqt`` when set, else the system's own place."""
+    """The AQT configuration folder: ``$XDG_CONFIG_HOME/aqt`` when set, else the system's own place.
+    ``environ`` (default ``os.environ``) supplies the variables; the home folder is ``Path.home()``."""
     env = _environ(environ)
     if env.get("XDG_CONFIG_HOME"):
         return Path(env["XDG_CONFIG_HOME"]) / "aqt"
     if IS_MACOS:
-        return _app_support(environ) / "config"
+        return _app_support() / "config"
     if IS_WINDOWS:
-        return Path(env.get("APPDATA") or _home(environ) / "AppData" / "Roaming") / "AQT"
-    return _home(environ) / ".config" / "aqt"
+        return Path(env.get("APPDATA") or Path.home() / "AppData" / "Roaming") / "AQT"
+    return Path.home() / ".config" / "aqt"
 
 
 def state_dir(environ=None) -> Path:
@@ -102,10 +97,10 @@ def state_dir(environ=None) -> Path:
     if env.get("XDG_STATE_HOME"):
         return Path(env["XDG_STATE_HOME"]) / "aqt"
     if IS_MACOS:
-        return _app_support(environ) / "state"
+        return _app_support() / "state"
     if IS_WINDOWS:
-        return Path(env.get("LOCALAPPDATA") or _home(environ) / "AppData" / "Local") / "AQT"
-    return _home(environ) / ".local" / "state" / "aqt"
+        return Path(env.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "AQT"
+    return Path.home() / ".local" / "state" / "aqt"
 
 
 _CS_DARWIN_USER_CACHE_DIR = 65538

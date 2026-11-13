@@ -6,7 +6,7 @@ import json
 import os
 from pathlib import Path
 
-from aqt_evidence import generate_key, load_public_key, load_signer, utc_now
+from aqt_evidence import generate_key, load_public_key, load_signer, platform, utc_now
 
 from .config import Config
 from .writer import TrailWriter
@@ -16,7 +16,7 @@ def init_state(config: Config, *, log_id: str | None = None) -> dict:
     """Create the state directory, the service key and ``trail.json``. Idempotent."""
     config.state.mkdir(parents=True, exist_ok=True)
     if not str(config.section("writer")["log_mode"]).endswith("40"):
-        os.chmod(config.state, 0o700)
+        platform.make_private(config.state, directory=True)
     if config.meta_path.exists():
         return config.meta()
     if not config.key_path.exists():

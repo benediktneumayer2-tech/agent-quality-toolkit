@@ -16,40 +16,45 @@ from aqt_evidence import platform, process_chain
 POSIX = not platform.IS_WINDOWS
 
 
+@pytest.fixture
+def home(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    return tmp_path
+
+
 def test_xdg_variables_win_on_every_system(tmp_path):
     env = {"XDG_CONFIG_HOME": str(tmp_path / "c"), "XDG_STATE_HOME": str(tmp_path / "s"),
-           "XDG_RUNTIME_DIR": str(tmp_path / "r"), "HOME": str(tmp_path), "USERPROFILE": str(tmp_path)}
+           "XDG_RUNTIME_DIR": str(tmp_path / "r")}
     assert platform.config_dir(env) == tmp_path / "c" / "aqt"
     assert platform.state_dir(env) == tmp_path / "s" / "aqt"
     assert platform.runtime_base(env) == tmp_path / "r"
 
 
-def test_linux_folders_are_the_xdg_defaults(tmp_path, monkeypatch):
+def test_linux_folders_are_the_xdg_defaults(home, monkeypatch):
     monkeypatch.setattr(platform, "IS_MACOS", False)
     monkeypatch.setattr(platform, "IS_WINDOWS", False)
-    env = {"HOME": str(tmp_path), "USERPROFILE": str(tmp_path)}
-    assert platform.config_dir(env) == tmp_path / ".config" / "aqt"
-    assert platform.state_dir(env) == tmp_path / ".local" / "state" / "aqt"
-    assert platform.runtime_base(env) is None   # callers fall back to their state folder
+    assert platform.config_dir({}) == home / ".config" / "aqt"
+    assert platform.state_dir({}) == home / ".local" / "state" / "aqt"
+    assert platform.runtime_base({}) is None   # callers fall back to their state folder
 
 
-def test_macos_folders(tmp_path, monkeypatch):
+def test_macos_folders(home, monkeypatch):
     monkeypatch.setattr(platform, "IS_MACOS", True)
     monkeypatch.setattr(platform, "IS_WINDOWS", False)
-    env = {"HOME": str(tmp_path), "USERPROFILE": str(tmp_path)}
-    base = tmp_path / "Library" / "Application Support" / "AQT"
-    assert platform.config_dir(env) == base / "config"
-    assert platform.state_dir(env) == base / "state"
+    base = home / "Library" / "Application Support" / "AQT"
+    assert platform.config_dir({}) == base / "config"
+    assert platform.state_dir({}) == base / "state"
 
 
-def test_windows_folders(tmp_path, monkeypatch):
+def test_windows_folders(home, monkeypatch):
     monkeypatch.setattr(platform, "IS_MACOS", False)
     monkeypatch.setattr(platform, "IS_WINDOWS", True)
-    env = {"APPDATA": str(tmp_path / "Roaming"), "LOCALAPPDATA": str(tmp_path / "Local"),
-           "USERPROFILE": str(tmp_path), "HOME": str(tmp_path)}
-    assert platform.config_dir(env) == tmp_path / "Roaming" / "AQT"
-    assert platform.state_dir(env) == tmp_path / "Local" / "AQT"
+    env = {"APPDATA": str(home / "Roaming"), "LOCALAPPDATA": str(home / "Local")}
+    assert platform.config_dir(env) == home / "Roaming" / "AQT"
+    assert platform.state_dir(env) == home / "Local" / "AQT"
     assert platform.runtime_base(env) is None
+    assert platform.config_dir({}) == home / "AppData" / "Roaming" / "AQT"
 
 
 @pytest.mark.skipif(not platform.IS_MACOS, reason="macOS's own runtime folder")

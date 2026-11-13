@@ -19,7 +19,7 @@ from pathlib import Path
 
 from .config import Config, Paths
 from .launch import home_of, load_pair, prepare, profile_of
-from .sandbox import SandboxError, resolve_cli, resolve_profile
+from .sandbox import SandboxError, resolve_cli, resolve_profile, sandbox_unavailable
 
 # Runs inside the sandbox with `python3 -I -c PROBE SPEC`; standard library only.
 PROBE = r'''
@@ -75,8 +75,12 @@ def host_checks(config: Config, paths: Paths, backend: str) -> list[dict]:
     def check(name, passed, detail=""):
         checks.append({"name": name, "passed": bool(passed), "detail": str(detail)[:300]})
 
-    bwrap = shutil.which(config.bwrap)
-    check("bubblewrap installed", bwrap, bwrap or f"{config.bwrap} not found")
+    blocked = sandbox_unavailable()
+    bwrap = None if blocked else shutil.which(config.bwrap)
+    if blocked:
+        check("sandbox available on this system", False, blocked)
+    else:
+        check("bubblewrap installed", bwrap, bwrap or f"{config.bwrap} not found")
     if bwrap:
         try:
             done = subprocess.run([bwrap, "--ro-bind", "/", "/", "--unshare-all", "true"],
@@ -140,7 +144,8 @@ def sandbox_probe(pair: dict, *, paths: Paths, config: Config, home: Path | None
 def doctor_pair(pair_id: str, *, paths: Paths, config: Config) -> dict:
     pair = load_pair(paths, pair_id)
     checks = host_checks(config, paths, pair["backend"])
-    checks += sandbox_probe(pair, paths=paths, config=config)
+    if not sandbox_unavailable():
+        checks += sandbox_probe(pair, paths=paths, config=config)
     return {"pair_id": pair_id, "checks": checks, "passed": all(c["passed"] for c in checks)}
 
 
@@ -150,6 +155,9 @@ def doctor_profile(advisor: str, project: str, *, paths: Paths, config: Config, 
     project = os.path.realpath(project)
     if not os.path.isdir(project):
         raise SandboxError("--project must be an existing folder")
+    if sandbox_unavailable():
+        checks = host_checks(config, paths, backend)
+        return {"profile": profile.name, "checks": checks, "passed": False}
     pair_id = "doctor-" + os.urandom(3).hex()
     scratch = Path(tempfile.mkdtemp(prefix="aqt-sensei-doctor-", dir=project))
     pair = {"id": pair_id, "backend": backend, "project_root": project, "scratch_dir": str(scratch),

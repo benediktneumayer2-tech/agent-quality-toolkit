@@ -8,6 +8,9 @@ The environment is cleared and rebuilt from an allow-list.
 
 `build_argv()` is a pure function of its inputs, so tests assert the exact
 command line without running bwrap.
+
+The sandbox needs Linux (bubblewrap). ``sandbox_unavailable()`` says why it cannot run
+elsewhere; a macOS Seatbelt profile (``sandbox-exec``) will plug in there.
 """
 
 from __future__ import annotations
@@ -23,7 +26,7 @@ from importlib import resources
 from pathlib import Path
 from string import Template
 
-from aqt_evidence import content_hash
+from aqt_evidence import content_hash, platform
 
 PROMPT_FILE = ".sensei-prompt.md"
 HERDR_REPORTS = ("pane.report_agent", "pane.report_agent_session", "pane.release_agent")
@@ -131,6 +134,24 @@ def write_prompt(pair: dict, profile: Profile) -> Path:
 
 def _under(path: Path, folders: list[Path]) -> bool:
     return any(path == folder or folder in path.parents for folder in folders)
+
+
+def sandbox_unavailable() -> str | None:
+    """None where the advisor sandbox can run (Linux, bubblewrap), else why not."""
+    if platform.IS_LINUX:
+        return None
+    if platform.IS_MACOS:
+        return platform.not_available("the sensei sandbox", "its Seatbelt profile (sandbox-exec) follows in a "
+                                      "later version")
+    return platform.not_available("the sensei sandbox", "the system has no sandbox like bubblewrap that works "
+                                  "without administrator rights")
+
+
+def require_sandbox() -> None:
+    """Raise ``SandboxError`` where the sandbox cannot run (before anything is started)."""
+    reason = sandbox_unavailable()
+    if reason:
+        raise SandboxError(reason)
 
 
 def resolve_cli(argv0: str, *, which=shutil.which, home: Path | None = None) -> tuple[str, list[str]]:

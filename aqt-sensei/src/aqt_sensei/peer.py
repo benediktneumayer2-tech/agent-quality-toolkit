@@ -1,8 +1,9 @@
-"""Who is on the other end of a socket: SO_PEERCRED plus /proc.
+"""Who is on the other end of a socket: SO_PEERCRED plus /proc (on macOS LOCAL_PEERCRED plus sysctl).
 
 The bridge never trusts a pane id or role that a caller declares. It reads the
-peer's pid, uid and gid from the kernel, walks the process ancestry in /proc,
-and compares it with the root processes and terminals of the paired panes.
+peer's pid, uid and gid from the kernel, walks the process ancestry in /proc
+(through ``aqt_evidence.platform``, which reads the same facts on macOS), and
+compares it with the root processes and terminals of the paired panes.
 The description uses the field names of the AQT `observed` object (aqt-spec spec §3.2) and goes
 into `data.peer` of the records, because `observed` belongs to the trail writer.
 """
@@ -10,15 +11,13 @@ into `data.peer` of the records, because `observed` belongs to the trail writer.
 from __future__ import annotations
 
 import hmac
-import os
 import socket
-import struct
 from dataclasses import dataclass
 from pathlib import Path
 
-from aqt_evidence import detect_agent_context
+from aqt_evidence import detect_agent_context, platform
 
-PROC = Path("/proc")
+PROC: Path | None = None   # None: the system's own process table (/proc on Linux); tests pass a fake tree
 
 
 @dataclass
@@ -45,57 +44,27 @@ class Peer:
 
 
 def peer_credentials(connection: socket.socket) -> tuple[int, int, int]:
-    raw = connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
-    return struct.unpack("3i", raw)
+    peer = platform.peer_credentials(connection)
+    return peer.pid, peer.uid, peer.gid
 
 
-def _status(pid: int, proc: Path) -> dict:
-    text = (proc / str(pid) / "status").read_text(errors="replace")
-    return dict(line.split(":\t", 1) for line in text.splitlines() if ":\t" in line)
-
-
-def _start_time(pid: int, proc: Path) -> int | None:
-    try:
-        stat = (proc / str(pid) / "stat").read_text()
-        return int(stat.rsplit(")", 1)[1].split()[19])
-    except (OSError, ValueError, IndexError):
-        return None
-
-
-def _environ(pid: int, proc: Path) -> dict:
-    try:
-        raw = (proc / str(pid) / "environ").read_bytes()
-    except OSError:
-        return {}
-    pairs = (item.split(b"=", 1) for item in raw.split(b"\0") if b"=" in item)
-    return {key.decode(errors="replace"): value.decode(errors="replace") for key, value in pairs}
-
-
-def _tty(pid: int, proc: Path) -> str | None:
-    try:
-        target = os.readlink(proc / str(pid) / "fd" / "0")
-    except OSError:
-        return None
-    return target if target.startswith("/dev/pts/") or target.startswith("/dev/tty") else None
-
-
-def describe_pid(pid: int, uid: int, gid: int, *, proc: Path = PROC, limit: int = 64) -> Peer:
+def describe_pid(pid: int, uid: int, gid: int, *, proc: Path | None = PROC, limit: int = 64) -> Peer:
+    """The peer and its ancestry up to and including init. ``proc`` reads a Linux-style /proc tree
+    at that path instead of asking the system."""
     chain, names, starts, current = [], [], [], pid
     for _ in range(limit):
-        try:
-            fields = _status(current, proc)
-        except OSError:
+        info = platform.process_info(current, proc=proc)
+        if info is None:
             break
         chain.append(current)
-        names.append(fields.get("Name", "?").strip())
-        starts.append(_start_time(current, proc))
-        parent = int((fields.get("PPid") or "0").strip() or 0)
-        if parent <= 0:
+        names.append(info.name)
+        starts.append(info.start_time)
+        if info.ppid <= 0 or info.ppid == current:
             break
-        current = parent
-    environ = _environ(pid, proc)
+        current = info.ppid
+    environ = platform.process_environ(pid, proc=proc) or {}
     context = detect_agent_context(environ, chain=names)
-    return Peer(pid, uid, gid, chain, names, starts, _tty(pid, proc), environ,
+    return Peer(pid, uid, gid, chain, names, starts, platform.process_tty(pid, proc=proc), environ,
                 context.harness, list(context.markers))
 
 

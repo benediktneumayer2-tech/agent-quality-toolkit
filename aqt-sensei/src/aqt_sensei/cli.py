@@ -343,7 +343,8 @@ def _login(args, paths: Paths, config) -> int:
     Claude Code: sign in with /login, then quit. Codex: device sign-in. pi: configure, then quit.
     """
     from .launch import prepare
-    from .sandbox import resolve_cli, resolve_profile
+    from .sandbox import require_sandbox, resolve_cli, resolve_profile
+    require_sandbox()
     profile = resolve_profile(args.platform, config.profiles)
     login = {"claude": [], "codex": ["login", "--device-auth"], "pi": []}[args.platform]
     with tempfile.TemporaryDirectory(prefix="aqt-sensei-login-") as scratch:

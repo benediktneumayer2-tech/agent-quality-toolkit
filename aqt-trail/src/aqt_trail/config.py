@@ -14,12 +14,12 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from aqt_evidence import spool_file
+from aqt_evidence import platform, spool_file
 from aqt_evidence import state_dir as aqt_state_dir
 
 DEFAULTS: dict = {
     "writer": {
-        "socket": "",              # default: $XDG_RUNTIME_DIR/aqt/trail.sock, else <state>/aqt-trail.sock
+        "socket": "",              # default: <runtime>/aqt/trail.sock, else <state>/aqt-trail.sock (aqt_evidence.platform)
         "socket_mode": "0600",     # separate-user mode: "0660" with socket_group
         "socket_group": "",
         "log_mode": "0600",        # separate-user mode: "0640" (group may read and verify, never write)
@@ -47,7 +47,7 @@ DEFAULTS: dict = {
 
 
 def config_dir() -> Path:
-    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "aqt"
+    return platform.config_dir()
 
 
 def default_state() -> Path:
@@ -101,9 +101,9 @@ class Config:
         sink = os.environ.get("AQT_SINK", "")
         if sink.startswith("unix:"):
             return Path(sink[5:])
-        runtime = os.environ.get("XDG_RUNTIME_DIR")
+        runtime = platform.runtime_base()
         if runtime:
-            return Path(runtime) / "aqt" / "trail.sock"
+            return runtime / "aqt" / "trail.sock"
         return self.state / "aqt-trail.sock"
 
     def meta(self) -> dict:

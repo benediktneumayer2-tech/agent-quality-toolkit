@@ -54,12 +54,15 @@ def default_agent_socket():
         return Path(os.environ["AQT_SENSEI_SOCKET"])
     if os.environ.get("AQT_SENSEI_RUNTIME"):
         return Path(os.environ["AQT_SENSEI_RUNTIME"]) / "agent.sock"
-    base = os.environ.get("XDG_RUNTIME_DIR")
+    try:
+        from aqt_evidence import platform   # the folders of this system (macOS, Windows)
+        base, state = platform.runtime_base(), platform.state_dir() / "sensei"
+    except ImportError:                     # the sandbox's stdlib-only copy of this file: XDG
+        base = Path(os.environ["XDG_RUNTIME_DIR"]) if os.environ.get("XDG_RUNTIME_DIR") else None
+        state = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "aqt" / "sensei"
     if base:
-        return Path(base) / "aqt-sensei" / "agent.sock"
-    state = os.environ.get("AQT_SENSEI_STATE") or str(
-        Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "aqt" / "sensei")
-    return Path(state) / "run" / "agent.sock"
+        return base / "aqt-sensei" / "agent.sock"
+    return Path(os.environ.get("AQT_SENSEI_STATE") or state) / "run" / "agent.sock"
 
 
 def pane_hint():

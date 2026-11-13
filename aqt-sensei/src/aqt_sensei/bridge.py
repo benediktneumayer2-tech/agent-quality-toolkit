@@ -24,7 +24,8 @@ from aqt_evidence import content_hash
 from .config import MODES, Budget, Config, Paths
 from .hosts import READY, HostError, TerminalHost, strip_ansi
 from .ledger import Ledger, LedgerError
-from .sandbox import BUILTIN_PROFILES, SandboxError, build_argv, resolve_cli, resolve_profile, write_shim
+from .sandbox import (BUILTIN_PROFILES, SandboxError, build_argv, resolve_cli, resolve_profile, sandbox_unavailable,
+                      write_shim)
 
 DIGEST_CHARS = 4000
 WORKER_LOG_CHARS = 20000
@@ -436,6 +437,9 @@ class Bridge:
         start_with = request.get("start_with") or "worker"
         if start_with not in ("worker", "advisor"):
             raise BridgeError("start_with must be worker or advisor")
+        blocked = sandbox_unavailable() if self.host.name != "fake" else None   # the fake host starts nothing
+        if blocked:
+            raise BridgeError(blocked)
         try:
             profile = resolve_profile(request.get("advisor") or "", self.config.profiles)
             cli_path, cli_binds = self.resolve(profile.command[0])
