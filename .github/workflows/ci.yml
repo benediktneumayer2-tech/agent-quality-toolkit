@@ -54,6 +54,7 @@ jobs:
           uv pip freeze --python /tmp/audit/bin/python --exclude-editable > /tmp/audit-requirements.txt
           # tornado comes only with mitmproxy (aqt-egress), for mitmproxy's own web interface, which aqt-egress
           # never imports or starts; mitmproxy 12.3.1 pins tornado<=6.5.10, so 6.6 cannot be installed yet.
-          # Remove these three ignores once mitmproxy allows tornado 6.6.
+          # Remove these four ignores once mitmproxy allows tornado 6.6.1.
           uvx pip-audit@2.9.0 -r /tmp/audit-requirements.txt --no-deps --disable-pip --progress-spinner off \
-            --ignore-vuln GHSA-pcg2-g6cj-q92c --ignore-vuln GHSA-r4j5-9xpp-3985 --ignore-vuln GHSA-pw9p-v7r6-gx4p
+            --ignore-vuln GHSA-pcg2-g6cj-q92c --ignore-vuln GHSA-r4j5-9xpp-3985 --ignore-vuln GHSA-pw9p-v7r6-gx4p \
+            --ignore-vuln GHSA-5cjw-f85j-cv6r
