@@ -41,7 +41,7 @@ Herdr's socket would let any client type into any pane. Under the Herdr backend,
 
 ## Ubuntu and AppArmor
 
-Ubuntu 24.04 and later can restrict unprivileged user namespaces (`kernel.apparmor_restrict_unprivileged_userns`). In some contexts this blocks `/usr/bin/bwrap`, for example inside certain terminal multiplexers. `doctor` reports "bubblewrap can create namespaces: FAIL" when that happens. Remedies: an AppArmor profile that allows `userns` for the bwrap binary you use, or `sandbox.bwrap` pointing to a binary that has one. Do not disable the restriction system-wide just for this.
+Ubuntu 24.04 and later restrict unprivileged user namespaces (`kernel.apparmor_restrict_unprivileged_userns`). Ubuntu 24.04 ships no AppArmor profile that lets `/usr/bin/bwrap` use them, so from a normal terminal `doctor` reports "bubblewrap can create namespaces: FAIL" (programs with their own profile, such as some desktop apps, are not affected). Remedies: the profile for `/usr/bin/bwrap` in the [manual, 6.4](../../docs/manual.md#64-sandbox-validation-and-capa) (two commands), or `sandbox.bwrap` pointing to a binary that has one. Do not disable the restriction system-wide just for this.
 
 ## doctor
 

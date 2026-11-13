@@ -1,10 +1,12 @@
 # The box: what was verified, and the fallbacks
 
-Verified on Ubuntu with Linux 7.0, bubblewrap 0.9.0 (not setuid), nftables and iproute2, with Ubuntu's
-AppArmor restriction of unprivileged user namespaces switched on (`kernel.apparmor_restrict_unprivileged_userns = 1`;
-bubblewrap's own profile lets it create them, and the processes inside have no capabilities). The box tests in
-`tests/test_box.py` repeat these checks on every run and skip themselves where bubblewrap or user namespaces are
-missing.
+Verified on Ubuntu 24.04 with Linux 7.0, bubblewrap 0.9.0 (not setuid), nftables and iproute2, with Ubuntu's
+AppArmor restriction of unprivileged user namespaces switched on (`kernel.apparmor_restrict_unprivileged_userns = 1`).
+Under that restriction bubblewrap needs an AppArmor profile that allows user namespaces; Ubuntu 24.04 ships none for
+`/usr/bin/bwrap`, so without one the box fails with `bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted`.
+The profile (two commands) is in the [manual, 6.4](../../docs/manual.md#64-sandbox-validation-and-capa). The box
+tests in `tests/test_box.py` repeat these checks on every run and skip themselves where bubblewrap or user
+namespaces are missing.
 
 ## How the box starts
 

@@ -54,7 +54,7 @@ The examples use two people: `human:alice` (quality manager) and `human:dave` (d
 | Python 3.11 or newer | All packages | `python3 --version` |
 | [uv](https://docs.astral.sh/uv/) | Creates the virtual environment and installs the packages | `uv --version` |
 | git | Getting the code; aqt-change and aqt-capa work on git repositories | `git --version` |
-| bubblewrap (optional) | For aqt-sensei (keeps the advisor agent read-only) and aqt-egress (the box around the agent) | `bwrap --version` |
+| bubblewrap (optional) | For aqt-sensei (keeps the advisor agent read-only) and aqt-egress (the box around the agent). On Ubuntu 24.04 and later it also needs an AppArmor profile (6.4) | `bwrap --version`; `aqt status` checks the rest |
 | tmux (optional) | Only for aqt-sensei: the two agents run in terminal panes | `tmux -V` |
 | Python 3.12, nftables and iproute2 (optional) | Only for aqt-egress (4.10): it needs Python 3.12 or newer; `nft` and `ip` let the box catch programs that ignore the proxy | `nft --version`, `ip -V` |
 
@@ -1805,7 +1805,14 @@ Monthly or quarterly:
 
 ### 6.4 Sandbox, validation and CAPA
 
-**`bubblewrap can create namespaces: FAIL`** (aqt-sensei doctor). Ubuntu 24.04 and later can restrict unprivileged user namespaces (`kernel.apparmor_restrict_unprivileged_userns`), which blocks bubblewrap in some contexts. Remedies: an AppArmor profile that allows `userns` for the bwrap program you use, or `[sandbox] bwrap = "/path/to/bwrap"` pointing to a bwrap that has such a profile. Do not switch the restriction off system-wide just for this. Details: `aqt-sensei/docs/sandbox.md`.
+**`bubblewrap cannot create namespaces`.** aqt-sensei doctor reports `bubblewrap can create namespaces: FAIL`; `aqt status` and `aqt-egress status` report `the box cannot start here: … bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted`. Ubuntu 24.04 and later restrict unprivileged user namespaces (`kernel.apparmor_restrict_unprivileged_userns = 1`): a program without an AppArmor profile that allows them gets a namespace without rights, so bubblewrap cannot set up the box. Ubuntu 24.04 ships no such profile for `/usr/bin/bwrap`, so this happens in a normal terminal. (Programs that have their own profile, such as some desktop apps, are not affected, which is why it can work from one window and fail from another.) Add a profile that allows user namespaces for bwrap only; the restriction stays on for every other program:
+
+```bash
+printf 'abi <abi/4.0>,\ninclude <tunables/global>\n\nprofile bwrap /usr/bin/bwrap flags=(unconfined) {\n  userns,\n\n  include if exists <local/bwrap>\n}\n' | sudo tee /etc/apparmor.d/bwrap
+sudo apparmor_parser -r /etc/apparmor.d/bwrap
+```
+
+Then `aqt status` again. The processes inside the box or the advisor sandbox still get no rights outside it: bubblewrap drops them. Do not switch the restriction off system-wide. aqt-sensei can also use another bwrap that has such a profile (`[sandbox] bwrap = "/path/to/bwrap"`, `aqt-sensei/docs/sandbox.md`).
 
 **`aqt-sensei: the bridge is offline (run 'aqt-sensei serve')`.** Start the bridge (4.4 step 4).
 

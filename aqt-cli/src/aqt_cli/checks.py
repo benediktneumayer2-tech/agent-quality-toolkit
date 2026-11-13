@@ -15,6 +15,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -480,16 +481,40 @@ def check_signer(ctx: Context) -> Result:
                       + (f" (first signer: {first})" if first else ""), data=data)
 
 
+SIGNER_ID = re.compile(r"^human:[a-z0-9][a-z0-9._-]{0,63}$")   # aqt-signoff's rule for signer IDs
+
+
+def _signer_id(text: str) -> str:
+    """``alice`` -> ``human:alice``; the ID as aqt-signoff will check it."""
+    text = text.strip()
+    return text if not text or text.startswith("human:") else f"human:{text}"
+
+
+def _suggest_signer_id(signer_id: str) -> str:
+    """A valid ID close to an invalid one: ``human:Bene Test`` -> ``human:bene-test``."""
+    name = re.sub(r"[^a-z0-9._-]+", "-", signer_id.removeprefix("human:").lower()).strip("-._")
+    return f"human:{name[:64] or 'yourname'}"
+
+
 def step_signer(ctx: Context) -> None:
-    signer_id, name, role = ctx.signer_id, ctx.name, ctx.role
+    signer_id, name, role = _signer_id(ctx.signer_id or ""), ctx.name, ctx.role
+    if signer_id and not SIGNER_ID.match(signer_id):
+        raise StepFailed(f"{signer_id} is not a valid signer ID: lower case letters, digits, . _ or -, "
+                         f"for example {_suggest_signer_id(signer_id)}")
     if not signer_id:
         if not ctx.interactive:
             raise StepSkipped(f"needs you at the keyboard: run 'aqt setup' in your terminal, or: {SIGNER_FIX}")
         if not ctx.confirm("Enrol your signing identity now (you choose an ID and type a passphrase)?"):
             raise StepSkipped(f"not now; later: {SIGNER_FIX}")
-        signer_id = ctx.prompt("Your ID, for example human:alice (never reused): ")
-    if signer_id and not signer_id.startswith("human:"):
-        signer_id = f"human:{signer_id}"
+        for _attempt in range(3):     # checked before the name, role and passphrase are asked
+            signer_id = _signer_id(ctx.prompt("Your ID: lower case letters, digits, . _ or -, for example alice "
+                                              "(becomes human:alice; never reused): "))
+            if not signer_id or SIGNER_ID.match(signer_id):
+                break
+            ctx.say(f"{signer_id} cannot be used: lower case letters, digits, . _ or - only "
+                    f"(for example {_suggest_signer_id(signer_id)}).")
+        else:
+            raise StepSkipped(f"no valid ID given; later: {SIGNER_FIX}")
     if ctx.interactive:
         name = name or ctx.prompt("Your printed name, for example Alice Example: ")
         role = role or ctx.prompt("Your role, for example quality-manager or developer: ")
@@ -643,6 +668,20 @@ def _egress_status() -> dict | None:
     return status()
 
 
+def _box_fix() -> str:
+    """What makes bubblewrap work here: on Ubuntu with the AppArmor user-namespace restriction, a profile for bwrap."""
+    if shutil.which("bwrap") is None:
+        return "install bubblewrap (bwrap)"
+    try:
+        restricted = Path("/proc/sys/kernel/apparmor_restrict_unprivileged_userns").read_text().strip() == "1"
+    except OSError:
+        restricted = False
+    if restricted:
+        return ("AppArmor blocks bwrap's user namespaces: add an AppArmor profile for bwrap "
+                "(manual 6.4, 'bubblewrap cannot create namespaces')")
+    return "allow unprivileged user namespaces for bwrap (manual 6.4)"
+
+
 def check_egress(ctx: Context) -> Result:
     """The optional outbound checkpoint: never a failure, whether it is installed or not."""
     try:
@@ -659,7 +698,7 @@ def check_egress(ctx: Context) -> Result:
              if last else "no session yet"]
     if not value.get("box"):
         return Result(WARN, ", ".join(parts) + f"; the box cannot start here: {value.get('box_detail')}",
-                      "install bubblewrap (bwrap) and allow unprivileged user namespaces", data=value)
+                      _box_fix(), data=value)
     return Result(OK, ", ".join(parts), data=value)
 
 

@@ -98,4 +98,4 @@ Danach im eigenen Terminal, nicht in einer Agenten-Sitzung:
 
 ## Entstehung
 
-Benedikt Neumayer hat das Toolkit mit KI-Coding-Agenten gebaut; Anforderungen, Architektur und Review kamen von ihm. Stand: acht Pakete plus der Befehl `aqt`, die optionale lokale Weboberfläche aqt-ui und die optionale Warenausgangskontrolle aqt-egress, 1206 automatisierte Tests, eine Demo mit 43 geprüften Ergebnissen; Linux, Python (Programmiersprache) 3.11–3.13 (aqt-egress ab 3.12). Lizenzen: Apache-2.0 für den Code, CC BY 4.0 für Spezifikation und Kataloge.
+Benedikt Neumayer hat das Toolkit mit KI-Coding-Agenten gebaut; Anforderungen, Architektur und Review kamen von ihm. Stand: acht Pakete plus der Befehl `aqt`, die optionale lokale Weboberfläche aqt-ui und die optionale Warenausgangskontrolle aqt-egress, 1208 automatisierte Tests, eine Demo mit 43 geprüften Ergebnissen; Linux, Python (Programmiersprache) 3.11–3.13 (aqt-egress ab 3.12). Lizenzen: Apache-2.0 für den Code, CC BY 4.0 für Spezifikation und Kataloge.

@@ -1,6 +1,7 @@
 import json
 import tomllib
 
+import pytest
 from aqt_signoff.settings import load_settings
 from aqt_trail.config import config_dir, load_config
 
@@ -98,6 +99,30 @@ def test_setup_asks_before_each_step_and_respects_no():
     setup(_ctx(ask=answer, interactive=True, run_tool=runner))
     assert asked[0].startswith("No trail in ") and asked[0].endswith("Create the trail (aqt-trail init)? [Y/n] ")
     assert runner.calls == [] and not load_config().meta_path.exists()
+
+
+def test_an_invalid_id_is_asked_again_before_the_name_with_a_suggestion():
+    answers = iter(["", "Bene_test", "bene_test", "Bene", "product owner"])   # yes, bad ID, good ID, name, role
+    asked, said = [], []
+
+    def answer(question):
+        asked.append(question)
+        return next(answers)
+
+    runner = Tools()
+    checks.step_signer(_ctx(ask=answer, interactive=True, yes=True, run_tool=runner, say=said.append))
+    assert any("human:Bene_test cannot be used" in text and "human:bene_test" in text for text in said)
+    assert asked[1].startswith("Your ID") and asked[2].startswith("Your ID")
+    assert runner.calls == [("signoff", ["init", "--id", "human:bene_test", "--name", "Bene",
+                                         "--role", "product owner"])]
+
+
+def test_an_invalid_id_from_the_command_line_fails_before_anything_is_asked():
+    runner = Tools()
+    with pytest.raises(checks.StepFailed, match="human:bene-test"):
+        checks.step_signer(_ctx(ask=lambda q: pytest.fail(q), interactive=True, signer_id="Bene Test",
+                                run_tool=runner))
+    assert runner.calls == []
 
 
 def test_interactive_enrolment_asks_for_id_name_and_role_but_never_the_passphrase():
