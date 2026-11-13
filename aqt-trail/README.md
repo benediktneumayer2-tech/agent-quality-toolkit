@@ -33,7 +33,8 @@ aqt-trail applies audit-trail practice to agent work on a developer machine:
 ## 60-second quick start
 
 ```sh
-pip install aqt-trail                           # Python 3.11+, Linux
+uv venv .venv && uv pip install --python .venv/bin/python -e ../aqt-spec -e .   # Python 3.11+, Linux
+source .venv/bin/activate
 
 aqt-trail init                                   # state dir + service key
 aqt-trail serve &                                # the writer (Unix socket, 0600); as a service: examples/aqt-trail.service
@@ -52,7 +53,7 @@ aqt-trail review sign <worksheet.json> --reviewer human:dora \
 aqt-trail export --out trail-bundle              # copy with checksums; verify it with your own trust anchors
 ```
 
-Or the whole toolkit: `pip install agent-quality-toolkit` (it adds the `aqt` command; `aqt trail …` runs this tool, and `aqt setup` sets the trail up step by step). For development, from a clone of the repository, in this folder: `uv venv .venv && uv pip install --python .venv/bin/python -e ../aqt-spec -e .`.
+Run it in this folder of a clone of the repository ([manual 1.2](../docs/manual.md#12-get-the-code)); the packages are not on PyPI yet. Or install the whole toolkit ([manual 1.3](../docs/manual.md#13-install-everything-recommended)); it adds the `aqt` command: `aqt trail …` runs this tool, and `aqt setup` sets the trail up step by step.
 
 For Claude Code, merge [`examples/claude-code-hooks.json`](examples/claude-code-hooks.json) into your settings:
 every prompt, tool call, tool result, stop and session start/end becomes a `trail.import` record. The hook never

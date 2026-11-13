@@ -13,15 +13,21 @@ Setting up AQT by hand means following a checklist: create the trail, write a sy
 
 ## 60-second quick start
 
+The packages are not on PyPI yet. Install them from a clone of the repository at the release tag ([manual 1.2](../docs/manual.md#12-get-the-code)):
+
 ```bash
-uv tool install agent-quality-toolkit      # or: pipx install agent-quality-toolkit (Python 3.11+, Linux)
+cd ~/agent-quality-toolkit
+uv venv .venv
+uv pip install --python .venv/bin/python -e "aqt-spec[schema]" -e aqt-trail -e aqt-signoff -e aqt-change \
+    -e aqt-sensei -e aqt-quarantine -e aqt-validate -e aqt-capa -e aqt-ui -e aqt-cli    # Python 3.11+, Linux
+mkdir -p ~/.local/bin && ln -sf ~/agent-quality-toolkit/.venv/bin/aqt ~/agent-quality-toolkit/.venv/bin/aqt-* ~/.local/bin/
 aqt status                                 # what is missing
 aqt setup                                  # do it, step by step
 ```
 
-`aqt-toolkit` is the same command under a second name, for systems where another `aqt` (from aqtinstall) comes first on `PATH`: `aqt-toolkit status`, `aqt-toolkit setup`, and so on. The optional outbound checkpoint, aqt-egress (Python 3.12+, bubblewrap), is the extra `egress`: `uv tool install "agent-quality-toolkit[egress]"`. In an existing virtual environment, `pip install agent-quality-toolkit` works as well.
+`aqt-toolkit` is the same command under a second name, for systems where another `aqt` (from aqtinstall) comes first on `PATH`: `aqt-toolkit status`, `aqt-toolkit setup`, and so on. The optional outbound checkpoint, aqt-egress (Python 3.12+, bubblewrap), is the extra `egress`: create the environment with `uv venv --python 3.12 .venv` and write `-e "aqt-cli[egress]"` instead of `-e aqt-cli`.
 
-The toolkit also installs the tools' own commands (`aqt-trail`, `aqt-signoff`, `aqt-change`, `aqt-sensei`, `aqt-quarantine`, `aqt-validate`, `aqt-capa`, `aqt-ui`, `aqt-evidence`), so a uv tool or pipx install puts them on `PATH`, where the Claude Code hooks of `aqt project init` find them. `aqt-egress` is the exception, because a command cannot depend on an extra: with a uv tool or pipx it runs as `aqt egress` (or add `--with-executables-from aqt-egress` to `uv tool install`). In one virtual environment the toolkit and each package install the same command, so `pip uninstall agent-quality-toolkit` also removes the tools' commands while their packages stay; `pip install --force-reinstall --no-deps aqt-trail aqt-signoff …` brings them back.
+The toolkit also declares the tools' own commands (`aqt-trail`, `aqt-signoff`, `aqt-change`, `aqt-sensei`, `aqt-quarantine`, `aqt-validate`, `aqt-capa`, `aqt-ui`, `aqt-evidence`), with the same entry points as their packages, so installing the toolkit always provides the commands that the Claude Code hooks of `aqt project init` call by name. `aqt-egress` is the exception, because a command cannot depend on an extra: it comes with its own package, and `aqt egress` runs it too. In one virtual environment the toolkit and each package install the same command, so uninstalling `agent-quality-toolkit` also removes the tools' commands while their packages stay; the install line with `--reinstall` brings them back.
 
 Then, once in each repository where agents work:
 
@@ -32,14 +38,6 @@ aqt project init ~/code/my-project         # asks before each step; --yes applie
 It never commits: its last lines print the `git add … && git commit` command for the files it wrote.
 
 `aqt setup` asks before each step. `aqt setup --yes` applies every step that does not need you without asking. Enrolling your signing identity always needs you: you choose the ID (or pass `--id human:alice --name "Alice Example" --role quality-manager`) and type the passphrase at aqt-signoff's own prompt, also under `--yes`.
-
-For development, from a clone of the repository (editable installs; `.venv/bin/aqt` instead of `aqt`):
-
-```bash
-uv venv .venv
-uv pip install --python .venv/bin/python -e "aqt-spec[schema]" -e aqt-trail -e aqt-signoff -e aqt-change \
-    -e aqt-sensei -e aqt-quarantine -e aqt-validate -e aqt-capa -e aqt-ui -e aqt-cli
-```
 
 ## How it works
 
@@ -102,7 +100,7 @@ The denied decision commands: aqt-quarantine `release`, `declare-threat`, `trust
 
 A settings file that is not valid JSON, or whose `hooks`, an event, `permissions` or `deny` has another shape, is refused. Otherwise every other key and the key order are kept; the file is written with 2-space indentation, atomically and with its mode. Every changed file is backed up first to `$XDG_STATE_HOME/aqt/backups/project-init/<repository>-<hash>/` (a file outside the repository, such as `ui.toml`, to `project-init/user/`), outside the repository, because an untracked file in it would make aqt-change receipts stale. An existing `.aqt/change.toml` is never rewritten.
 
-Pass-through: `aqt trail`, `aqt signoff`, `aqt change`, `aqt sensei`, `aqt quarantine`, `aqt validate`, `aqt capa`, `aqt ui` and `aqt spec` (or `aqt evidence`) run that tool's command line in the same process, with the same arguments and exit code (also as `aqt-toolkit <tool>`). A tool that is not installed prints the command that adds it to this installation: `uv tool install "agent-quality-toolkit[egress]"` for a uv tool, `pipx install --force …` for pipx, `pip install aqt-egress` in another environment, and the editable install in a clone of the repository.
+Pass-through: `aqt trail`, `aqt signoff`, `aqt change`, `aqt sensei`, `aqt quarantine`, `aqt validate`, `aqt capa`, `aqt ui` and `aqt spec` (or `aqt evidence`) run that tool's command line in the same process, with the same arguments and exit code (also as `aqt-toolkit <tool>`). A tool that is not installed prints the command that adds it to this installation, matched to how the toolkit was installed; in a clone of the repository, that is the editable install of its folder.
 
 ## Threat model and limits
 

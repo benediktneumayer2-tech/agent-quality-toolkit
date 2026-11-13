@@ -80,7 +80,7 @@ Unverändert aus einem Demo-Lauf vom 22. Oktober 2026 ([Übersicht](../../exampl
 
 ## Einrichtung
 
-Installiert wird mit einem Befehl aus PyPI, dem Python-Paketverzeichnis: `uv tool install agent-quality-toolkit` (Varianten und Aktualisierung im [Benutzerhandbuch 1.3](../manual.md#13-install-everything-recommended), englisch).
+Installiert wird aus einer Kopie (einem Klon) des Repositorys im Stand des Releases, mit fünf Befehlen aus dem [README](../../README.md#quick-start-install-in-about-a-minute-run-in-about-ten-seconds). Pakete auf PyPI, dem Python-Paketverzeichnis, sind geplant. Einzelheiten und Aktualisierung stehen im [Benutzerhandbuch 1.2 bis 1.7](../manual.md#12-get-the-code) (englisch).
 
 Danach im eigenen Terminal, nicht in einer Agenten-Sitzung:
 
@@ -98,4 +98,4 @@ Danach im eigenen Terminal, nicht in einer Agenten-Sitzung:
 
 ## Entstehung
 
-Benedikt Neumayer hat das Toolkit mit KI-Coding-Agenten gebaut; Anforderungen, Architektur und Review kamen von ihm. Stand: acht Pakete plus der Befehl `aqt`, die optionale lokale Weboberfläche aqt-ui und die optionale Warenausgangskontrolle aqt-egress, 1204 automatisierte Tests, eine Demo mit 43 geprüften Ergebnissen; Linux, Python (Programmiersprache) 3.11–3.13 (aqt-egress ab 3.12). Lizenzen: Apache-2.0 für den Code, CC BY 4.0 für Spezifikation und Kataloge.
+Benedikt Neumayer hat das Toolkit mit KI-Coding-Agenten gebaut; Anforderungen, Architektur und Review kamen von ihm. Stand: acht Pakete plus der Befehl `aqt`, die optionale lokale Weboberfläche aqt-ui und die optionale Warenausgangskontrolle aqt-egress, 1206 automatisierte Tests, eine Demo mit 43 geprüften Ergebnissen; Linux, Python (Programmiersprache) 3.11–3.13 (aqt-egress ab 3.12). Lizenzen: Apache-2.0 für den Code, CC BY 4.0 für Spezifikation und Kataloge.

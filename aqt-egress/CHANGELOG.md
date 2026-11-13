@@ -2,7 +2,7 @@
 
 ## 0.2.0 — unreleased
 
-- Packaging: published on PyPI (`pip install aqt-egress`) at 0.2.0, the version of every AQT package; the other AQT packages it needs are required at `>=0.2,<0.3`; the licence is an SPDX expression with the licence files in the package (PEP 639); also the optional extra `egress` of agent-quality-toolkit (Python 3.12+).
+- Packaging: released at 0.2.0, the version of every AQT package; the other AQT packages it needs are required at `>=0.2,<0.3`; the licence is an SPDX expression with the licence files in the package (PEP 639); also the optional extra `egress` of agent-quality-toolkit (Python 3.12+).
 - **Known (2026-10-31):** pip-audit reports three tornado 6.5.10 advisories (GHSA-pcg2-g6cj-q92c, GHSA-r4j5-9xpp-3985, GHSA-pw9p-v7r6-gx4p, fixed in 6.6). tornado is installed only because mitmproxy needs it for its own web interface; aqt-egress never imports or starts it, and mitmproxy 12.3.1 pins `tornado<=6.5.10`. CI ignores these three until mitmproxy allows 6.6.
 
 First slice of the outbound checkpoint: observe and record (nothing is blocked).
