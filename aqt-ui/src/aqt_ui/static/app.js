@@ -145,6 +145,23 @@ function put(el, ...children) { return append(el, children); }
 function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); return el; }
 function announce(text) { const live = $("live"); clear(live); setTimeout(() => { live.textContent = vis(text); }, 30); }
 
+// A role by its label ("quality-manager" -> "Quality manager"); a role typed in your own words stays as it is.
+const ROLE_WORDS = { developer: "Developer", "quality-manager": "Quality manager", reviewer: "Reviewer" };
+function roleWord(role) { return role ? t(ROLE_WORDS[role] || role) : t("no role"); }
+// The singular or the plural sentence, by n.
+function tn(n, one, many, vars) { return t(n === 1 ? one : many, { n, ...(vars || {}) }); }
+// Why decisions are off, in words a person reads first; the technical reason goes under "Details".
+function readOnlyWords(mode) {
+  if (!mode) return "";
+  if (mode.explicit) return t("This window was started read-only on purpose.");
+  if ((mode.markers || []).length || mode.harness) return t("AQT was opened by an AI agent. So that no agent can ever sign in your name, this window is read-only.");
+  return t("AQT could not confirm that a person opened it, so this window is read-only.");
+}
+function readOnlyNotice(mode, then) {
+  return h("div", { class: "off" }, h("p", {}, h("strong", { text: `${t("Read-only")}. ` }), readOnlyWords(mode), then ? ` ${then}` : ""),
+    mode && mode.reason ? h("details", { class: "tech" }, h("summary", { text: t("Details") }), h("p", { class: "small muted break", text: mode.reason })) : null);
+}
+
 // ---- formatting --------------------------------------------------------------------------------
 function fmtTime(iso) {
   if (!iso) return "–";
@@ -391,15 +408,21 @@ function renderTopbar() {
     badge.className = "badge off";
     put(badge, t("Read-only"));
     ribbon.hidden = S.mode.decisions;
-    if (!S.mode.decisions) put(ribbon, h("strong", { text: `${t("Read-only")}. ` }), S.mode.reason);
+    if (!S.mode.decisions) put(ribbon, h("strong", { text: `${t("Read-only")}. ` }), readOnlyWords(S.mode), " ", t("Open AQT yourself to decide."),
+      S.mode.reason ? h("details", { class: "tech inline" }, h("summary", { text: t("Details") }), h("span", { class: "small", text: S.mode.reason })) : null);
   }
 }
 
 // ---- the status pill: "Everything in order", or the most important problem with its one fix ---------
 // Setup checks that need a look (from GET /api/setup; aqt status's own list).
 function setupProblems() {
-  const rows = (S.setup && S.setup.checks) || [];
+  const rows = ((S.setup && S.setup.checks) || []).filter((c) => visibleCheck(c, S.setup.checks));
   return rows.filter((c) => c.result === "fail").concat(rows.filter((c) => c.result === "warn" && c.id !== "egress"));
+}
+// "Where records go" says the writer is down when it is: one cause appears once.
+function visibleCheck(row, rows) {
+  if (row.id !== "sink" || row.result !== "warn") return true;
+  return !(rows || []).some((c) => c.id === "writer" && c.result === "fail");
 }
 function pillState() {
   const ov = S.overview;
@@ -408,9 +431,12 @@ function pillState() {
   const status = ov.status || {};
   if (setup.needed) return { kind: "warn", text: t("Setup not finished"), fix: t("Continue setup"), path: "/welcome" };
   if (["broken", "changed", "problems"].includes(status.state)) return { kind: "fail", text: t("The audit trail does not verify"), fix: t("See why"), path: `/case/trail:trail_${status.state}` };
-  if (status.state !== "missing" && status.writer && !status.writer.running) return { kind: "fail", text: t("Trail writer stopped"), fix: t("Restart"), apply: "writer", path: "/settings" };
-  if (status.writer && status.writer.spooled) return { kind: "warn", text: t("{n} record(s) wait outside the trail", { n: status.writer.spooled }), fix: t("Move them in"), apply: "spool", path: "/settings" };
+  // the banner under the top bar carries the restart; the pill only names it
+  if (status.state !== "missing" && status.writer && !status.writer.running) return { kind: "fail", text: t("Background service (writer) stopped") };
+  if (status.writer && status.writer.spooled) return { kind: "warn", text: tn(status.writer.spooled, "1 record waits outside the audit trail", "{n} records wait outside the audit trail"), fix: t("Move them in"), apply: "spool", path: "/settings" };
   const problem = setupProblems()[0];
+  if (problem && problem.id === "command") return { kind: "warn", text: t("Agents can't reach AQT"), fix: t("Fix"),
+    install: APP && problem.data && problem.data.in_app === "aqt_command", path: "/settings#check-command" };
   if (problem) return { kind: problem.result === "fail" ? "fail" : "warn", text: `${t(CHECK_WORDS[problem.id] || problem.id)}: ${problem.result === "fail" ? t("needs a fix") : t("needs a look")}`,
     fix: t("Fix"), apply: problem.can_apply ? problem.id : null, path: `/settings#check-${problem.id}` };
   if (status.test_mode) return { kind: "warn", text: t("Test mode is on"), fix: t("See why"), path: "/case/trail:test_mode" };
@@ -424,6 +450,7 @@ function renderPill() {
     const button = h("button", { class: "btn small pill-fix", type: "button", text: p.fix });
     button.addEventListener("click", async () => {
       if (p.apply && S.mode && S.mode.decisions) { button.disabled = true; await applyStep(p.apply); button.disabled = false; }
+      else if (p.install && S.mode && S.mode.decisions) { button.disabled = true; await installCommand(); button.disabled = false; }
       else go(p.path);
     });
     put(box, button);
@@ -438,6 +465,13 @@ async function applyStep(id) {
   if (!ok && location.pathname !== "/settings") go(`/settings#check-${id}`);
   else if (S.view === "settings") route();
   return { status, data };
+}
+// The app installs the aqt command (AppImage: ~/.local/bin/aqt), then checks again.
+async function installCommand() {
+  try { await desktopSettings({ aqt_command: true }); announce(t("Done: {what}", { what: t("Install the aqt command") })); }
+  catch (error) { announce(`${t("Not done:")} ${String(error.message || error)}`); }
+  await loadSetup().catch(() => null);
+  if (S.view === "settings") route();
 }
 // The setup checks (aqt status). Kept in S.setup for the pill and Settings.
 async function loadSetup() {
@@ -455,7 +489,7 @@ function writerBar(status) {
   bar.hidden = !down;
   if (!down) return;
   const service = S.setup && S.setup.service;
-  put(clear(bar), h("strong", { text: `${t("The trail writer is not running.")} ` }), t("Records wait in a spool until it runs again."), " ",
+  put(clear(bar), h("strong", { text: `${t("The background service (writer) is not running.")} ` }), t("Records wait in a spool until it runs again."), " ",
     service && S.mode && S.mode.decisions ? h("button", { class: "btn small", type: "button", text: t("Restart the writer"), onclick: (e) => { e.target.disabled = true; applyStep("writer"); } })
       : [t("Start it in a terminal:"), " ", h("code", { text: "aqt-trail serve" })]);
 }
@@ -543,12 +577,6 @@ function termNode(key, text) {
   return h("span", { class: "term-wrap" }, h("span", { class: "term", tabindex: "0", "data-tip": g.tip, "aria-describedby": id, text: text || g.noun }),
     h("span", { class: "sr-only", id, text: g.tip }));
 }
-// A word for a list or a heading: "Release for use (release)", with the tooltip.
-function termLabel(key) {
-  const g = gloss(key);
-  if (!g) return key;
-  return h("span", {}, termNode(key, g.word), g.term.toLowerCase() !== g.word.toLowerCase() ? h("span", { class: "gmp", text: ` (${g.term})` }) : null);
-}
 // A value as a shell word: plain when it is safe, else in single quotes.
 function sq(value) {
   const text = String(value ?? "");
@@ -565,77 +593,54 @@ function decisionPanel({ actions, subject, signers, submit, note, fields, noSign
   const box = h("section", { class: "decision", "aria-label": title || t("Decision") });
   put(box, h("h3", { text: title || t("Decision") }));
   if (!S.mode || !S.mode.decisions) {
-    put(box, h("div", { class: "off" }, h("strong", { text: `${t("Read-only")}. ` }), S.mode ? S.mode.reason : ""));
+    put(box, readOnlyNotice(S.mode));
     return box;
   }
   if (!signers || !signers.length) {
     put(box, h("div", { class: "off" }, noSigners || [t("No signing identity is set up yet."), " ", link(t("Set up your identity"), "/welcome")]));
     return box;
   }
-  let chosen = actions[0];
-  const button = h("button", { class: `btn ${chosen.danger ? "danger" : "primary"}`, type: "button", text: chosen.button });
+  // Nothing is chosen in advance: every allowed decision is an equal button with its one sentence of consequence.
+  const result = h("div", { "aria-live": "polite" });
   const shown = h("div", { class: "as-command", hidden: true });
   const toggle = command ? h("button", { class: "btn small ghost", type: "button", "aria-expanded": "false", text: t("Show as command") }) : null;
-  const showCommand = () => {
+  const showCommands = () => {
     if (!command || shown.hidden) return;
-    const text = command(chosen);
-    put(clear(shown), text ? [h("p", { class: "small muted", text: t("The same decision in a terminal; it asks for your passphrase there.") }), commandLine(text)]
-      : h("p", { class: "small muted", text: t("No aqt command does exactly this.") }));
+    put(clear(shown), h("p", { class: "small muted", text: t("The same decision in a terminal; it asks for your passphrase there.") }),
+      actions.map((a) => { const text = command(a); return text ? [actions.length > 1 ? h("p", { class: "small", text: a.label }) : null, commandLine(text)] : null; }));
   };
   if (toggle) toggle.addEventListener("click", () => {
     shown.hidden = !shown.hidden;
     toggle.setAttribute("aria-expanded", String(!shown.hidden));
     toggle.textContent = vis(shown.hidden ? t("Show as command") : t("Hide the command"));
-    showCommand();
+    showCommands();
   });
-  const consequence = h("p", { class: "consequence" });
-  const sayConsequence = () => put(clear(consequence), title === chosen.label ? null : h("strong", { text: `${chosen.label}: ` }), chosen.consequence || "");
-  const pick = (a) => {
-    chosen = a;
-    button.textContent = vis(a.button); button.className = `btn ${a.danger ? "danger" : "primary"}`;
-    sayConsequence();
-    showCommand();
-  };
-  const worded = actions.some((a) => a.consequence);
-  const choice = worded && actions.length > 1 ? h("div", { class: "choice-list", role: "radiogroup", "aria-label": t("Decision") },
-    actions.map((a) => {
-      const b = h("button", { class: `choice${a.danger ? " danger" : ""}`, type: "button", role: "radio", "aria-checked": a === chosen ? "true" : "false" },
-        h("strong", { text: a.label }), a.consequence ? h("span", { text: a.consequence }) : null);
-      b.addEventListener("click", () => {
-        for (const other of choice.children) other.setAttribute("aria-checked", String(other === b));
-        pick(a);
-      });
-      return b;
-    }))
-    : worded ? (sayConsequence(), consequence)
-    : actions.length > 1 ? h("div", { class: "chips", role: "radiogroup", "aria-label": t("Decision") },
-    actions.map((a) => {
-      const b = h("button", { class: "chip-btn", type: "button", role: "radio", "aria-checked": a === chosen ? "true" : "false", "aria-pressed": a === chosen ? "true" : "false", text: a.label });
-      b.addEventListener("click", () => {
-        for (const other of choice.children) { const on = other === b; other.setAttribute("aria-checked", String(on)); other.setAttribute("aria-pressed", String(on)); }
-        pick(a);
-      });
-      return b;
-    })) : null;
-  const result = h("div", { "aria-live": "polite" });
-  const row = h("div", { class: "actions" }, button, toggle);
-  button.addEventListener("click", async () => {
-    clear(result);
-    const answer = await signSheet({ action: chosen, subject, signers, submit, note });
-    if (!answer) { button.focus(); return; }
-    const { data } = answer;
-    const text = `${t("Recorded as {record}", { record: data.record_id || "a record" })}${data.time ? " · " + fmtTime(data.time) : ""}. ${msgOf(data, "message")}`;
-    put(result, h("div", { class: "result ok", role: "status", text }));
-    announce(text);
-    row.remove();                       // the decision is made; show what was recorded
-    shown.remove();
-    if (choice) choice.remove();
-    if (fields) fields.remove();
-    if (onDone) onDone(data, chosen);
-    else setTimeout(async () => { await refresh(); route(true); }, 600);
-    result.scrollIntoView({ block: "nearest" });
-  });
-  put(box, choice, fields || null, note ? h("p", { class: "small muted", text: note }) : null, row, shown, result);
+  if (fields) fields.addEventListener("input", showCommands);
+  const buttons = h("div", { class: "choice-list" });
+  for (const a of actions) {
+    const b = h("button", { class: `choice${a.danger ? " danger" : ""}`, type: "button" },
+      h("strong", { text: a.button }), a.consequence ? h("span", { text: a.consequence }) : null);
+    b.addEventListener("click", async () => {
+      clear(result);
+      for (const other of buttons.children) other.disabled = true;
+      const answer = await signSheet({ action: a, subject, signers, submit, note });
+      for (const other of buttons.children) other.disabled = false;
+      if (!answer) { b.focus(); return; }
+      const { data } = answer;
+      const text = `${t("Recorded as {record}", { record: data.record_id || "a record" })}${data.time ? " · " + fmtTime(data.time) : ""}. ${msgOf(data, "message")}`;
+      put(result, h("div", { class: "result ok", role: "status", text }));
+      announce(text);
+      buttons.remove();                    // the decision is made; show what was recorded
+      if (toggle) toggle.remove();
+      shown.remove();
+      if (fields) fields.remove();
+      if (onDone) onDone(data, a);
+      else setTimeout(async () => { await refresh(); route(true); }, 600);
+      result.scrollIntoView({ block: "nearest" });
+    });
+    put(buttons, b);
+  }
+  put(box, fields || null, note ? h("p", { class: "small muted", text: note }) : null, buttons, toggle ? h("div", { class: "actions" }, toggle) : null, shown, result);
   return box;
 }
 
@@ -648,10 +653,11 @@ function signSheet({ action, subject, signers, submit, note }) {
   return new Promise((resolve) => {
     const n = ++panelCount;
     const label = subject.label instanceof Node ? subject.label.textContent : String(subject.label ?? "");
-    const select = signers.length > 1 ? h("select", { id: `ss-signer-${n}` }, signers.map((x) => h("option", { value: x.id, text: `${x.name || x.id} (${x.role || t("no role")})` }))) : null;
+    const select = signers.length > 1 ? h("select", { id: `ss-signer-${n}` }, signers.map((x) => h("option", { value: x.id, text: `${x.name || x.id} (${roleWord(x.role)})` }))) : null;
     const who = () => signers.find((x) => x.id === (select ? select.value : "")) || signers[0];
     const reason = h("textarea", { id: `ss-reason-${n}`, required: true, "aria-required": "true", maxlength: "2000", rows: "3" });
-    const pass = h("input", { id: `ss-pass-${n}`, type: "password", autocomplete: "off", spellcheck: "false", "aria-required": "true" });
+    const pass = h("input", { id: `ss-pass-${n}`, type: "password", autocomplete: "off", spellcheck: "false", "aria-required": "true", "aria-describedby": `ss-pass-msg-${n}` });
+    const passMessage = h("p", { id: `ss-pass-msg-${n}`, class: "field-message", "aria-live": "assertive" });
     const message = h("div", { "aria-live": "polite" });
     const sign = h("button", { class: `btn ${action.danger ? "danger" : "primary"}`, type: "button", text: action.button });
     const cancel = h("button", { class: "btn ghost", type: "button", text: t("Cancel") });
@@ -660,8 +666,8 @@ function signSheet({ action, subject, signers, submit, note }) {
     const reasonCell = h("dd", { class: "keep-lines" });
     const fill = () => {
       const x = who();
-      put(clear(idLine), h("code", { text: x.id }), " ", h("span", { class: "muted", text: `${x.name || "?"} · ${x.role || t("no role")}` }));
-      put(clear(signerCell), `${x.name || "?"} · ${x.id} · ${x.role || t("no role")}`);
+      put(clear(idLine), h("code", { text: x.id }), " ", h("span", { class: "muted", text: `${x.name || "?"} · ${roleWord(x.role)}` }));
+      put(clear(signerCell), `${x.name || "?"} · ${x.id} · ${roleWord(x.role)}`);
       put(clear(reasonCell), reason.value.trim() || "–");
     };
     if (select) select.addEventListener("change", fill);
@@ -675,7 +681,7 @@ function signSheet({ action, subject, signers, submit, note }) {
       action.consequence ? h("p", { class: "small muted", text: action.consequence }) : null,
       h("div", { class: "field" }, select ? [h("label", { for: select.id, text: t("Who signs") }), select] : [h("span", { class: "label", text: t("Your ID") }), idLine]),
       h("div", { class: "field" }, h("label", { for: reason.id, text: t("Reason (recorded with your signature)") }), reason),
-      h("div", { class: "field" }, h("label", { for: pass.id, text: t("Passphrase (used once, never stored)") }), pass),
+      h("div", { class: "field" }, h("label", { for: pass.id, text: t("Passphrase (used once, never stored)") }), pass, passMessage),
       h("details", { class: "what-signed" }, h("summary", { text: t("What exactly is signed?") }),
         h("dl", { class: "manifest" },
           h("dt", { text: t("Signer") }), signerCell,
@@ -696,10 +702,18 @@ function signSheet({ action, subject, signers, submit, note }) {
       dlg.remove();
       resolve(answer);
     };
-    const say = (kind, text) => { put(clear(message), h("div", { class: `result ${kind}`, role: "status", text })); };
+    const say = (kind, text) => { put(clear(message), h("div", { class: `result ${kind}`, role: "status", text })); message.scrollIntoView({ block: "nearest" }); };
+    const wrongPass = (text) => {
+      pass.classList.add("invalid");
+      pass.setAttribute("aria-invalid", "true");
+      put(clear(passMessage), text);
+      pass.scrollIntoView({ block: "center" });
+      pass.focus();
+    };
+    pass.addEventListener("input", () => { pass.classList.remove("invalid"); pass.removeAttribute("aria-invalid"); clear(passMessage); });
     sign.addEventListener("click", async () => {
       if (!reason.value.trim()) { say("stale", t("A reason is required.")); reason.focus(); return; }
-      if (!pass.value) { say("stale", t("Enter your passphrase.")); pass.focus(); return; }
+      if (!pass.value) { wrongPass(t("Enter your passphrase.")); return; }
       sign.disabled = true;
       const passphrase = pass.value;
       pass.value = "";
@@ -707,10 +721,9 @@ function signSheet({ action, subject, signers, submit, note }) {
         const { status, data } = await submit(action, { reason: reason.value.trim(), passphrase, signer_id: who().id });
         if (data.ok) { finish({ status, data }); return; }
         const said = msgOf(data, "message");
-        if (data.reason_code === "auth_failed") say("stale", t("The passphrase did not unlock your key. Type it again; the attempt was recorded."));
-        else if (status === 409) say("stale", `${t("Not signed:")} ${said}`);
+        if (data.reason_code === "auth_failed") { clear(message); wrongPass(t("Wrong passphrase: your key did not unlock. Type it again. This attempt is recorded.")); return; }
+        if (status === 409) say("stale", `${t("Not signed:")} ${said}`);
         else say("refused", `${t("Refused:")} ${refusalWords(data.reason_code, data.reason_text) ? refusalWords(data.reason_code, data.reason_text) + ". " : ""}${said}${data.record_id ? ` (${t("refusal recorded as {record}", { record: data.record_id })})` : ""}`);
-        pass.focus();
       } catch (error) {
         say("refused", String(error.message || error));
       } finally {
@@ -761,6 +774,7 @@ async function route(keepInspector) {
   const shell = document.querySelector(".shell");
   shell.classList.toggle("no-insp", !!page || !(part ? part.inspector : area.inspector));
   shell.classList.toggle("onboarding", area === WELCOME);
+  shell.classList.toggle("insp-overlay", !!part && part.id === "trail");     // the trail's panel opens over the list
   renderRail();
   const main = clear($("main"));
   put(main, h("div", { class: "empty", text: t("Loading…") }));
@@ -779,13 +793,14 @@ async function route(keepInspector) {
 const SEVERITY_KIND = { critical: "fail", high: "warn", medium: "info", low: "neutral" };
 // Title and detail of a "Needs you" entry in the chosen language (English comes from the server).
 function needText(item) {
-  const de = LANG === "de" && NEEDS[item.key];
+  const entry = LANG === "de" && NEEDS[item.key];
+  const de = typeof entry === "function" ? entry(item.args || {}) : entry;
   if (!de) return [item.title, msgOf(item, "detail")];
   // Only enumerated words are translated (ALCOA++ attributes, validate kinds and triggers); ids, sources and
   // names are data and stay as they are.
   const word = (key, value) => (key === "kind" ? codeWord("validate.kind.", value)
     : key === "triggers" ? String(value).split(", ").map((x) => codeWord("validate.trigger.", x)).join(", ")
-      : key === "attribute" ? t(String(value)) : typeof value === "number" ? num(value) : String(value));
+      : key === "attribute" ? t(String(value)) : key === "suspicion" ? t(String(value)) : typeof value === "number" ? num(value) : String(value));
   const fill = (text) => text.replace(/\{(\w+)\}/g, (all, key) => (item.args[key] === undefined ? all : word(key, item.args[key])));
   const detail = de[1] === null ? msgOf(item, "detail") : de[1] === "@reason" ? (REASONS_DE[item.args.reason_code] || item.detail) : fill(de[1]);
   return [fill(de[0]), detail];
@@ -864,17 +879,19 @@ function healthSections(data) {
     unverified: status.verifying ? t("Verifying…") : t("Not verified yet"), missing: t("No trail yet") };
   const verifyBtn = h("button", { class: "btn small", type: "button", text: status.verifying ? t("Verifying…") : t("Verify now"), disabled: status.verifying,
     onclick: async () => { verifyBtn.disabled = true; verifyBtn.textContent = vis(t("Verifying…")); await post("/api/trail/verify"); pollVerify(); } });
-  const band = h("dl", { class: "band" },
-    [[t("Trail"), stWord(status.state, words[status.state])], [t("Records"), num(status.records)], [t("Head seq"), num(status.head_seq)],
-     [t("Last full check"), check.checked_at ? `${ago(check.checked_at)}${status.appended_since_check ? ` · ${t("{n} newer not yet verified", { n: num(status.appended_since_check) })}` : ""}` : t("not yet")],
-     [t("Writer"), stWord(status.writer.running ? "running" : "missing", status.writer.running ? t("Running") : t("Not running"))],
-     [t("Spool"), status.writer.spooled ? stWord("warn", t("{n} waiting", { n: status.writer.spooled })) : t("empty")],
-     [t("Last anchor"), status.last_anchor ? ago(status.last_anchor) : t("none")],
-     [t("Last review"), status.last_review ? ago(status.last_review) : t("none")],
-     [t("Test mode"), status.test_mode ? stWord("warn", t("On")) : t("Off")],
-     [t("Review parameters"), profileWord(status.review_profile)]]
-      .map(([k, v]) => h("div", {}, h("dt", { text: k }), h("dd", {}, v))));
-  main.put(section([`${t("Trail status")} `, h("span", { class: "hint" }, verifyBtn)], band,
+  const tiles = (pairs) => h("dl", { class: "band" }, pairs.map(([k, v, hint]) => h("div", { title: hint || null }, h("dt", { text: k }), h("dd", {}, v))));
+  // what a person reads first; the technical tiles under Details, each with a hint
+  const band = tiles([[t("Audit trail"), stWord(status.state, words[status.state])], [t("Records"), num(status.records)],
+    [t("Last full check"), check.checked_at ? `${ago(check.checked_at)}${status.appended_since_check ? ` · ${t("{n} newer not yet verified", { n: num(status.appended_since_check) })}` : ""}` : t("not yet")],
+    [t("Background service (writer)"), stWord(status.writer.running ? "running" : "missing", status.writer.running ? t("Running") : t("Not running"))],
+    [t("Last audit-trail review"), status.last_review ? ago(status.last_review) : t("none")]]);
+  const more = h("details", { class: "tech" }, h("summary", { text: t("Details") }), tiles([
+    [t("Head seq"), num(status.head_seq), t("The number of the newest record; records are numbered without gaps.")],
+    [t("Waiting records"), status.writer.spooled ? stWord("warn", t("{n} waiting", { n: status.writer.spooled })) : t("none"), t("Records that could not reach the background service wait in a spool until it runs again.")],
+    [t("Last external time stamp"), status.last_anchor ? ago(status.last_anchor) : t("none"), t("An external service (RFC 3161) confirmed when the trail had this state.")],
+    [t("Test mode"), status.test_mode ? stWord("warn", t("On")) : t("Off"), t("In test mode, time stamps from a test service count. Never for real use.")],
+    [t("Review parameters"), profileWord(status.review_profile), t("The thresholds the audit-trail review uses, from trail.toml.")]]));
+  main.put(section([`${t("Audit trail")} `, h("span", { class: "hint" }, verifyBtn)], band, more,
     status.state === "broken" ? h("p", { class: "small", text: `${t("Verifier:")} ${msgOf(check, "summary")}` }) : null));
 
   const strip = h("div", { class: "alcoa" });
@@ -1069,14 +1086,22 @@ const CASES = {
     const unknown = a.status === "unknown";
     const f = caseFrame(main, item, {
       title: t("Prepared action {id}", { id: a.id }),
-      stop: ["person", unknown ? t("Waits for you: find out what happened, then resolve the outcome in a terminal") : t("Waits for you: approve or reject this exact version")],
+      stop: ["person", unknown ? t("Waits for you: find out whether the action ran, then record what happened") : t("Waits for you: approve or reject this exact version")],
       settled: stWord(a.status),
       links: [[t("Open in {view}", { view: t("Changes") }), `/changes?tab=actions&item=${encodeURIComponent(a.id)}`]],
     });
     f.body(x.summary, x.spec);
     if (notice) f.decide(t("Decided"), recordedBlock(notice));
-    else if (unknown) f.decide(t("How to resolve"), resolveSteps([[t("Check the external state first (did it run?), then record what happened, in your own terminal:"),
-      `aqt-signoff resolve ${a.id} --as succeeded --reason "…"`, `aqt-signoff resolve ${a.id} --as not-applied --reason "…"`]]));
+    else if (unknown) f.decide(t("How to resolve"),
+      h("p", { class: "lede", text: t("AQT cannot tell whether this action ran: it started, but no result came back. Look at the system it acts on (for example the server, the repository or the account it changes). Then record what you found.") }),
+      decisionPanel({ title: t("Record what happened"),
+        actions: [{ id: "succeeded", label: t("It ran"), meaning: "verified", button: t("Record: the action ran"),
+          consequence: t("The action counts as done. Your signature confirms that you checked the result.") },
+        { id: "not-applied", label: t("It did not run"), meaning: "verified", button: t("Record: the action did not run"),
+          consequence: t("The action counts as not applied; to try again, the agent prepares a new version.") }],
+        signers: a.signers, subject: { label: t("action {id} v{version}", { id: a.id, version: a.version }), hash: a.action_sha256 }, onDone: done,
+        command: (choice) => `aqt signoff resolve ${sq(a.id)} --as ${choice.id} --reason "…"`,
+        submit: (choice, values) => post(`/api/changes/actions/${encodeURIComponent(a.id)}/resolve`, { ...values, outcome: choice.id, expected_hash: a.action_sha256 }) }));
     else if (x.decision) f.decide(null, x.decision);
     else caseEmpty(f);
   },
@@ -1097,8 +1122,10 @@ const CASES = {
         links: [[t("Open in {view}", { view: t("CAPA") }), "/evidence/capa?tab=deviations"]] });
       f.body(inspSection(t("Deviations"), overdue.length ? h("ul", { class: "evidence-list" }, overdue.map((d) => h("li", {},
         link(`${d.dev_id} ${d.title}`, `/evidence/capa?tab=deviations&item=${encodeURIComponent(d.dev_id)}`), ` · ${t("due")} ${fmtTime(d.due)}`))) : h("p", { class: "muted", text: t("No deviation is overdue.") })));
-      f.decide(t("How to resolve"), resolveSteps([[t("Record the investigation in a terminal (5 whys, factors, root cause):"),
-        `aqt-capa investigate ${(overdue[0] && overdue[0].dev_id) || "DEV-…"} --why "…" --root-cause "…" --root-category …`]]));
+      f.decide(t("How to resolve"),
+        h("p", { class: "lede", text: t("The investigation of these deviations was due. Find out why each one happened: ask why until you reach the cause, and note what contributed to it.") }),
+        h("p", { text: t("Recording an investigation is not in the app yet, so it is done in a terminal; the person handling the deviation (or their developer) runs:") }),
+        commandLine(`aqt capa investigate ${(overdue[0] && overdue[0].dev_id) || "DEV-…"} --why "…" --root-cause "…" --root-category …`));
       return;
     }
     const wanted = query().get("candidate");
@@ -1169,13 +1196,42 @@ const CASES = {
         trail_missing: [t("Waits for a fix: set up the audit trail"), [t("Set up the trail, a signing key and the hooks in a terminal (safe to run again):"), "aqt setup"]],
         writer_down: [t("Waits for a fix: start the trail writer"), [t("Start the writer in a terminal:"), "aqt-trail serve"]],
         spooled: [t("Waits for a fix: move the spooled records into the trail"), [t("Append the spooled records to the trail:"), "aqt-trail drain"]],
-        unanchored: [t("Waits for a fix: anchor the trail head"), [t("Sign the head and add an RFC 3161 time stamp:"), "aqt-trail checkpoint --anchor"]],
-        test_mode: [t("Waits for a fix in trail.toml"), [t("Remove the line test_tsa = true from the [anchor] section of trail.toml.")]],
-        review_params: [t("Waits for a fix in trail.toml"), [t("Check the [review] section of trail.toml and remove the values you did not set.")]],
-      }[code] || [t("Waits for a fix"), [t("See the Health view for details.")]];
+        unanchored: [t("Waits for an external time stamp"), [t("Without a time-stamp service, add one to trail.toml under [anchor] (tsa_url). Which service to trust is your organisation's choice, so AQT does not pick one; only the hash of the trail's head is sent to it.")]],
+        test_mode: [t("Waits for a fix in trail.toml"), [t("Remove the line test_tsa = true from the [anchor] section of trail.toml. AQT does not change this file itself: test mode is switched off by the person who switched it on.")]],
+        review_params: [t("Waits for you: keep these values or change them"), [t("To use the built-in values instead, remove these lines from the [review] section of trail.toml.")]],
+      }[code] || [t("Waits for a fix"), [t("See Settings for details.")]];
       const f = caseFrame(main, item, { title: t("Trail"), stop: ["fix", fixes[0]], links: [[t("Settings"), "/settings"]] });
       f.body(code === "review_params" || code === "test_mode" ? inspSection(t("Review parameters"), profileNotes(status.review_profile, status.test_mode)) : integrity());
       // the one fix as a button where the app can do it; the command stays beside it
+      const can = S.mode && S.mode.decisions;
+      if (code === "unanchored" && status.time_stamps && can) {
+        const out = h("div", { "aria-live": "polite" });
+        const b = h("button", { class: "btn primary", type: "button", text: t("Add time stamp now"), onclick: async () => {
+          b.disabled = true;
+          const { status: code2, data } = await post("/api/trail/anchor", {});
+          b.disabled = false;
+          if (code2 === 200 && data.ok) { put(clear(out), h("div", { class: "result ok", role: "status", text: t("Time stamp added ({record}).", { record: data.record_id || "–" }) })); await refresh().catch(() => null); }
+          else put(clear(out), h("div", { class: "result refused", text: `${t("Not done:")} ${data.message || ""}` }));
+        } });
+        f.decide(t("How to resolve"), h("p", { class: "lede", text: t("An external service (RFC 3161) confirms when the trail had its current state; only the hash of its head is sent.") }),
+          h("div", { class: "actions fix-first" }, b), out);
+        return;
+      }
+      if (code === "review_params" && can) {
+        const differs = (status.review_profile || {}).differs_from_builtin || {};
+        const out = h("div", { "aria-live": "polite" });
+        const b = h("button", { class: "btn primary", type: "button", text: t("Keep my values"), onclick: async () => {
+          b.disabled = true;
+          const { status: code2, data } = await post("/api/trail/review-params/keep", { params: differs });
+          b.disabled = false;
+          if (code2 === 200 && data.ok) { await refresh().catch(() => null); put(clear(out), h("div", { class: "result ok", role: "status", text: t("Kept. This case comes back only when the values change.") })); }
+          else put(clear(out), h("div", { class: "result refused", text: `${t("Not done:")} ${msgOf(data, "message") || data.message || ""}` }));
+        } });
+        f.decide(t("How to resolve"), h("div", { class: "fix-first" }, h("div", { class: "actions" }, b),
+          h("p", { class: "small muted", text: t("Keeps these values as yours: the case closes until they change. Every review still shows and signs them.") })),
+          out, resolveSteps([fixes[1]]));
+        return;
+      }
       const step = { trail_missing: null, writer_down: "writer", spooled: "spool" }[code];
       const canDo = S.mode && S.mode.decisions && (code === "trail_missing" || (step && S.setup && (S.setup.checks || []).some((c) => c.id === step && c.can_apply)));
       f.decide(t("How to resolve"), canDo ? h("div", { class: "actions fix-first" }, h("button", { class: "btn primary", type: "button",
@@ -1384,7 +1440,7 @@ function releaseSection(step, d, p, { onDone, notice }) {
   if (release.signatures.length) parts.push(plainTable([t("Printed name"), "ID", t("Role"), t("Local time"), t("Reason"), t("Status")], release.signatures.map((x) =>
     [x.name, h("td", { class: "mono small", text: x.id }), x.role, h("td", { class: "small", text: x.local }), h("td", { class: "wrap small", text: x.reason }),
       h("td", {}, stWord(x.status), x.status !== "valid" && x.detail ? h("span", { class: "small muted", text: ` ${msgOf(x, "detail")}` }) : null)])));
-  parts.push(h("p", { class: "small muted" }, t("Policy [policy.released] in signoff.toml: {n} valid signature(s), {roles}, {author}.", {
+  parts.push(h("p", { class: "small muted" }, t(pol.min_signatures === 1 ? "Policy [policy.released] in signoff.toml: 1 valid signature, {roles}, {author}." : "Policy [policy.released] in signoff.toml: {n} valid signatures, {roles}, {author}.", {
     n: pol.min_signatures, roles: pol.roles.length ? t("roles {list}", { list: pol.roles.join(", ") }) : t("any role"),
     author: pol.distinct_from_author ? t("not by an author of the change") : t("the author may sign") }),
     result.note ? ` ${msgOf(result, "note")}` : ""));
@@ -1413,6 +1469,28 @@ function releaseSection(step, d, p, { onDone, notice }) {
 // ---- Trail -------------------------------------------------------------------------------------------
 const TRAIL_FILTERS = ["type", "actor", "session", "subject", "since", "until"];
 const TRAIL_PAGE = 100;
+// Records by what happened, in words; the record type stays beside it as the code.
+const EVENT_WORDS = {
+  "trail.event": "Event", "trail.gap": "Gap: spooled records moved in", "trail.anchor": "External time stamp",
+  "trail.review": "Audit-trail review signed", "trail.import": "Imported from an agent session",
+  "quarantine.held": "Page held back", "quarantine.passed": "Page passed", "quarantine.delivered": "Page given to the agent",
+  "quarantine.released": "Page released", "quarantine.threat.declared": "Threat declared", "quarantine.source.trusted": "Source trusted",
+  "signoff.key.enrolled": "Signing key enrolled", "signoff.key.revoked": "Signing key revoked", "signoff.signature": "Signature",
+  "signoff.invalidation": "Signature no longer valid", "signoff.auth.failed": "Wrong passphrase",
+  "signoff.action.claimed": "Prepared action started", "signoff.action.outcome": "Result of an action recorded",
+  "change.plan.reconciled": "Plan accepted", "change.receipt": "Check run", "change.review": "Review added", "change.finish": "Change finished",
+  "capa.deviation": "Deviation opened", "capa.investigation": "Investigation recorded", "capa.action": "Corrective action",
+  "capa.effectiveness": "Effectiveness checked", "capa.closure": "Deviation closed",
+  "validate.run": "Validation run", "validate.report": "Validation report", "validate.qualification": "Qualification",
+  "validate.requalification": "Requalification needed", "egress.session": "Outbound session", "egress.request": "Outbound request",
+  "ui.review_params.kept": "Review values kept",
+};
+const EVENT_ACTIONS = { "service.start": "Background service started", "service.stop": "Background service stopped", "clock.jump": "Clock jump noted" };
+function eventWords(r) {
+  if (r.type === "trail.event" && EVENT_ACTIONS[r.action]) return t(EVENT_ACTIONS[r.action]);
+  if (r.type.endsWith(".refused")) return t("Decision refused");
+  return EVENT_WORDS[r.type] ? t(EVENT_WORDS[r.type]) : r.type;
+}
 async function renderTrail(main) {
   const q = query();
   const params = Object.fromEntries(TRAIL_FILTERS.map((k) => [k, q.get(k) || ""]));
@@ -1424,12 +1502,12 @@ async function renderTrail(main) {
   clear(main);
   const inputs = {};
   const bar = h("div", { class: "filterbar trail-filters", role: "search" });
-  const typeSelect = h("select", { "aria-label": t("Record type") }, h("option", { value: "", text: t("All types") }),
-    h("option", { value: "*.refused", text: t("All refusals (*.refused)") }), data.types.map((x) => h("option", { value: x, text: x })));
+  const typeSelect = h("select", { "aria-label": t("What happened") }, h("option", { value: "", text: t("All events") }),
+    h("option", { value: "*.refused", text: t("All refused decisions") }), data.types.map((x) => h("option", { value: x, text: EVENT_WORDS[x] ? `${t(EVENT_WORDS[x])} (${x})` : x })));
   typeSelect.value = params.type;
   inputs.type = typeSelect;
   put(bar, typeSelect);
-  for (const [key, label] of [["actor", t("Actor id")], ["session", t("Session")], ["subject", t("Subject ref")], ["since", t("Since (2026-10-01)")], ["until", t("Until")]]) {
+  for (const [key, label] of [["actor", t("Who (ID)")], ["session", t("Agent session")], ["subject", t("About what (ID)")], ["since", t("From (2026-10-01)")], ["until", t("To")]]) {
     inputs[key] = h("input", { type: "text", placeholder: label, "aria-label": label, value: params[key] });
     put(bar, inputs[key]);
   }
@@ -1453,15 +1531,18 @@ async function renderTrail(main) {
     return { data: r, cells: [
       h("td", { class: "seq", text: r.chain.seq ?? "" }),
       h("td", { class: "small time", text: fmtTime(r.time) }),
-      h("td", {}, r.type, r.signed ? h("span", { class: "muted small", text: ` · ${t("signature attached")}` }) : null),
-      h("td", { class: "hide-narrow", text: r.action }),
-      h("td", { class: "mono small wrap", text: r.actor.id }),
+      h("td", { class: "event" }, h("span", { text: eventWords(r) }), r.signed ? h("span", { class: "muted small", text: ` · ${t("signed")}` }) : null,
+        h("span", { class: "code", text: r.type === "trail.event" ? `${r.type} · ${r.action}` : r.type })),
+      h("td", { class: "mono small clip", title: r.actor.id, text: r.actor.id }),
       h("td", { class: "hide-narrow small" }, observedCell),
-      h("td", { class: "hide-narrow mono small wrap", text: (r.subject && r.subject.ref) || "" }),
+      h("td", { class: "hide-narrow mono small clip", title: (r.subject && r.subject.ref) || null, text: (r.subject && r.subject.ref) || "" }),
     ] };
   });
-  const x = table([h("th", { scope: "col", class: "num", text: "Seq" }), t("Time"), t("Type"), th(t("Action"), "hide-narrow"), t("Claimed actor"),
-    th(t("Observed"), "hide-narrow"), th(t("Subject"), "hide-narrow")], rows, openRecord,
+  const tip = (text, title, cls) => h("th", { scope: "col", class: cls || null, title, text });
+  const x = table([h("th", { scope: "col", class: "num", title: t("The number of the record; records are numbered without gaps."), text: "Seq" }), t("Time"), t("What happened"),
+    tip(t("Who (as recorded)"), t("The person or agent the record names.")),
+    tip(t("Seen by the writer"), t("What the background service (writer) saw of the process that sent the record. 'unconfirmed': the record names a person, but the writer could not confirm who sent it."), "hide-narrow"),
+    tip(t("About"), t("The subject of the record: a case, a plan, a file."), "hide-narrow")], rows, openRecord,
     (r) => (r.type === "trail.anchor" ? "anchor" : r.type === "trail.gap" ? "gap" : r.type.endsWith(".refused") ? "refusal" : ""));
   x.table.classList.add("with-filter");
   put(main, x.table, pager(data));
@@ -1501,7 +1582,7 @@ function integrityPanel(open) {
   parts.push(reviewStart(), exportSection());
   setInspector(...parts);
   if (open === "review") document.getElementById("review-start")?.scrollIntoView({ block: "start" });
-  else if (!open && window.matchMedia("(max-width: 1100px)").matches) closeSheet();
+  else if (!open && (window.matchMedia("(max-width: 1100px)").matches || document.querySelector(".shell").classList.contains("insp-overlay"))) closeSheet();
 }
 
 // Audit-trail review: prepare a worksheet (writes no evidence), then dispose of each finding and sign.
@@ -1553,7 +1634,7 @@ function reviewPanel(sheet, { onDone } = {}) {
     notes[f.id] = note;
     put(list, h("div", { class: "finding" },
       h("p", { class: "small" }, h("strong", { text: f.id }), " ", stWord(f.severity), ` ${f.query} · `,
-        t("{n} record(s)", { n: f.record_ids.length })),
+        tn(f.record_ids.length, "1 record", "{n} records")),
       h("p", { class: "small muted break", text: findingText(sheet, f) }), h("div", { class: "field-row" }, select, note)));
   }
   const actors = sheet.actors_reviewed || [];
@@ -1653,8 +1734,8 @@ async function renderQuarantine(main) {
     [["held", t("Held")], ["warned", t("Warned")], ["released", t("Released")], ["threat", t("Threat")], ["all", t("All")]].map(([id, label]) =>
       h("button", { class: "chip-btn", type: "button", "aria-pressed": state === id ? "true" : "false",
         text: `${label}${id === "all" ? "" : ` ${counts[id] || 0}`}`, onclick: () => { setQuery({ state: id }); route(); } }))),
-    data.outbox ? h("span", { class: "small", text: t("{n} record(s) waiting in the quarantine outbox (aqt-quarantine flush)", { n: data.outbox }) }) : null,
-    data.journal_problem_count ? h("span", { class: "small flag", title: data.journal_problems.join("\n"), text: t("{n} journal line(s) ignored: malformed, or reopening a case (aqt-quarantine doctor)", { n: data.journal_problem_count }) }) : null);
+    data.outbox ? h("span", { class: "small", text: tn(data.outbox, "1 record waits in the quarantine outbox (aqt-quarantine flush)", "{n} records wait in the quarantine outbox (aqt-quarantine flush)") }) : null,
+    data.journal_problem_count ? h("span", { class: "small flag", title: data.journal_problems.join("\n"), text: tn(data.journal_problem_count, "1 journal line ignored: malformed, or reopening a case (aqt-quarantine doctor)", "{n} journal lines ignored: malformed, or reopening a case (aqt-quarantine doctor)") }) : null);
   put(main, bar);
   if (!data.cases.length) {
     put(main, empty(state === "held" ? t("No held cases") : t("No cases in this state"), state === "held" ? t("Nothing waits for a quarantine decision.") : ""));
@@ -1738,7 +1819,7 @@ function quarantineParts(c, { full, open, onDone }) {
       full && c.content.pages > 1 ? contentPager(c, (p) => open(true, p)) : null);
   } else put(content, h("p", { class: "muted", text: msgOf(c, "content_error") || t("Content not available.") }));
   const fullFirst = c.needs_full_view ? h("div", { class: "note-box" },
-    h("p", { class: "small", text: t("Release and threat declaration need the whole content on screen first. Not shown yet: {n} of {pages} page(s).", { n: unseen.length, pages: c.content.pages }) }),
+    h("p", { class: "small", text: t(c.content.pages === 1 ? "Release and threat declaration need the whole content on screen first. Not shown yet: {n} of 1 page." : "Release and threat declaration need the whole content on screen first. Not shown yet: {n} of {pages} pages.", { n: unseen.length, pages: c.content.pages }) }),
     h("button", { class: "btn small primary", type: "button", text: t("Show page {page}", { page: unseen[0] + 1 }), onclick: () => open(true, unseen[0]) })) : null;
   const actions = [];
   if (c.can_release) actions.push({ id: "release", label: t("Release"), meaning: "released", button: t("Sign and release"),
@@ -1750,7 +1831,7 @@ function quarantineParts(c, { full, open, onDone }) {
       : t("The content stays withheld from the agent, and the case is recorded as a threat.") });
   const panel = actions.length ? decisionPanel({
     actions, signers: c.signers, subject: { label: t("case {id}, content", { id: c.case_id }), hash: c.content_sha256,
-      summary: [c.domain || c.tool || null, t("score {n} ppm", { n: num(c.score_ppm) })].filter(Boolean).join(", ") },
+      summary: [c.domain || c.tool || null, t("suspicion: {level}", { level: t(suspicionWord(c.score_ppm)) })].filter(Boolean).join(", ") },
     note: c.state === "threat" ? t("This case was declared a threat; releasing it overrules that decision.") : null, onDone,
     command: (a) => a.id === "release" ? `aqt quarantine release ${sq(c.case_id)}${c.state === "threat" ? " --overrule-threat" : ""} --reason "…"` : `aqt quarantine declare-threat ${sq(c.case_id)} --reason "…"`,
     submit: (a, values) => post(`/api/quarantine/${encodeURIComponent(c.case_id)}/${a.id}`, { ...values, content_sha256: c.content_sha256, overrule_threat: c.state === "threat" }),
@@ -1762,18 +1843,27 @@ function quarantineParts(c, { full, open, onDone }) {
         [t("Thresholds"), `${c.thresholds.version || "?"} ${c.thresholds.calibrated ? t("calibrated") : t("NOT calibrated (defaults)")}`],
         [t("Opened"), fmtTime(c.opened)], [t("Reached model"), c.reached_model ? t("yes") : t("no")], [t("Content"), hashButton(c.content_sha256)], [t("Record"), h("code", { text: c.opened_record })]]),
       c.domain ? h("p", { class: "small" }, link(t("Trust {domain} for later content…", { domain: c.domain }), `/evidence/quarantine?tab=sources&trust=${encodeURIComponent(c.domain)}`)) : null),
-    evidence: c.evidence.length ? inspSection(t("Detector findings"), h("ul", { class: "evidence-list" }, c.evidence.map((e) => h("li", {}, h("strong", { text: e.label }), ` (${e.detector}): ${detectorReason(e.reason)} `, h("code", { text: e.excerpt }))))) : null,
+    evidence: c.evidence.length ? inspSection(t("Detector findings"), h("ul", { class: "evidence-list" }, c.evidence.map((e) => h("li", {}, h("strong", { text: SPAN_WORDS[e.label] ? t(SPAN_WORDS[e.label]) : e.label }), ` (${DETECTOR_WORDS[e.detector] ? t(DETECTOR_WORDS[e.detector]) : e.detector}): ${detectorReason(e.reason)} `, h("code", { text: e.excerpt }))))) : null,
     content: inspSection(t("Content"), content),
     journal: c.journal_problems && c.journal_problems.length ? inspSection(t("Journal lines ignored for this case"),
       c.journal_problems.map((p) => h("p", { class: "small flag break", text: p }))) : null,
     history: c.decisions.length || c.refusals.length ? inspSection(t("History"),
-      c.decisions.map((d) => h("p", { class: "small" }, `${fmtTime(d.time)} ${d.action} · ${d.display || ""} ${d.by} · ${t("signature")} `, stWord(d.status), d.honoured ? "" : ` (${t("not honoured")})`, d.note ? ` ${msgOf(d, "note")}` : "", h("br"), h("span", { class: "muted", text: `${t("Reason")}: ${d.reason}` }))),
-      c.refusals.map((r) => h("p", { class: "small" }, stWord("fail", t("refused")), ` ${fmtTime(r.time)} ${r.attempted}${refusalWords(r.reason_code) ? ": " + refusalWords(r.reason_code) : ""} (${r.reason_code}${r.markers.length ? "; " + r.markers.join(", ") : ""})`))) : null,
+      c.decisions.map((d) => h("p", { class: "small" }, `${fmtTime(d.time)} ${t(HISTORY_WORDS[d.action] || d.action || "–")} · ${d.display || ""} ${d.by} · ${t("signature")} `, stWord(d.status), d.honoured ? "" : ` (${t("not honoured")})`, d.note ? ` ${msgOf(d, "note")}` : "", h("br"), h("span", { class: "muted", text: `${t("Reason")}: ${d.reason}` }))),
+      c.refusals.map((r) => h("p", { class: "small" }, stWord("fail", t("refused")), ` ${fmtTime(r.time)} ${t(ATTEMPT_WORDS[r.attempted] || r.attempted || "–")}${refusalWords(r.reason_code) ? ": " + refusalWords(r.reason_code) : ""} `,
+        h("span", { class: "muted", text: `(${r.reason_code}${r.markers.length ? "; " + r.markers.join(", ") : ""})` })))) : null,
     decision: fullFirst ? inspSection(t("Decision"), fullFirst) : panel,
   };
 }
+// How suspicious the detectors found a page, in a word (as the Needs-you entry says it).
+function suspicionWord(ppm) { return ppm >= 800000 ? "high" : ppm >= 400000 ? "medium" : "low"; }
 // A detector's span reason (records keep the English): the catalogue entry it matches.
 function detectorReason(reason) { return msg("quarantine.detector.", null, reason); }
+const ATTEMPT_WORDS = { release: "tried to release", "declare-threat": "tried to declare a threat", "trust-source": "tried to trust a source" };
+const HISTORY_WORDS = { release: "released", declare: "declared a threat", "declare-threat": "declared a threat", trust: "trusted the source",
+  revoke: "revoked trust" };
+const DETECTOR_WORDS = { heuristics: "heuristics", onnx: "model" };
+const SPAN_WORDS = { override: "override", addressed: "addresses the agent", framing: "framing", toolcall: "tool call", exfil: "sends data out",
+  secret: "secret", encoded: "encoded", hidden: "hidden" };
 function contentPager(c, open) {
   const w = c.content.windows[0];
   const page = c.content.page;
@@ -2023,7 +2113,7 @@ async function renderQualifications(main) {
   clear(main);
   if (!data.qualifications.length) put(main, empty(t("No qualifications recorded"), data.installed ? t("Qualify a detector with aqt-validate (in a terminal).") : t("aqt-validate is not installed.")));
   else {
-    const words = (q) => ({ valid: t("valid until {date}", { date: String(q.valid_until).slice(0, 10) }), expiring: t("expires in {n} day(s)", { n: q.days_left }), expired: t("expired"), triggered: t("triggered: {list}", { list: triggerWords(q.triggers) }), rejected: t("rejected") })[q.state];
+    const words = (q) => ({ valid: t("valid until {date}", { date: String(q.valid_until).slice(0, 10) }), expiring: tn(q.days_left, "expires in 1 day", "expires in {n} days"), expired: t("expired"), triggered: t("triggered: {list}", { list: triggerWords(q.triggers) }), rejected: t("rejected") })[q.state];
     const rows = data.qualifications.map((q) => ({ data: q, cells: [h("td", { class: "wrap", text: q.subject_id }), codeWord("validate.kind.", q.kind), h("td", {}, stWord(q.state, words(q))), h("td", { class: "num", text: q.days_left ?? "–" }),
       h("td", { class: "hide-narrow mono small", text: q.approver || "" }), h("td", { class: "hide-narrow" }, q.same_thresholds === null ? "–" : q.same_thresholds ? stWord("pass", t("same as qualified")) : stWord("warn", t("different file in use")))] }));
     put(main, table([t("Subject"), t("Kind"), t("Status"), th(t("Days left"), "num"), th(t("Approver"), "hide-narrow"), th(t("Thresholds"), "hide-narrow")], rows, (q) => setInspector(
@@ -2067,27 +2157,48 @@ async function renderExport(main) {
 
 // ---- Settings: is everything running, who am I, language, the aqt command, the glossary ----------------
 // The checks of aqt status in everyday words (the explanation beside them is the tool's own sentence).
-const CHECK_WORDS = { packages: "Toolkit packages", command: "The aqt command", "trail.init": "Audit trail", service: "Background service", writer: "Trail writer",
+const CHECK_WORDS = { packages: "Toolkit packages", command: "Agents can reach AQT", "trail.init": "Audit trail",
+  service: "Background service at login", writer: "Background service (writer)",
   spool: "Waiting records", sink: "Where records go", signer: "Your signing identity", "signoff.config": "Signing settings",
-  "trail.config": "Review settings", "trail.intact": "Trail integrity", vectors: "Self-test", egress: "Outbound checkpoint (optional)" };
+  "trail.config": "Settings for the audit-trail review", "trail.intact": "Trail integrity", vectors: "Self-test", egress: "Outbound checkpoint (optional)" };
 // The fix of each step the app can apply: [button, what it does].
 const FIX_WORDS = {
   "trail.init": ["Create the trail", "Creates the trail folder and its service key. Nothing else changes."],
-  service: ["Install and start the service", "Writes a user service that starts the writer at login, and starts it now."],
-  writer: ["Restart the writer", "Starts the background service that writes the trail."],
+  service: ["Install and start the background service", "Writes a user service that starts the background service (writer) at login, and starts it now."],
+  writer: ["Restart the background service", "Starts the background service (writer) that writes the audit trail."],
   spool: ["Move the records into the trail", "Appends the records that waited in the spool, after a gap marker."],
   "signoff.config": ["Write the signing settings", "Writes signoff.toml with your default signer and time zone. An existing file is never replaced."],
-  "trail.config": ["Write the review settings", "Writes trail.toml with your time zone and working hours for the review. An existing file is never replaced."],
+  "trail.config": ["Write the settings for the audit-trail review", "Writes trail.toml with your time zone and working hours for the audit-trail review. An existing file is never replaced."],
 };
-const RESULT_KIND = { ok: "pass", warn: "warn", fail: "fail", skip: "neutral" };
-const RESULT_WORDS = { ok: "in order", warn: "needs a look", fail: "needs a fix", skip: "not used here" };
-function checkRow(row, { words, fixes, onFix } = {}) {
+const RESULT_KIND = { ok: "pass", warn: "warn", fail: "fail", skip: "neutral", info: "info" };
+const RESULT_WORDS = { ok: "in order", warn: "needs attention", fail: "needs a fix", skip: "not used here", info: "good to know" };
+// Project items that are git work: for the developer, not an open point of the quality desk.
+const DEVELOPER_ITEMS = new Set(["committed", "git.hook"]);
+function copyButton(text) {
+  return h("button", { class: "btn small", type: "button", text: t("Copy instructions"),
+    onclick: () => { navigator.clipboard?.writeText(text).then(() => announce(t("Copied")), () => {}); } });
+}
+function checkRow(row, { words, fixes, onFix, onAdd } = {}) {
   const title = t((words || CHECK_WORDS)[row.id] || row.id);
   const problem = row.result === "warn" || row.result === "fail";
   const fix = (fixes || FIX_WORDS)[row.id];
   const out = h("div", { "aria-live": "polite" });
+  const explanation = msgOf(row, "explanation");
+  const developer = words === PROJECT_WORDS && DEVELOPER_ITEMS.has(row.id);
   let action = null;
-  if (problem && row.can_apply && fix && S.mode && S.mode.decisions && onFix) {
+  if (row.id === "command" && problem && APP && row.data && row.data.in_app === "aqt_command" && S.mode && S.mode.decisions) {
+    const button = h("button", { class: "btn small primary", type: "button", text: t("Install the aqt command") });
+    button.addEventListener("click", async () => { button.disabled = true; await installCommand(); button.disabled = false; });
+    action = h("div", { class: "fix" }, button, h("span", { class: "small muted", text: t("Agents report to AQT through the aqt command. Without it, your projects' hooks can't reach AQT.") }));
+  } else if (row.id === "command" && problem) {
+    action = h("div", { class: "fix-words" }, h("p", { class: "small", text: t("Agents report to AQT through the aqt command. Without it, your projects' hooks can't reach AQT.") }),
+      row.fix ? commandLine(row.fix) : null);
+  } else if (developer && problem) {
+    action = h("div", { class: "fix" }, copyButton(`${t(words[row.id] || row.id)}: ${explanation}${row.fix ? `\n${row.fix}` : ""}`),
+      h("span", { class: "small muted", text: t("A step in git for whoever develops in this folder.") }));
+  } else if (problem && row.can_apply && onAdd && S.mode && S.mode.decisions) {
+    action = h("div", { class: "fix" }, h("button", { class: "btn small primary", type: "button", text: t("Add what is missing…"), onclick: (e) => onAdd(row, e.target) }));
+  } else if (problem && row.can_apply && fix && S.mode && S.mode.decisions && onFix) {
     const button = h("button", { class: "btn small primary", type: "button", text: t(fix[0]) });
     button.addEventListener("click", async () => { button.disabled = true; await onFix(row, out); button.disabled = false; });
     action = h("div", { class: "fix" }, button, h("span", { class: "small muted", text: t(fix[1]) }));
@@ -2099,8 +2210,8 @@ function checkRow(row, { words, fixes, onFix } = {}) {
       : h("p", { class: "small" }, h("strong", { text: `${t("What to do:")} ` }), row.fix);
   }
   return h("li", { class: `check-row ${row.result}`, id: `check-${row.id}` },
-    st(RESULT_KIND[row.result] || "neutral", t(RESULT_WORDS[row.result] || row.result)),
-    h("div", { class: "check-what" }, h("strong", { text: title }), h("span", { class: "small muted break", text: row.explanation }), action, out));
+    developer && problem ? st("neutral", t("For your developer")) : st(RESULT_KIND[row.result] || "neutral", t(RESULT_WORDS[row.result] || row.result)),
+    h("div", { class: "check-what" }, h("strong", { text: title }), h("span", { class: "small muted break", text: explanation }), action, out));
 }
 async function renderSettings(main) {
   const data = S.overview || (await refresh());
@@ -2112,22 +2223,35 @@ async function renderSettings(main) {
   put(main, page);
   // 1. is everything running? aqt status, each problem with its one fix
   if (setup) {
-    const rows = setup.checks.slice().sort((a, b) => ({ fail: 0, warn: 1, ok: 2, skip: 3 })[a.result] - ({ fail: 0, warn: 1, ok: 2, skip: 3 })[b.result]);
+    const order = { fail: 0, warn: 1, info: 2, ok: 3, skip: 4 };
+    const rows = setup.checks.filter((r) => visibleCheck(r, setup.checks)).sort((a, b) => order[a.result] - order[b.result]);
     const open = rows.filter((r) => r.result === "fail" || r.result === "warn").length;
     const onFix = async (row, out) => {
       const { data: answer } = await applyStep(row.id);
-      if (!answer.ok) put(clear(out), h("div", { class: "result refused", text: `${t("Not done:")} ${answer.error || (answer.check && answer.check.explanation) || answer.message || ""}` }));
+      if (!answer.ok) put(clear(out), h("div", { class: "result refused", text: `${t("Not done:")} ${answer.error || (answer.check && msgOf(answer.check, "explanation")) || answer.message || ""}` }));
     };
     const problems = rows.filter((r) => r.result === "fail" || r.result === "warn");
     const fine = rows.filter((r) => !problems.includes(r));
     put(page, section(t("Is everything running?"),
-      h("p", { class: "lede" }, open ? t("{n} thing(s) need a look. Each has its fix.", { n: open }) : t("Everything in order."), " ",
+      h("p", { class: "lede" }, open ? tn(open, "1 thing needs attention. It has its fix.", "{n} things need attention. Each has its fix.") : t("Everything in order."), " ",
         h("span", { class: "small muted" }, t("The same list as"), " ", h("code", { text: "aqt status" }), ".")),
       problems.length ? h("ul", { class: "checks" }, problems.map((row) => checkRow(row, { onFix }))) : null,
       h("details", { class: "all-checks", open: !!location.hash.startsWith("#check-") && !problems.some((r) => `#check-${r.id}` === location.hash) },
-        h("summary", { text: t("Show the {n} checks that are in order", { n: fine.length }) }),
+        h("summary", { text: tn(fine.length, "Show the check that is in order", "Show the {n} checks that are in order") }),
         h("ul", { class: "checks" }, fine.map((row) => checkRow(row, { onFix }))))));
   } else put(page, section(t("Is everything running?"), errorBox(problem)));
+  // a recommendation, not a problem: external time stamps need a service the organisation chooses
+  const status = (S.overview && S.overview.status) || data.status || {};
+  if (status.time_stamps === false) {
+    const snippet = '[anchor]\ntsa_url = "https://…"';
+    put(page, section(t("Recommended"), h("div", { class: "recommend" },
+      h("p", {}, h("strong", { text: t("Set up external time stamps") })),
+      h("p", { class: "lede", text: t("An external time-stamp service (RFC 3161) confirms when the audit trail had a given state, so a later rewrite of the whole trail would show. Which service to trust is your organisation's choice, so AQT does not pick one; only the hash of the trail's newest record is sent to it.") }),
+      h("p", { class: "small", text: t("Add these lines to {file}, with the address of your time-stamp service:", { file: status.trail_toml || "trail.toml" }) }),
+      h("div", { class: "snippet" }, h("pre", { class: "json", text: snippet }),
+        h("button", { class: "btn small ghost", type: "button", text: t("Copy"), onclick: () => { navigator.clipboard?.writeText(snippet).then(() => announce(t("Copied")), () => {}); } })),
+      h("p", { class: "small muted", text: t("Until then the ALCOA++ attribute Enduring stays not met under Evidence, and no case asks for a time stamp.") }))));
+  }
   // 2. who you are
   put(page, await identitySection(setup));
   // 3. the audit trail and the tools
@@ -2152,7 +2276,7 @@ async function identitySection(setup) {
     return box;
   }
   put(box, h("ul", { class: "people" }, rows.map((x) => h("li", {}, h("strong", { text: x.name }), " ", h("code", { text: x.id }),
-    h("span", { class: "muted", text: ` · ${x.role}` }), h("span", { class: "small muted break", text: ` · ${t("key")} ${x.active_key}` })))),
+    h("span", { class: "muted", text: ` · ${roleWord(x.role)}` }), h("span", { class: "small muted break", text: ` · ${t("key")} ${x.active_key}` })))),
   h("p", { class: "small muted" }, t("Your ID stands in every signature you make and is never reused."), " ", t("Another person enrols in their own terminal:"), " ", h("code", { text: "aqt signoff init" })));
   return box;
 }
@@ -2192,8 +2316,11 @@ function appSettingRows(d, { keys, onChange }) {
     b.addEventListener("click", async () => { b.disabled = true; try { const fresh = await desktopSettings({ [key]: true }); put(b.parentNode, st(fresh[key] ? "pass" : "warn", fresh[key] ? done : t("Not done:"))); b.remove(); } catch (error) { b.disabled = false; fail(error); } });
     return h("p", { class: "small" }, b);
   };
-  rows.push(install("aqt_command", t("The aqt command is installed in ~/.local/bin."), t("Install the aqt command")),
-    install("links", t("aqt:// links open this app."), t("Register aqt:// links")));
+  const said = (node, words) => node && [node, h("p", { class: "small muted consequence-line", text: words })];
+  rows.push(said(install("aqt_command", t("The aqt command is installed in ~/.local/bin."), t("Install the aqt command")),
+    t("Agents report to AQT through the aqt command. Without it, your projects' hooks can't reach AQT.")),
+  said(install("links", t("aqt:// links open this app."), t("Register aqt:// links")),
+    t("Links in notifications and in the terminal (aqt://…) then open the matching page in this app.")));
   return [...rows, can ? null : h("p", { class: "small muted", text: t("Read-only: these settings cannot be changed here.") }), out];
 }
 async function appSection() {
@@ -2205,7 +2332,7 @@ async function appSection() {
 function glossaryList() {
   return h("dl", { class: "glossary" }, Object.keys(GLOSSARY).map((key) => {
     const g = gloss(key);
-    return [h("dt", {}, g.word, g.term.toLowerCase() !== g.word.toLowerCase() ? h("span", { class: "gmp", text: ` (${g.term})` }) : null), h("dd", { text: g.tip })];
+    return [h("dt", {}, g.noun, g.term.toLowerCase() !== g.noun.toLowerCase() ? h("span", { class: "gmp", text: ` (${g.term})` }) : null), h("dd", { text: g.tip })];
   }));
 }
 
@@ -2233,18 +2360,21 @@ async function renderProjects(main) {
     S.mode && S.mode.decisions ? start : h("p", { class: "small muted", text: t("Read-only: connecting a project is not possible here.") })), flow);
   if (!data.projects.length) put(page, empty(t("No project connected yet"), t("Connect a project folder. AQT shows what it will add, file by file, before anything is written.")));
   for (const project of data.projects) {
-    const problems = project.checks.filter((c) => c.result === "warn" || c.result === "fail");
+    // git work (commit, commit-msg hook) is for the developer and not an open point here
+    const problems = project.checks.filter((c) => (c.result === "warn" || c.result === "fail") && !DEVELOPER_ITEMS.has(c.id));
     const head = h("h2", {}, h("span", { class: "path", text: project.root }), " ",
-      project.missing ? st("fail", t("folder not found")) : problems.length ? st(problems.some((c) => c.result === "fail") ? "fail" : "warn", t("{n} thing(s) to do", { n: problems.length })) : st("pass", t("set up")));
+      project.missing ? st("fail", t("folder not found")) : problems.length ? st(problems.some((c) => c.result === "fail") ? "fail" : "warn",
+        tn(problems.length, "1 thing to do", "{n} things to do")) : st("pass", t("set up")));
     const box = h("section", { class: "section project" }, head);
     if (project.missing) put(box, h("p", { class: "muted", text: project.error || t("The folder does not exist any more.") }));
     else {
-      put(box, h("ul", { class: "checks compact" }, project.checks.filter((c) => c.result !== "skip").map((row) => checkRow(row, { words: PROJECT_WORDS, fixes: {} }))));
-      if (problems.some((c) => c.can_apply) && S.mode && S.mode.decisions) {
-        const again = h("div", { class: "connect-box" });
-        put(box, h("div", { class: "actions" }, h("button", { class: "btn small", type: "button", text: t("Add what is missing…"),
-          onclick: (e) => { e.target.hidden = true; connectFlow(again, { path: project.root, onDone: () => route(), onLater: () => { clear(again); e.target.hidden = false; } }); } })), again);
-      }
+      const again = h("div", { class: "connect-box" });
+      const onAdd = (row, button) => {
+        for (const other of box.querySelectorAll(".check-row .fix .btn.primary")) other.hidden = true;
+        connectFlow(again, { path: project.root, onDone: () => route(), onLater: () => { clear(again); route(); } });
+        again.scrollIntoView({ block: "nearest" });
+      };
+      put(box, h("ul", { class: "checks compact" }, project.checks.filter((c) => c.result !== "skip").map((row) => checkRow(row, { words: PROJECT_WORDS, fixes: {}, onAdd }))), again);
     }
     put(page, box);
   }
@@ -2272,9 +2402,11 @@ function connectFlow(box, { path, onDone, onLater, laterLabel }) {
   } }) : null;
   const look = h("button", { class: `btn ${APP ? "" : "primary"}`, type: "button", text: t("Show what changes"), onclick: () => show(pathInput.value.trim()) });
   pathInput.addEventListener("keydown", (e) => { if (e.key === "Enter") show(pathInput.value.trim()); });
-  put(box, h("div", { class: "folder-row" }, pick,
+  const folderRow = h("div", { class: "folder-row" }, pick,
     h("label", { for: "project-path", class: APP ? "or" : "", text: APP ? t("or type the path") : t("Project folder (full path)") }), pathInput, look,
-    onLater ? h("button", { class: "btn ghost", type: "button", text: laterLabel || t("Later"), onclick: onLater }) : null), out);
+    onLater ? h("button", { class: "btn ghost", type: "button", text: laterLabel || t("Later"), onclick: onLater }) : null);
+  out.connected = () => folderRow.remove();          // after connecting: only the result stays
+  put(box, folderRow, out);
   if (path) show(path);
   else (pick || pathInput).focus();
 }
@@ -2284,13 +2416,15 @@ function previewList(out, data, { onDone, onLater, laterLabel }) {
   const items = data.items.map((item) => {
     const todo = item.can_apply;
     const locked = item.id === "ui.project";
-    const box = h("input", { type: "checkbox", id: `pi-${item.id}`, checked: todo, disabled: !todo || locked });
+    const developer = DEVELOPER_ITEMS.has(item.id);         // the commit-msg hook: optional, git work
+    const box = h("input", { type: "checkbox", id: `pi-${item.id}`, checked: todo && !developer, disabled: !todo || locked });
     if (todo) boxes[item.id] = box;
     const state = todo ? null : item.result === "ok" ? st("pass", t("already in place")) : item.result === "skip" ? st("neutral", t("not used here")) : st("warn", t("yours to do"));
     return h("li", { class: `item${todo ? "" : " done"}` }, box,
-      h("div", {}, h("label", { for: box.id }, h("strong", { text: t(PROJECT_WORDS[item.id] || item.id) }), " ", item.file ? h("code", { class: "muted", text: item.file }) : null, " ", state),
+      h("div", {}, h("label", { for: box.id }, h("strong", { text: t(PROJECT_WORDS[item.id] || item.id) }), " ", item.file ? h("code", { class: "muted", text: item.file }) : null, " ", state,
+        developer ? [" ", h("span", { class: "tag", text: t("For your developer") })] : null),
         h("p", { class: "small", text: t(PROJECT_DOES[item.id] || "") }),
-        !todo && item.result !== "ok" && item.result !== "skip" ? h("p", { class: "small muted break", text: item.explanation }) : null,
+        !todo && item.result !== "ok" && item.result !== "skip" ? h("p", { class: "small muted break", text: msgOf(item, "explanation") }) : null,
         locked && todo ? h("p", { class: "small muted", text: t("Always part of connecting.") }) : null,
         todo && item.backup ? h("p", { class: "small muted", text: t("The file exists: a backup copy is saved first.") }) : null,
         todo && item.preview ? h("details", {}, h("summary", { text: t("Show what is added") }), h("pre", { class: "json", text: item.preview })) : null));
@@ -2305,11 +2439,14 @@ function previewList(out, data, { onDone, onLater, laterLabel }) {
     connect.disabled = false;
     if (status !== 200) { put(clear(result), h("div", { class: "result refused", text: `${t("Not connected:")} ${refusalWords(done.reason_code, done.reason_text) || ""} ${msgOf(done, "message")}` })); return; }
     const errors = Object.entries(done.errors || {});
+    const added = (done.done || []).filter((id) => id !== "ui.project").map((id) => t(PROJECT_WORDS[id] || id));
+    if (out.connected) out.connected();
     put(clear(out), h("div", { class: `result ${errors.length ? "stale" : "ok"}`, role: "status" },
       h("p", { class: "recorded-title" }, st(errors.length ? "warn" : "pass", errors.length ? t("Connected with problems") : t("Connected: {root}", { root: done.root }))),
+      added.length ? h("p", {}, `${t("Added:")} ${added.join(", ")}${done.backups ? ` ${t("(backup saved)")}` : ""}.`) : null,
       errors.length ? h("ul", { class: "evidence-list" }, errors.map(([id, error]) => h("li", {}, h("strong", { text: t(PROJECT_WORDS[id] || id) }), `: ${error}`))) : null,
-      done.said.length ? h("ul", { class: "evidence-list small" }, done.said.map((line) => h("li", { text: line }))) : null,
-      h("p", { class: "small muted", text: t("Backups: {dir}. Nothing was committed; commit the new files when you are ready.", { dir: done.backup_dir }) })));
+      h("p", { text: t("Your developer should commit these files to Git.") }),
+      done.backups ? h("p", { class: "small muted", text: t("Backup copies of the changed files are in {dir}.", { dir: done.backup_dir }) }) : null));
     announce(errors.length ? t("Connected with problems") : t("Connected: {root}", { root: done.root }));
     await refresh().catch(() => null);
     if (onDone) put(out, h("div", { class: "actions" }, h("button", { class: "btn primary", type: "button", text: t("Continue"), onclick: () => onDone(done) })));
@@ -2325,13 +2462,13 @@ function previewList(out, data, { onDone, onLater, laterLabel }) {
 // Welcome and language, who you are, your passphrase, the audit trail with its background writer, the first
 // project, done. Steps 2 and 3 only collect and check; the signing key is made in step 4 after the trail
 // exists (as aqt setup orders it), so its enrolment record lands in the trail. Read-only: explained, no action.
-const STEP_NAMES = ["Welcome", "Who you are", "Your passphrase", "Audit trail", "First project", "Done"];
+const STEP_NAMES = ["Welcome", "Who you are", "Your passphrase", "Audit trail", "First project", "All set"];
 const W = { step: 1, reached: 1, name: "", role: "", other: "", custom: "", customOpen: false, id: "", check: null };
 let pendingPass = "";      // the passphrase between step 3 and the signing key in step 4: page memory only
 const ROLES = [["developer", "Developer"], ["quality-manager", "Quality manager"]];
-const SUBSTEPS = [["trail.init", "Create the audit trail"], ["service", "Install the background service"], ["writer", "Start the writer"],
+const SUBSTEPS = [["trail.init", "Create the audit trail"], ["service", "Install the background service"], ["writer", "Start the background service (writer)"],
   ["spool", "Move waiting records into the trail"], ["enrol", "Create your signing key"], ["signoff.config", "Save your signing settings"],
-  ["trail.config", "Save your review settings"]];
+  ["trail.config", "Save the settings for the audit-trail review"]];
 
 async function renderWelcome(main) {
   let setup;
@@ -2386,7 +2523,7 @@ async function renderWelcome(main) {
     const other = h("input", { id: "ob-role-other", type: "text", value: W.other, "aria-label": t("Your role, in your words"), placeholder: t("for example Reviewer") });
     const roleRadios = [...ROLES, ["", "Other"]].map(([value, words]) => {
       const checked = value ? W.role === value : !!W.role && !ROLES.some(([v]) => v === W.role);
-      return h("label", { class: "radio" }, h("input", { type: "radio", name: "ob-role", value, checked, onchange: () => { W.role = value || other.value.trim(); if (!value) other.focus(); update(); } }), t(words));
+      return h("label", { class: "radio" }, h("input", { type: "radio", name: "ob-role", value, checked, onchange: () => { W.role = value || other.value.trim(); if (!value) other.focus(); update(); } }), value ? roleWord(value) : t(words));
     });
     other.addEventListener("input", () => { W.other = other.value; roleRadios[2].querySelector("input").checked = true; W.role = other.value.trim(); update(); });
     const idCode = h("code", { class: "id-big", text: W.id || "human:…" });
@@ -2500,7 +2637,7 @@ async function renderWelcome(main) {
           const { status, data } = await post("/api/setup/enrol", { name: W.name.trim(), role: W.role.trim(), signer_id: W.id, passphrase: pendingPass });
           if (status === 200 && data.ok) {
             pendingPass = "";
-            Object.assign(x, { state: "done", detail: data.counts ? t("{id}: your key counts now.", { id: data.signer_id }) : t("{id}: your key counts once another enrolled signer approves it.", { id: data.signer_id }) });
+            Object.assign(x, { state: "done", detail: data.counts ? t("{id}: your key is active now.", { id: data.signer_id }) : t("{id}: your key counts once another enrolled signer approves it.", { id: data.signer_id }) });
             continue;
           }
           const back2 = status === 400 ? h("button", { class: "btn small", type: "button", text: t("Change name or ID"), onclick: () => goStep(2) }) : null;
@@ -2509,8 +2646,8 @@ async function renderWelcome(main) {
         }
         const { status, data } = await post("/api/setup/apply", { check: x.id });
         const row = data.check || {};
-        if (status === 200 && data.ok) { Object.assign(x, { state: row.result === "skip" ? "skipped" : "done", detail: row.result === "skip" ? row.explanation : "" }); continue; }
-        Object.assign(x, { state: "failed", detail: [data.error, row.explanation || msgOf(data, "message")].filter(Boolean).join(". "), fix: row.fix || "" });
+        if (status === 200 && data.ok) { Object.assign(x, { state: row.result === "skip" ? "skipped" : "done", detail: row.result === "skip" ? msgOf(row, "explanation") : "" }); continue; }
+        Object.assign(x, { state: "failed", detail: [data.error, msgOf(row, "explanation") || msgOf(data, "message")].filter(Boolean).join(". "), fix: row.fix || "" });
         break;
       }
       drawSubs();
@@ -2523,8 +2660,7 @@ async function renderWelcome(main) {
     go4.addEventListener("click", run);
     drawSubs();
     return [title(t("Audit trail")),
-      h("p", { class: "lede" }, t("AQT keeps a tamper-evident record of what agents and people do:"), " ", termNode("trail"), ". ",
-        t("A small background service writes it, also when the app is closed.")),
+      h("p", { class: "lede", text: t("AQT keeps a tamper-evident record (audit trail) of what agents and people do. A small background service (writer) writes it, even when the app is closed.") }),
       S.setup.service ? null : h("p", { class: "note-box", text: t("This computer has no systemd user session, so AQT cannot install the background service here. Start the writer yourself when the step asks for it; it must keep running.") }),
       listEl, nav(go4, back(enrolled() ? 1 : 3))];
   }
@@ -2547,7 +2683,7 @@ async function renderWelcome(main) {
       }
       put(clear(app), appSettingRows(d, { keys: ["autostart", "aqt_command"] }));
     })();
-    return [title(p.kind === "pass" ? t("Everything is set up") : t("Almost done")),
+    return [title(p.kind === "pass" ? t("All set") : t("Almost done")),
       h("p", { class: "status-line" }, st(p.kind, p.text), p.fix && p.path ? [" ", link(p.fix, p.path)] : null),
       h("p", { class: "lede", text: t("Start your agent as usual in your project. When something needs your decision, AQT shows it under Needs you.") }),
       app,
@@ -2558,9 +2694,7 @@ async function renderWelcome(main) {
     drawList();
     if (readOnly) {
       put(clear(body), title(t("AQT cannot be set up from here")),
-        h("p", { class: "lede", text: t("Setting up writes your keys and settings, so only you can do it.") }),
-        h("div", { class: "off" }, h("strong", { text: `${t("Read-only")}. ` }), S.mode ? S.mode.reason : ""),
-        h("p", { text: t("Start AQT yourself, outside any agent session, and open the setup again.") }),
+        readOnlyNotice(S.mode, t("Open AQT yourself to set it up.")),
         nav(h("button", { class: "btn ghost", type: "button", text: t("Look around read-only"), onclick: () => go("/") })));
       return;
     }

@@ -26,11 +26,11 @@ from importlib import metadata
 from pathlib import Path
 from typing import Callable
 
-from aqt_evidence import platform
+from aqt_evidence import Text, platform
 
 from . import tools
 
-OK, WARN, FAIL, SKIP = "ok", "warn", "fail", "skip"
+OK, WARN, FAIL, SKIP, INFO = "ok", "warn", "fail", "skip", "info"   # info: worth knowing, nothing to do
 DISTRIBUTIONS = ("aqt-spec", "aqt-trail", "aqt-signoff", "aqt-change", "aqt-sensei", "aqt-quarantine",
                  "aqt-validate", "aqt-capa", "aqt-ui")
 UNIT = "aqt-trail.service"
@@ -329,15 +329,18 @@ def query_task(ctx: Context) -> dict | None:
 def _check_task(ctx: Context) -> Result:
     task = query_task(ctx)
     if task is None:
-        return Result(WARN, f"no logon task {TASK}: the writer does not start when you log on", "aqt setup")
+        return Result(WARN, Text("cli.check.task.missing", "no logon task {task}: the writer does not start when you "
+                                 "log on", task=TASK), "aqt setup")
     command = task["command"]
     if command and not Path(command).exists():
-        return Result(WARN, f"the logon task {TASK} starts {command}, which does not exist",
+        return Result(WARN, Text("cli.check.task.no_program", "the logon task {task} starts {command}, which does not "
+                                 "exist", task=TASK, command=command),
                       f"schtasks /Delete /TN {TASK} /F, then: aqt setup", can_apply=False)
     if not task["enabled"]:
-        return Result(WARN, f"the logon task {TASK} is disabled", f"schtasks /Change /TN {TASK} /ENABLE")
-    return Result(OK, f"logon task {TASK} enabled, starts {command} {task['arguments']}".rstrip(),
-                  data={"task": TASK, **task})
+        return Result(WARN, Text("cli.check.task.disabled", "the logon task {task} is disabled", task=TASK),
+                      f"schtasks /Change /TN {TASK} /ENABLE")
+    return Result(OK, Text("cli.check.task.ok", "logon task {task} enabled, starts {command}", task=TASK,
+                           command=f"{command} {task['arguments']}".rstrip()), data={"task": TASK, **task})
 
 
 def _step_task(ctx: Context) -> None:
@@ -452,10 +455,12 @@ def check_packages(ctx: Context) -> Result:
             versions[dist] = None
     missing = [dist for dist, version in versions.items() if version is None]
     if missing:
-        return Result(FAIL, f"not installed: {', '.join(missing)}", tools.install_command(*missing),
+        return Result(FAIL, Text("cli.check.packages.missing", "not installed: {names}", names=", ".join(missing)),
+                      tools.install_command(*missing),
                       data={"versions": versions})
     distinct = sorted(set(versions.values()))
-    text = (f"all {len(versions)} packages installed, version {distinct[0]}" if len(distinct) == 1 else
+    text = (Text("cli.check.packages.ok", "all {n} packages installed, version {version}", n=len(versions),
+                 version=distinct[0]) if len(distinct) == 1 else
             "installed: " + ", ".join(f"{dist} {version}" for dist, version in versions.items()))
     return Result(OK, text, data={"versions": versions})
 
@@ -503,7 +508,7 @@ def command_name() -> str:
 
 def _command_fix(mine: Path | None) -> str:
     if getattr(sys, "frozen", False) and os.environ.get("APPIMAGE"):
-        return f"in the app: Settings, install the aqt command (or: ln -s {_quote(str(mine))} ~/.local/bin/aqt)"
+        return f"ln -s {_quote(str(mine))} ~/.local/bin/aqt"      # the app's Settings install it too
     if getattr(sys, "frozen", False) and os.name == "nt":
         return (f"open a new terminal: the installer put {_quote(str(Path(sys.executable).parent))} on your PATH "
                 "(reinstall the app if it is missing there)")
@@ -512,20 +517,50 @@ def _command_fix(mine: Path | None) -> str:
     return f"add {_quote(str(Path(sys.executable).parent))} to PATH"
 
 
+def toolkit_version(path: str) -> str | None:
+    """The version of the AQT command at ``path`` (``aqt --version``), or None when it is another program."""
+    try:
+        done = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    words = done.stdout.split()
+    return words[1] if len(words) > 1 and words[0] == "agent-quality-toolkit" else None
+
+
 def check_command(ctx: Context) -> Result:
-    """Which AQT command agents run: hooks call ``aqt`` (or ``aqt-toolkit``, see ``command_name``) from PATH."""
+    """Which AQT command agents run: hooks call ``aqt`` (or ``aqt-toolkit``, see ``command_name``) from PATH.
+    A warning only when that is not AQT's command, or AQT of another version; the same version installed
+    elsewhere (a clone, a uv tool) is worth knowing, nothing more."""
+    from . import __version__
     name = command_name()
     found = shutil.which(name)
     mine = this_command(name)
     data = {"name": name, "path": found, "this": str(mine) if mine else None, "aqt": shutil.which("aqt")}
-    other = f"; the first aqt on PATH ({data['aqt']}) is another program" if name == "aqt-toolkit" and data["aqt"] else ""
+    other = (Text("cli.check.command.other_aqt", "; the first aqt on PATH ({aqt}) is another program", aqt=data["aqt"])
+             if name == "aqt-toolkit" and data["aqt"] else "")
     if not found:
-        return Result(WARN, f"no {name} command on PATH{other}: the hooks aqt project init writes cannot run",
+        data["in_app"] = "aqt_command" if getattr(sys, "frozen", False) and os.environ.get("APPIMAGE") else None
+        return Result(WARN, Text("cli.check.command.missing", "no {name} command on PATH{other}: the hooks aqt project "
+                                 "init writes cannot run", name=name, other=other),
                       _command_fix(mine), data=data, can_apply=False)
     if is_this(found, name):
-        return Result(OK, f"agents run this AQT as {name} ({found}){other}", data=data)
-    return Result(WARN, f"agents run another {name}: {found} comes first on PATH, not this one "
-                        f"({mine or sys.executable}){other}",
+        return Result(OK, Text("cli.check.command.ok", "agents run this AQT as {name} ({path}){other}", name=name,
+                               path=found, other=other), data=data)
+    version = toolkit_version(found)
+    data["version"] = version
+    if version == __version__:
+        return Result(INFO, Text("cli.check.command.same_version", "agents run another installation of AQT "
+                                 "{version} as {name} ({path}){other}", version=version, name=name, path=found,
+                                 other=other), data=data)
+    if version:
+        return Result(WARN, Text("cli.check.command.other_version", "agents run AQT {version} as {name} ({path}), "
+                                 "not this AQT {mine}{other}", version=version, name=name, path=found,
+                                 mine=__version__, other=other),
+                      f"remove or move the other {name}, or reorder PATH, if this one should run", data=data,
+                      can_apply=False)
+    return Result(WARN, Text("cli.check.command.other", "agents run another {name}: {path} comes first on PATH, "
+                             "not this one ({mine}){other}", name=name, path=found, mine=str(mine or sys.executable),
+                             other=other),
                   f"remove or move the other {name}, or reorder PATH, if this one should run", data=data,
                   can_apply=False)
 
@@ -533,12 +568,13 @@ def check_command(ctx: Context) -> Result:
 def check_trail_init(ctx: Context) -> Result:
     config = _trail()
     if config.meta_path.exists():
-        return Result(OK, f"trail {config.meta()['log_id']} in {config.state}")
+        return Result(OK, Text("cli.check.trail.ok", "trail {log_id} in {state}", log_id=config.meta()["log_id"],
+                               state=str(config.state)))
     external = _writer_head(config)
     if external:
         return Result(OK, f"no trail state here, but a writer serves trail {external.get('log_id')} on "
                           f"{config.socket_path} (separate-user mode)")
-    return Result(FAIL, f"no trail in {config.state}", "aqt-trail init")
+    return Result(FAIL, Text("cli.check.trail.missing", "no trail in {state}", state=str(config.state)), "aqt-trail init")
 
 
 def step_trail_init(ctx: Context) -> None:
@@ -562,21 +598,25 @@ def check_service(ctx: Context) -> Result:
     if platform.IS_WINDOWS:
         return _check_task(ctx)
     if not ctx.systemd_available():
-        return Result(SKIP, "systemd --user is not available here; the writer is started by hand")
+        return Result(SKIP, Text("cli.check.service.no_systemd", "systemd --user is not available here; the writer is "
+                                 "started by hand"))
     unit = unit_path()
     if not unit.exists():
         if _external_writer(_trail()):
             return Result(SKIP, "the writer runs outside your user services (separate-user mode)")
-        return Result(WARN, f"no user service {unit}: the writer does not start at login", "aqt setup")
+        return Result(WARN, Text("cli.check.service.missing", "no user service {unit}: the writer does not start at login",
+                                 unit=str(unit)), "aqt setup")
     executable = _unit_executable(unit)
     if executable and not Path(executable).exists():
         return Result(WARN, f"{unit} starts {executable}, which does not exist",
                       f"edit ExecStart in {unit}, then: systemctl --user daemon-reload", can_apply=False)
     _code, state = ctx.systemd("is-enabled", "aqt-trail")
     if state not in ("enabled", "enabled-runtime"):
-        return Result(WARN, f"{UNIT} is installed but not enabled ({state or 'unknown'})",
+        return Result(WARN, Text("cli.check.service.disabled", "{unit} is installed but not enabled ({state})", unit=UNIT,
+                                 state=state or "unknown"),
                       "systemctl --user enable --now aqt-trail")
-    return Result(OK, f"{UNIT} enabled, starts {executable}")
+    return Result(OK, Text("cli.check.service.ok", "{unit} enabled, starts {executable}", unit=UNIT,
+                           executable=str(executable)))
 
 
 def step_service(ctx: Context) -> None:
@@ -600,14 +640,16 @@ def check_writer(ctx: Context) -> Result:
     config = _trail()
     head = _writer_head(config)
     if head:
-        return Result(OK, f"running on {config.socket_path}, head seq {head.get('seq')}",
+        return Result(OK, Text("cli.check.writer.ok", "running on {socket}, head seq {seq}", socket=str(config.socket_path),
+                               seq=head.get("seq")),
                       data={"socket": str(config.socket_path), "head_seq": head.get("seq")})
     if not config.meta_path.exists():
-        return Result(SKIP, "no trail yet")
+        return Result(SKIP, Text("cli.check.writer.no_trail", "no trail yet"))
     can_start = (query_task(ctx) is not None) if platform.IS_WINDOWS else (
         ctx.systemd_available() and unit_path().exists())
-    how = "" if can_start else "; start it in a terminal of its own and keep it running"
-    return Result(FAIL, f"no writer answers on {config.socket_path}{how}", _start_fix(ctx, config),
+    how = "" if can_start else Text("cli.check.writer.by_hand", "; start it in a terminal of its own and keep it running")
+    return Result(FAIL, Text("cli.check.writer.down", "no writer answers on {socket}{how}", socket=str(config.socket_path),
+                             how=how), _start_fix(ctx, config),
                   can_apply=can_start)
 
 
@@ -627,8 +669,11 @@ def check_spool(ctx: Context) -> Result:
     from aqt_evidence import spool_file
     count = _count_lines(spool_file())
     if not count:
-        return Result(OK, "spool empty")
-    return Result(WARN, f"{count} record(s) wait in {spool_file()} and are not in the trail yet",
+        return Result(OK, Text("cli.check.spool.empty", "spool empty"))
+    waiting = (Text("cli.check.spool.one", "1 record waits in {path} and is not in the trail yet", path=str(spool_file()))
+               if count == 1 else Text("cli.check.spool.many", "{n} records wait in {path} and are not in the trail yet",
+                                       n=count, path=str(spool_file())))
+    return Result(WARN, waiting,
                   "aqt-trail drain", data={"spooled": count})
 
 
@@ -637,7 +682,8 @@ def step_spool(ctx: Context) -> None:
         raise StepFailed("aqt-trail drain did not succeed")
 
 
-_SOURCES = {"env": "set by AQT_SINK", "discovered": "found automatically", "default": "the default"}
+_SOURCES = {"env": Text("cli.check.sink.env", "set by AQT_SINK"), "discovered": Text("cli.check.sink.discovered",
+            "found automatically"), "default": Text("cli.check.sink.default", "the default")}
 
 
 def check_sink(ctx: Context) -> Result:
@@ -653,8 +699,9 @@ def check_sink(ctx: Context) -> Result:
     kind, target, warning = info.get("kind"), info.get("target"), info.get("warning")
     origin = _SOURCES.get(info.get("source"), info.get("source"))
     if not warning:
-        where = "the trail writer" if kind == "unix" else "the file"
-        return Result(OK, f"records go to {where} {target} ({origin})", data=info)
+        where = Text("cli.check.sink.writer", "the trail writer") if kind == "unix" else Text("cli.check.sink.file", "the file")
+        return Result(OK, Text("cli.check.sink.ok", "records go to {where} {target} ({origin})", where=where,
+                               target=str(target), origin=origin), data=info)
     config = _trail()
     if kind == "unix" and info.get("writer"):       # a writer answered but refused the check
         fix = "aqt-trail status"
@@ -673,7 +720,8 @@ def check_signer(ctx: Context) -> Result:
     settings, registry = _signoff()
     active = _active_signers(registry)
     if not active:
-        return Result(FAIL, f"no signer with an active key in {settings.registry_path}", SIGNER_FIX)
+        return Result(FAIL, Text("cli.check.signer.none", "no signer with an active key in {registry}",
+                                 registry=str(settings.registry_path)), SIGNER_FIX)
     check_signers = getattr(aqt_signoff, "check_signers", None)
     if check_signers is None:
         return Result(WARN, f"{len(active)} signer(s) enrolled: {', '.join(active)}; aqt-signoff is too old to check "
@@ -735,9 +783,15 @@ def check_signer(ctx: Context) -> Result:
                       "aqt-signoff signers check", data=data, can_apply=False)
     first = report.get("bootstrap")
     first = first.get("signer") if isinstance(first, dict) else first
-    return Result(OK, f"{len(counting)} signer(s) enrolled and backed by enrolment records in the "
-                      f"{report.get('evidence')}: {', '.join(counting)}"
-                      + (f" (first signer: {first})" if first else ""), data=data)
+    first = Text("cli.check.signer.first", " (first signer: {signer})", signer=first) if first else ""
+    if len(counting) == 1:
+        text = Text("cli.check.signer.ok_one", "1 signer enrolled and backed by enrolment records in the {evidence}: "
+                    "{signers}{first}", evidence=str(report.get("evidence")), signers=counting[0], first=first)
+    else:
+        text = Text("cli.check.signer.ok_many", "{n} signers enrolled and backed by enrolment records in the {evidence}: "
+                    "{signers}{first}", n=len(counting), evidence=str(report.get("evidence")),
+                    signers=", ".join(counting), first=first)
+    return Result(OK, text, data=data)
 
 
 SIGNER_ID = re.compile(r"^human:[a-z0-9][a-z0-9._-]{0,63}$")   # aqt-signoff's rule for signer IDs
@@ -790,8 +844,9 @@ def check_signoff_config(ctx: Context) -> Result:
     path = settings.config_path
     active = _active_signers(registry)
     if not path.exists():
-        need = "" if active else " (enrol a signer first)"
-        return Result(WARN, f"no {path}: signing commands need --signer every time{need}", "aqt setup")
+        need = "" if active else Text("cli.check.signoff.enrol_first", " (enrol a signer first)")
+        return Result(WARN, Text("cli.check.signoff.missing", "no {path}: signing commands need --signer every time{need}",
+                                 path=str(path), need=need), "aqt setup")
     if not settings.signer:
         return Result(WARN, f"{path} names no default signer",
                       f'add signer = "{active[0] if active else "human:<you>"}" under [signoff] in {path}',
@@ -799,7 +854,8 @@ def check_signoff_config(ctx: Context) -> Result:
     if settings.signer not in active:
         return Result(FAIL, f"{path} names {settings.signer}, who has no active key in {settings.registry_path}",
                       "aqt-signoff signers list", can_apply=False)
-    return Result(OK, f"default signer {settings.signer}, time zone {settings.tz}")
+    return Result(OK, Text("cli.check.signoff.ok", "default signer {signer}, time zone {tz}", signer=settings.signer,
+                           tz=settings.tz))
 
 
 def step_signoff_config(ctx: Context) -> None:
@@ -828,11 +884,12 @@ def check_trail_config(ctx: Context) -> Result:
     from aqt_trail.config import config_dir
     path = config_dir() / "trail.toml"
     if not path.exists():
-        return Result(WARN, f"no {path}: the audit-trail review assumes UTC and 07:00-19:00 on weekdays",
+        return Result(WARN, Text("cli.check.trail_config.missing", "no {path}: the audit-trail review assumes UTC and "
+                                 "07:00-19:00 on weekdays", path=str(path)),
                       "aqt setup")
     review = _trail().section("review")
-    return Result(OK, f"{path}: review time zone {review['timezone']}, "
-                      f"{review['work_start']}-{review['work_end']}")
+    return Result(OK, Text("cli.check.trail_config.ok", "{path}: review time zone {tz}, {start}-{end}", path=str(path),
+                           tz=review["timezone"], start=review["work_start"], end=review["work_end"]))
 
 
 def step_trail_config(ctx: Context) -> None:
@@ -850,16 +907,16 @@ def check_trail_intact(ctx: Context) -> Result:
     from aqt_trail.state import service_keys
     config = _trail()
     if not config.meta_path.exists():
-        return Result(SKIP, "no trail state here")
+        return Result(SKIP, Text("cli.check.intact.no_state", "no trail state here"))
     if not config.trail_path.exists():
-        return Result(OK, "the trail has no records yet")
+        return Result(OK, Text("cli.check.intact.empty", "the trail has no records yet"))
     keys = service_keys(config)
     if ctx.verify:
         return _full_verify(config, keys)
     writer = _writer_head(config)          # before reading the file: the writer may append meanwhile
     line = _last_line(config.trail_path)
     if line is None:
-        return Result(OK, "the trail has no records yet")
+        return Result(OK, Text("cli.check.intact.empty", "the trail has no records yet"))
     try:
         record = json.loads(line)
         seq = record["chain"]["seq"]
@@ -890,8 +947,9 @@ def check_trail_intact(ctx: Context) -> Result:
                                     f"(seq {seq}): the trail was cut short", "aqt-trail verify")
             if point.get("seq") == seq and point.get("head") != head:
                 return Result(FAIL, f"the record at the last checkpoint (seq {seq}) was rewritten", "aqt-trail verify")
-    matched = " and matches the writer" if writer else ""
-    return Result(OK, f"head seq {seq} is signed by the service key{matched}; full check: aqt status --verify",
+    matched = Text("cli.check.intact.matches", " and matches the writer") if writer else ""
+    return Result(OK, Text("cli.check.intact.ok", "head seq {seq} is signed by the service key{matched}; full check: "
+                           "aqt status --verify", seq=seq, matched=matched),
                   data={"head_seq": seq, "head": head, "verified": False})
 
 
@@ -916,7 +974,7 @@ def check_vectors(ctx: Context) -> Result:
     if failed:
         return Result(FAIL, f"{len(failed)} of {len(results)} test vectors disagree ({', '.join(failed[:3])})",
                       "aqt-evidence vectors")
-    return Result(OK, f"{len(results)} of {len(results)} test vectors agree")
+    return Result(OK, Text("cli.check.vectors.ok", "{n} of {total} test vectors agree", n=len(results), total=len(results)))
 
 
 def _egress_status() -> dict | None:
@@ -949,7 +1007,7 @@ def check_egress(ctx: Context) -> Result:
         return Result(WARN, f"aqt-egress is installed but its status could not be read: {type(error).__name__}: "
                             f"{error}", tools.install_command("aqt-egress"))
     if value is None:
-        return Result(SKIP, "aqt-egress (optional outbound checkpoint) is not installed")
+        return Result(SKIP, Text("cli.check.egress.missing", "aqt-egress (optional outbound checkpoint) is not installed"))
     if not value.get("box") and not platform.IS_LINUX:   # the box needs Linux: no fix to offer elsewhere
         return Result(SKIP, f"aqt-egress {value.get('version')} is installed, but {value.get('box_detail')}",
                       data=value)

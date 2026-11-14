@@ -20,7 +20,7 @@ import unicodedata
 from pathlib import Path
 from typing import Callable
 
-from . import UsageProblem, require
+from . import UsageProblem, coded_fields, require
 
 # The machine steps the page may apply (aqt setup's steps without the personal one, enrolling a signer).
 MACHINE_STEPS = ("trail.init", "service", "writer", "spool", "signoff.config", "trail.config")
@@ -41,7 +41,8 @@ def _quiet(_text: str) -> None:
 
 def _row(checks, check, result) -> dict:
     """A check result as the page shows it: aqt status's fields plus whether the page can apply its step."""
-    return {**result.as_dict(), "can_apply": checks.needs_step(check, result) and not check.personal,
+    return {**result.as_dict(), **coded_fields("explanation", result.explanation),
+            "can_apply": checks.needs_step(check, result) and not check.personal,
             "personal": check.personal, "does": check.describe(checks.Context(say=_quiet)) if check.step else ""}
 
 
@@ -90,10 +91,11 @@ def apply(check_id: str) -> dict:
     check = next(c for c in checks.CHECKS if c.id == check_id)
     said: list[str] = []
     ctx = checks.Context(yes=True, say=said.append)
+    applied = checks.needs_step(check, checks.run_check(ctx, check))
     error = _apply(checks, ctx, check)
     result = checks.run_check(ctx, check)
     return {"ok": error is None and result.result != checks.FAIL, "check": _row(checks, check, result),
-            "error": error, "said": said}
+            "error": error, "said": said, "applied": applied and error is None}
 
 
 def _apply(checks, ctx, check, step: Callable | None = None) -> str | None:
@@ -225,7 +227,8 @@ def _project_rows(checks, project, ctx) -> list[dict]:
     rows = []
     for check in project.PROJECT_CHECKS:
         result = checks.run_check(ctx, check)
-        row = {**result.as_dict(), "can_apply": checks.needs_step(check, result)}
+        row = {**result.as_dict(), **coded_fields("explanation", result.explanation),
+               "can_apply": checks.needs_step(check, result)}
         if check.id in PROJECT_ITEMS:
             row["file"], row["preview"] = _preview_text(project, ctx, check.id, result)
             row["backup"] = row["can_apply"] and _exists(project, ctx, check.id)
@@ -264,7 +267,9 @@ def project_connect(path: str, items) -> dict:
         if error:
             errors[check.id] = error
     rows = _project_rows(checks, project, ctx)
-    return {"ok": not errors, "root": str(ctx.root), "errors": errors, "said": said, "checks": rows,
+    done = [row["id"] for row in rows if row["id"] in chosen and row["result"] == checks.OK and row["id"] not in errors]
+    return {"ok": not errors, "root": str(ctx.root), "errors": errors, "said": said, "checks": rows, "done": done,
+            "backups": sum(1 for line in said if "(backup:" in line),
             "backup_dir": project.show(ctx, project.backup_dir(ctx.root))}
 
 
@@ -282,7 +287,8 @@ def projects(paths) -> dict:
         except UsageProblem as error:
             out.append({**entry, "missing": True, "verdict": checks.FAIL, "checks": [], "error": str(error)})
             continue
-        rows = [{**result.as_dict(), "can_apply": checks.needs_step(check, result)}
+        rows = [{**result.as_dict(), **coded_fields("explanation", result.explanation),
+                 "can_apply": checks.needs_step(check, result)}
                 for check, result in ((check, checks.run_check(ctx, check)) for check in project.PROJECT_CHECKS)]
         out.append({**entry, "root": str(ctx.root), "git": ctx.git, "checks": rows,
                     "verdict": checks.verdict([checks.Result(row["result"], "") for row in rows])})
