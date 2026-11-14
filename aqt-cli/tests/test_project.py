@@ -170,11 +170,12 @@ def test_existing_settings_keep_the_users_hooks_keys_order_and_mode(repo):
     assert data["hooks"]["PreToolUse"][0] == mine["hooks"]["PreToolUse"][0]
     assert data["hooks"]["PreToolUse"][1]["hooks"][0]["command"] == "aqt trail hook claude-code"
     assert data["permissions"]["allow"] == ["Bash(ls:*)"] and data["permissions"]["deny"][0] == "Bash(rm:*)"
-    assert path.read_text().endswith("}\n") and path.stat().st_mode & 0o777 == 0o640
+    assert path.read_text().endswith("}\n") and (platform.IS_WINDOWS or path.stat().st_mode & 0o777 == 0o640)
     saved = backups(repo)
     assert [p.name.split(".json.")[0] for p in saved] == ["settings"] and saved[0].read_bytes() == original
     assert str(project.backup_dir(repo)).startswith(os.environ["XDG_STATE_HOME"])     # outside the repository
-    assert project.backup_dir(repo).name.startswith("repo-") and saved[0].stat().st_mode & 0o777 == 0o640
+    assert project.backup_dir(repo).name.startswith("repo-")
+    assert platform.IS_WINDOWS or saved[0].stat().st_mode & 0o777 == 0o640           # Windows: no POSIX modes
 
 
 @pytest.mark.parametrize("text", ["{", "[]", '{"hooks": []}', '{"hooks": {"Stop": {}}}', '{"permissions": []}',
@@ -241,6 +242,8 @@ def test_rule_paths_follow_xdg_dirs(tmp_path, monkeypatch):
     else:                                                          # the system's own AQT folders
         monkeypatch.delenv("XDG_STATE_HOME", raising=False)
         monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+        monkeypatch.setenv("APPDATA", str(home / "AppData" / "Roaming"))       # Windows: under the home, as usual
+        monkeypatch.setenv("LOCALAPPDATA", str(home / "AppData" / "Local"))
     from aqt_quarantine.cli import CLAUDE_SNIPPET
     file_rules = [rule for rule in CLAUDE_SNIPPET["permissions"]["deny"] if not rule.startswith("Bash(")]
     assert set(file_rules) <= set(project.deny_rules())          # the defaults: the same rules as aqt-quarantine's
@@ -249,10 +252,19 @@ def test_rule_paths_follow_xdg_dirs(tmp_path, monkeypatch):
     assert f"Read({state}/trail/keys/**)" in project.deny_rules()
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "elsewhere"))
     rules = project.deny_rules()
-    assert f"Read(/{tmp_path}/elsewhere/aqt/quarantine/**)" in rules and f"Edit(/{tmp_path}/elsewhere/aqt/**)" in rules
-    assert f"Read(/{tmp_path}/elsewhere/aqt/trail/keys/**)" in rules
+    base = absolute_rule(tmp_path)
+    assert f"Read({base}/elsewhere/aqt/quarantine/**)" in rules and f"Edit({base}/elsewhere/aqt/**)" in rules
+    assert f"Read({base}/elsewhere/aqt/trail/keys/**)" in rules
     monkeypatch.setenv("AQT_TRAIL_STATE", str(tmp_path / "trail"))         # a trail outside the AQT state folder
-    assert f"Edit(/{tmp_path}/trail/**)" in project.deny_rules()
+    assert f"Edit({base}/trail/**)" in project.deny_rules()
+
+
+def absolute_rule(path: Path) -> str:
+    """Claude Code's spelling of an absolute path in a rule: ``//abs``; on Windows ``//c/Users/…`` (the drive
+    letter as a folder, as Claude Code normalises Windows paths)."""
+    if os.name == "nt":
+        return "//" + path.drive[0].lower() + path.as_posix()[2:]
+    return "/" + path.as_posix()
 
 
 # -- agent instructions ------------------------------------------------------------------------
@@ -336,22 +348,24 @@ def test_ui_toml_append_rewrite_listed_and_other_shapes(repo, tmp_path):
     path.parent.mkdir(parents=True)
     path.write_text("port = 41377")
     init(repo)
-    assert path.read_text() == f'port = 41377\n\n[changes]\nprojects = ["{repo}"]\n'
+    q = lambda path: json.dumps(str(path))       # a TOML string (backslashes escaped on Windows)  # noqa: E731
+    assert path.read_text() == f'port = 41377\n\n[changes]\nprojects = [{q(repo)}]\n'
     other = tmp_path / "other"
-    path.write_text(f'port = 1\n\n[changes]\nprojects = ["{other}", ]  # mine\n\n[x]\ny = 2\n')
+    path.write_text(f'port = 1\n\n[changes]\nprojects = [{q(other)}, ]  # mine\n\n[x]\ny = 2\n')
     init(repo)
-    assert path.read_text() == f'port = 1\n\n[changes]\nprojects = ["{other}", "{repo}"]  # mine\n\n[x]\ny = 2\n'
+    assert path.read_text() == f'port = 1\n\n[changes]\nprojects = [{q(other)}, {q(repo)}]  # mine\n\n[x]\ny = 2\n'
     assert ui_config().projects == [other, repo] and len(user_backups(repo)) == 2 and backups(repo) == []
     assert status(repo)["ui.project"].result == "ok"
-    path.write_text(f'[changes]\nprojects = [\n  "{other}",\n]\n')
+    path.write_text(f'[changes]\nprojects = [\n  {q(other)},\n]\n')
     result = status(repo)["ui.project"]
-    assert result.result == "warn" and not result.can_apply and result.fix.startswith(f'add "{repo}" to projects')
+    assert result.result == "warn" and not result.can_apply and result.fix.startswith(f'add {q(repo)} to projects')
     path.write_text("[changes\n")
     assert status(repo)["ui.project"].result == "fail"
 
 
 def test_home_relative_ui_entry_counts(repo, monkeypatch):
     monkeypatch.setenv("HOME", str(repo.parent))
+    monkeypatch.setenv("USERPROFILE", str(repo.parent))          # Windows' home
     ui = ui_toml()
     ui.parent.mkdir(parents=True)
     ui.write_text('[changes]\nprojects = ["~/repo"]\n')

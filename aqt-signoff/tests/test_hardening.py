@@ -333,7 +333,7 @@ def test_enrolment_must_be_in_the_trail_when_there_is_one(people, make, isolated
 def test_new_keys_use_scrypt_and_earlier_keys_are_re_encrypted_at_unlock(people, isolated):
     from aqt_evidence.crypto import key_file_format
     keys_dir = isolated / "config/aqt/keys"
-    assert stat.S_IMODE(os.stat(keys_dir).st_mode) == 0o700
+    assert os.name == "nt" or stat.S_IMODE(os.stat(keys_dir).st_mode) == 0o700     # Windows: no POSIX modes
     path = keys_dir / "human-alice.key"
     assert key_file_format(path) == "aqt-key"
     private = load_signer(path, passphrase=PASSWORDS["human:alice"].encode()).private_key
@@ -347,7 +347,7 @@ def test_new_keys_use_scrypt_and_earlier_keys_are_re_encrypted_at_unlock(people,
     doc.write_text("alpha")
     alice = people["human:alice"]
     alice.sign(alice.file_subject(doc), "approved", "fine")
-    assert key_file_format(path) == "aqt-key" and stat.S_IMODE(os.stat(path).st_mode) == 0o600
+    assert key_file_format(path) == "aqt-key" and (os.name == "nt" or stat.S_IMODE(os.stat(path).st_mode) == 0o600)
     assert alice.verify_file(doc).ok
     result = alice.rekey("human:alice")
     assert result["format"] == "aqt-key" and not result["upgraded"] and not result["enrolled"]

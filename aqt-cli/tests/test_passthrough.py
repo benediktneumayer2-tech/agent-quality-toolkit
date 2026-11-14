@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 
@@ -24,11 +25,17 @@ def test_spec_and_evidence_both_run_aqt_evidence(capsys):
 
 
 def test_falls_back_to_the_console_script(tmp_path, monkeypatch):
-    script = tmp_path / "bin" / "aqt-fake"
-    script.parent.mkdir()
-    script.write_text(f'#!/bin/sh\necho "$@" > {tmp_path / "args"}\nexit 3\n')
-    script.chmod(0o755)
-    monkeypatch.setenv("PATH", f"{script.parent}:/usr/bin:/bin")
+    if os.name == "nt":            # a batch file stands in for the console script
+        script = tmp_path / "bin" / "aqt-fake.cmd"
+        script.parent.mkdir()
+        script.write_text(f'@echo %* > "{tmp_path / "args"}"\r\n@exit /b 3\r\n')
+        monkeypatch.setenv("PATH", f"{script.parent};{os.environ['SystemRoot']}\\System32")
+    else:
+        script = tmp_path / "bin" / "aqt-fake"
+        script.parent.mkdir()
+        script.write_text(f'#!/bin/sh\necho "$@" > {tmp_path / "args"}\nexit 3\n')
+        script.chmod(0o755)
+        monkeypatch.setenv("PATH", f"{script.parent}:/usr/bin:/bin")
     monkeypatch.setitem(tools.TOOLS, "capa", ("aqt_not_importable.cli", "aqt-fake", "aqt-capa"))
     assert main(["capa", "list", "--json"]) == 3
     assert (tmp_path / "args").read_text().strip() == "list --json"

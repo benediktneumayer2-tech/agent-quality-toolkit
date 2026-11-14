@@ -1,6 +1,6 @@
 """Receipts and reviews must be in the trail when a trail is in use; hidden working-tree changes block.
 
-A small stand-in for the aqt-trail writer (ping and append over a Unix socket into
+A small stand-in for the aqt-trail writer (ping and append over a Unix socket, a named pipe on Windows, into
 ``trail.jsonl`` at the default trail location, records signed with a fixed service key whose public key
 is in ``keys/``) keeps this suite free of an aqt-trail dependency.
 """
@@ -33,6 +33,39 @@ from conftest import CHECK_SCRIPT, edit, git
 P = "plans/s01.md"
 
 
+class PipeServer:
+    """The same stand-in on Windows, behind a named pipe (``aqt_evidence.pipes``), one client at a time."""
+
+    def __init__(self, name: str, answer):
+        from aqt_evidence import pipes
+        self.listener, self.answer, self.stop, self.done = pipes.PipeListener(name), answer, threading.Event(), \
+            threading.Event()
+
+    def serve_forever(self, poll_interval: float):
+        try:
+            while not self.stop.is_set():
+                connection = self.listener.accept(timeout=poll_interval)
+                if connection is None:
+                    continue
+                try:
+                    connection.settimeout(5)
+                    request = b""
+                    while chunk := connection.recv(65536):
+                        request += chunk
+                    connection.sendall(canonical_json(self.answer(json.loads(request))) + b"\n")
+                finally:
+                    connection.close()
+        finally:
+            self.done.set()
+
+    def shutdown(self):
+        self.stop.set()
+        self.done.wait(10)
+
+    def server_close(self):
+        self.listener.close()
+
+
 class FakeTrail:
     def __init__(self, state: Path, socket_path: Path):
         state.mkdir(parents=True, exist_ok=True)
@@ -46,15 +79,18 @@ class FakeTrail:
 
         class Handler(socketserver.StreamRequestHandler):
             def handle(self):
-                payload = json.loads(self.rfile.readline())
-                if payload.get("op") == "append":
-                    answer = {"ok": True, "record": trail.add(payload["record"], "socket"), "created": True}
-                else:
-                    answer = {"ok": True, "version": "fake"}
-                self.wfile.write(canonical_json(answer) + b"\n")
+                self.wfile.write(canonical_json(trail.answer(json.loads(self.rfile.readline()))) + b"\n")
 
-        self.server = socketserver.UnixStreamServer(str(socket_path), Handler)
+        if hasattr(socketserver, "UnixStreamServer"):
+            self.server = socketserver.UnixStreamServer(str(socket_path), Handler)
+        else:                       # Windows: the writer's named pipe
+            self.server = PipeServer(str(socket_path), self.answer)
         threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True).start()
+
+    def answer(self, payload: dict) -> dict:
+        if payload.get("op") == "append":
+            return {"ok": True, "record": self.add(payload["record"], "socket"), "created": True}
+        return {"ok": True, "version": "fake"}
 
     def add(self, record: dict, via: str) -> dict:
         with self.lock:
@@ -69,8 +105,9 @@ class FakeTrail:
 @pytest.fixture
 def trail(isolated, monkeypatch):
     short = Path(tempfile.mkdtemp(prefix="aqtc", dir="/tmp" if os.name == "posix" else None))
-    monkeypatch.setenv("AQT_SINK", f"unix:{short / 'trail.sock'}")
-    fake = FakeTrail(isolated / "state" / "aqt" / "trail", short / "trail.sock")
+    address = short / "trail.sock" if os.name == "posix" else f"\\\\.\\pipe\\aqt-change-test-{short.name}"
+    monkeypatch.setenv("AQT_SINK", f"unix:{address}")
+    fake = FakeTrail(isolated / "state" / "aqt" / "trail", address)
     yield fake
     fake.server.shutdown()
     fake.server.server_close()
@@ -525,6 +562,10 @@ def test_tracked_gitignore_rules_ignore_as_git_does(project):
     rules = {".gitignore": "__pycache__/\n*.log\n!keep.log\n/top.txt\nbuild/\n\\#hash\n",
              "a/.gitignore": "*.tmp\n/only.txt\nsub/deep.txt\n!important.tmp\nnested/\n**/z.dat\n",
              "a/b/.gitignore": "*\r\n!*.keep\r\n!.gitignore\r\n", "we*rd/.gitignore": "x*\n!xkeep\n"}
+    weird = ("we*rd/xa", "we*rd/xkeep", "we*rd/d/xb", "we*rd/ya")
+    if os.name == "nt":            # Windows file names cannot contain "*"
+        del rules["we*rd/.gitignore"]
+        weird = ()
     for name, text in rules.items():
         (project / name).parent.mkdir(parents=True, exist_ok=True)
         (project / name).write_text(text)
@@ -533,7 +574,7 @@ def test_tracked_gitignore_rules_ignore_as_git_does(project):
     for name in ("top.txt", "a/top.txt", "x.log", "keep.log", "a/x.log", "a/keep.log", "build/o", "a/build/o",
                  "#hash", "a/y.tmp", "a/important.tmp", "a/c/w.tmp", "a/only.txt", "a/b/only.txt", "a/sub/deep.txt",
                  "a/q/sub/deep.txt", "a/m/z.dat", "z.dat", "a/nested/f", "a/x/nested/f", "a/b/f.keep", "a/b/f.txt",
-                 "we*rd/xa", "we*rd/xkeep", "we*rd/d/xb", "we*rd/ya"):
+                 *weird):
         (project / name).parent.mkdir(parents=True, exist_ok=True)
         (project / name).write_text("x\n")
     led = Ledger.open(project)

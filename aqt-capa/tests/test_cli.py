@@ -21,8 +21,8 @@ def cli(tmp_path, monkeypatch, capsys):
     other = tmp_path / "other.jsonl"
     append_all(other, synthetic_evidence())
     cfg = tmp_path / "capa.toml"
-    cfg.write_text(f'[identity]\nid = "human:qa-lead"\n[project]\nroot = "{root}"\n'
-                   f'[evidence]\npaths = ["{other}", "{sink}"]\n[approval]\nallow_self_approval = true\n')
+    cfg.write_text(f"[identity]\nid = 'human:qa-lead'\n[project]\nroot = '{root}'\n"
+                   f"[evidence]\npaths = ['{other}', '{sink}']\n[approval]\nallow_self_approval = true\n")
     monkeypatch.setenv("AQT_SINK", f"file:{sink}")
     state = {"agent": False}
 

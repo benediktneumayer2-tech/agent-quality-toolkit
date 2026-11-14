@@ -12,10 +12,10 @@ from aqt_validate.config import records
 from aqt_validate.decisions import check, qualify
 from aqt_validate.detector import run_detector
 from aqt_validate.protocol import ProtocolError, configuration_hash, load_protocol
-from conftest import FIXTURES, HUMAN, detector_project, write_jsonl, benign_items
+from conftest import DETECTOR_COMMAND, FIXTURES, HUMAN, detector_project, write_jsonl, benign_items
 
 ACTOR = {"kind": "human", "id": "human:tester"}
-COMMAND = f'command = ["{sys.executable}", "{FIXTURES / "stub_detector.py"}"]'
+COMMAND = DETECTOR_COMMAND
 
 
 class Result:
@@ -87,7 +87,7 @@ def test_command_script_change_changes_configuration_hash(aqt_env):
     root = aqt_env.tmp / "p"
     path = detector_project(root)
     shutil.copy(FIXTURES / "stub_detector.py", root / "det.py")
-    path.write_text(path.read_text().replace(COMMAND, f'command = ["{sys.executable}", "det.py"]'))
+    path.write_text(path.read_text().replace(COMMAND, f"command = ['{sys.executable}', 'det.py']"))
     before = configuration_hash(load_protocol(path))
     assert configuration_hash(load_protocol(path)) == before
     (root / "det.py").write_text((root / "det.py").read_text() + "\n# tuned\n")

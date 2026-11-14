@@ -69,7 +69,7 @@ def test_install_hints_fit_how_aqt_ui_was_installed(tmp_path, monkeypatch):
     from aqt_ui import views
     monkeypatch.setattr(sys, "prefix", str(tmp_path))
     here = views.install_command("aqt-signoff")                     # this test venv: an editable clone install
-    assert here.startswith("uv pip install --python ") and here.endswith("/aqt-signoff")
+    assert here.startswith("uv pip install --python ") and here.rstrip("'").endswith(f"{os.sep}aqt-signoff")
     monkeypatch.setattr(views, "_clone", lambda: None)
     assert views.install_command("aqt-signoff") == "pip install aqt-signoff"
     (tmp_path / "pipx_metadata.json").write_text("{}")

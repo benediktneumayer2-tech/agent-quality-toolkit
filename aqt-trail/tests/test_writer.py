@@ -1,4 +1,5 @@
 import json
+import os
 
 import pytest
 
@@ -226,6 +227,7 @@ def test_drain_stores_each_id_once(writer, config):
 
 
 # -- lock file and write failures (C-13, C-16) --------------------------------------------------
+@pytest.mark.skipif(os.name == "nt", reason="no POSIX file modes on Windows (the trail lies in the user's profile)")
 def test_lock_file_is_private(config):
     import os
     import stat as stat_

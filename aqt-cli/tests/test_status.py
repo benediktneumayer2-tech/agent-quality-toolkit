@@ -32,7 +32,8 @@ def test_fresh_machine_fails_with_a_fix_per_problem_and_pure_json(capsys):
     assert checks_["packages"]["result"] == "ok" and checks_["packages"]["data"]["versions"]["aqt-ui"]
     assert checks_["trail.init"] == {"id": "trail.init", "result": "fail", "fix": "aqt-trail init",
                                      "explanation": checks_["trail.init"]["explanation"]}
-    assert checks_["service"]["result"] == "skip"                       # no systemd --user here
+    # no systemd --user here; on Windows the logon task is simply not registered yet
+    assert checks_["service"]["result"] == ("warn" if platform.IS_WINDOWS else "skip")
     assert checks_["writer"]["result"] == "skip"
     assert checks_["sink"]["result"] == "warn" and checks_["sink"]["data"]["kind"] == "file"
     assert checks_["signer"]["result"] == "fail" and "aqt-signoff init" in checks_["signer"]["fix"]

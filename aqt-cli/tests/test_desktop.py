@@ -14,12 +14,25 @@ from aqt_cli.checks import Context, check_command, trail_command
 
 
 def fake_aqt(folder: Path, name="aqt", version="") -> Path:
-    """A program ``name`` in ``folder`` whose --version prints ``version``."""
+    """A program ``name`` in ``folder`` whose --version prints ``version`` (on Windows ``name.CMD``, spelled as
+    ``shutil.which`` reports it)."""
     folder.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":
+        program = folder / f"{name}.CMD"
+        program.write_text(f"@echo {version}\n")
+        return program
     program = folder / name
     program.write_text(f"#!/bin/sh\necho '{version}'\n")
     program.chmod(0o755)
     return program
+
+
+def same_file(first, second) -> bool:
+    """The same path as the system compares them (Windows: case-insensitive, ``aqt.EXE`` is ``aqt.exe``)."""
+    return os.path.normcase(str(first)) == os.path.normcase(str(second))
+
+
+THIS_AQT = checks.this_command()      # the console script beside this interpreter (aqt.exe on Windows)
 
 
 # -- aqt open ----------------------------------------------------------------------------------
@@ -56,7 +69,7 @@ def test_open_refuses_other_text_and_reports_a_missing_handler(monkeypatch, caps
 # -- which aqt agents run -----------------------------------------------------------------------
 def test_command_check_is_ok_when_this_aqt_comes_first():
     result = check_command(Context())
-    assert result.result == "ok" and result.data["path"] == str(Path(sys.executable).parent / "aqt")
+    assert result.result == "ok" and same_file(result.data["path"], THIS_AQT)
 
 
 def test_command_check_names_another_aqt_installation_that_comes_first(tmp_path, monkeypatch):
@@ -64,7 +77,7 @@ def test_command_check_names_another_aqt_installation_that_comes_first(tmp_path,
     monkeypatch.setenv("PATH", f"{other.parent}{os.pathsep}{os.environ['PATH']}")
     result = check_command(Context())
     assert result.result == "warn" and str(other) in result.explanation and not result.can_apply
-    assert result.data["path"] == str(other) and result.data["this"] == str(Path(sys.executable).parent / "aqt")
+    assert result.data["path"] == str(other) and same_file(result.data["this"], THIS_AQT)
     assert checks.command_name() == "aqt"                     # another AQT still answers to aqt
 
 
@@ -98,6 +111,7 @@ def test_command_check_without_aqt_on_path(tmp_path, monkeypatch):
     assert result.fix == f"add {Path(sys.executable).parent} to PATH"
 
 
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="AppImages exist only on Linux")
 def test_frozen_appimage_runtime_counts_the_link_to_its_appimage(tmp_path, monkeypatch):
     image = fake_aqt(tmp_path / "Apps", "AQT.AppImage")
     bin_dir = tmp_path / "bin"

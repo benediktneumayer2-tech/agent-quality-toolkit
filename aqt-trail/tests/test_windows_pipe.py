@@ -26,11 +26,12 @@ print(json.dumps({"pid": os.getpid(), "route": route, "seq": stored.get("chain",
 """
 
 
-def _wait_for_writer(address, process, seconds=30.0):
+def _wait_for_writer(address, process, log, seconds=30.0):
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
         if process.poll() is not None:
-            raise AssertionError(f"the writer exited with {process.returncode}")
+            raise AssertionError(f"the writer exited with {process.returncode}: "
+                                 f"{log.read_text(encoding='utf-8', errors='replace')[-2000:]}")
         try:
             if writer_request(address, {"op": "ping"}, timeout=0.5).get("ok"):
                 return
@@ -45,7 +46,7 @@ def test_a_real_writer_and_two_clients(config, tmp_path):
     log = open(tmp_path / "writer.log", "wb")
     writer = subprocess.Popen([sys.executable, "-m", "aqt_trail.cli", "serve"], stdout=log, stderr=subprocess.STDOUT)
     try:
-        _wait_for_writer(address, writer)
+        _wait_for_writer(address, writer, tmp_path / "writer.log")
         one_input = tmp_path / "one.json"
         one_input.write_text(json.dumps(event("client-one")), encoding="utf-8")
         one = subprocess.Popen([sys.executable, "-m", "aqt_trail.cli", "append", str(one_input)],

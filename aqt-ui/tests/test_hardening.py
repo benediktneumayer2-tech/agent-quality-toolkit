@@ -616,8 +616,9 @@ def test_browser_is_opened_on_a_private_file_without_the_token(env, monkeypatch)
     login_file = cli.open_browser(app, link, opener=opened.append)
     assert len(opened) == 1 and token not in opened[0] and opened[0].startswith("file://")
     assert login_file.parent.parent == home and login_file.parent.name.startswith("aqt-ui-login-")
-    assert stat.S_IMODE(login_file.stat().st_mode) == 0o600
-    assert stat.S_IMODE(login_file.parent.stat().st_mode) == 0o700
+    if not platform.IS_WINDOWS:            # Windows: no POSIX modes; the folder is in the user's private profile
+        assert stat.S_IMODE(login_file.stat().st_mode) == 0o600
+        assert stat.S_IMODE(login_file.parent.stat().st_mode) == 0o700
     assert token in login_file.read_text()
     assert app.redeem(token)
     assert not login_file.exists() and not login_file.parent.exists()
@@ -638,11 +639,11 @@ def test_browser_page_falls_back_to_the_runtime_dir_without_a_usable_home(env, m
 def test_peer_with_agent_environment_or_of_another_user_is_refused():
     from aqt_ui.guard import Peer
     guard = Guard(Mode(True), environ={},
-                  peer_lookup=lambda c, s: Peer(uid=os.getuid(), pid=4242, chain=["curl", "systemd"],
+                  peer_lookup=lambda c, s: Peer(uid=platform.user_id(), pid=4242, chain=["curl", "systemd"],
                                                 environ={"CLAUDECODE": "1"}))
     context, refusal = guard.context(("127.0.0.1", 1), ("127.0.0.1", 2))
     assert refusal and "env:CLAUDECODE" in context.markers
-    other = Guard(Mode(True), environ={}, peer_lookup=lambda c, s: Peer(uid=os.getuid() + 1))
+    other = Guard(Mode(True), environ={}, peer_lookup=lambda c, s: Peer(uid=-1))     # nobody's uid or SID
     context, refusal = other.context(("127.0.0.1", 1), ("127.0.0.1", 2))
     assert refusal and context.markers == ["peer:other-user"]
 
@@ -675,7 +676,7 @@ def test_real_peer_lookup_reads_pid_uid_and_the_peers_agent_markers():
 
 def test_each_decision_request_is_logged_with_its_peer(trail, held_case, ui_factory):
     from aqt_ui.guard import Peer
-    client = ui_factory(peer=Peer(uid=os.getuid(), pid=4242, chain=["firefox", "systemd"]))
+    client = ui_factory(peer=Peer(uid=platform.user_id(), pid=4242, chain=["firefox", "systemd"]))
     client.login()
     case = case_detail(client, held_case)
     status, result, _ = client.post(f"/api/quarantine/{held_case}/release",

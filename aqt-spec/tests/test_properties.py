@@ -88,7 +88,7 @@ def test_duplicate_keys_are_always_refused(value, extra):
         parse_json(forged)
 
 
-@given(st.integers().filter(lambda n: abs(n) > LIMIT))
+@given(st.one_of(st.integers(min_value=LIMIT + 1), st.integers(max_value=-LIMIT - 1)))
 def test_integers_beyond_the_safe_range_are_refused(number):
     with pytest.raises(CanonicalError):
         parse_json(f'{{"n":{number}}}')

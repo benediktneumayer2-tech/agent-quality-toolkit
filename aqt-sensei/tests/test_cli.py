@@ -1,6 +1,7 @@
 """The console script end to end against an in-process bridge."""
 
 import json
+import os
 
 import pytest
 
@@ -23,6 +24,8 @@ def env(paths, monkeypatch):
 
 @pytest.fixture
 def live(env, bridge, tmp_path, config, monkeypatch):
+    if os.name == "nt":
+        pytest.skip("the sensei needs its sandbox, which Windows does not have (owner decision D2)")
     proc = FakeProc(tmp_path / "proc")
     proc.add(1, "systemd", 0)
     proc.add(5000, "bash", 1, tty="/dev/pts/9")

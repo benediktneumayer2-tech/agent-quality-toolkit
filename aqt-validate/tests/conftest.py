@@ -102,7 +102,7 @@ compose = {compose}
 [[detectors]]
 id = "marker"
 version = "1.0"
-command = ["{python}", "{stub}"]
+command = ['{python}', '{stub}']
 model_file = "model.bin"
 
 {extra_detectors}
@@ -137,6 +137,10 @@ target = 0.10
 """
 
 
+# the detector's command line as detector_project writes it (TOML literal strings: Windows paths have backslashes)
+DETECTOR_COMMAND = f"command = ['{sys.executable}', '{FIXTURES / 'stub_detector.py'}']"
+
+
 def detector_project(root: Path, *, criteria: str = DEFAULT_CRITERIA, compose: bool = False,
                      extra_detectors: str = "", hold_rule: str = "", contamination: str = "",
                      max_errors: int = 0, benign=None, attacks=None) -> Path:
@@ -165,7 +169,7 @@ def commit(repo: Path, message: str, files: dict[str, str], date: str) -> str:
     for name, content in files.items():
         path = repo / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content)
+        path.write_text(content, newline="\n")      # LF on every system, as the patches expect
     _git(repo, "add", "-A")
     stamp = f"{date}T12:00:00+00:00"
     _git(repo, "commit", "-q", "-m", message, extra_env={"GIT_AUTHOR_DATE": stamp, "GIT_COMMITTER_DATE": stamp})

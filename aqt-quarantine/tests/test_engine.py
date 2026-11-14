@@ -79,8 +79,9 @@ def test_hold_writes_case_file_and_minimal_fields(world):
     assert INJECTION not in json.dumps(record)  # large text never inline; only excerpts
     original = world.store.cases_dir / result.case_id / "original.txt"
     assert original.read_text() == INJECTION
-    assert stat.S_IMODE(original.stat().st_mode) == 0o600
-    assert stat.S_IMODE(world.store.root.stat().st_mode) == 0o700
+    if os.name != "nt":            # Windows: no POSIX modes; the store lies in the user's private profile
+        assert stat.S_IMODE(original.stat().st_mode) == 0o600
+        assert stat.S_IMODE(world.store.root.stat().st_mode) == 0o700
     assert "case " + result.case_id in result.notice()
     # the same record also went to the configured (default) sink
     assert [r["id"] for r in read_jsonl(world.config.state_dir.parent / "evidence.jsonl")] == [record["id"]]

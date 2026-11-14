@@ -171,6 +171,7 @@ def test_minor_closes_without_action(env):
 def test_rebuild_when_index_missing_keeps_ids(env):
     capa = env.capa()
     capa.new_deviation(title="a", description=None, severity="minor", category="tool")
+    capa.store.db.close()               # the index of a stopped process (Windows cannot delete an open file)
     env.db.unlink()
     again = env.capa()
     assert again.new_deviation(title="b", description=None, severity="minor",

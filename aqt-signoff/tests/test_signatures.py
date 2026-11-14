@@ -24,7 +24,7 @@ def test_init_writes_registry_keys_and_enrolment(people, make, isolated):
     assert key["key_id"].startswith("ed25519:") and key["public_pem"].startswith("-----BEGIN PUBLIC KEY")
     assert key["revoked_at"] is None and key["enrolled_at"].endswith("Z")
     key_file = isolated / "config/aqt/keys/human-alice.key"
-    assert stat.S_IMODE(os.stat(key_file).st_mode) == 0o600
+    assert os.name == "nt" or stat.S_IMODE(os.stat(key_file).st_mode) == 0o600      # Windows: no POSIX modes
     assert b"ENCRYPTED" in key_file.read_bytes()
     enrolled = [r for r in records(make) if r["type"] == "signoff.key.enrolled"]
     requests = [r for r in enrolled if r["actor"]["id"] == r["data"]["signer"]]

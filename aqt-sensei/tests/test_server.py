@@ -4,6 +4,8 @@ The kernel reports this test process as the peer; a fake /proc tree decides
 which process the bridge believes it is talking to.
 """
 
+import os
+
 import pytest
 
 from aqt_sensei.agent import call
@@ -12,6 +14,8 @@ from aqt_sensei.peer import describe_pid
 from aqt_sensei.server import Server
 
 from conftest import ADVISOR_PID, WORKER_PID, FakeProc, pair_up, records
+
+pytestmark = pytest.mark.skipif(os.name == "nt", reason="the sensei needs its sandbox, which Windows does not have (owner decision D2)")
 
 OWNER_PID, OWNER_SHELL = 5100, 5000
 AGENT_IN_WORKER = 4110

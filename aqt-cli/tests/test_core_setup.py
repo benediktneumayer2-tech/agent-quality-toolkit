@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from aqt_evidence import platform
 from aqt_signoff.settings import load_settings
 from aqt_trail.config import load_config
 
@@ -73,7 +74,8 @@ def test_a_fresh_machine_needs_setup_and_the_status_is_aqt_status():
     rows = {row["id"]: row for row in body["checks"]}
     assert rows["trail.init"]["result"] == "fail" and rows["trail.init"]["can_apply"] is True
     assert rows["signer"]["can_apply"] is False and rows["signer"]["personal"] is True   # the onboarding enrols
-    assert body["passphrase_min"] == 12 and body["service"] is None          # the fake systemd is not available
+    # the fake systemd is not available; Windows always has the Task Scheduler for the writer's logon task
+    assert body["passphrase_min"] == 12 and body["service"] is (True if platform.IS_WINDOWS else None)
     assert get(core, "/api/overview")[1]["setup"] == {"needed": True, "trail": False, "signer": False, "signers": []}
 
 

@@ -11,7 +11,7 @@ from aqt_validate.adapters import to_ppm
 from aqt_validate.config import records
 from aqt_validate.detector import RunRefused, calibrate, fires, run_detector, threshold_any
 from aqt_validate.protocol import ProtocolError, load_protocol
-from conftest import FIXTURES, attack_items, benign_items, detector_project, read_records
+from conftest import DETECTOR_COMMAND, FIXTURES, attack_items, benign_items, detector_project, read_records
 
 ACTOR = {"kind": "human", "id": "human:tester"}
 
@@ -244,7 +244,7 @@ def test_score_file_adapter(aqt_env):
     root.mkdir()
     (root / "scores.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
     path = detector_project(root, benign=benign, attacks=attacks, criteria="")
-    text = path.read_text().replace(f'command = ["{sys.executable}", "{FIXTURES / "stub_detector.py"}"]', 'scores = "scores.jsonl"')
+    text = path.read_text().replace(DETECTOR_COMMAND, 'scores = "scores.jsonl"')
     path.write_text(text)
     protocol = load_protocol(path)
     res = run(protocol, aqt_env, split="dev").results
@@ -257,7 +257,7 @@ def test_real_quarantine_heuristics_plugin(aqt_env):
     from aqt_quarantine.thresholds import load as load_thresholds
     root = aqt_env.tmp / "p"
     path = detector_project(root, criteria="")
-    text = path.read_text().replace(f'command = ["{sys.executable}", "{FIXTURES / "stub_detector.py"}"]', 'plugin = "heuristics"')
+    text = path.read_text().replace(DETECTOR_COMMAND, 'plugin = "heuristics"')
     text = text.replace('id = "marker"\nversion = "1.0"', 'id = "heuristics"')  # version comes from the plug-in
     path.write_text(text)
     protocol = load_protocol(path)

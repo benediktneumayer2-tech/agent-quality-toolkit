@@ -26,7 +26,7 @@ id = "stub-{mode}"
 harness = "stub"
 model = "stub-model"
 version = "1"
-argv = ["{python}", "{stub}", "{mode}", "{{diff}}"{extra}]
+argv = ['{python}', '{stub}', "{mode}", "{{diff}}"{extra}]
 stdin = "none"
 runs = {runs}
 min_severity = "medium"
@@ -35,7 +35,7 @@ knowledge_cutoff = "2025-06-01"
 
 [cases]
 dir = "cases"
-repo = "{repo}"
+repo = '{repo}'
 
 [[criteria]]
 id = "R1"
@@ -151,7 +151,7 @@ def test_silent_and_wrapped(git_repo, aqt_env):
 
 def test_alternating_reviewer_disagrees_and_cache_avoids_reruns(git_repo, aqt_env):
     counter = aqt_env.tmp / "calls.txt"
-    protocol = project(aqt_env.tmp / "p", git_repo, "alternate", runs=2, extra=f', "{counter}"')
+    protocol = project(aqt_env.tmp / "p", git_repo, "alternate", runs=2, extra=f", '{counter}'")
     result = run(protocol, aqt_env)
     m = result.results["metrics"]
     assert int(counter.read_text()) == 6  # 3 cases x 2 runs

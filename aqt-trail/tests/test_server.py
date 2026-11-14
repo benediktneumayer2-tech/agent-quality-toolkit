@@ -69,7 +69,7 @@ def test_client_spools_when_writer_is_down_then_drain_on_start(config):
     records = [event("while-down-1"), event("while-down-2")]
     for record in records:
         assert client.append(record) == record and client.last_spooled
-    assert spool_path().exists() and stat.S_IMODE(os.stat(spool_path()).st_mode) == 0o600
+    assert spool_path().exists() and (platform.IS_WINDOWS or stat.S_IMODE(os.stat(spool_path()).st_mode) == 0o600)
     writer = open_writer(config)
     result = drain_local_spool(writer)
     writer.close()
