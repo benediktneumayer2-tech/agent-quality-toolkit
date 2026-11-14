@@ -3,8 +3,8 @@
 // because evidence (quarantined pages, reasons, excerpts) is untrusted. All text goes through
 // vis(), which shows hidden characters (bidi controls, zero-width characters, ...) as <U+XXXX>.
 import { DE, GLOSSARY, NEEDS, REASONS_DE, REFUSALS_DE, STEPS_DE } from "./i18n.js";
-import { initMachines, machineLine, machineName, machinesPart, pageLoaded, relabelMachines, remoteFolderLabel, setupPicker,
-  unknownBox, unknownText } from "./machines.js";
+import { initMachines, machineLine, machineName, machinesPart, onMachine, pageLoaded, relabelMachines, remoteFolderLabel,
+  setupPicker, unknownBox, unknownText } from "./machines.js";
 import { MESSAGES } from "./messages.js";
 import { vis } from "./text.js";
 
@@ -2520,7 +2520,7 @@ async function renderWelcome(main) {
     1: () => [title(t("Welcome")),
       h("p", { class: "lede", text: t("AQT watches what your AI coding agents do and keeps a tamper-evident record of it.") }),
       h("p", { text: t("When something needs a person (a held web page, a plan to approve, a change to release), it waits for you. You decide here and sign each decision with your passphrase.") }),
-      h("p", { text: t("Setting up takes about five minutes: who you are, your passphrase, the audit trail and your first project. Nothing leaves this computer.") }),
+      h("p", { text: onMachine("setup") || t("Setting up takes about five minutes: who you are, your passphrase, the audit trail and your first project. Nothing leaves this computer.") }),
       h("fieldset", { class: "radio-row" }, h("legend", { text: t("Language") }), [["en", "English"], ["de", "Deutsch"]].map(([value, words]) =>
         h("label", { class: "radio" }, h("input", { type: "radio", name: "ob-lang", value, checked: LANG === value, onchange: () => setLang(value) }), words))),
       nav(h("button", { class: "btn primary", type: "button", text: t("Set up"), onclick: () => goStep(enrolled() ? 4 : 2) }),
@@ -2676,7 +2676,7 @@ async function renderWelcome(main) {
     drawSubs();
     return [title(t("Audit trail")),
       h("p", { class: "lede", text: t("AQT keeps a tamper-evident record (audit trail) of what agents and people do. A small background service (writer) writes it, even when the app is closed.") }),
-      S.setup.service ? null : h("p", { class: "note-box", text: t("This computer has no systemd user session, so AQT cannot install the background service here. Start the writer yourself when the step asks for it; it must keep running.") }),
+      S.setup.service ? null : h("p", { class: "note-box", text: onMachine("no-service") || t("This computer has no systemd user session, so AQT cannot install the background service here. Start the writer yourself when the step asks for it; it must keep running.") }),
       listEl, nav(go4, back(enrolled() ? 1 : 3))];
   }
   function projectStep() {

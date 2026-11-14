@@ -38,6 +38,11 @@ no agent among its ancestors (its parent is the desktop app; the check walks on 
 is needed, the app's window is the person's place to decide. Each decision request checks the parent
 process, its ancestry and markers again, as the HTTP server checks the peer of a request. With
 ``--read-only`` decisions are refused as the read-only HTTP server refuses them.
+
+``aqt core --mode-check`` only prints that start-up verdict as one JSON line (``decisions``, ``reason``,
+``markers``, ``harness``, ``explicit``) and exits. The desktop app asks it before it opens another machine's
+core over SSH: the remote guard cannot see who started the app, so an app started by an agent opens it
+read-only.
 """
 
 from __future__ import annotations
@@ -593,7 +598,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--stdio", action="store_true", help="speak the protocol on stdin and stdout (required)")
     parser.add_argument("--read-only", action="store_true", help="never allow decisions from this core")
     parser.add_argument("--config", help="ui.toml to use (default: $XDG_CONFIG_HOME/aqt/ui.toml)")
+    parser.add_argument("--mode-check", action="store_true",
+                        help="print the mode a core started here would have (JSON) and exit")
     args = parser.parse_args(argv)
+    if args.mode_check:
+        print(json.dumps(startup_mode(args.read_only, terminal=False).as_dict()))
+        return 0
     if not args.stdio:
         parser.error("--stdio is required (the only transport)")
     try:

@@ -114,6 +114,11 @@ the same.
 - **The guard** is the remote core's. Started by `sshd`, it sees no agent among its ancestors, so a person at
   the app can decide. Each decision asks for the passphrase of the signing key on that machine, which travels
   there through the SSH connection.
+- **An app started by an agent never decides, here or there.** The remote guard cannot see who started the app,
+  so before the app opens another machine it asks the local Python guard: `aqt core --mode-check`, run like
+  its local core (the same command, environment and ancestry), prints the verdict as JSON. When that verdict is
+  read-only, or the check cannot run, the remote core is started with `--read-only`, and the page shows the
+  read-only banner with the local reason. The app asks once; *Test connection* shows the same mode.
 - **States:**
   - an unreachable host or a lost connection keeps the last data greyed, with *Reconnect* and *Use this
     computer*;
@@ -214,7 +219,8 @@ page load, `page_ms` for the page's first answer) and the core's `mode`.
 
 `scripts/smoke.sh` runs it under `xvfb-run`, never on your display, with throw-away HOME and XDG folders and
 its own D-Bus session (`dbus-run-session`), so it reaches neither a running AQT app nor your desktop's tray and
-notifications. For a bundle it then runs the bundle's `aqt --version` and `aqt status --json` (the .deb's
+notifications. That bus starts no services on demand, so there is no desktop portal to wait for (25 s on a
+desktop machine). For a bundle it then runs the bundle's `aqt --version` and `aqt status --json` (the .deb's
 `usr/bin/aqt`, the AppImage's `--cli`):
 
 ```bash
@@ -232,3 +238,27 @@ run it on a Mac someone is using, because the window opens on its screen.
 
 CI (`.github/workflows/desktop.yml`) builds both bundles, smoke-tests each of them, and uploads them as the
 artifact `aqt-desktop-linux`.
+
+## SSH end-to-end check (for developers)
+
+`scripts/e2e-ssh.sh` checks "another machine over SSH" against an sshd in a throw-away container
+(`scripts/e2e-ssh.Dockerfile`, with AQT installed from the clone's working tree). It does not run in CI. It needs
+Docker, `xvfb-run`, `dbus-run-session`, `dbus-monitor`, `ssh`, `ssh-keygen` and `python3`, and takes about three
+minutes, most of it the image:
+
+```bash
+aqt-desktop/scripts/build-linux.sh --debug
+aqt-desktop/scripts/e2e-ssh.sh            # or: e2e-ssh.sh path/to/aqt-desktop
+```
+
+It checks:
+- the round trip with AQT only in `~/.local/bin` there, with `aqt` on the PATH, and behind aqtinstall's `aqt`;
+- the remote mode is the local guard's verdict, and `CLAUDECODE=1` in the app's environment makes it read-only;
+- an unknown host, a refused key, an unreachable host and a machine without AQT;
+- a queue event whose notification names the machine (seen with `dbus-monitor`);
+- a dropped connection that is started again.
+
+It never uses your display, `~/.ssh` or your ssh-agent: ssh runs with its own config (`-F`) and throw-away
+keys. The container listens on 127.0.0.1 only and is removed at the end, as are the keys. The local core it
+asks is `AQT_CORE`, by default the `aqt-cli/.venv` that `scripts/test_all.sh` creates. Started from an agent
+session, the round trip is read-only too, which the check expects.
