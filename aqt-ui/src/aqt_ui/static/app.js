@@ -3,6 +3,8 @@
 // because evidence (quarantined pages, reasons, excerpts) is untrusted. All text goes through
 // vis(), which shows hidden characters (bidi controls, zero-width characters, ...) as <U+XXXX>.
 import { DE, GLOSSARY, NEEDS, REASONS_DE, REFUSALS_DE, STEPS_DE } from "./i18n.js";
+import { initMachines, machineLine, machineName, machinesPart, pageLoaded, relabelMachines, remoteFolderLabel, setupPicker,
+  unknownBox, unknownText } from "./machines.js";
 import { MESSAGES } from "./messages.js";
 import { vis } from "./text.js";
 
@@ -256,7 +258,11 @@ async function core(method, path, body) {
     if (path === "/api/session") return { status: 200, body: await APP.invoke("core_session") };
     return await APP.invoke("core_request", { method, path, body: body === undefined ? null : body });
   } catch (reason) {
-    throw new Error(t("The AQT core does not answer: {reason}", { reason: String(reason) }));
+    // {message, sent}: a request that reached the core (or its SSH connection) and got no answer may have been
+    // carried out; the app never sends it again, and the page says so (machines.js)
+    const unknown = !!(reason && reason.sent) && method === "POST";
+    const said = t("The AQT core does not answer: {reason}", { reason: (reason && reason.message) || String(reason) });
+    throw Object.assign(new Error(unknown ? `${said}. ${unknownText()}` : said), { unknown });
   }
 }
 function answered(answer) { return answer.status >= 200 && answer.status < 300; }
@@ -340,7 +346,8 @@ function shellLabels() {
   $("skip").textContent = vis(t("Skip to content"));
   $("menu-btn").textContent = vis(t("Menu"));
   $("refresh").textContent = vis(t("Refresh"));
-  $("brand-sub").textContent = vis(t("quality desk, this machine only"));
+  $("brand-sub").textContent = vis(machineLine() || t("quality desk, this machine only"));
+  relabelMachines();
   $("rail").setAttribute("aria-label", t("Areas"));
   $("status-pill").setAttribute("aria-label", t("Status"));
   inspector().setAttribute("aria-label", t("Details"));
@@ -725,6 +732,8 @@ function signSheet({ action, subject, signers, submit, note }) {
         if (status === 409) say("stale", `${t("Not signed:")} ${said}`);
         else say("refused", `${t("Refused:")} ${refusalWords(data.reason_code, data.reason_text) ? refusalWords(data.reason_code, data.reason_text) + ". " : ""}${said}${data.record_id ? ` (${t("refusal recorded as {record}", { record: data.record_id })})` : ""}`);
       } catch (error) {
+        // the decision was sent and no answer came: its outcome is unknown, never retried; a reload shows it
+        if (error.unknown) { put(clear(message), unknownBox()); sign.hidden = true; return; }
         say("refused", String(error.message || error));
       } finally {
         sign.disabled = false;
@@ -755,7 +764,7 @@ function setQuery(params) {
 
 function setTitle(text) {
   $("title").textContent = vis(text);
-  document.title = vis(`${text} · ${t("AQT quality desk")}`);
+  document.title = vis(`${text} · ${machineName() ? `${machineName()} · ` : ""}${t("AQT quality desk")}`);
 }
 async function route(keepInspector) {
   const moved = MOVED[location.pathname];
@@ -2313,8 +2322,8 @@ function appSettingRows(d, { keys, onChange }) {
 async function appSection() {
   if (!APP) return null;
   let d;
-  try { d = await desktopSettings(); } catch (error) { return section(t("This app"), errorBox(error)); }
-  return section(t("This app"), appSettingRows(d, { keys: ["autostart", "close_to_tray", "aqt_command", "links"] }));
+  try { d = await desktopSettings(); } catch (error) { return section(t("This app"), errorBox(error), machinesPart()); }
+  return section(t("This app"), appSettingRows(d, { keys: ["autostart", "close_to_tray", "aqt_command", "links"] }), machinesPart());
 }
 function glossaryList() {
   return h("dl", { class: "glossary" }, Object.keys(GLOSSARY).map((key) => {
@@ -2382,15 +2391,16 @@ function connectFlow(box, { path, onDone, onLater, laterLabel }) {
     try { previewList(out, await api(`/api/projects/preview?path=${encodeURIComponent(value)}`), { onDone, onLater, laterLabel }); }
     catch (error) { put(clear(out), errorBox(error)); }
   };
-  const pick = APP ? h("button", { class: "btn primary", type: "button", text: t("Choose folder…"), onclick: async () => {
+  const local = APP && !machineName();      // the folder dialog shows this computer; another machine takes a typed path
+  const pick = local ? h("button", { class: "btn primary", type: "button", text: t("Choose folder…"), onclick: async () => {
     let picked = null;
     try { picked = await APP.invoke("pick_folder"); } catch (error) { put(clear(out), h("div", { class: "result refused", text: String(error) })); return; }
     if (picked) show(picked);
   } }) : null;
-  const look = h("button", { class: `btn ${APP ? "" : "primary"}`, type: "button", text: t("Show what changes"), onclick: () => show(pathInput.value.trim()) });
+  const look = h("button", { class: `btn ${local ? "" : "primary"}`, type: "button", text: t("Show what changes"), onclick: () => show(pathInput.value.trim()) });
   pathInput.addEventListener("keydown", (e) => { if (e.key === "Enter") show(pathInput.value.trim()); });
   const folderRow = h("div", { class: "folder-row" }, pick,
-    h("label", { for: "project-path", class: APP ? "or" : "", text: APP ? t("or type the path") : t("Project folder (full path)") }), pathInput, look,
+    h("label", { for: "project-path", class: local ? "or" : "", text: local ? t("or type the path") : remoteFolderLabel() || t("Project folder (full path)") }), pathInput, look,
     onLater ? h("button", { class: "btn ghost", type: "button", text: laterLabel || t("Later"), onclick: onLater }) : null);
   out.connected = () => folderRow.remove();          // after connecting: only the result stays
   put(box, folderRow, out);
@@ -2467,7 +2477,7 @@ async function renderWelcome(main) {
   clear(main);
   const list = h("ol", { class: "steps", "aria-label": t("Setup steps") });
   const body = h("section", { class: "step-body", "aria-labelledby": "step-title" });
-  put(main, h("div", { class: "onboard-wrap" }, h("p", { class: "onboard-brand" }, "Agent Quality Toolkit", h("span", { class: "muted", text: ` · ${t("Set up AQT")}` })),
+  put(main, h("div", { class: "onboard-wrap" }, h("p", { class: "onboard-brand" }, "Agent Quality Toolkit", h("span", { class: "muted", text: ` · ${t("Set up AQT")}` }), setupPicker()),
     h("div", { class: "onboard" }, list, body)));
   const readOnly = !S.mode || !S.mode.decisions;
   const enrolled = () => !!(S.setup && S.setup.signer);
@@ -2694,6 +2704,8 @@ const RENDER = { home: renderHome, changes: renderChanges, projects: renderProje
 
 // ---- start ---------------------------------------------------------------------------------------------
 async function start() {
+  // the desktop app: which machine the window is on, its indicator and the state of the connection
+  await initMachines({ APP, DE, h, t, put, clear, st, announce, commandLine, onBack: () => refresh().catch(() => {}) });
   shellLabels();
   $("lang").addEventListener("change", (event) => setLang(event.target.value));
   $("menu-btn").addEventListener("click", () => {
@@ -2709,8 +2721,10 @@ async function start() {
     S.install = session.install || {};
     renderTopbar();
     await refresh();
+    pageLoaded(true);
   } catch (error) {
     put(clear($("main")), errorBox(error));
+    pageLoaded(false);
     return;
   }
   // not set up yet (no trail or no signer): the window opens on the setup; deep links still open their page

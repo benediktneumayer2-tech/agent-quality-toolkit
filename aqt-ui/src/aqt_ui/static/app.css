@@ -680,3 +680,29 @@ table.list td.mono:first-child { white-space: nowrap; }
   .step-body h2 { font-size: 21px; }
   .nav-settings { margin-top: 0; }
 }
+
+/* ---- the desktop app's machines (machines.js): the indicator, the connection banner, the list -------- */
+.topbar select.machine-pick { min-height: 30px; max-width: 14rem; padding: 2px 8px; font-size: 13px; color: var(--ink); background: var(--paper); border: 1px solid var(--rule); border-radius: 6px; }
+.topbar select.machine-pick.remote { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); font-weight: 600; }
+.conn-bar { padding: 10px 28px; font-size: 14px; color: var(--ink); border-bottom: 1px solid var(--hairline); background: var(--accent-soft); }
+.conn-bar.failed { background: var(--stop-soft); border-left: 3px solid var(--stop); }
+.conn-bar p { margin: 4px 0; max-width: 52rem; }
+.conn-bar ul { margin: 4px 0; padding-left: 1.2rem; }
+.conn-bar .command { max-width: 40rem; margin: 6px 0; }
+.conn-bar .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.conn-bar pre, .machines pre { white-space: pre-wrap; word-break: break-word; max-height: 10rem; overflow: auto; }
+.shell.offline .center, .shell.offline .inspector { opacity: 0.5; filter: grayscale(1); pointer-events: none; user-select: none; }
+.machines h3 { margin: 22px 0 4px; font-size: 16px; }
+.machine-list { list-style: none; margin: 10px 0; padding: 0; max-width: 52rem; }
+.machine-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 10px 2px; border-bottom: 1px solid var(--hairline); }
+.machine-row .who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; }
+.machine-row .who code { word-break: break-all; }
+.machine-row .row-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.machine-row > div:last-child { grid-column: 1 / -1; }
+.machine-row > div:last-child:empty { display: none; }
+.machine-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 12px 0; max-width: 52rem; }
+.machine-add input { min-width: 0; }
+.machine-add #machine-name { flex: 0 1 12rem; }
+.machine-add input.grow { flex: 1 1 16rem; font-family: var(--mono); font-size: 13px; }
+.onboard-brand select.machine-pick { margin-left: 12px; min-height: 28px; padding: 2px 8px; font-size: 13px; border: 1px solid var(--rule); border-radius: 6px; background: var(--paper); color: var(--ink); }
+.onboard-brand select.machine-pick.remote { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); font-weight: 600; }
