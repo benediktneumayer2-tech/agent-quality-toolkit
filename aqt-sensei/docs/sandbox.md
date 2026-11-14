@@ -88,6 +88,12 @@ and the Codex CLI; `doctor` runs its probe inside the same command line. Verifie
 | Processes | own PID namespace | other processes cannot be signalled or inspected; their names and arguments stay readable through `sysctl` |
 | Environment | `--clearenv` plus the allow-list | `env -i` plus the allow-list; macOS adds `__CF_USER_TEXT_ENCODING` itself |
 
-Open: Claude Code keeps its login in the macOS keychain. In the sandbox the keychain is closed, so whether
-`aqt-sensei login claude` works depends on Claude Code falling back to a file in `CLAUDE_CONFIG_DIR`; this has not been
-tried with a real account yet. Codex and pi keep their logins in files.
+Logins: Claude Code keeps its login in the macOS keychain, which is closed in the sandbox (`security` can neither
+find nor add an item there). It then uses `.credentials.json` in `CLAUDE_CONFIG_DIR`, the private home: checked on
+macOS 26.6 with Claude Code 2.1.323, where a credentials file placed there is read (`claude auth status`), and Claude
+Code has a plain-file store for its login when the keychain refuses. A complete `aqt-sensei login claude` with a real
+account on macOS is still to be done. Codex and pi keep their logins in files.
+
+A CLI started through a link, such as Claude Code's installer's `~/.local/bin/claude` → `~/.local/share/claude/versions/X`,
+can read the link itself as well as its target (with the target alone, the link was refused and the CLI could not
+start).

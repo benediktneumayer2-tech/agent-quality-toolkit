@@ -11,6 +11,9 @@
   (through `aqt_evidence.platform`). Pairing, `launch`, `login` and `doctor` say that the sandbox is not available
   on this system and why (bubblewrap is Linux only; a Seatbelt profile follows); the fake backend still pairs.
   Linux behaviour is unchanged.
+- macOS: a CLI started through a link in a user folder, such as Claude Code's installer's `~/.local/bin/claude`,
+  starts in the advisor sandbox (the link was refused). With the keychain closed, Claude Code reads the advisor's
+  login from `.credentials.json` in the private home.
 
 ## 0.2.0 — 2026-11-13
 

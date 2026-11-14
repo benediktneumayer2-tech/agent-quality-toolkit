@@ -328,11 +328,18 @@ def seatbelt_profile(*, project: str, scratch: str, private_home: str, pair_runt
     real = seatbelt.real
     writable = [real(private_home), real(scratch)]
     visible = [real(project), *(real(path) for path in readable), *writable, real(pair_runtime)]
+    # A link on the way to the CLI (Claude Code's installer: ~/.local/bin/claude -> its version) is read
+    # itself before its target; real() would allow only the target.
+    links = [os.path.join(real(os.path.dirname(path)), os.path.basename(path))
+             for path in readable if os.path.islink(path)]
     lines = seatbelt.base_rules(seatbelt.MACH_SERVICES + (seatbelt.NETWORK_SERVICES if network else ()))
     lines += ["(allow file-read*)"]
     lines += seatbelt.rule("deny", "file-read*", "subpath", hidden)
     lines += seatbelt.rule("allow", "file-read*", "subpath", visible)
+    lines += seatbelt.rule("allow", "file-read*", "literal", links)
     folders = [folder for path in visible for folder in seatbelt.ancestors(path)]
+    for link in links:
+        folders += [os.path.dirname(link), *seatbelt.ancestors(os.path.dirname(link))]
     lines += seatbelt.rule("allow", "file-read-metadata", "literal", folders)   # realpath() walks them
     lines += [*seatbelt.DEVICES]
     lines += seatbelt.rule("allow", "file-write*", "subpath", writable)

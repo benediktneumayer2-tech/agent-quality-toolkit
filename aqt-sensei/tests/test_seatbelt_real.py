@@ -12,7 +12,7 @@ from aqt_evidence import platform
 from aqt_sensei.config import Config
 from aqt_sensei.doctor import doctor_profile
 from aqt_sensei.launch import prepare
-from aqt_sensei.sandbox import resolve_profile
+from aqt_sensei.sandbox import resolve_cli, resolve_profile
 
 pytestmark = pytest.mark.skipif(not platform.IS_MACOS, reason="Seatbelt (sandbox-exec) exists only on macOS")
 
@@ -80,6 +80,25 @@ open(os.path.join(os.environ['TMPDIR'], 'ok'), 'w').close(); print('tmp ok')
         assert not (project / "new").exists() and not (outside / "new").exists() and not in_tmp.exists()
     finally:
         in_tmp.unlink(missing_ok=True)
+
+
+def test_a_cli_started_through_a_link_in_a_user_folder_runs(paths, project, tmp_path):
+    # Claude Code's installer puts ~/.local/bin/claude -> ~/.local/share/claude/versions/X; both are user folders.
+    versions = tmp_path / "share" / "versions"
+    versions.mkdir(parents=True)
+    cli = versions / "1.0"
+    cli.write_text("#!/bin/sh\necho cli-ok\n")
+    cli.chmod(0o755)
+    bin_folder = tmp_path / "bin"
+    bin_folder.mkdir()
+    link = bin_folder / "fake-cli"
+    link.symlink_to(cli)
+    paths.ensure()
+    pair = boxed_pair(paths, project, "none")
+    argv = prepare(pair, paths=paths, config=Config(), command=[str(link)], proxy=False,
+                   resolve=lambda name: resolve_cli(name, which=lambda _: str(link)))
+    done = subprocess.run(argv, capture_output=True, text=True, timeout=60, cwd=pair["scratch_dir"])
+    assert done.stdout.strip() == "cli-ok", done.stdout + done.stderr
 
 
 def test_network_none_refuses_and_share_allows_a_tcp_connection(paths, project):
