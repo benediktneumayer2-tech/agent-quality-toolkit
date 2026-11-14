@@ -36,7 +36,7 @@ def load_vectors(directory: Path | None = None) -> list[dict]:
     vectors = []
     for path in sorted(directory.glob("*/*.json")):
         vector = json.loads(path.read_text(encoding="utf-8"))
-        vector["_file"] = str(path.relative_to(directory))
+        vector["_file"] = path.relative_to(directory).as_posix()
         vectors.append(vector)
     return vectors
 

@@ -24,6 +24,9 @@ def pytest_configure(config):
     global _SESSION_HOME
     _SESSION_HOME = tempfile.mkdtemp(prefix="aqt-home-")
     os.environ["HOME"] = _SESSION_HOME
+    if os.name == "nt":   # Windows takes the home and the AQT folders from these
+        for name, sub in (("USERPROFILE", ""), ("APPDATA", "appdata"), ("LOCALAPPDATA", "localappdata")):
+            os.environ[name] = os.path.join(_SESSION_HOME, sub)
     for name, sub in (("XDG_STATE_HOME", "state"), ("XDG_CONFIG_HOME", "config")):
         os.environ[name] = os.path.join(_SESSION_HOME, sub)
     os.environ.pop("XDG_RUNTIME_DIR", None)
@@ -44,7 +47,8 @@ def without_signoff(monkeypatch):
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     """Isolated XDG directories; a short runtime dir because AF_UNIX paths are limited."""
-    runtime = Path(tempfile.mkdtemp(prefix="aqt", dir="/tmp" if len(str(tmp_path)) > 60 else None))
+    runtime = Path(tempfile.mkdtemp(prefix="aqt", dir="/tmp" if os.name == "posix" and len(str(tmp_path)) > 60
+                                    else None))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
@@ -112,7 +116,19 @@ def local_fixture(tmp_path):
 
 
 def observed_stub(**kw):
-    base = {"pid": os.getpid(), "uid": os.getuid(), "gid": os.getgid(), "process_chain": ["python3"],
+    base = {"pid": os.getpid(), "uid": 1000, "gid": 1000, "process_chain": ["python3"],
             "processes": [{"pid": os.getpid(), "comm": "python3", "start_time": 1}], "harness": None, "via": "socket"}
     base.update(kw)
     return base
+
+
+def pipe_security(name) -> str:
+    """Windows: owner and access list (SDDL) of the writer's named pipe, read through a client handle."""
+    import _winapi
+    from aqt_evidence import pipes
+    handle = _winapi.CreateFile(str(name), _winapi.GENERIC_READ | _winapi.GENERIC_WRITE, 0, _winapi.NULL,
+                                _winapi.OPEN_EXISTING, 0, _winapi.NULL)
+    try:
+        return pipes.security_text(handle)
+    finally:
+        _winapi.CloseHandle(handle)

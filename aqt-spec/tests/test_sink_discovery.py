@@ -1,6 +1,7 @@
 """Sink discovery: AQT_SINK, then the aqt-trail socket (or its spool), then the fallback file."""
 
 import json
+import os
 import shutil
 import socket
 import tempfile
@@ -14,8 +15,9 @@ from aqt_evidence import (JsonlSink, SinkError, SocketSink, actor, evidence_sour
                           read_jsonl, resolve_sink, spool_file, state_dir)
 from aqt_evidence import sink as sink_module
 
-# Discovery looks for an aqt-trail writer on a Unix socket; Windows will use a named pipe (a later stage).
-pytestmark = pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="no Unix sockets (Windows)")
+# Discovery looks for an aqt-trail writer on a Unix socket (on Windows on a named pipe).
+pytestmark = pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="the fake writer is a Unix socket; on Windows a "
+                                "real writer is found over its named pipe in aqt-trail/tests/test_windows_pipe.py")
 
 
 def record():
@@ -65,8 +67,10 @@ class FakeWriter:
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     """Throw-away XDG dirs, a short runtime dir (AF_UNIX path limit), no AQT_* overrides."""
-    runtime = Path(tempfile.mkdtemp(prefix="aqt", dir="/tmp" if len(str(tmp_path)) > 60 else None))
+    runtime = Path(tempfile.mkdtemp(prefix="aqt", dir="/tmp" if os.name == "posix" and len(str(tmp_path)) > 60 else None))
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    if os.name == "nt":
+        monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))

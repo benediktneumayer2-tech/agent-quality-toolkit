@@ -1,11 +1,13 @@
 """Observed attribution: who is on the other end of the socket.
 
 The writer reads the peer's pid, uid and gid from the kernel (``SO_PEERCRED``;
-macOS ``LOCAL_PEERPID`` and ``LOCAL_PEERCRED``) and walks the parent chain
-(``/proc``; macOS ``sysctl``, through ``aqt_evidence.platform``). This is evidence
-the writer saw, not a claim by the client. PIDs are reused, so each process
+macOS ``LOCAL_PEERPID`` and ``LOCAL_PEERCRED``; Windows: the named pipe's client pid and the
+SID of that process's token as ``uid``, no ``gid``) and walks the parent chain
+(``/proc``; macOS ``sysctl``; Windows a Toolhelp snapshot, through ``aqt_evidence.platform``).
+This is evidence the writer saw, not a claim by the client. ``via`` stays ``socket`` for the
+named pipe: it is the writer's local connection on that system. PIDs are reused, so each process
 carries its start time (Linux: clock ticks since boot, ``/proc/<pid>/stat`` field
-22; macOS: microseconds since 1970).
+22; macOS: microseconds since 1970; Windows: 100 ns since 1601).
 
 ``chain_status`` says how far that evidence goes. Finding no agent marker in a
 chain only means something when the chain is ``complete``:
@@ -40,8 +42,8 @@ CHAIN_STATUSES = ("complete", "partial", "unavailable")
 SO_PEERPIDFD = getattr(socket, "SO_PEERPIDFD", 77)  # Linux >= 6.5
 
 
-def peer_credentials(connection: socket.socket) -> tuple[int, int, int]:
-    """(pid, uid, gid) of a connected Unix-socket peer (``aqt_evidence.platform.peer_credentials``)."""
+def peer_credentials(connection) -> tuple[int | None, int | str | None, int | None]:
+    """(pid, uid, gid) of a connected Unix-socket or named-pipe peer (``aqt_evidence.platform.peer_credentials``)."""
     peer = platform.peer_credentials(connection)
     return peer.pid, peer.uid, peer.gid
 
@@ -71,16 +73,27 @@ def _stat(pid: int, proc: Path | None) -> tuple[str, int, int | None, int] | Non
     return None if info is None else (info.name, info.ppid, info.start_time, info.session or 0)
 
 
+def _reused(start: int | None, child_start: int | None, proc: Path | None) -> bool:
+    """Windows only: a "parent" that started after its child holds a reused pid. Windows does not
+    re-parent orphans (Linux hands them to init), so every chain there ends at a parent that has
+    exited, and its pid may belong to an unrelated process by now."""
+    return (platform.IS_WINDOWS and proc is None and start is not None and child_start is not None
+            and start > child_start)
+
+
 def _walk(pid: int, proc: Path | None, limit: int) -> tuple[list[dict], list[int], str]:
     """Chain entries (nearest first), their session ids, and how the walk ended:
     ``top`` (reached init), ``gone`` (a process could not be read) or ``depth``."""
-    chain, sessions, current = [], [], pid
+    chain, sessions, current, child_start = [], [], pid, None
     for _ in range(limit):
         info = _stat(current, proc)
+        if info is not None and _reused(info[2], child_start, proc):
+            info = None     # Windows keeps a dead parent's pid: a later process with that pid is not the parent
         if info is None:
             chain.append({"pid": current, "comm": "?"})  # exited before it could be observed
             return chain, sessions, "gone"
         comm, parent, start, session = info
+        child_start = start
         chain.append({"pid": current, "comm": comm} if start is None
                      else {"pid": current, "comm": comm, "start_time": start})
         sessions.append(session)
@@ -128,7 +141,7 @@ def harness_of(chain: list[dict]) -> str | None:
     return None
 
 
-def observe(pid: int | None, uid: int | None, gid: int | None, *, via: str = "socket",
+def observe(pid: int | None, uid: int | str | None, gid: int | None, *, via: str = "socket",
             proc: Path | None = None, pidfd: int | None = None) -> dict:
     """Build the writer-owned ``observed`` object (aqt-spec spec §3.2); ``client_time`` is added on append.
 
@@ -157,7 +170,7 @@ def observe(pid: int | None, uid: int | None, gid: int | None, *, via: str = "so
 def observe_self() -> dict:
     """``observed`` for records the writer creates itself: no ``via`` (nothing was received),
     ``origin: writer`` instead, plus the writer's own process."""
-    observed = observe(os.getpid(), os.getuid(), os.getgid())
+    observed = observe(os.getpid(), platform.user_id(), None if platform.IS_WINDOWS else os.getgid())
     del observed["via"]
     observed["origin"] = "writer"
     return observed

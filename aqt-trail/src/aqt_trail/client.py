@@ -9,11 +9,10 @@ from __future__ import annotations
 
 import json
 import os
-import socket
 from contextlib import contextmanager
 from pathlib import Path
 
-from aqt_evidence import SinkError, canonical_json, platform
+from aqt_evidence import SinkError, platform, writer_request
 
 from .config import spool_path
 
@@ -25,21 +24,9 @@ class TrailRefused(SinkError):
 
 
 def request(socket_path: str | os.PathLike, payload: dict, *, timeout: float = 5.0) -> dict:
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
-        client.settimeout(timeout)
-        try:
-            client.connect(str(socket_path))
-            client.sendall(canonical_json(payload) + b"\n")
-            client.shutdown(socket.SHUT_WR)
-            chunks = []
-            while chunk := client.recv(65536):
-                chunks.append(chunk)
-        except OSError as error:
-            raise SinkError(f"aqt-trail socket {socket_path}: {error}") from error
-    try:
-        return json.loads(b"".join(chunks).decode("utf-8"))
-    except ValueError as error:
-        raise SinkError("aqt-trail sent an unreadable response") from error
+    """One request to the writer (its Unix socket, or its named pipe on Windows); ``SinkError`` when it
+    cannot be reached or answers unreadably."""
+    return writer_request(socket_path, payload, timeout=timeout)
 
 
 def spool_append(record: dict, path: str | os.PathLike | None = None) -> Path:

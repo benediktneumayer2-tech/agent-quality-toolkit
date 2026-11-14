@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Runs on Windows: the writer serves its named pipe (`PipeTrailServer`; `TrailServer` is the transport of the
+  system), `observed.uid` is the client's SID and `gid` is null, `via` stays `socket`. Windows does not re-parent
+  orphans, so a chain ends at the first parent that has exited (`chain_status` `partial`). Without a console
+  (the logon task) `serve` writes its messages to `writer.log` in the trail folder. `append` reads UTF-8.
 - Runs on macOS: the writer reads the peer with `LOCAL_PEERPID`/`LOCAL_PEERCRED` and walks the process chain with
   `sysctl` (through `aqt_evidence.platform`); `start_time` is then in microseconds since 1970, and the pidfd check
   (`SO_PEERPIDFD`) exists only on Linux. Locks, the import's no-follow open and the folders come from the same

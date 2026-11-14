@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Windows: the aqt-trail writer is reached over a named pipe (`aqt_evidence.pipes`, `\\.\pipe\aqt-trail-<hash>`
+  per user and trail, `platform.trail_socket()`): only the user's SID may open it, remote clients are refused, a
+  client sends nothing to a pipe owned by someone else, and the writer learns the client's pid and SID
+  (`platform.peer_credentials`). `writer_request()` is the one client for sockets and pipes.
+- Windows: process names drop `.exe` (`claude.exe` is the agent marker `claude`), a chain ends where a parent's pid
+  was reused, and `NUL` is no longer taken for a terminal (`platform.is_terminal`), so the human check refuses
+  `< NUL` as it refuses `/dev/null`. The vector index and the generators write `/` and LF on every system.
 - `aqt_evidence.platform`: one module for what differs between Linux, macOS and Windows (folders, file locks,
   no-follow opens, private modes, user and socket-peer identity, process information). Linux behaviour and
   folders are unchanged; on macOS the folders are `~/Library/Application Support/AQT/config` and `…/state`,

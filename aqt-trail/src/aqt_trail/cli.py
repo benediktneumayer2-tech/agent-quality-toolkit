@@ -96,6 +96,9 @@ def cmd_init(args, config):
 
 
 def cmd_serve(args, config):
+    if sys.stderr is None:    # started without a console (the Windows logon task): messages go to writer.log
+        log = open(config.state / "writer.log", "a", encoding="utf-8", buffering=1)
+        sys.stdout = sys.stderr = log
     return run_service(config)
 
 
@@ -134,7 +137,8 @@ def cmd_status(args, config):
 
 
 def _read_input(source: str) -> list[dict]:
-    raw = sys.stdin.read() if source == "-" else Path(source).read_text()
+    # UTF-8 whatever the console's code page (Windows): records are UTF-8 JSON
+    raw = sys.stdin.buffer.read().decode("utf-8") if source == "-" else Path(source).read_text(encoding="utf-8")
     raw = raw.strip()
     if not raw:
         return []

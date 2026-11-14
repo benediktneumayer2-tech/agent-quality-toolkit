@@ -6,7 +6,10 @@ Every AQT package asks this module instead of assuming Linux:
   ``runtime_base()`` (the user's folder for sockets, to which callers add their own name);
 - **files**: ``lock()`` / ``unlock()``, ``open_nofollow()``, ``make_private()``,
   ``ensure_private_dir()``, ``owned_by_user()``;
-- **identity**: ``user_id()`` and ``peer_credentials()`` of a connected Unix socket;
+- **identity**: ``user_id()`` and ``peer_credentials()`` of a connected Unix socket or Windows named pipe;
+- **the trail writer's address**: ``trail_socket()`` (a Unix socket, or a named pipe on Windows,
+  see ``aqt_evidence.pipes``);
+- **terminals**: ``is_terminal()``;
 - **processes**: ``process_info()``, ``process_chain()``, ``process_exe()``,
   ``process_cmdline()``, ``process_environ()``, ``process_tty()``.
 
@@ -18,10 +21,11 @@ and ``XDG_RUNTIME_DIR`` are honoured on every system when they are set.
 |---|---|---|---|
 | config | ``~/.config/aqt`` | ``~/Library/Application Support/AQT/config`` | ``%APPDATA%\\AQT`` |
 | state | ``~/.local/state/aqt`` | ``~/Library/Application Support/AQT/state`` | ``%LOCALAPPDATA%\\AQT`` |
-| sockets | ``$XDG_RUNTIME_DIR``, else none | the per-user cache folder (``getconf DARWIN_USER_CACHE_DIR``) | none yet |
+| sockets | ``$XDG_RUNTIME_DIR``, else none | the per-user cache folder (``getconf DARWIN_USER_CACHE_DIR``) | none: named pipes |
 | locks | ``fcntl.flock`` | ``fcntl.flock`` | ``msvcrt.locking`` on the first byte |
 | processes | ``/proc`` | ``sysctl`` and ``libproc`` | Toolhelp snapshot, process token |
-| socket peer | ``SO_PEERCRED`` | ``LOCAL_PEERCRED`` and ``LOCAL_PEERPID`` | (named pipes follow) |
+| socket peer | ``SO_PEERCRED`` | ``LOCAL_PEERCRED`` and ``LOCAL_PEERPID`` | ``GetNamedPipeClientProcessId``, the process token |
+| terminal | ``isatty`` | ``isatty`` | ``isatty`` and a console mode (``NUL`` is a character device too) |
 
 Limits, stated rather than hidden:
 
@@ -35,6 +39,8 @@ Limits, stated rather than hidden:
   within one system, to notice a reused pid.
 - A process of another user may hide its executable, command line, environment and
   terminal (macOS, Windows); those functions then return None.
+- Windows process names drop the ``.exe`` suffix (``claude.exe`` -> ``claude``), so the agent
+  markers and the recorded chains read as on Linux and macOS.
 """
 
 from __future__ import annotations
@@ -121,6 +127,27 @@ def runtime_base(environ=None) -> Path | None:
         if folder:
             return Path(folder)
     return None
+
+
+def trail_socket(state: Path, environ=None) -> Path:
+    """The default address of the aqt-trail writer of the trail in ``state``. POSIX: the Unix socket
+    ``<runtime_base()>/aqt/trail.sock``, else ``<state>/aqt-trail.sock``. Windows: the named pipe
+    ``\\\\.\\pipe\\aqt-trail-<hash>``, the hash taken from the user's SID and the trail folder, so each
+    user and each trail has its own (``aqt_evidence.pipes``)."""
+    if IS_WINDOWS:
+        import hashlib
+        key = f"{user_id()}\0{os.path.normcase(os.path.abspath(state))}".encode("utf-8", "surrogatepass")
+        return Path(PIPE_PREFIX + "aqt-trail-" + hashlib.sha256(key).hexdigest()[:20])
+    runtime = runtime_base(environ)
+    return runtime / "aqt" / "trail.sock" if runtime else Path(state) / "aqt-trail.sock"
+
+
+PIPE_PREFIX = "\\\\.\\pipe\\"
+
+
+def is_pipe(address) -> bool:
+    """Is ``address`` a Windows named pipe (``\\\\.\\pipe\\name``; forward slashes count too)?"""
+    return str(address).replace("/", "\\").lower().startswith(PIPE_PREFIX)
 
 
 # -- files -------------------------------------------------------------------------------------
@@ -211,6 +238,26 @@ def owned_by_user(info: os.stat_result) -> bool:
     return True if IS_WINDOWS else info.st_uid == os.getuid()
 
 
+def is_terminal(stream) -> bool:
+    """Is ``stream`` an interactive terminal? ``isatty()``, and on Windows also a console: there ``NUL``
+    is a character device, so ``isatty()`` alone is True for ``< NUL``. A stream without a file
+    descriptor (a test double) is taken at its ``isatty()``."""
+    if not (hasattr(stream, "isatty") and stream.isatty()):
+        return False
+    if not IS_WINDOWS:
+        return True
+    try:
+        fd = stream.fileno()
+    except (AttributeError, OSError, ValueError):
+        return True
+    try:
+        handle = msvcrt.get_osfhandle(fd)
+    except OSError:
+        return False
+    mode = wintypes.DWORD()
+    return bool(_kernel32.GetConsoleMode(handle, ctypes.byref(mode)))
+
+
 # -- identity ----------------------------------------------------------------------------------
 
 def user_id() -> int | str:
@@ -223,7 +270,7 @@ def user_id() -> int | str:
 @dataclass(frozen=True)
 class PeerCredentials:
     """The process at the other end of a local connection, as the kernel reports it.
-    ``uid`` is an int on POSIX; a Windows named pipe will report the SID string (stage to come)."""
+    ``uid`` is an int on POSIX and the SID string (``S-1-5-21-…``) of a Windows named-pipe client."""
     pid: int | None
     uid: int | str | None
     gid: int | None
@@ -233,9 +280,17 @@ _SOL_LOCAL, _LOCAL_PEERCRED, _LOCAL_PEERPID = 0, 1, 2   # macOS <sys/un.h>
 _XUCRED = struct.Struct("=IIh2x16I")                    # struct xucred: version, uid, ngroups, groups[16]
 
 
-def peer_credentials(connection: socket.socket) -> PeerCredentials:
+def peer_credentials(connection) -> PeerCredentials:
     """pid, uid and gid of the peer of a connected Unix socket (Linux ``SO_PEERCRED``;
-    macOS ``LOCAL_PEERPID`` and ``LOCAL_PEERCRED``, where gid is the peer's effective group)."""
+    macOS ``LOCAL_PEERPID`` and ``LOCAL_PEERCRED``, where gid is the peer's effective group).
+    Windows: ``connection`` is the server end of a named pipe (``aqt_evidence.pipes``, its ``handle``):
+    the pid from ``GetNamedPipeClientProcessId``, the uid is the SID string from that process's token,
+    no gid. Both are None when Windows does not tell."""
+    if IS_WINDOWS:
+        pid = wintypes.ULONG(0)
+        if not _kernel32.GetNamedPipeClientProcessId(connection.handle, ctypes.byref(pid)) or not pid.value:
+            return PeerCredentials(None, None, None)
+        return PeerCredentials(pid.value, _win_process_sid(pid.value), None)
     if IS_LINUX:
         raw = connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
         return PeerCredentials(*struct.unpack("3i", raw))
@@ -251,7 +306,7 @@ def peer_credentials(connection: socket.socket) -> PeerCredentials:
 @dataclass(frozen=True)
 class ProcessInfo:
     """One process. ``name`` is the short command name (Linux ``comm``, macOS ``p_comm``,
-    Windows the executable's file name); ``start_time`` and ``session`` may be None."""
+    Windows the executable's file name without ``.exe``); ``start_time`` and ``session`` may be None."""
     pid: int
     ppid: int
     name: str
@@ -274,12 +329,16 @@ def process_info(pid: int, *, proc: Path | None = None) -> ProcessInfo | None:
 
 def process_chain(pid: int | None = None, *, limit: int = 32, proc: Path | None = None) -> list[ProcessInfo]:
     """``pid`` (default: this process) and its ancestors, nearest first, up to the last process
-    below init, or up to the first one that cannot be read."""
+    below init, or up to the first one that cannot be read. On Windows the chain also ends where a
+    parent has exited and its pid was reused (a "parent" that started after its child)."""
     chain, current = [], pid or os.getpid()
     for _ in range(limit):
         info = process_info(current, proc=proc)
         if info is None:
             break
+        if IS_WINDOWS and proc is None and chain and None not in (info.start_time, chain[-1].start_time) \
+                and info.start_time > chain[-1].start_time:
+            break       # Windows keeps a dead parent's pid; a process that started later is not the parent
         chain.append(info)
         if info.ppid <= 1 or info.ppid == info.pid:
             break
@@ -498,6 +557,8 @@ if IS_WINDOWS:
     _kernel32.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR,
                                                      ctypes.POINTER(wintypes.DWORD)]
     _kernel32.LocalFree.argtypes = [wintypes.HLOCAL]
+    _kernel32.GetNamedPipeClientProcessId.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.ULONG)]
+    _kernel32.GetConsoleMode.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
     _advapi32.OpenProcessToken.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)]
     _advapi32.GetTokenInformation.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD,
                                               ctypes.POINTER(wintypes.DWORD)]
@@ -589,7 +650,10 @@ def _win_info(pid: int) -> ProcessInfo | None:
     with _WinProcess(pid) as handle:
         if handle:
             start, sid = _win_start_time(handle), _win_token_sid(handle)
-    return ProcessInfo(pid, int(entry.th32ParentProcessID), entry.szExeFile, sid, start, None)
+    name = entry.szExeFile
+    if name.lower().endswith(".exe"):
+        name = name[:-4]
+    return ProcessInfo(pid, int(entry.th32ParentProcessID), name, sid, start, None)
 
 
 def _win_exe(pid: int) -> str | None:

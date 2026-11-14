@@ -159,12 +159,12 @@ def main(argv: list[str]) -> int:
     outputs = {ROOT / "crosswalk.md": render_markdown(features, catalogues),
                CATALOGUES / "catalogues.json": render_json(features, catalogues)}
     if "--check" in argv:
-        stale = [str(p.relative_to(ROOT)) for p, text in outputs.items() if not p.exists() or p.read_text() != text]
+        stale = [str(p.relative_to(ROOT)) for p, text in outputs.items() if not p.exists() or p.read_text(encoding="utf-8") != text]
         for item in stale:
             print("out of date:", item)
         return 1 if stale else 0
     for path, text in outputs.items():
-        path.write_text(text, encoding="utf-8")
+        path.write_text(text, encoding="utf-8", newline="\n")
     print(f"wrote crosswalk.md and catalogues.json ({sum(len(c['items']) for c in catalogues)} items)")
     return 0
 

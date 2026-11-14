@@ -12,7 +12,8 @@ from .conformance import ConformanceResult, conformance
 from .messages import Text, coded, text_join
 from .session import AgentContext, HumanCheckError, detect_agent_context, process_chain, require_human
 from .sink import (ERROR_CODES, JsonlSink, RecordLineError, Sink, SinkError, SinkUnavailable, SocketSink,
-                   evidence_sources, iter_evidence, open_sink, read_jsonl, resolve_sink, spool_file, state_dir)
+                   evidence_sources, iter_evidence, open_sink, read_jsonl, resolve_sink, spool_file, state_dir,
+                   writer_request)
 
 __version__ = "0.2.0"
 
@@ -27,5 +28,5 @@ __all__ = [
     "public_key_from_raw", "sign_statement", "signer_from_seed", "verify_statement",
     "ConformanceResult", "conformance",
     "RecordLineError", "checkpoint_problems", "parse_canonical_line",
-    "Text", "coded", "text_join",
+    "Text", "coded", "text_join", "writer_request",
 ]

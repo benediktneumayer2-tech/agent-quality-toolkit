@@ -37,8 +37,10 @@ def test_copies_keep_code_and_args():
 
 
 def test_coded_gives_plain_json_for_texts_and_exceptions():
-    text = Text("demo.outer", "{what} at {path}", what=Text("demo.what", "a thing"), path=__import__("pathlib").Path("/x"))
-    assert coded(text) == {"code": "demo.outer", "args": {"what": {"code": "demo.what", "args": {}}, "path": "/x"}}
+    path = __import__("pathlib").Path("/x")
+    text = Text("demo.outer", "{what} at {path}", what=Text("demo.what", "a thing"), path=path)
+    # a path argument is shown as the system writes it ("/x" on POSIX, "\\x" on Windows)
+    assert coded(text) == {"code": "demo.outer", "args": {"what": {"code": "demo.what", "args": {}}, "path": str(path)}}
     assert coded(ValueError(text)) == coded(text)
     assert coded("plain") is None and coded(ValueError("plain")) is None and coded(None) is None
     joined = text_join("; ", [Text("demo.a", "a"), "b"])

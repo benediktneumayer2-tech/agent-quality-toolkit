@@ -86,7 +86,7 @@ def require_human(*, environ: dict | None = None, chain: list[str] | None = None
                                             "runs inside an agent session ({markers}); run it yourself in a terminal",
                                             markers=", ".join(context.markers)))
     stdin = sys.stdin if stdin is None else stdin
-    if require_tty and not (hasattr(stdin, "isatty") and stdin.isatty()):
+    if require_tty and not platform.is_terminal(stdin):
         raise HumanCheckError(context, Text("evidence.human.no_tty",
                                             "refused: a human decision needs an interactive terminal"))
     return context

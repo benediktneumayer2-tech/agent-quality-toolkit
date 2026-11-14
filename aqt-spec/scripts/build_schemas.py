@@ -365,14 +365,14 @@ def main(argv: list[str]) -> int:
     outputs = build()
     if "--check" in argv:
         stale = [str(p.relative_to(ROOT)) for p, text in outputs.items()
-                 if not p.exists() or p.read_text() != text]
+                 if not p.exists() or p.read_text(encoding="utf-8") != text]
         extra = sorted(str(p.relative_to(ROOT)) for p in (OUT / "data").glob("*.json") if p not in outputs)
         for item in stale + extra:
             print("out of date:", item)
         return 1 if stale or extra else 0
     for path, text in outputs.items():
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
+        path.write_text(text, encoding="utf-8", newline="\n")
     print(f"wrote {len(outputs)} files")
     return 0
 

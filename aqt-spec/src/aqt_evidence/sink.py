@@ -2,10 +2,12 @@
 
 ``open_sink()`` without an argument uses ``resolve_sink()``, which picks, in this order:
 1. ``AQT_SINK``: ``file:/path/evidence.jsonl`` appends records as JSON lines (locked,
-   fsynced); ``unix:/path/aqt-trail.sock`` sends them to an aqt-trail writer service.
+   fsynced); ``unix:/path/aqt-trail.sock`` sends them to an aqt-trail writer service
+   (on Windows ``unix:\\\\.\\pipe\\aqt-trail-…``, its named pipe).
 2. The aqt-trail writer socket at its default place (``[writer] socket`` in
    ``$XDG_CONFIG_HOME/aqt/trail.toml``, else ``$XDG_RUNTIME_DIR/aqt/trail.sock``, else
-   ``aqt-trail.sock`` in the trail state directory), when a writer answers there or a
+   ``aqt-trail.sock`` in the trail state directory; on Windows a named pipe instead,
+   ``platform.trail_socket()``), when a writer answers there or a
    trail has been initialised (``trail.json`` in the trail state directory). A trail
    whose writer is down gets the records through the spool below.
 3. The fallback file ``$XDG_STATE_HOME/aqt/evidence.jsonl`` (not chained, not in a trail).
@@ -111,8 +113,43 @@ class JsonlSink:
         return record
 
 
+def writer_request(address: str | os.PathLike, payload: dict, *, timeout: float = 5.0) -> dict:
+    """One request to the aqt-trail writer at ``address`` and its answer: over its Unix socket, or on
+    Windows over its named pipe (``\\\\.\\pipe\\…``, ``aqt_evidence.pipes``). ``SinkUnavailable`` when
+    nothing answers there, ``SinkError`` for an unreadable answer."""
+    data = canonical_json(payload) + b"\n"
+    if platform.is_pipe(address):
+        if not platform.IS_WINDOWS:
+            raise SinkUnavailable(f"aqt-trail pipe {address}: named pipes exist only on Windows")
+        from . import pipes
+        try:
+            raw = pipes.request(str(address), data, timeout=timeout)
+        except OSError as error:
+            raise SinkUnavailable(f"aqt-trail pipe {address}: {error}") from error
+    elif not hasattr(socket, "AF_UNIX"):
+        raise SinkUnavailable(platform.not_available(f"the aqt-trail socket {address}", "no Unix sockets; the "
+                                                     "writer listens on a named pipe (\\\\.\\pipe\\…)"))
+    else:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+            client.settimeout(timeout)
+            try:
+                client.connect(str(address))
+                client.sendall(data)
+                client.shutdown(socket.SHUT_WR)
+                chunks = []
+                while chunk := client.recv(65536):
+                    chunks.append(chunk)
+            except OSError as error:
+                raise SinkUnavailable(f"aqt-trail socket {address}: {error}") from error
+        raw = b"".join(chunks)
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except ValueError as error:
+        raise SinkError("aqt-trail sent an unreadable response") from error
+
+
 class SocketSink:
-    """Client for an aqt-trail writer listening on a Unix socket."""
+    """Client for an aqt-trail writer listening on a Unix socket (a named pipe on Windows)."""
 
     def __init__(self, path: str | os.PathLike, *, timeout: float = 5.0, spool: bool = True,
                  spool_path: str | os.PathLike | None = None):
@@ -121,23 +158,7 @@ class SocketSink:
         self.last_spooled = False
 
     def request(self, payload: dict) -> dict:
-        if not hasattr(socket, "AF_UNIX"):   # Windows: the writer will be reached through a named pipe later
-            raise SinkUnavailable(platform.not_available("the aqt-trail socket", "no Unix sockets"))
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
-            client.settimeout(self.timeout)
-            try:
-                client.connect(self.path)
-                client.sendall(canonical_json(payload) + b"\n")
-                client.shutdown(socket.SHUT_WR)
-                chunks = []
-                while chunk := client.recv(65536):
-                    chunks.append(chunk)
-            except OSError as error:
-                raise SinkUnavailable(f"aqt-trail socket {self.path}: {error}") from error
-        try:
-            return json.loads(b"".join(chunks).decode("utf-8"))
-        except ValueError as error:
-            raise SinkError("aqt-trail sent an unreadable response") from error
+        return writer_request(self.path, payload, timeout=self.timeout)
 
     def append(self, record: dict) -> dict:
         """Send ``record``; on an unreachable socket spool it (unless ``spool=False``).
@@ -171,8 +192,7 @@ def _trail_location(environ) -> tuple[Path, Path]:
     state = Path(trail.get("state") or environ.get("AQT_TRAIL_STATE") or state_dir() / "trail")
     if writer.get("socket"):
         return state, Path(writer["socket"])
-    runtime = platform.runtime_base()
-    return state, (runtime / "aqt" / "trail.sock" if runtime else state / "aqt-trail.sock")
+    return state, platform.trail_socket(state)
 
 
 def _ping(path) -> dict | None:

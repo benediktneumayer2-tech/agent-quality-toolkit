@@ -19,7 +19,8 @@ from aqt_evidence import state_dir as aqt_state_dir
 
 DEFAULTS: dict = {
     "writer": {
-        "socket": "",              # default: <runtime>/aqt/trail.sock, else <state>/aqt-trail.sock (aqt_evidence.platform)
+        "socket": "",              # default: <runtime>/aqt/trail.sock, else <state>/aqt-trail.sock; Windows: a named
+                                   # pipe \\.\pipe\aqt-trail-<hash> (aqt_evidence.platform.trail_socket)
         "socket_mode": "0600",     # separate-user mode: "0660" with socket_group
         "socket_group": "",
         "log_mode": "0600",        # separate-user mode: "0640" (group may read and verify, never write)
@@ -101,10 +102,7 @@ class Config:
         sink = os.environ.get("AQT_SINK", "")
         if sink.startswith("unix:"):
             return Path(sink[5:])
-        runtime = platform.runtime_base()
-        if runtime:
-            return runtime / "aqt" / "trail.sock"
-        return self.state / "aqt-trail.sock"
+        return platform.trail_socket(self.state)
 
     def meta(self) -> dict:
         return json.loads(self.meta_path.read_text())

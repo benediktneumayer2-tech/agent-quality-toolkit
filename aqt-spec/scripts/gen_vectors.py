@@ -392,7 +392,7 @@ def render() -> dict[Path, str]:
     for vector in vectors:
         path = OUT / vector["category"] / f"{vector['name']}.json"
         files[path] = json.dumps(vector, indent=2, ensure_ascii=False) + "\n"
-        index.append({"file": str(path.relative_to(OUT)), "kind": vector["kind"], "description": vector["description"]})
+        index.append({"file": path.relative_to(OUT).as_posix(), "kind": vector["kind"], "description": vector["description"]})
     files[OUT / "index.json"] = json.dumps({"aqt": "0.1", "count": len(index), "vectors": index}, indent=2,
                                            ensure_ascii=False) + "\n"
     return files
@@ -401,13 +401,13 @@ def render() -> dict[Path, str]:
 def main(argv: list[str]) -> int:
     files = render()
     if "--check" in argv:
-        stale = [str(p.relative_to(ROOT)) for p, text in files.items() if not p.exists() or p.read_text() != text]
+        stale = [str(p.relative_to(ROOT)) for p, text in files.items() if not p.exists() or p.read_text(encoding="utf-8") != text]
         for item in stale:
             print("out of date:", item)
         return 1 if stale else 0
     for path, text in files.items():
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
+        path.write_text(text, encoding="utf-8", newline="\n")
     keys = load_keys(OUT)
     failures = [r for r in (run_vector({**v, "_file": v["name"]}, keys) for v in vectors) if not r.ok]
     for failure in failures:

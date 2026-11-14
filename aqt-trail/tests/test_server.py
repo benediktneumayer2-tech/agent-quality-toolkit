@@ -4,7 +4,7 @@ import stat
 
 import pytest
 
-from aqt_evidence import SocketSink
+from aqt_evidence import SocketSink, platform
 
 from aqt_trail import server as server_module
 from aqt_trail.client import TrailClient, TrailRefused, request, spool_append
@@ -13,18 +13,23 @@ from aqt_trail.observe import observe, processes
 from aqt_trail.server import drain_local_spool
 from aqt_trail.state import open_writer, read_records
 
-from conftest import event, human
+from conftest import event, human, pipe_security
 
 
 def test_socket_append_observes_the_peer(server, config):
     stored = TrailClient(config.socket_path).append(event("hello"))
     observed = stored["observed"]
     assert observed["via"] == "socket"
-    assert observed["pid"] == os.getpid() and observed["uid"] == os.getuid() and observed["gid"] == os.getgid()
+    if platform.IS_WINDOWS:     # a named pipe: the client's SID, no group; only the user may open it
+        assert observed["pid"] == os.getpid() and observed["uid"] == platform.user_id() and observed["gid"] is None
+    else:
+        assert observed["pid"] == os.getpid() and observed["uid"] == os.getuid() and observed["gid"] == os.getgid()
+        assert stat.S_IMODE(os.stat(config.socket_path).st_mode) == 0o600
     assert observed["process_chain"] and observed["processes"][0]["start_time"] is not None
-    assert stat.S_IMODE(os.stat(config.socket_path).st_mode) == 0o600
     records = read_records(config.trail_path)
     assert [r["action"] for r in records] == ["service.start", "hello"]
+    if platform.IS_WINDOWS:     # after the records: opening the pipe without a request is itself recorded
+        assert pipe_security(config.socket_path) == "O:{0}D:P(A;;FA;;;{0})".format(platform.user_id())
 
 
 def test_aqt_evidence_socket_sink_is_compatible(server, config):
@@ -96,7 +101,7 @@ def test_drain_op_cannot_hide_a_human_claim_sent_from_an_agent(server, config, m
     from aqt_trail import review
     proc = _fake_proc(tmp_path, ((300, "python3", 200, 200), (200, "bash", 100, 200), (100, "claude", 1, 100)))
     real = server_module.observe
-    monkeypatch.setattr(server_module, "observe", lambda *a, **kw: real(300, os.getuid(), os.getgid(),
+    monkeypatch.setattr(server_module, "observe", lambda *a, **kw: real(300, 1000, 1000,
                                                                        via="socket", proc=proc))
     claimed = event("release.decided", who=human("owner"))
     request(config.socket_path, {"op": "drain", "records": [claimed], "source": "client spool"})
@@ -180,6 +185,8 @@ def test_chain_status_unavailable_without_pid_or_when_the_sender_exited(tmp_path
     import tempfile
     from aqt_trail.observe import peer_credentials, peer_pidfd
     assert observe(None, 1000, 1000)["chain_status"] == "unavailable"
+    if not hasattr(socket, "AF_UNIX"):
+        pytest.skip("a pidfd of the peer (SO_PEERPIDFD) exists only for Unix sockets on Linux")
     folder = tempfile.mkdtemp(prefix="aqtp", dir="/tmp")
     path = os.path.join(folder, "s")
     listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)

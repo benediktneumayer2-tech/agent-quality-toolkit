@@ -1,4 +1,4 @@
-"""``aqt-trail serve``: the writer behind a Unix socket.
+"""``aqt-trail serve``: the writer behind a Unix socket (on Windows a named pipe, ``PipeTrailServer``).
 
 Protocol (one JSON request per connection, client closes its write side):
 ``append`` (aqt-spec spec §10.2), ``drain`` (spooled records), ``checkpoint``
@@ -19,7 +19,7 @@ import threading
 import time
 from pathlib import Path
 
-from aqt_evidence import bytes_hash, canonical_json
+from aqt_evidence import bytes_hash, canonical_json, platform
 
 from . import __version__
 from .anchors import checkpoint, record_external_head
@@ -124,43 +124,15 @@ class _Handler(socketserver.BaseRequestHandler):
         return {"ok": False, "code": refused.code, "message": refused.message}
 
 
-class TrailServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
-    daemon_threads = True
-    allow_reuse_address = False
+class _TrailService:
+    """What the writer's server does on every system; the transport is the subclass's."""
 
-    def __init__(self, socket_path: str | os.PathLike, writer: TrailWriter, *, mode: int = 0o600,
-                 group: str = "", allowed_uids: list[int] | None = None, max_request_bytes: int = 16 << 20,
-                 spool: str | os.PathLike | None = None, drain_interval_s: float = 30,
-                 anchor: dict | None = None):
+    def _setup(self, writer: TrailWriter, *, allowed_uids, max_request_bytes: int, spool, drain_interval_s: float,
+               anchor: dict | None) -> None:
         self.writer, self.max_request_bytes = writer, max_request_bytes
         self.anchor = anchor or {}
-        self.allowed_uids = set(allowed_uids or []) | {os.getuid()}
+        self.allowed_uids = set(allowed_uids or []) | {platform.user_id()}
         self.spool, self.drain_interval_s, self._last_drain = spool, drain_interval_s, time.monotonic()
-        path = Path(socket_path)
-        self.socket_path = path
-        if len(os.fsencode(path)) > 104:
-            raise ValueError(f"socket path is too long for AF_UNIX ({len(os.fsencode(path))} bytes): {path}; "
-                             "set [writer] socket to a shorter path")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if path.exists() or path.is_socket():
-            probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            try:
-                probe.connect(str(path))
-            except OSError:
-                path.unlink()  # stale socket from a writer that is gone
-            else:
-                raise RuntimeError(f"a writer is already listening on {path}")
-            finally:
-                probe.close()
-        old = os.umask(0o177)
-        try:
-            super().__init__(str(path), _Handler)
-        finally:
-            os.umask(old)
-        if group:
-            import grp   # POSIX only, and only for the separate-user mode
-            os.chown(path, -1, grp.getgrnam(group).gr_gid)
-        os.chmod(path, mode)
 
     def tsa_allowed(self, url: str) -> bool:
         """A client may name only the configured TSA, or ``test:`` (the TEST ONLY authority in the
@@ -186,18 +158,119 @@ class TrailServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
             self._last_drain = time.monotonic()
             drain_local_spool(self.writer, self.spool)
 
-    def server_close(self):
-        super().server_close()
+
+if hasattr(socketserver, "UnixStreamServer"):   # every system with Unix sockets (not Windows)
+    class UnixTrailServer(_TrailService, socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+        """The writer behind a Unix socket (Linux, macOS)."""
+        daemon_threads = True
+        allow_reuse_address = False
+
+        def __init__(self, socket_path: str | os.PathLike, writer: TrailWriter, *, mode: int = 0o600,
+                     group: str = "", allowed_uids: list[int] | None = None, max_request_bytes: int = 16 << 20,
+                     spool: str | os.PathLike | None = None, drain_interval_s: float = 30,
+                     anchor: dict | None = None):
+            self._setup(writer, allowed_uids=allowed_uids, max_request_bytes=max_request_bytes, spool=spool,
+                        drain_interval_s=drain_interval_s, anchor=anchor)
+            path = Path(socket_path)
+            self.socket_path = path
+            if len(os.fsencode(path)) > 104:
+                raise ValueError(f"socket path is too long for AF_UNIX ({len(os.fsencode(path))} bytes): {path}; "
+                                 "set [writer] socket to a shorter path")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if path.exists() or path.is_socket():
+                probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                try:
+                    probe.connect(str(path))
+                except OSError:
+                    path.unlink()  # stale socket from a writer that is gone
+                else:
+                    raise RuntimeError(f"a writer is already listening on {path}")
+                finally:
+                    probe.close()
+            old = os.umask(0o177)
+            try:
+                socketserver.UnixStreamServer.__init__(self, str(path), _Handler)
+            finally:
+                os.umask(old)
+            if group:
+                import grp   # POSIX only, and only for the separate-user mode
+                os.chown(path, -1, grp.getgrnam(group).gr_gid)
+            os.chmod(path, mode)
+
+        def server_close(self):
+            super().server_close()
+            try:
+                self.socket_path.unlink()
+            except OSError:
+                pass
+
+
+class PipeTrailServer(_TrailService):
+    """The writer on Windows: the same requests over a named pipe that only the user can open
+    (``aqt_evidence.pipes``). ``serve_forever``, ``shutdown`` and ``server_close`` behave as in
+    ``socketserver``; each client gets a thread."""
+
+    def __init__(self, socket_path: str | os.PathLike, writer: TrailWriter, *, mode: int = 0o600,
+                 group: str = "", allowed_uids: list | None = None, max_request_bytes: int = 16 << 20,
+                 spool: str | os.PathLike | None = None, drain_interval_s: float = 30,
+                 anchor: dict | None = None):
+        from aqt_evidence import pipes
+        self._setup(writer, allowed_uids=allowed_uids, max_request_bytes=max_request_bytes, spool=spool,
+                    drain_interval_s=drain_interval_s, anchor=anchor)
+        name = str(socket_path)
+        if not platform.is_pipe(name):
+            raise ValueError(f"on Windows the writer listens on a named pipe (\\\\.\\pipe\\<name>), not on {name}; "
+                             "set [writer] socket to such a name or leave it empty")
+        if group:
+            raise ValueError(platform.not_available("[writer] socket_group (separate-user mode)"))
+        self.socket_path = Path(name)
         try:
-            self.socket_path.unlink()
-        except OSError:
-            pass
+            self._listener = pipes.PipeListener(name)
+        except FileExistsError:
+            raise RuntimeError(f"a writer is already listening on {name}") from None
+        self._stop, self._stopped = threading.Event(), threading.Event()
+        self._stopped.set()
+
+    def serve_forever(self, poll_interval: float = 0.5) -> None:
+        self._stopped.clear()
+        try:
+            while not self._stop.is_set():
+                try:
+                    connection = self._listener.accept(timeout=poll_interval)
+                except InterruptedError:     # Ctrl+C: the signal handler decides
+                    continue
+                if connection is not None:
+                    threading.Thread(target=self._handle, args=(connection,), daemon=True).start()
+                self.service_actions()
+        finally:
+            self._stop.clear()
+            self._stopped.set()
+
+    def _handle(self, connection) -> None:
+        try:
+            _Handler(connection, None, self)
+        finally:
+            connection.close()
+
+    def shutdown(self) -> None:
+        """Stop ``serve_forever`` and wait until it has returned."""
+        if not self._stopped.is_set():
+            self._stop.set()
+            self._stopped.wait()
+
+    def server_close(self) -> None:
+        self._listener.close()
+
+
+TrailServer = PipeTrailServer if platform.IS_WINDOWS else UnixTrailServer
 
 
 def build_server(config: Config, writer: TrailWriter) -> TrailServer:
     section = config.section("writer")
+    # uids are numbers on POSIX and SID strings (S-1-5-21-...) on Windows
+    uids = [str(u) if platform.IS_WINDOWS else int(u) for u in section["allowed_uids"]]
     return TrailServer(config.socket_path, writer, mode=int(str(section["socket_mode"]), 8),
-                       group=section["socket_group"], allowed_uids=[int(u) for u in section["allowed_uids"]],
+                       group=section["socket_group"], allowed_uids=uids,
                        max_request_bytes=int(section["max_request_bytes"]),
                        drain_interval_s=float(section["drain_interval_s"]), anchor=config.section("anchor"))
 
