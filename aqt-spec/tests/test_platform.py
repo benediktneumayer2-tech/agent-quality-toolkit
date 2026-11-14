@@ -236,3 +236,10 @@ def test_a_fake_proc_tree_is_read_on_every_system(tmp_path):
 def test_not_available_names_the_system():
     assert platform.not_available("the box", "it needs bubblewrap").startswith(f"the box is not available on "
                                                                               f"{platform.SYSTEM_NAME}: ")
+
+
+def test_aqt_command_is_the_name_the_process_was_started_as():
+    from aqt_evidence import aqt_command
+    assert aqt_command("/usr/bin/aqt") == "aqt" and aqt_command("aqt-trail") == "aqt"
+    assert aqt_command("/home/u/.local/bin/aqt-toolkit") == "aqt-toolkit"
+    assert aqt_command("C:\\Tools\\AQT-TOOLKIT.EXE".replace("\\", "/")) == "aqt-toolkit"

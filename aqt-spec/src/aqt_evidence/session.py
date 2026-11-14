@@ -90,3 +90,12 @@ def require_human(*, environ: dict | None = None, chain: list[str] | None = None
         raise HumanCheckError(context, Text("evidence.human.no_tty",
                                             "refused: a human decision needs an interactive terminal"))
     return context
+
+
+def aqt_command(argv0: str | None = None) -> str:
+    """The name of the toolkit's command for the commands that messages to agents name: ``aqt-toolkit`` when
+    this process was started under that name (its second name, where another aqt comes first on PATH),
+    else ``aqt``. ``aqt <tool> ...`` exists in every installation, also where ``aqt-<tool>`` does not (the
+    desktop app's runtime)."""
+    name = Path(sys.argv[0] if argv0 is None else argv0).name.lower()
+    return "aqt-toolkit" if name.removesuffix(".exe") == "aqt-toolkit" else "aqt"

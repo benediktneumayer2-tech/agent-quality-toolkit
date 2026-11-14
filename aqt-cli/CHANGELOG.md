@@ -8,6 +8,7 @@
   normal rights, no time limit, started again every five minutes when it is not running; `pythonw.exe` or the
   app's `aqtw.exe`, so no console window) and never replaces an existing one; `aqt status` checks that it
   exists, is enabled and starts a program that exists.
+- The agent-instruction block of `aqt project init` names the commands as `aqt change ...` and `aqt ui` (`aqt-toolkit ...` where another aqt comes first on `PATH`); a rerun replaces an older block. The git hook's fix names `aqt change` too.
 - Where the first `aqt` on `PATH` is another program (aqtinstall's), `aqt project init` writes the hooks, and from the desktop app's runtime the commit-msg hook, as `aqt-toolkit <tool> ...`; the `command` check reports which name agents run.
 - `aqt status` on macOS and Windows: the writer service and the egress box say that they are not available on this
   system and why (systemd and bubblewrap are Linux only), as a skipped line instead of a warning with a Linux fix.

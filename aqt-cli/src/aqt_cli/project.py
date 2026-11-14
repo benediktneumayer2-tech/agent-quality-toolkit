@@ -60,21 +60,23 @@ DECISIONS = {
 }
 
 BEGIN, END = "<!-- aqt:begin -->", "<!-- aqt:end -->"
+# The agent-instruction texts name the commands as `{aqt} <tool> ...`: `aqt` (or `aqt-toolkit`, see
+# checks.command_name), which every installation has, also the desktop app's runtime without `aqt-change`.
 CHANGE_MD = """## Change control (aqt-change)
 
-- Work on a change under a plan: `aqt-change plan new plans/<id>.md --id <id> --title "<title>"`, fill in the
+- Work on a change under a plan: `{aqt} change plan new plans/<id>.md --id <id> --title "<title>"`, fill in the
   approved paths, tasks and verification items, accept it with
-  `aqt-change reconcile plans/<id>.md --kind semantic --reason "<why>"`, then
-  `aqt-change begin plans/<id>.md --reason "<why>"`.
-- Verify only with `aqt-change run --plan plans/<id>.md --item <V-id>` (or `--all`): the tool runs the declared
-  command itself and records a receipt. Never tick a `[V..]` item without a fresh passing receipt.
-- Close the work with `aqt-change finish plans/<id>.md --key <key> --summary "<what changed>"`.
+  `{aqt} change reconcile plans/<id>.md --kind semantic --reason "<why>"`, then
+  `{aqt} change begin plans/<id>.md --reason "<why>"`.
+- Verify only with `{aqt} change run --plan plans/<id>.md --item <V-id>` (or `--all`): the tool runs the
+  declared command itself and records a receipt. Never tick a `[V..]` item without a fresh passing receipt.
+- Close the work with `{aqt} change finish plans/<id>.md --key <key> --summary "<what changed>"`.
 """
 PERSON_MD = """## Decisions belong to a person
 
 - Never run the toolkit's decision commands: releasing or trusting quarantined content, declaring a threat,
   approving, signing, revoking, enrolling or re-keying, CAPA and qualification decisions, the audit-trail
-  review signature, advisor (aqt-sensei) decisions and `aqt-ui`. Most refuse in an agent session and record
+  review signature, advisor (aqt-sensei) decisions and `{aqt} ui`. Most refuse in an agent session and record
   the attempt. Never type or ask for a passphrase.
 - Never edit the AQT configuration or state folders (`$XDG_CONFIG_HOME/aqt` and `$XDG_STATE_HOME/aqt`, by
   default `~/.config/aqt` and `~/.local/state/aqt`).
@@ -408,7 +410,7 @@ def instructions_block() -> str:
         parts += [CLAUDE_MD.strip(), ""]
     if installed("aqt-change"):
         parts += [CHANGE_MD.strip(), ""]
-    return "\n".join([*parts, PERSON_MD.strip(), END])
+    return "\n".join([*parts, PERSON_MD.strip(), END]).replace("{aqt}", command_name())
 
 
 def with_block(text: str, block: str) -> str:
@@ -663,13 +665,13 @@ def check_git_hook(ctx: ProjectContext) -> Result:
     hook = _commit_msg_hook(ctx)
     if not hook.exists():
         return Result(WARN, "no git commit-msg hook: commits are not checked for valid AQT-* trailers (optional)",
-                      "aqt-change hooks install-git")
+                      f"{command_name()} change hooks install-git")
     text = hook.read_text(encoding="utf-8", errors="replace")
     if any(f"{program} hook commit-msg" in text
            for program in ("aqt_change.cli", "aqt-change", "aqt change", "aqt-toolkit change")):
         return Result(OK, f"the commit-msg hook runs aqt-change ({show(ctx, hook)})")
     return Result(WARN, f"{show(ctx, hook)} does not run aqt-change: AQT-* trailers are not checked (optional)",
-                  f"add the line  aqt-change hook commit-msg \"$1\"  to {show(ctx, hook)}", can_apply=False)
+                  f"add the line  {command_name()} change hook commit-msg \"$1\"  to {show(ctx, hook)}", can_apply=False)
 
 
 def step_git_hook(ctx: ProjectContext) -> None:

@@ -12,6 +12,7 @@
 - Windows: process names drop `.exe` (`claude.exe` is the agent marker `claude`), a chain ends where a parent's pid
   was reused, and `NUL` is no longer taken for a terminal (`platform.is_terminal`), so the human check refuses
   `< NUL` as it refuses `/dev/null`. The vector index and the generators write `/` and LF on every system.
+- `aqt_command()`: the name of the toolkit's command for the commands that messages to agents name: `aqt-toolkit` when the process was started under that name, else `aqt`.
 - `aqt_evidence.platform`: one module for what differs between Linux, macOS and Windows (folders, file locks,
   no-follow opens, private modes, user and socket-peer identity, process information). Linux behaviour and
   folders are unchanged; on macOS the folders are `~/Library/Application Support/AQT/config` and `…/state`,

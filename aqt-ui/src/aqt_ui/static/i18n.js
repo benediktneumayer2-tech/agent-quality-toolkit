@@ -609,6 +609,9 @@ export const DE = {
   "{n} new cases need you": "{n} neue Fälle brauchen dich",
   "Review it in Agent Quality Toolkit": "In Agent Quality Toolkit prüfen",
   "Show the case": "Fall anzeigen",
+  "Open window": "Fenster öffnen",
+  "Needs you ({n})": "Braucht dich ({n})",
+  "Quit": "Beenden",
 };
 
 // "Needs you" entries by key: [title, detail]; {name} takes the entry's values, null keeps the

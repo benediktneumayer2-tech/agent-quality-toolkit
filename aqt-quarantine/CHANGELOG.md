@@ -4,6 +4,7 @@
 
 - Windows: the outbox and the report file are written in binary mode.
 - The Claude Code hook reads and writes UTF-8 whatever the console's code page (Windows).
+- The hold notice and the pointer to a long released page name `aqt quarantine ...` (or `aqt-toolkit quarantine ...`), not `aqt-quarantine ...`.
 - Folders, locks, no-follow opens and the owner check come from `aqt_evidence.platform` (unchanged on Linux). The
   Claude Code deny rules that `aqt-quarantine hooks` prints name the default AQT folders of macOS there.
 - The hold and warning notices name the case's link in the AQT desktop app (`aqt://case/quarantine:<id>`); `doctor` also finds the hook when it is written as `aqt quarantine hook claude-code`.

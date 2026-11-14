@@ -14,6 +14,8 @@ import stat
 import sys
 from pathlib import Path
 
+from aqt_evidence import aqt_command
+
 from .errors import ChangeError
 from .gitio import trailers
 from .ledger import TRAIL_REQUIRED, TRUST_NOGO, TRUST_TEXT, Ledger
@@ -58,6 +60,7 @@ def claude_code(payload: dict, ledger: Ledger | None = None) -> tuple[int, str]:
     plans = active_plans(ledger)
     if not plans:
         return 0, ""
+    aqt = aqt_command()                 # the command the agent can run: aqt (or aqt-toolkit) change ...
     freshness = Freshness(ledger)
     problems: list[str] = []
     if event == "TaskCompleted":
@@ -80,7 +83,7 @@ def claude_code(payload: dict, ledger: Ledger | None = None) -> tuple[int, str]:
         for rel, plan in plans:
             state = status(ledger, rel)["state"]
             if state not in STATES_OK:
-                problems.append(f"{plan.id}: plan edits are {state}; run 'aqt-change reconcile {rel} --kind … --reason …'")
+                problems.append(f"{plan.id}: plan edits are {state}; run '{aqt} change reconcile {rel} --kind … --reason …'")
             items = evaluate(ledger, plan, freshness)
             for item in plan.verification:
                 if item.checked and items[item.id]["state"] != "ok":
@@ -95,10 +98,10 @@ def claude_code(payload: dict, ledger: Ledger | None = None) -> tuple[int, str]:
                         f"committed ({HIDDEN_FIX}): " + hidden_text(hidden))
     if not problems:
         return 0, ""
-    hint = "Run 'aqt-change run --plan <plan> --item <ID>' (or --all) to record receipts."
+    hint = f"Run '{aqt} change run --plan <plan> --item <ID>' (or --all) to record receipts."
     message = "aqt-change: completion is not evidenced:\n- " + "\n- ".join(problems) + "\n" + hint
     if event in ("Stop", "SubagentStop") and payload.get("stop_hook_active"):
-        return 0, message + "\n(not blocking again: stop_hook_active; 'aqt-change finish' will still refuse)"
+        return 0, message + f"\n(not blocking again: stop_hook_active; '{aqt} change finish' will still refuse)"
     return 2, message
 
 
@@ -110,7 +113,7 @@ def commit_msg(ledger: Ledger, message_file: str, require: bool = False) -> tupl
     problems = []
     if not aqt:
         if require and active_plans(ledger):
-            return 1, "aqt-change: a plan is in progress; commits need an AQT-Plan trailer (or use 'aqt-change finish')"
+            return 1, f"aqt-change: a plan is in progress; commits need an AQT-Plan trailer (or use '{aqt_command()} change finish')"
         return 0, ""
     known = {k: [v for kk, v in aqt if kk == k] for k in {k for k, _ in aqt}}
     plan_ids = []
@@ -149,7 +152,7 @@ def install_git_hook(ledger: Ledger, name: str = "aqt") -> Path:
     hooks = ledger.git.hooks_dir()
     target = hooks / "commit-msg"
     if target.exists():
-        raise ChangeError("hook_exists", f"{target} already exists; add 'aqt-change hook commit-msg \"$1\"' to it "
+        raise ChangeError("hook_exists", f"{target} already exists; add 'aqt change hook commit-msg \"$1\"' to it "
                           "yourself", exit_code=1)
     hooks.mkdir(parents=True, exist_ok=True)
     if name not in ("aqt", "aqt-toolkit"):
