@@ -7,6 +7,7 @@ import sys
 from types import SimpleNamespace
 
 import pytest
+from aqt_evidence import platform, seatbelt
 
 from aqt_sensei.config import Config
 from aqt_sensei.doctor import PROBE, doctor_profile, sandbox_probe
@@ -48,7 +49,10 @@ def test_probe_runs_inside_the_pairs_argv(bridge, project, paths, config):
     checks = sandbox_probe(bridge.pairs[pair["id"]], paths=paths, config=config, runner=runner,
                            resolve=lambda name: (f"/usr/bin/{name}", []))
     assert all(c["passed"] for c in checks)
-    assert seen[0][0] == config.bwrap and "--clearenv" in seen[0]
+    if platform.IS_MACOS:
+        assert seen[0][0] == seatbelt.SANDBOX_EXEC and "-i" in seen[0]
+    else:
+        assert seen[0][0] == config.bwrap and "--clearenv" in seen[0]
     assert seen[1][-1] == "--version"
 
 

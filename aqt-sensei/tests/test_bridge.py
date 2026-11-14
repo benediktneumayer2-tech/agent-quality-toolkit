@@ -271,13 +271,16 @@ def test_independence_classes():
     assert independence({}, {"platform": "claude"}) == "unknown"
 
 
-def test_pairing_off_linux_says_the_sandbox_is_not_available(bridge, project, monkeypatch):
-    from aqt_evidence import platform
+def test_pairing_without_a_working_sandbox_says_it_is_not_available(bridge, project, monkeypatch):
+    from aqt_evidence import platform, seatbelt
     from aqt_sensei import sandbox
     monkeypatch.setattr(platform, "IS_LINUX", False)
     monkeypatch.setattr(platform, "IS_MACOS", True)
     monkeypatch.setattr(platform, "SYSTEM_NAME", "macOS")
-    assert "Seatbelt" in sandbox.sandbox_unavailable()
+    monkeypatch.setattr(seatbelt, "unavailable", lambda: None)
+    assert sandbox.sandbox_unavailable() is None                       # macOS with sandbox-exec: available
+    monkeypatch.setattr(seatbelt, "unavailable", lambda: "/usr/bin/sandbox-exec is missing")
+    assert "sandbox-exec is missing" in sandbox.sandbox_unavailable()
     with pytest.raises(sandbox.SandboxError, match="not available on macOS"):
         sandbox.require_sandbox()
     monkeypatch.setattr(type(bridge.host), "name", "tmux")

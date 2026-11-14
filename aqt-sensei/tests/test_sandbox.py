@@ -10,10 +10,12 @@ from pathlib import Path
 
 import pytest
 
+from aqt_evidence import platform, seatbelt
+
 from aqt_sensei.config import Config
 from aqt_sensei.launch import prepare
-from aqt_sensei.sandbox import (Profile, SandboxError, build_argv, herdr_request_allowed, proxy_connection,
-                                resolve_cli, resolve_profile, write_shim)
+from aqt_sensei.sandbox import (Profile, SandboxError, build_argv, cli_paths, env_names, herdr_request_allowed,
+                                proxy_connection, resolve_cli, resolve_profile, write_shim)
 
 from conftest import pair_up
 
@@ -31,11 +33,11 @@ def pair(bridge, project):
     return pair_up(bridge, project)
 
 
-def argv_for(pair, paths, config, **kwargs):
+def argv_for(pair, paths, config, macos=False, **kwargs):
     profile = Profile(**{k: v for k, v in pair["profile"].items()})
     return build_argv(pair, profile, paths=paths, config=config, cli_path="/usr/bin/claude", cli_binds=[],
                       environ={"TERM": "xterm", "SECRET_TOKEN": "s3cret", "ANTHROPIC_API_KEY": "k"},
-                      home=Path("/home/tester"), **kwargs)
+                      home=Path("/home/tester"), macos=macos, **kwargs)
 
 
 def test_project_read_only_scratch_writable_state_hidden(pair, paths, config):
@@ -119,7 +121,7 @@ def test_prepare_writes_prompt(pair, paths, config):
     prompt = Path(pair["scratch_dir"]) / ".sensei-prompt.md"
     assert prompt.exists() and pair["project_root"] in prompt.read_text()
     assert "never implement" in prompt.read_text()
-    assert argv[0] == config.bwrap
+    assert argv[0] == (seatbelt.SANDBOX_EXEC if platform.IS_MACOS else config.bwrap)
 
 
 def test_herdr_proxy_filter():
@@ -171,3 +173,55 @@ def test_shim_is_stdlib_only_and_talks_to_the_advisor_socket(short_dir, tmp_path
     offline = subprocess.run([sys.executable, "-I", str(shim), "status"],
                              env={"AQT_SENSEI_SOCKET": str(short_dir / "gone.sock")}, capture_output=True, text=True)
     assert offline.returncode == 2 and "offline" in offline.stderr
+
+
+# -- macOS: the Seatbelt profile (generated on every system; run for real in test_seatbelt_real.py) ----------
+def seatbelt_env(argv):
+    start = argv.index("-i") + 1
+    return dict(item.split("=", 1) for item in argv[start:start + len(env_names(argv))])
+
+
+def test_seatbelt_argv_clears_the_environment_and_uses_the_private_home(pair, paths, config):
+    argv = argv_for(pair, paths, config, macos=True)
+    assert argv[:2] == [seatbelt.SANDBOX_EXEC, "-p"] and argv[3:5] == ["/usr/bin/env", "-i"]
+    env = seatbelt_env(argv)
+    home = str(paths.home("claude"))
+    assert env["HOME"] == home and env["CLAUDE_CONFIG_DIR"] == home and env["AQT_AGENT_SESSION"] == "1"
+    assert env["TMPDIR"] == str(Path(pair["scratch_dir"]) / ".tmp") and env["TERM"] == "xterm"
+    assert "SECRET_TOKEN" not in env and "ANTHROPIC_API_KEY" not in env
+    command = argv[5 + len(env):]
+    assert command[0] == "/usr/bin/claude" and command[-2:] == ["--session-id", pair["advisor"]["session"]]
+    proxied = seatbelt_env(argv_for(pair, paths, config, macos=True, proxy=("/r/herdr.sock", "/real/herdr.sock")))
+    assert proxied["HERDR_SOCKET_PATH"] == "/r/herdr.sock"          # the filtering proxy, never the real socket
+
+
+def test_seatbelt_profile_hides_user_folders_and_writes_only_home_and_scratch(pair, paths, config):
+    profile = argv_for(pair, paths, config, macos=True)[2]
+    real = seatbelt.real
+    lines = profile.splitlines()
+    assert lines[:2] == ["(version 1)", "(deny default)"]
+    deny = lines.index("(deny file-read*")
+    allow = lines.index("(allow file-read*", deny)
+    assert f'  (subpath "{real("/home")}")' in lines[deny:allow]                 # the parent of HOME
+    assert '  (subpath "/private/tmp")' in lines[deny:allow]
+    for path in (pair["project_root"], pair["scratch_dir"], paths.pair_runtime(pair["id"])):
+        assert f'  (subpath "{real(path)}")' in lines[allow:allow + 8]
+    write = lines.index("(allow file-write*")
+    assert lines[write + 1:write + 4] == [f'  (subpath "{real(paths.home("claude"))}")',
+                                          f'  (subpath "{real(pair["scratch_dir"])}")', ")"]
+    assert f'(allow network-outbound (remote unix-socket (subpath "{real(paths.pair_runtime(pair["id"]))}")))' in lines
+    assert "com.apple.SecurityServer" in profile and "com.apple.securityd.xpc" not in profile   # no keychain items
+    assert '(allow network-outbound (remote ip "*:*"))' in lines and seatbelt.MDNS_SOCKET in profile
+    offline = argv_for({**pair, "network": "none"}, paths, config, macos=True)[2]
+    assert "remote ip" not in offline and seatbelt.MDNS_SOCKET not in offline
+    assert "com.apple.SecurityServer" not in offline and "com.apple.trustd.agent" not in offline
+
+
+def test_seatbelt_profile_reads_the_cli_where_resolve_cli_found_it(pair, paths, config):
+    binds = ["--symlink", "../lib/node_modules/agentx/bin/agentx.js", "/u/npm/bin/agentx", "--ro-bind", "/u/npm/lib",
+             "/u/npm/lib"]
+    assert cli_paths(binds) == ["/u/npm/bin/agentx", "/u/npm/lib"]
+    profile = Profile(**pair["profile"])
+    argv = build_argv(pair, profile, paths=paths, config=config, cli_path="/u/npm/bin/agentx", cli_binds=binds,
+                      environ={}, home=Path("/u"), macos=True)
+    assert '  (subpath "/u/npm/lib")' in argv[2].splitlines()

@@ -10,7 +10,8 @@ The Agent Quality Toolkit as a desktop app: one window with the aqt-ui pages, an
 - **Runtime:** a bundle ships a frozen Python 3.12 with all eleven packages (PyInstaller, one folder). It is
   also the full `aqt` command, at `runtime/aqt/aqt` inside the installed app.
 
-Builds are unsigned for now. Only Linux (AppImage and .deb) is built so far.
+Builds are unsigned for now: Linux (AppImage and .deb) and macOS (.dmg for Apple silicon and Intel, ad-hoc
+signed; see [Install on macOS](#install-on-macos) for the first start).
 
 ## How it fits together
 
@@ -64,6 +65,11 @@ Builds are unsigned for now. Only Linux (AppImage and .deb) is built so far.
   - the AppImage runs it as `AppImage --cli ARGS`, or when it is called through a link named `aqt` or
     `aqt-toolkit` (Settings: install the aqt command makes both in `~/.local/bin`; a name already taken there,
     e.g. by an `aqt` from pip or uv, is never replaced).
+
+  - on macOS it is `Contents/Resources/runtime/aqt/aqt` inside the app. Settings: *Install 'aqt' command* links
+    `/usr/local/bin/aqt` and `/usr/local/bin/aqt-toolkit` to it (on the `PATH` of every macOS shell, so agents'
+    hooks find it), through macOS's administrator prompt, as editors install their command. A name taken by
+    another program is never replaced; a link to an AQT app that moved is renewed.
 
   `aqt project init` writes hooks that call `aqt <tool> ...` from `PATH`, never a path inside the app. When the
   first `aqt` on `PATH` is another program (aqtinstall's), they call `aqt-toolkit <tool> ...` instead. The texts
@@ -163,6 +169,37 @@ On an Ubuntu 24.04 machine with the Tauri build dependencies installed, as in CI
 does the same without Docker. The frozen runtime alone is `core/build.sh`. It needs only uv, and it checks
 the result: `aqt --version`, every tool's `--help`, and `aqt status --json` against a temp HOME.
 
+## Build (macOS)
+
+You need Xcode's command line tools, Rust, Node and uv.
+
+```bash
+aqt-desktop/scripts/build-macos.sh        # .dmg for this Mac's architecture in aqt-desktop/dist/
+aqt-desktop/scripts/build-macos.sh --app  # only the .app (the .dmg's layout step talks to the Finder)
+```
+
+The app is ad-hoc signed (`src-tauri/tauri.macos.conf.json`: Apple silicon runs no unsigned code), and the script
+checks that signature with `codesign --verify --deep --strict`; the frozen runtime inside is signed by PyInstaller.
+CI (the `macos` job of `.github/workflows/desktop.yml`) builds it on `macos-15` (Apple silicon) and
+`macos-15-intel` (Intel), runs the smoke test on the app taken out of the .dmg, and uploads the .dmg files as the
+artifacts `aqt-desktop-macos-arm64` and `aqt-desktop-macos-x86_64`.
+
+## Install on macOS
+
+The app is not signed with an Apple Developer ID and not notarized, so macOS blocks its first start. On macOS 15
+(Sequoia) and later:
+
+1. Open the .dmg and drag *Agent Quality Toolkit* into *Applications*.
+2. Open the app. macOS says that it cannot check the app for malware; click *Done* (not *Move to Trash*).
+3. Open *System Settings → Privacy & Security*, scroll to *Security*: next to "Agent Quality Toolkit was blocked
+   to protect your Mac" click *Open Anyway*, then confirm with your password or Touch ID and click *Open*.
+
+Later starts open normally. On macOS 14 and earlier, Control-click the app in *Applications*, choose *Open*, then
+*Open* again. Each new version needs this once more.
+
+Start the app from where it lies (*Applications*, or the opened .dmg), not through a path with a symbolic link:
+Tauri then finds no bundled runtime (the window says that the AQT core could not start).
+
 ## Smoke test
 
 `--smoke` (or `AQT_DESKTOP_SMOKE=1`) makes the app:
@@ -188,6 +225,10 @@ AQT_CORE="$PWD/aqt-desktop/core/dist/aqt/aqt core --stdio" \
 ```
 
 `SMOKE_RUNS=3` repeats it in the same HOME: the first run is cold, the others are warm.
+
+On macOS, `scripts/smoke.sh --dmg aqt-desktop/dist/aqt-desktop_*.dmg` copies the app out of the disk image and runs it
+in the login session (there is no Xvfb), then the runtime's `aqt` inside the app. CI runs it on the runner; do not
+run it on a Mac someone is using, because the window opens on its screen.
 
 CI (`.github/workflows/desktop.yml`) builds both bundles, smoke-tests each of them, and uploads them as the
 artifact `aqt-desktop-linux`.

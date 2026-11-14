@@ -32,7 +32,14 @@ fn ms() -> u128 {
 /// else `aqt core --stdio` from PATH.
 fn core_command(app: &AppHandle, read_only: bool) -> Vec<String> {
     let exe = if cfg!(windows) { "aqt.exe" } else { "aqt" };
-    let shipped = app.path().resource_dir().ok().map(|dir| dir.join("runtime").join("aqt").join(exe));
+    let shipped = match app.path().resource_dir() {
+        Ok(dir) => Some(dir.join("runtime").join("aqt").join(exe)),
+        Err(error) => {
+            // e.g. started through a symbolic link (macOS: /var), which Tauri refuses to resolve resources for
+            eprintln!("[aqt desktop] the bundled runtime cannot be found: {error}");
+            None
+        }
+    };
     let mut command: Vec<String> = match (shipped, std::env::var("AQT_CORE")) {
         (Some(path), _) if path.is_file() => vec![path.display().to_string(), "core".into(), "--stdio".into()],
         (_, Ok(line)) if !line.trim().is_empty() => line.split_whitespace().map(String::from).collect(),

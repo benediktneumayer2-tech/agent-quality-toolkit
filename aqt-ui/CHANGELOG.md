@@ -8,6 +8,7 @@
   - a connection banner: connecting, connected again, or why not (unreachable, connection lost, unknown or changed host key, refused key, no AQT there, no ssh), with *Reconnect* and the last data greyed;
   - for a request that was sent but got no answer, a message that its outcome is unknown: the signing sheet offers a reload and never sends the decision again;
   - for a project on another machine, a path field instead of the folder dialog.
+- Tests: the connection-cap test accepts a reset as well as an end of file for a refused connection (macOS reports the close of a connection with an unread request as a reset); the server is unchanged.
 - In the desktop app the page also gives the tray menu its words in its language, at start and after each change of language.
 - In the desktop app the page words the system notifications of new cases in its language (German or English); the `queue` event's new cases carry `key` and `args` for that.
 - From the desktop app's frozen runtime the change gates run the runtime itself (`aqt -I -m aqt_change.cli gate`), since it has no `aqt-change` program.

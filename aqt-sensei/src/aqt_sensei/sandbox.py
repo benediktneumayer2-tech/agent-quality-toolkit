@@ -9,8 +9,15 @@ The environment is cleared and rebuilt from an allow-list.
 `build_argv()` is a pure function of its inputs, so tests assert the exact
 command line without running bwrap.
 
-The sandbox needs Linux (bubblewrap). ``sandbox_unavailable()`` says why it cannot run
-elsewhere; a macOS Seatbelt profile (``sandbox-exec``) will plug in there.
+On macOS the same limits come from a generated Seatbelt profile (``sandbox-exec``, see
+``seatbelt_profile()``): reads are refused in the user folders (``/Users``, ``/Volumes``, the
+temporary folders) except the project, the CLI, the private home, the scratch folder and the pair's
+runtime folder; writes only in the private home and the scratch folder; Unix sockets only in the pair's
+runtime folder (and the system resolver's, with network); the keychain is not reachable (it would
+show the owner's own logins). Seatbelt cannot give an empty home or ``/tmp``: ``HOME`` is the
+private home and ``TMPDIR`` a folder in the scratch folder. ``docs/sandbox.md`` compares the two.
+
+``sandbox_unavailable()`` says why the sandbox cannot run on other systems.
 """
 
 from __future__ import annotations
@@ -26,7 +33,7 @@ from importlib import resources
 from pathlib import Path
 from string import Template
 
-from aqt_evidence import content_hash, platform
+from aqt_evidence import content_hash, platform, seatbelt
 
 PROMPT_FILE = ".sensei-prompt.md"
 HERDR_REPORTS = ("pane.report_agent", "pane.report_agent_session", "pane.release_agent")
@@ -137,12 +144,12 @@ def _under(path: Path, folders: list[Path]) -> bool:
 
 
 def sandbox_unavailable() -> str | None:
-    """None where the advisor sandbox can run (Linux, bubblewrap), else why not."""
+    """None where the advisor sandbox can run (Linux: bubblewrap, macOS: Seatbelt), else why not."""
     if platform.IS_LINUX:
         return None
     if platform.IS_MACOS:
-        return platform.not_available("the sensei sandbox", "its Seatbelt profile (sandbox-exec) follows in a "
-                                      "later version")
+        reason = seatbelt.unavailable()
+        return platform.not_available("the sensei sandbox", reason) if reason else None
     return platform.not_available("the sensei sandbox", "the system has no sandbox like bubblewrap that works "
                                   "without administrator rights")
 
@@ -200,18 +207,62 @@ def _expand(value: str, values: dict) -> str:
     return value
 
 
+def _values(pair: dict, platform_home: Path) -> dict:
+    return {"prompt_file": str(Path(pair["scratch_dir"]) / PROMPT_FILE), "scratch": pair["scratch_dir"],
+            "project": pair["project_root"], "home": str(platform_home),
+            "model": pair["advisor"].get("model") or "", "session": pair["advisor"].get("session") or ""}
+
+
+def _environment(pair: dict, profile: Profile, *, paths, config, environ, home: Path, values: dict) -> dict:
+    pair_runtime = paths.pair_runtime(pair["id"])
+    env = {"HOME": str(home), "PATH": f"{pair_runtime / 'bin'}:/usr/local/bin:/usr/bin:/bin",
+           "AQT_SENSEI_SOCKET": str(paths.advisor_socket(pair["id"])), "AQT_AGENT_SESSION": "1",
+           "AQT_SENSEI_ROLE": "advisor", "AQT_SENSEI_PAIR": pair["id"]}
+    for name in (*BASE_ENV, *config.env_allow):
+        if environ.get(name) is not None:
+            env[name] = environ[name]
+    env.update({key: _expand(value, values) for key, value in profile.env.items()})
+    return env
+
+
+def _command(pair: dict, profile: Profile, cli_path: str, platform_home: Path, values: dict) -> list[str]:
+    command = [cli_path] + [_expand(part, values) for part in profile.command[1:]]
+    if pair["advisor"].get("model") and profile.model_args:
+        command += [_expand(part, values) for part in profile.model_args]
+    if profile.platform == "claude" and pair["advisor"].get("session"):
+        session = pair["advisor"]["session"]
+        known = any(platform_home.glob(f"projects/*/{session}.jsonl")) if platform_home.exists() else False
+        command += ["--resume" if known else "--session-id", session]
+    return command
+
+
+def env_names(argv: list[str]) -> list[str]:
+    """The variable names a sandbox command line sets (bwrap ``--setenv``, or ``env -i NAME=value`` on macOS)."""
+    if "--clearenv" in argv:
+        return [argv[i + 1] for i, item in enumerate(argv[:-1]) if item == "--setenv"]
+    names, start = [], argv.index("-i") + 1 if "-i" in argv else len(argv)
+    for item in argv[start:]:
+        name, equals, _value = item.partition("=")
+        if not equals or not name.replace("_", "a").isalnum() or name[0].isdigit():
+            break
+        names.append(name)
+    return names
+
+
 def build_argv(pair: dict, profile: Profile, *, paths, config, cli_path: str, cli_binds: list[str],
                environ: dict | None = None, home: Path | None = None, command: list[str] | None = None,
                proxy: tuple[str, str] | None = None, root_dirs: tuple[str, ...] = ("bin", "sbin", "lib", "lib64", "lib32"),
-               fs=os.path) -> list[str]:
-    """The full bwrap command line for this pair's advisor (or `command` instead of the CLI)."""
+               fs=os.path, macos: bool | None = None) -> list[str]:
+    """The full sandbox command line for this pair's advisor (or `command` instead of the CLI): bwrap on
+    Linux, ``sandbox-exec`` on macOS (``macos`` chooses explicitly, for tests)."""
+    if platform.IS_MACOS if macos is None else macos:
+        return seatbelt_argv(pair, profile, paths=paths, config=config, cli_path=cli_path, cli_binds=cli_binds,
+                             environ=environ, home=home, command=command, proxy=proxy)
     environ = os.environ if environ is None else environ
     home = home or Path.home()
     platform_home = paths.home(profile.platform if profile.platform != "custom" else f"custom-{profile.name}")
     pair_runtime = paths.pair_runtime(pair["id"])
-    values = {"prompt_file": str(Path(pair["scratch_dir"]) / PROMPT_FILE), "scratch": pair["scratch_dir"],
-              "project": pair["project_root"], "home": str(platform_home),
-              "model": pair["advisor"].get("model") or "", "session": pair["advisor"].get("session") or ""}
+    values = _values(pair, platform_home)
 
     args = [config.bwrap, "--unshare-all", "--die-with-parent"]
     if pair.get("network", config.network) == "share":
@@ -238,27 +289,90 @@ def build_argv(pair: dict, profile: Profile, *, paths, config, cli_path: str, cl
         args += ["--ro-bind", proxy[0], proxy[1]]
     args += ["--chdir", pair["scratch_dir"], "--clearenv"]
 
-    env = {"HOME": str(home), "PATH": f"{pair_runtime / 'bin'}:/usr/local/bin:/usr/bin:/bin",
-           "AQT_SENSEI_SOCKET": str(paths.advisor_socket(pair["id"])), "AQT_AGENT_SESSION": "1",
-           "AQT_SENSEI_ROLE": "advisor", "AQT_SENSEI_PAIR": pair["id"]}
-    for name in (*BASE_ENV, *config.env_allow):
-        if environ.get(name) is not None:
-            env[name] = environ[name]
-    env.update({key: _expand(value, values) for key, value in profile.env.items()})
+    env = _environment(pair, profile, paths=paths, config=config, environ=environ, home=home, values=values)
     if proxy:
         env.update({"HERDR_ENV": "1", "HERDR_SOCKET_PATH": proxy[1], "HERDR_PANE_ID": pair["advisor"]["pane_id"]})
     for key, value in env.items():
         args += ["--setenv", key, value]
 
     if command is None:
-        command = [cli_path] + [_expand(part, values) for part in profile.command[1:]]
-        if pair["advisor"].get("model") and profile.model_args:
-            command += [_expand(part, values) for part in profile.model_args]
-        if profile.platform == "claude" and pair["advisor"].get("session"):
-            session = pair["advisor"]["session"]
-            known = any(platform_home.glob(f"projects/*/{session}.jsonl")) if platform_home.exists() else False
-            command += ["--resume" if known else "--session-id", session]
+        command = _command(pair, profile, cli_path, platform_home, values)
     return args + ["--"] + command
+
+
+# ------------------------------------------------------------- macOS: Seatbelt
+
+TMP_FOLDER = ".tmp"       # TMPDIR inside the scratch folder (Seatbelt cannot give an empty /tmp)
+
+
+def user_folders(home: Path) -> list[str]:
+    """Where the user's own files are on macOS: hidden from the advisor, except what it is given."""
+    return [seatbelt.real(home.parent), "/Volumes", "/private/tmp", "/private/var/folders", "/private/var/root"]
+
+
+def cli_paths(cli_binds: list[str]) -> list[str]:
+    """The paths a bwrap bind list of ``resolve_cli`` makes visible: link paths and bound folders."""
+    found = []
+    for index, item in enumerate(cli_binds):
+        if item == "--symlink":
+            found.append(cli_binds[index + 2])
+        elif item in ("--ro-bind", "--ro-bind-try"):
+            found.append(cli_binds[index + 1])
+    return found
+
+
+def seatbelt_profile(*, project: str, scratch: str, private_home: str, pair_runtime: str, readable: list[str],
+                     hidden: list[str], network: bool) -> str:
+    """The advisor's profile: read the system and the given folders, write the private home and the scratch
+    folder, connect to Unix sockets in the pair's runtime folder only; the IP network only with ``network``."""
+    real = seatbelt.real
+    writable = [real(private_home), real(scratch)]
+    visible = [real(project), *(real(path) for path in readable), *writable, real(pair_runtime)]
+    lines = seatbelt.base_rules(seatbelt.MACH_SERVICES + (seatbelt.NETWORK_SERVICES if network else ()))
+    lines += ["(allow file-read*)"]
+    lines += seatbelt.rule("deny", "file-read*", "subpath", hidden)
+    lines += seatbelt.rule("allow", "file-read*", "subpath", visible)
+    folders = [folder for path in visible for folder in seatbelt.ancestors(path)]
+    lines += seatbelt.rule("allow", "file-read-metadata", "literal", folders)   # realpath() walks them
+    lines += [*seatbelt.DEVICES]
+    lines += seatbelt.rule("allow", "file-write*", "subpath", writable)
+    lines += ["(allow system-socket (socket-domain AF_UNIX))"]
+    quote = seatbelt.quote
+    lines += [f"(allow network-bind (local unix-socket (subpath {quote(path)})))" for path in writable]
+    lines += [f"(allow network-outbound (remote unix-socket (subpath {quote(path)})))"
+              for path in [real(pair_runtime), *writable]]
+    if network:
+        lines += [f"(allow network-outbound (remote unix-socket (path-literal {seatbelt.quote(seatbelt.MDNS_SOCKET)})))",
+                  '(allow network-outbound (remote ip "*:*"))', '(allow network-bind (local ip "*:*"))',
+                  '(allow network-inbound (local ip "*:*"))']
+    return "\n".join(lines) + "\n"
+
+
+def seatbelt_argv(pair: dict, profile: Profile, *, paths, config, cli_path: str, cli_binds: list[str],
+                  environ: dict | None = None, home: Path | None = None, command: list[str] | None = None,
+                  proxy: tuple[str, str] | None = None) -> list[str]:
+    """``sandbox-exec -p PROFILE /usr/bin/env -i NAME=value ... COMMAND``; the caller starts it in the
+    scratch folder."""
+    environ = os.environ if environ is None else environ
+    home = home or Path.home()
+    platform_home = paths.home(profile.platform if profile.platform != "custom" else f"custom-{profile.name}")
+    values = _values(pair, platform_home)
+    readable = cli_paths(cli_binds)
+    for item in [*profile.ro_binds, *config.extra_ro_binds]:
+        readable.append(os.path.expanduser(_expand(item, values)))
+    text = seatbelt_profile(project=pair["project_root"], scratch=pair["scratch_dir"],
+                            private_home=str(platform_home), pair_runtime=str(paths.pair_runtime(pair["id"])),
+                            readable=readable, hidden=user_folders(home),
+                            network=pair.get("network", config.network) == "share")
+    env = _environment(pair, profile, paths=paths, config=config, environ=environ, home=platform_home,
+                       values=values)
+    env["TMPDIR"] = str(Path(pair["scratch_dir"]) / TMP_FOLDER)
+    if proxy:
+        env.update({"HERDR_ENV": "1", "HERDR_SOCKET_PATH": proxy[0], "HERDR_PANE_ID": pair["advisor"]["pane_id"]})
+    if command is None:
+        command = _command(pair, profile, cli_path, platform_home, values)
+    return [seatbelt.SANDBOX_EXEC, "-p", text, "/usr/bin/env", "-i",
+            *(f"{key}={value}" for key, value in env.items()), *command]
 
 
 # -------------------------------------------------------------- Herdr proxy

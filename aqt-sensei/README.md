@@ -86,7 +86,7 @@ More usage: [docs/usage.md](docs/usage.md). A live check with real advisor CLIs:
 - Idle detection on tmux without hooks is heuristic.
 - The bridge's own state files are writable by your user. Tamper evidence comes from aqt-trail.
 - When aqt-trail is down, owner decisions are not blocked: their records go to the durable spool (`$XDG_STATE_HOME/aqt/spool/`), and aqt-trail writes a `trail.gap` marker and appends them with `observed.via = "spool"` when it drains. Until then, the records lack the trail's process attribution and chain. This is deliberate: blocking the owner during an outage would do more harm than a marked gap.
-- Linux only. On Ubuntu, AppArmor can block bwrap's user namespaces in some contexts; `doctor` detects it.
+- Linux (bubblewrap) and macOS (a Seatbelt profile, compared in [docs/sandbox.md](docs/sandbox.md#macos-seatbelt)). On Ubuntu, AppArmor can block bwrap's user namespaces in some contexts; `doctor` detects it.
 - Advisors of the same platform share one private home.
 
 ## Prior art

@@ -541,6 +541,15 @@ def test_body_is_read_exactly_and_short_bodies_are_refused():
 
 
 # -- E-7 / AQT-UI-005: timeouts and a bound on handler threads -----------------------------------------
+def closed_without_answer(sock) -> bool:
+    """The server closed the connection and sent nothing. Closing a socket whose request is still unread
+    sends a reset: Linux reports the FIN that came first (end of file), macOS the reset (ECONNRESET)."""
+    try:
+        return sock.recv(100) == b""
+    except ConnectionResetError:
+        return True
+
+
 def test_incomplete_requests_time_out_and_connections_are_capped(env):
     from aqt_ui.config import UiConfig
     import threading
@@ -558,10 +567,10 @@ def test_incomplete_requests_time_out_and_connections_are_capped(env):
         time.sleep(0.1)
         extra = socket.create_connection(address, timeout=5)
         extra.sendall(b"GET /static/app.css HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n")
-        assert extra.recv(100) == b"", "a connection over the limit is closed at once"
+        assert closed_without_answer(extra), "a connection over the limit is closed at once"
         extra.close()
         for sock in held:                                   # the server gives up on each after the timeout
-            assert sock.recv(100) == b""
+            assert closed_without_answer(sock)
         time.sleep(0.2)
         ok = socket.create_connection(address, timeout=5)
         ok.sendall(f"GET /static/app.css HTTP/1.0\r\nHost: 127.0.0.1:{app.port}\r\n\r\n".encode())

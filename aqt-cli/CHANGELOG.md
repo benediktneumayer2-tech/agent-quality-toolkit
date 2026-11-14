@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `aqt status` on macOS: the `egress` line names what the Seatbelt box cannot do that the Linux box does.
+- `aqt setup` on macOS installs the trail writer as a LaunchAgent (`~/Library/LaunchAgents/io.github.benediktneumayer2tech.aqt.trail.plist`, KeepAlive, output to `trail-writer.log` in the AQT state folder) and loads it with `launchctl bootstrap gui/$UID`; `aqt status` checks it with `launchctl print` and gives the fix, as for systemd on Linux.
 - The agent-instruction block of `aqt project init` names the commands as `aqt change ...` and `aqt ui` (`aqt-toolkit ...` where another aqt comes first on `PATH`); a rerun replaces an older block. The git hook's fix names `aqt change` too.
 - Where the first `aqt` on `PATH` is another program (aqtinstall's), `aqt project init` writes the hooks, and from the desktop app's runtime the commit-msg hook, as `aqt-toolkit <tool> ...`; the `command` check reports which name agents run.
 - `aqt status` on macOS and Windows: the writer service and the egress box say that they are not available on this

@@ -1,6 +1,7 @@
 //! The app in the operating system: the tray (menu-bar) icon with the number of open cases, one notification
 //! per new case, `aqt://` links, the app's own settings (keep running in the tray, start at login) and the
-//! `aqt` command of the AppImage. Links and notifications only open a view; they never decide anything.
+//! `aqt` command of the AppImage and of the macOS app. Links and notifications only open a view; they never
+//! decide anything.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -14,7 +15,8 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Manager, WebviewWindow, Wry};
 use tauri_plugin_autostart::ManagerExt;
 
-pub const SCHEME: &str = "aqt";
+#[cfg(not(target_os = "macos"))]
+pub const SCHEME: &str = "aqt"; // macOS: the app bundle declares the scheme
 pub const COMMAND_NAMES: [&str; 2] = ["aqt", "aqt-toolkit"]; // the toolkit's command and its second name
 const TRAY: &str = "main";
 const SUMMARY_FROM: usize = 4; // this many new cases at once: one notification for all of them
@@ -345,8 +347,9 @@ pub(crate) fn save(app: &AppHandle, key: &str, value: Value) -> Result<(), Strin
 
 /// The app's own settings and what it set up in the system, for the page's Settings. `change` may set
 /// `close_to_tray` and `autostart` (true or false), ask for `aqt_command: true` (the AppImage's
-/// `~/.local/bin/aqt`) or `links: true` (register `aqt://` for the AppImage), and give the tray menu's
-/// words in the page's language (`menu`: `{"open", "needs", "quit"}`, kept until the app ends). Async, so that the D-Bus
+/// `~/.local/bin/aqt`, the macOS app's `/usr/local/bin/aqt`) or `links: true` (register `aqt://` for the AppImage),
+/// and give the tray menu's words in the page's language (`menu`: `{"open", "needs", "quit"}`, kept until the app
+/// ends). `aqt_command` is null where there is nothing to install (the .deb has `/usr/bin/aqt`). Async, so that the D-Bus
 /// and `xdg-mime` calls run off the main thread.
 #[tauri::command]
 pub async fn desktop_settings(app: AppHandle, change: Option<Value>) -> Result<Value, String> {
@@ -375,13 +378,22 @@ pub async fn desktop_settings(app: AppHandle, change: Option<Value>) -> Result<V
         "tray": app.tray_by_id(TRAY).is_some() && tray_host(),
         "autostart": app.autolaunch().is_enabled().unwrap_or(false),
         "appimage": appimage,
-        "aqt_command": appimage.as_ref().map(|_| command_links(&app).is_some_and(|links| links.iter().any(|(_, ours)| *ours))),
+        "aqt_command": command_links(&app).map(|links| links.iter().any(|(_, ours)| *ours)),
+        "aqt_command_folder": COMMAND_FOLDER,
         "links": appimage.is_none() || links_registered(&app),
     }))
 }
 
+/// Where the `aqt` command's links go: `~/.local/bin` for the AppImage, `/usr/local/bin` for the macOS app (on
+/// the PATH of every macOS shell, so agents' hooks find it there).
+#[cfg(not(target_os = "macos"))]
+const COMMAND_FOLDER: &str = "~/.local/bin";
+#[cfg(target_os = "macos")]
+const COMMAND_FOLDER: &str = "/usr/local/bin";
+
 /// `~/.local/bin/aqt` and `~/.local/bin/aqt-toolkit` (the second name, for systems where another aqt comes
 /// first on PATH), each with whether it is a link to this AppImage.
+#[cfg(not(target_os = "macos"))]
 fn command_links(app: &AppHandle) -> Option<Vec<(PathBuf, bool)>> {
     let dir = app.path().home_dir().ok()?.join(".local").join("bin");
     let image = std::env::var_os("APPIMAGE")?;
@@ -400,6 +412,7 @@ fn command_links(app: &AppHandle) -> Option<Vec<(PathBuf, bool)>> {
 /// The AppImage's `aqt` command: links `~/.local/bin/aqt` and `~/.local/bin/aqt-toolkit` to the AppImage file,
 /// which runs the bundled `aqt` when it is called by either name. Another program under one of these names
 /// (an `aqt` from pip or uv, or aqtinstall's) is never replaced; it fails only when neither name is free.
+#[cfg(not(target_os = "macos"))]
 fn install_command(app: &AppHandle) -> Result<(), String> {
     let links = command_links(app).ok_or("only the AppImage needs this: the .deb package installs /usr/bin/aqt")?;
     let mut taken = Vec::new();
@@ -429,6 +442,100 @@ fn install_command(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+// -- macOS: the aqt command in /usr/local/bin, as an editor installs its command ---------------------------------
+
+/// The runtime inside the app bundle (`Contents/Resources/runtime/aqt/aqt`), which the links name.
+#[cfg(target_os = "macos")]
+fn bundled_runtime(app: &AppHandle) -> Option<PathBuf> {
+    let runtime = app.path().resource_dir().ok()?.join("runtime").join("aqt").join("aqt");
+    runtime.is_file().then_some(runtime)
+}
+
+/// `/usr/local/bin/aqt` and `/usr/local/bin/aqt-toolkit`, each with whether it is a link to this app's runtime.
+#[cfg(target_os = "macos")]
+fn command_links(app: &AppHandle) -> Option<Vec<(PathBuf, bool)>> {
+    let runtime = bundled_runtime(app)?;
+    Some(
+        COMMAND_NAMES
+            .iter()
+            .map(|name| {
+                let link = PathBuf::from(COMMAND_FOLDER).join(name);
+                let ours = std::fs::read_link(&link).is_ok_and(|target| target == runtime);
+                (link, ours)
+            })
+            .collect(),
+    )
+}
+
+/// A link to the runtime of an AQT app bundle that is no longer this one (an older copy, or the app moved):
+/// it may be replaced. Anything else under the name (another program, an aqt from pip or uv) never is.
+#[cfg(target_os = "macos")]
+fn stale_app_link(link: &std::path::Path) -> bool {
+    std::fs::read_link(link).is_ok_and(|target| target.ends_with("Contents/Resources/runtime/aqt/aqt"))
+}
+
+/// The shell command (run as administrator) that links each name to `runtime`: `ln -s` for a free name, which
+/// fails rather than replace something that appeared since; `ln -sfn` only for a stale link to an AQT app.
+#[cfg(any(target_os = "macos", test))]
+fn link_script(folder: &str, runtime: &str, free: &[String], stale: &[String]) -> String {
+    let quote = |text: &str| format!("'{}'", text.replace('\'', "'\\''"));
+    let mut parts = vec![format!("mkdir -p {}", quote(folder))];
+    parts.extend(free.iter().map(|link| format!("ln -s {} {}", quote(runtime), quote(link))));
+    parts.extend(stale.iter().map(|link| format!("ln -sfn {} {}", quote(runtime), quote(link))));
+    parts.join(" && ")
+}
+
+/// A string literal of AppleScript.
+#[cfg(any(target_os = "macos", test))]
+fn applescript_string(text: &str) -> String {
+    format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+/// The macOS app's `aqt` command: links `/usr/local/bin/aqt` and `/usr/local/bin/aqt-toolkit` to the runtime in
+/// the app, through macOS's administrator prompt (`/usr/local/bin` belongs to an administrator). A name taken by
+/// another program is never replaced; it fails only when neither name can be linked.
+#[cfg(target_os = "macos")]
+fn install_command(app: &AppHandle) -> Result<(), String> {
+    let runtime = bundled_runtime(app).ok_or("this app has no bundled aqt runtime")?;
+    let (mut free, mut stale, mut taken) = (Vec::new(), Vec::new(), Vec::new());
+    for (link, ours) in command_links(app).unwrap_or_default() {
+        let text = link.display().to_string();
+        if ours {
+            continue;
+        } else if link.symlink_metadata().is_err() {
+            free.push(text);
+        } else if stale_app_link(&link) {
+            stale.push(text);
+        } else {
+            taken.push(text);
+        }
+    }
+    if taken.len() == COMMAND_NAMES.len() {
+        return Err(format!(
+            "{} exist already (other programs); remove one first if agents should run this app's aqt",
+            taken.join(" and ")
+        ));
+    }
+    if free.is_empty() && stale.is_empty() {
+        return Ok(());
+    }
+    let script = format!(
+        "do shell script {} with prompt {} with administrator privileges",
+        applescript_string(&link_script(COMMAND_FOLDER, &runtime.display().to_string(), &free, &stale)),
+        applescript_string("Agent Quality Toolkit wants to link its aqt command into /usr/local/bin, so that agents and terminals find it.")
+    );
+    let done = std::process::Command::new("/usr/bin/osascript").arg("-e").arg(&script).output().map_err(|e| e.to_string())?;
+    if done.status.success() {
+        return Ok(());
+    }
+    let why = String::from_utf8_lossy(&done.stderr);
+    Err(if why.contains("-128") {
+        "not installed: the administrator prompt was cancelled".into()
+    } else {
+        format!("could not link the aqt command: {}", why.trim())
+    })
+}
+
 #[cfg(any(target_os = "linux", windows))]
 fn register_links(app: &AppHandle) -> Result<(), String> {
     use tauri_plugin_deep_link::DeepLinkExt;
@@ -453,7 +560,20 @@ fn links_registered(_app: &AppHandle) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::link_path;
+    use super::{applescript_string, link_path, link_script};
+
+    #[test]
+    fn the_macos_link_script_quotes_paths_and_replaces_only_stale_links() {
+        let runtime = "/Applications/Agent Quality Toolkit.app/Contents/Resources/runtime/aqt/aqt";
+        let script = link_script("/usr/local/bin", runtime, &["/usr/local/bin/aqt".into()], &["/usr/local/bin/it's".into()]);
+        assert_eq!(
+            script,
+            "mkdir -p '/usr/local/bin' && ln -s '/Applications/Agent Quality Toolkit.app/Contents/Resources/runtime/aqt/aqt' \
+             '/usr/local/bin/aqt' && ln -sfn '/Applications/Agent Quality Toolkit.app/Contents/Resources/runtime/aqt/aqt' \
+             '/usr/local/bin/it'\\''s'"
+        );
+        assert_eq!(applescript_string(r#"say "hi" \ there"#), r#""say \"hi\" \\ there""#);
+    }
 
     #[test]
     fn links_open_case_and_change_views_only() {

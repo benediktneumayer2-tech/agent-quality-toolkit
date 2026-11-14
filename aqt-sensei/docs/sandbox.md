@@ -65,3 +65,29 @@ Probe inside the sandbox:
 - for built-in profiles, the CLI starts (`--version`).
 
 Exit 1 if any check fails.
+
+## macOS: Seatbelt
+
+On macOS, `aqt-sensei launch` replaces itself with `sandbox-exec -p PROFILE /usr/bin/env -i NAME=value … CLI`. The
+profile is generated per pair (`sandbox.seatbelt_profile()`), closed by default, following Anthropic's sandbox-runtime
+and the Codex CLI; `doctor` runs its probe inside the same command line. Verified on macOS 26.6 (Apple silicon) by
+`tests/test_seatbelt_real.py` (also on the macOS CI runner) and by hand (`curl` to an HTTPS site works with
+`--network share` and cannot even look the name up with `none`; the login keychain and the home folder are refused).
+
+| | Linux (bubblewrap) | macOS (Seatbelt) |
+|---|---|---|
+| System | `/usr`, `/etc`, `/opt`, `/bin`, `/lib*` read-only; nothing else exists | everything outside the user folders readable, nothing writable |
+| User folders | `/home`, `/tmp`, `/run` are empty | `/Users`, `/Volumes`, `/private/tmp`, `/private/var/folders` refused (not empty), except the project, the CLI, the private home, the scratch folder and the pair's runtime folder |
+| `HOME` | an empty folder at your home's path | the private home itself |
+| Temporary files | an empty `/tmp` | `/tmp` refused; `TMPDIR` is `.tmp` in the scratch folder |
+| Writable | the private home, the scratch folder | the same |
+| Unix sockets | only what is mounted: the pair's runtime folder | only the pair's runtime folder (advisor socket, Herdr proxy), the private home and the scratch folder; `HERDR_SOCKET_PATH` names the proxy, since it cannot be mounted over the real socket |
+| `--network share` | the host's network | the IP network and the system resolver |
+| `--network none` | own network namespace | no IP connections, no name lookups |
+| Keychain | not involved (credential files are hidden) | not reachable (the login keychain file is refused, `securityd` closed): it would show the owner's own logins |
+| Processes | own PID namespace | other processes cannot be signalled or inspected; their names and arguments stay readable through `sysctl` |
+| Environment | `--clearenv` plus the allow-list | `env -i` plus the allow-list; macOS adds `__CF_USER_TEXT_ENCODING` itself |
+
+Open: Claude Code keeps its login in the macOS keychain. In the sandbox the keychain is closed, so whether
+`aqt-sensei login claude` works depends on Claude Code falling back to a file in `CLAUDE_CONFIG_DIR`; this has not been
+tried with a real account yet. Codex and pi keep their logins in files.

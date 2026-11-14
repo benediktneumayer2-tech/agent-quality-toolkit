@@ -220,13 +220,24 @@ def test_egress_line_never_fails_the_verdict(monkeypatch):
     assert by_id(run_checks(Context()))["egress"].result == "warn"
 
 
-def test_off_linux_the_service_and_the_box_are_reported_as_not_available(monkeypatch):
-    monkeypatch.setattr(platform, "IS_LINUX", False)
-    monkeypatch.setattr(platform, "SYSTEM_NAME", "macOS")
+def test_on_other_systems_the_service_and_the_box_are_reported_as_not_available(monkeypatch):
+    for name in ("IS_LINUX", "IS_MACOS", "IS_WINDOWS"):           # a system with neither systemd nor launchd
+        monkeypatch.setattr(platform, name, False)
+    monkeypatch.setattr(platform, "SYSTEM_NAME", "FreeBSD")
     monkeypatch.setattr(checks, "_egress_status", lambda: {"version": "0.2", "ca": False, "box": False,
-                                                            "box_detail": "the egress box is not available on macOS",
+                                                            "box_detail": "the egress box is not available on FreeBSD",
                                                             "last_session": None})
     results = by_id(run_checks(Context()))
-    assert results["service"].result == "skip" and "not available on macOS" in results["service"].explanation
-    assert results["egress"].result == "skip" and "not available on macOS" in results["egress"].explanation
+    assert results["service"].result == "skip" and "not available on FreeBSD" in results["service"].explanation
+    assert results["egress"].result == "skip" and "not available on FreeBSD" in results["egress"].explanation
     assert results["egress"].fix is None
+
+
+def test_on_macos_the_egress_line_names_what_the_seatbelt_box_cannot_do(monkeypatch):
+    monkeypatch.setattr(platform, "IS_LINUX", False)
+    monkeypatch.setattr(platform, "IS_MACOS", True)
+    detail = "Seatbelt (sandbox-exec) works; macOS (Seatbelt) box, unlike Linux: a direct connection is refused"
+    monkeypatch.setattr(checks, "_egress_status", lambda: {"version": "0.2", "ca": True, "box": True,
+                                                            "box_detail": detail, "last_session": None})
+    line = by_id(run_checks(Context()))["egress"]
+    assert line.result == "ok" and line.explanation.endswith(detail)

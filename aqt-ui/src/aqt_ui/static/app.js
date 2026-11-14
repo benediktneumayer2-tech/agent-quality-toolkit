@@ -2295,8 +2295,8 @@ function commandSection(setup) {
     kv([[t("On your PATH"), where.on_path ? h("code", { text: where.on_path }) : t("not yet")], where.this ? [t("This app's command"), h("code", { text: where.this })] : null]),
     commandLine("aqt status"), commandLine("aqt project init <folder>"), commandLine("aqt --help")];
 }
-// ---- the app's own settings, kept by the desktop shell (desktop_settings): start at login, the tray, and in
-// an AppImage the aqt command and aqt:// links. They act at once and can be switched back.
+// ---- the app's own settings, kept by the desktop shell (desktop_settings): start at login, the tray, the aqt
+// command (AppImage, macOS) and aqt:// links (AppImage). They act at once and can be switched back.
 async function desktopSettings(change) {
   return APP.invoke("desktop_settings", change ? { change } : {});
 }
@@ -2317,17 +2317,22 @@ function appSettingRows(d, { keys, onChange }) {
     });
     rows.push(h("div", { class: "check" }, input, h("label", { for: input.id }, words[key][0], words[key][1] ? h("span", { class: "small muted", text: ` ${words[key][1]}` }) : null)));
   }
-  // AppImage only: there is something to install
+  // something to install: the aqt command where the shell offers it (AppImage, macOS), aqt:// links in an AppImage
   const install = (key, done, button) => {
-    if (!keys.includes(key) || !d.appimage) return null;
+    const offered = key === "aqt_command" ? d.aqt_command != null : !!d.appimage;
+    if (!keys.includes(key) || !offered) return null;
     if (d[key]) return h("p", { class: "small" }, st("pass", done));
     const b = h("button", { class: "btn small", type: "button", text: button, disabled: !can });
     b.addEventListener("click", async () => { b.disabled = true; try { const fresh = await desktopSettings({ [key]: true }); put(b.parentNode, st(fresh[key] ? "pass" : "warn", fresh[key] ? done : t("Not done:"))); b.remove(); } catch (error) { b.disabled = false; fail(error); } });
     return h("p", { class: "small" }, b);
   };
   const said = (node, words) => node && [node, h("p", { class: "small muted consequence-line", text: words })];
-  rows.push(said(install("aqt_command", t("The aqt command is installed in ~/.local/bin."), t("Install the aqt command")),
-    t("Agents report to AQT through the aqt command. Without it, your projects' hooks can't reach AQT.")),
+  const mac = d.aqt_command_folder === "/usr/local/bin";
+  const reach = t("Agents report to AQT through the aqt command. Without it, your projects' hooks can't reach AQT.");
+  rows.push(mac
+    ? said(install("aqt_command", t("The aqt command is installed in /usr/local/bin."), t("Install 'aqt' command")),
+      `${reach} ${t("Links aqt and aqt-toolkit in /usr/local/bin to this app's command, so that agents and terminals find it. macOS asks for an administrator's password. An aqt of another program there is never replaced.")}`)
+    : said(install("aqt_command", t("The aqt command is installed in ~/.local/bin."), t("Install the aqt command")), reach),
   said(install("links", t("aqt:// links open this app."), t("Register aqt:// links")),
     t("Links in notifications and in the terminal (aqt://…) then open the matching page in this app.")));
   return [...rows, can ? null : h("p", { class: "small muted", text: t("Read-only: these settings cannot be changed here.") }), out];
