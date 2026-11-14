@@ -161,9 +161,9 @@ services; macOS and Windows not run yet):
 ## Updates
 
 The app updates itself from the GitHub release (`src-tauri/src/updates.rs`, tauri-plugin-updater), but only in a
-build whose `tauri.conf.json` has the owner's public key in `plugins.updater.pubkey`. While it is empty, as now, the
-plugin is not loaded and the app never asks; [RELEASING.md](../RELEASING.md#updates-of-the-desktop-app) has the
-owner's steps to switch it on.
+build whose `tauri.conf.json` has the owner's public key in `plugins.updater.pubkey`. The key is set since 0.3.0; a build
+with an empty key (a fork, for example) does not load the plugin and never asks; [RELEASING.md](../RELEASING.md#updates-of-the-desktop-app)
+has the owner's steps.
 
 - **Look:** a minute after start, then once a day, the app reads `latest.json` of the newest release
   (`releases/latest/download/latest.json`). A newer version only shows: a dot at *Settings* in the rail and a line

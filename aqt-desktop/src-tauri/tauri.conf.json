@@ -29,7 +29,7 @@
   "plugins": {
     "deep-link": { "desktop": { "schemes": ["aqt"] } },
     "updater": {
-      "pubkey": "",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ2MTI5NzYwOUE2MTFDQzQKUldURUhHR2FZSmNTMXROWjdtd2N6akU0THM4Qm95NnRNcU13dEtxWGszYndhNzFtbnBwMmNxcUgK",
       "endpoints": ["https://github.com/benediktneumayer2-tech/agent-quality-toolkit/releases/latest/download/latest.json"],
       "requireSignedVersion": true
     }
