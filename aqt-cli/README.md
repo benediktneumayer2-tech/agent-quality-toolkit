@@ -58,8 +58,8 @@ Each check has a result (`ok`, `warn`, `fail` or `skip`), a one-line explanation
 | `packages` | the eight packages and aqt-ui are installed (with versions) | – (prints the command that adds the missing ones) |
 | `command` (warn) | the first `aqt` on `PATH` is this one, which hooks and agents will run; names the other one otherwise | – (prints how to put this one on `PATH`) |
 | `trail.init` | the trail state exists | `aqt-trail init` |
-| `service` | the systemd user unit is installed and enabled (skipped without `systemd --user`) | writes `~/.config/systemd/user/aqt-trail.service` with the `aqt-trail` of this environment, then `systemctl --user enable --now aqt-trail` |
-| `writer` | the writer answers on its socket | `systemctl --user start aqt-trail`; without systemd it prints the foreground command |
+| `service` | Linux: the systemd user unit is installed and enabled (skipped without `systemd --user`). macOS: the LaunchAgent is installed and loaded (`launchctl print gui/$UID/io.github.benediktneumayer2tech.aqt.trail`) | Linux: writes `~/.config/systemd/user/aqt-trail.service` with the `aqt-trail` of this environment, then `systemctl --user enable --now aqt-trail`. macOS: writes `~/Library/LaunchAgents/io.github.benediktneumayer2tech.aqt.trail.plist` (KeepAlive, output to `trail-writer.log` in the AQT state folder), then `launchctl bootstrap gui/$UID` |
+| `writer` | the writer answers on its socket | `systemctl --user start aqt-trail` (macOS: `launchctl kickstart`); without a service it prints the foreground command |
 | `spool` | no records wait in the spool | `aqt-trail drain` |
 | `sink` | where records go; a fallback to the side file is a warning | – |
 | `signer` | a signer with an active key is enrolled, and every key in the signer registry counts by its enrolment records (`aqt_signoff.check_signers()`, the check behind `aqt-signoff signers check`); see below | `aqt-signoff init` (needs you); the other fixes are printed (below) |
@@ -110,7 +110,7 @@ Pass-through: `aqt trail`, `aqt signoff`, `aqt change`, `aqt sensei`, `aqt quara
 - **Same-user agents.** An agent running as you can run `aqt setup` too. It cannot enrol a signer without the passphrase prompt, and the enrolment is recorded, as with `aqt-signoff init`. A key added to `signers.json` by hand, without its enrolment record, does not count, and the `signer` check fails. An agent can write an enrolment request for a key of its own, but the key stays pending until an enrolled signer approves it with their passphrase. Two cases count without an approval: the very first enrolment (so enrol yourself first and check the first signer that `aqt status` names), and a key enrolled after every other key was revoked (a re-bootstrap, which `aqt status` shows as `warn` until another signer confirms it). Keep agents out of `~/.config/aqt` (see the manual).
 - **Separate-user mode** (manual 3.8) is not set up by `aqt setup`. When a writer answers but this account has no trail state, `aqt status` reports the external writer and does not offer a user service.
 - **Deny rules are not a boundary.** Claude Code matches a Bash rule against the command as written: `aqt-signoff sign …` is stopped, but `/full/path/aqt-signoff sign …`, `sh -c '…'` or an option before the subcommand (`aqt-trail --json review sign …`) is not, and Read rules do not stop a script that opens the file itself. The decision commands still refuse in an agent session and need the passphrase; for more, use a sandbox (manual 3.7).
-- **Linux only**, like the rest of the toolkit. Without `systemd --user` (some containers, WSL) you start the writer yourself.
+- **Linux and macOS.** Without `systemd --user` (some containers, WSL) or a macOS login session (`gui/$UID`, for example over SSH without anyone logged in) you start the writer yourself.
 
 ## Regulatory status
 

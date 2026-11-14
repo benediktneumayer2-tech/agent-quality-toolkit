@@ -4,9 +4,10 @@
 
 mod core;
 mod desktop;
+mod machines;
 
 use std::path::Path;
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use base64::Engine;
@@ -17,7 +18,7 @@ use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
-use crate::core::Core;
+use crate::machines::Machines;
 
 static STARTED: OnceLock<Instant> = OnceLock::new();
 static PAGE_LOADED: OnceLock<u128> = OnceLock::new(); // ms after start: the window's page has loaded
@@ -31,7 +32,14 @@ fn ms() -> u128 {
 /// else `aqt core --stdio` from PATH.
 fn core_command(app: &AppHandle, read_only: bool) -> Vec<String> {
     let exe = if cfg!(windows) { "aqt.exe" } else { "aqt" };
-    let shipped = app.path().resource_dir().ok().map(|dir| dir.join("runtime").join("aqt").join(exe));
+    let shipped = match app.path().resource_dir() {
+        Ok(dir) => Some(dir.join("runtime").join("aqt").join(exe)),
+        Err(error) => {
+            // e.g. started through a symbolic link (macOS: /var), which Tauri refuses to resolve resources for
+            eprintln!("[aqt desktop] the bundled runtime cannot be found: {error}");
+            None
+        }
+    };
     let mut command: Vec<String> = match (shipped, std::env::var("AQT_CORE")) {
         (Some(path), _) if path.is_file() => vec![path.display().to_string(), "core".into(), "--stdio".into()],
         (_, Ok(line)) if !line.trim().is_empty() => line.split_whitespace().map(String::from).collect(),
@@ -62,13 +70,19 @@ fn open_outside(app: &AppHandle, url: &Url) {
 }
 
 #[tauri::command]
-async fn core_session(core: State<'_, Arc<Core>>) -> Result<Value, String> {
-    core.ready().await
+async fn core_session(machines: State<'_, Machines>) -> Result<Value, String> {
+    machines.core().ready().await
 }
 
+/// The core's answer; else {"message", "sent"}: `sent` when the request had reached the core (or the SSH
+/// connection to it) and no answer came, so its outcome is unknown. The app never sends it again.
 #[tauri::command]
-async fn core_request(core: State<'_, Arc<Core>>, method: String, path: String, body: Option<Value>) -> Result<Value, String> {
-    let answer = core.request(&method, &path, body.unwrap_or(Value::Null)).await?;
+async fn core_request(machines: State<'_, Machines>, method: String, path: String, body: Option<Value>) -> Result<Value, Value> {
+    let core = machines.core();
+    let answer = core
+        .request(&method, &path, body.unwrap_or(Value::Null))
+        .await
+        .map_err(|error| json!({"message": error.message, "sent": error.sent}))?;
     if answer.get("status").and_then(Value::as_u64) == Some(200) {
         let _ = PAGE_ANSWERED.set(ms());
     }
@@ -95,8 +109,12 @@ async fn save_file(app: AppHandle, name: String, text: Option<String>, base64: O
 
 /// The system's folder dialog (connecting a project). The chosen folder's path, or None when the person cancelled.
 /// Choosing a folder changes nothing: the page then asks the core for a preview of what connecting would write.
+/// It shows this computer's folders, so on another machine the page asks for a path there instead.
 #[tauri::command]
-async fn pick_folder(app: AppHandle) -> Result<Option<String>, String> {
+async fn pick_folder(app: AppHandle, machines: State<'_, Machines>) -> Result<Option<String>, String> {
+    if let Some(machine) = machines.machine() {
+        return Err(format!("the folder dialog shows this computer's folders: type a path on {}", machine.name));
+    }
     let picked = tauri::async_runtime::spawn_blocking(move || app.dialog().file().blocking_pick_folder())
         .await
         .map_err(|e| e.to_string())?;
@@ -106,11 +124,13 @@ async fn pick_folder(app: AppHandle) -> Result<Option<String>, String> {
 }
 
 /// --smoke: wait for the core, one request, the page's first answer; one JSON line; exit 0 or 1.
-async fn smoke(app: AppHandle, core: Arc<Core>) {
+async fn smoke(app: AppHandle) {
+    let core = app.state::<Machines>().core();
+    let machine = app.state::<Machines>().machine().map(|m| m.name);
     let ready = core.ready().await;
     let core_ready_ms = ms();
     let first = match &ready {
-        Ok(_) => core.request("GET", "/api/overview", Value::Null).await,
+        Ok(_) => core.request("GET", "/api/overview", Value::Null).await.map_err(|e| e.message),
         Err(error) => Err(error.clone()),
     };
     let first_response_ms = ms();
@@ -138,6 +158,7 @@ async fn smoke(app: AppHandle, core: Arc<Core>) {
             "mode": ready.get("mode"),
             "version": ready.get("version"),
             "core": core.command_line(),
+            "machine": machine,
             "error": error,
         })
     );
@@ -208,7 +229,8 @@ fn main() {
             save_file,
             desktop::desktop_settings,
             desktop::show_notifications,
-            pick_folder
+            pick_folder,
+            machines::machines
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
@@ -219,13 +241,9 @@ fn main() {
             }
         })
         .setup(move |app| {
-            let events = app.handle().clone();
-            let core = Core::start(core_command(app.handle(), read_only), move |event, body| {
-                if event == "queue" {
-                    desktop::queue(&events, body);
-                }
-            });
-            app.manage(core.clone());
+            // this computer's core, or the core of the machine chosen in Settings, started over SSH
+            let machines = Machines::start(app.handle(), core_command(app.handle(), read_only), read_only);
+            app.manage(machines);
             let tray = !smoke_mode && desktop::wait_for_tray_host(if hidden { 10 } else { 0 });
             let tray = tray && desktop::create_tray(app.handle()).map_err(|e| eprintln!("[aqt desktop] no tray: {e}")).is_ok();
             if !tray && !smoke_mode {
@@ -268,14 +286,14 @@ fn main() {
                 }
             }
             if smoke_mode {
-                tauri::async_runtime::spawn(smoke(app.handle().clone(), core));
+                tauri::async_runtime::spawn(smoke(app.handle().clone()));
             }
             Ok(())
         })
         .build(context)
         .expect("could not build the app");
     app.run(|app, event| match event {
-        RunEvent::Exit => app.state::<Arc<Core>>().stop(),
+        RunEvent::Exit => app.state::<Machines>().core().stop(),
         #[cfg(target_os = "macos")]
         RunEvent::Reopen { .. } => desktop::show(app), // a click on the Dock icon
         _ => {}

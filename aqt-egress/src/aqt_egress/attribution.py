@@ -25,7 +25,10 @@ from __future__ import annotations
 import ipaddress
 import os
 import socket
+import struct
 from pathlib import Path
+
+from aqt_evidence import platform
 
 from .mask import masked_argv
 
@@ -226,3 +229,151 @@ def _box_pid(base: Path) -> int | None:
 
 def unattributed(reason: str) -> dict:
     return {"chain": [], "chain_status": "unavailable", "chain_detail": reason}
+
+
+# -- macOS: the Seatbelt box -------------------------------------------------------------------------
+
+_SOCKET_INFO_SIZE = 792                       # struct socket_fdinfo (macOS 26, arm64 and x86_64)
+_FAMILY, _KIND, _LPORT, _FPORT, _VFLAG, _FADDR, _LADDR = 184, 256, 268, 264, 288, 296, 312
+_SOCKINFO_TCP, _FDTYPE_SOCKET, _PIDLISTFDS, _PIDFDSOCKETINFO, _UID_ONLY = 2, 2, 1, 3, 4
+_libproc = None
+
+
+def _proc():
+    global _libproc
+    if _libproc is None:
+        import ctypes
+        _libproc = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
+    return _libproc
+
+
+def _user_pids() -> list[int]:
+    import ctypes
+    lib = _proc()
+    count = lib.proc_listpids(_UID_ONLY, os.getuid(), None, 0) // 4 + 64
+    buffer = (ctypes.c_int * count)()
+    got = lib.proc_listpids(_UID_ONLY, os.getuid(), buffer, ctypes.sizeof(buffer)) // 4
+    return [pid for pid in buffer[:got] if pid > 0]
+
+
+def _socket_fds(pid: int) -> list[int]:
+    import ctypes
+    lib = _proc()
+    size = lib.proc_pidinfo(pid, _PIDLISTFDS, 0, None, 0)
+    if size <= 0:
+        return []
+    buffer = ctypes.create_string_buffer(size + 8 * 32)
+    got = lib.proc_pidinfo(pid, _PIDLISTFDS, 0, buffer, len(buffer))
+    entries = [struct.unpack_from("=iI", buffer.raw, offset) for offset in range(0, max(got, 0), 8)]
+    return [fd for fd, kind in entries if kind == _FDTYPE_SOCKET]
+
+
+def _tcp_ends(pid: int, fd: int) -> tuple[tuple[str, int], tuple[str, int]] | None:
+    """(local, remote) of a TCP socket of ``pid``, from ``proc_pidfdinfo(PROC_PIDFDSOCKETINFO)``."""
+    import ctypes
+    buffer = ctypes.create_string_buffer(_SOCKET_INFO_SIZE)
+    if _proc().proc_pidfdinfo(pid, fd, _PIDFDSOCKETINFO, buffer, _SOCKET_INFO_SIZE) < _SOCKET_INFO_SIZE:
+        return None
+    raw = buffer.raw
+    if struct.unpack_from("=i", raw, _KIND)[0] != _SOCKINFO_TCP:
+        return None
+    ipv4 = raw[_VFLAG] & 1
+
+    def end(address_at: int, port_at: int) -> tuple[str, int]:
+        port = socket.ntohs(struct.unpack_from("=i", raw, port_at)[0] & 0xFFFF)
+        ip = (socket.inet_ntop(socket.AF_INET, raw[address_at + 12:address_at + 16]) if ipv4
+              else socket.inet_ntop(socket.AF_INET6, raw[address_at:address_at + 16]))
+        return normal_ip(ip), port
+
+    return end(_LADDR, _LPORT), end(_FADDR, _FPORT)
+
+
+class MacBox:
+    """A running Seatbelt box, seen from the launcher. ``sandbox-exec`` execs the start gate, which execs the
+    command: the process the launcher started is the box's root, and the box is that process and its
+    descendants. A process that left the tree (reparented to launchd) is not found; its connections are
+    recorded as ``unavailable``, as are connections from outside the box, which can reach the proxy's port on
+    the host's loopback."""
+
+    def __init__(self, init_pid: int):
+        self.init_pid = init_pid
+
+    def pids(self) -> list[int]:
+        """The box's root and its descendants, the root first."""
+        children: dict[int, list[int]] = {}
+        for pid in _user_pids():
+            info = platform.process_info(pid)
+            if info:
+                children.setdefault(info.ppid, []).append(pid)
+        found, stack = [self.init_pid], [self.init_pid]
+        while stack:
+            for child in children.get(stack.pop(), []):
+                if child not in found:
+                    found.append(child)
+                    stack.append(child)
+        return found
+
+    def holders(self, local: tuple[str, int], remote: tuple | None) -> list[int]:
+        owners = []
+        for pid in self.pids():
+            for fd in _socket_fds(pid):
+                ends = _tcp_ends(pid, fd)
+                if ends and ends[0] == local and (remote is None or ends[1] == remote):
+                    owners.append(pid)
+                    break
+        return sorted(owners, key=lambda pid: getattr(platform.process_info(pid), "start_time", 0) or 0, reverse=True)
+
+    def entry(self, pid: int) -> dict | None:
+        info = platform.process_info(pid)
+        if info is None:
+            return None
+        entry = {"pid": pid, "comm": info.name, "start_time": info.start_time, "exe": platform.process_exe(pid)}
+        argv = platform.process_cmdline(pid)
+        if argv:
+            entry["argv"] = masked_argv(argv)
+        return {key: value for key, value in entry.items() if value is not None}
+
+    def chain(self, pid: int | None) -> dict:
+        if pid is None:
+            return unattributed("no process of the box holds the socket (it exited, left the box's process tree, "
+                                "or is outside the box)")
+        chain, current, detail, status = [], pid, None, "partial"
+        for _ in range(MAX_DEPTH):
+            entry = self.entry(current)
+            if entry is None:
+                detail = f"process {current} exited before it could be read"
+                break
+            if chain and (entry.get("start_time") or 0) > (chain[-1].get("start_time") or 0):
+                detail = f"parent {current} started after its child {chain[-1]['pid']} (pid reused)"
+                break
+            chain.append(entry)
+            if current == self.init_pid:
+                status = "complete"
+                break
+            info = platform.process_info(current)
+            if info is None or info.ppid <= 1:
+                detail = f"process {current} has no parent in the box"
+                break
+            current = info.ppid
+        else:
+            detail = f"more than {MAX_DEPTH} ancestors"
+        if not chain:
+            status = "unavailable"
+        result = {"chain": chain, "chain_status": status}
+        if detail and status != "complete":
+            result["chain_detail"] = detail
+        return result
+
+    def attribute(self, kind: str, peer: tuple, remote: tuple | None = None) -> dict:
+        if kind != "tcp":
+            return unattributed(f"no {kind} in the macOS box")
+        local = (normal_ip(peer[0]), int(peer[1]))
+        there = (normal_ip(remote[0]), int(remote[1])) if remote else None
+        holders = self.holders(local, there)
+        result = self.chain(holders[0] if holders else None)
+        if len(holders) > 1:
+            result["chain_status"] = "shared"
+            result["chain_detail"] = f"{len(holders)} box processes hold the socket"
+            result["holders"] = [{key: value for key, value in (self.entry(pid) or {"pid": pid}).items()
+                                  if key in ("pid", "comm", "exe", "start_time")} for pid in holders]
+        return result

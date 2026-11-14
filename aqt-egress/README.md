@@ -2,7 +2,7 @@
 
 **The outbound checkpoint for AI coding agents: everything the agent sends leaves its box through one proxy, and every request is recorded with the process that sent it.**
 
-Part of the [Agent Quality Toolkit](../) (AQT). Python ≥ 3.12, Linux, Apache-2.0. Optional: nothing changes for you unless you start a session with `aqt egress run`.
+Part of the [Agent Quality Toolkit](../) (AQT). Python ≥ 3.12, Linux or macOS, Apache-2.0. Optional: nothing changes for you unless you start a session with `aqt egress run`.
 
 This is the first stage: **observe and record**. Nothing is blocked, held or changed. Checks against the task, scanners and holds come in later stages.
 
@@ -32,7 +32,7 @@ Records go where all AQT records go (`aqt_evidence.open_sink()`): to the aqt-tra
 
 ## How it works
 
-1. **The box.** bubblewrap with its own user, network, PID and IPC namespaces, `--disable-userns` (no `unshare` inside) and `--die-with-parent`. The command starts only after the network is ready (`--block-fd`).
+1. **The box.** bubblewrap with its own user, network, PID and IPC namespaces, `--disable-userns` (no `unshare` inside) and `--die-with-parent`. The command starts only after the network is ready (`--block-fd`). On macOS a Seatbelt profile instead: the box may connect only to the proxy's port on the host's loopback; what it cannot do that the Linux box does is listed in [docs/box.md](docs/box.md#macos-the-seatbelt-box).
 2. **The listener.** The proxy on the host enters the box's network namespace (the user owns it, no privileges needed), opens its listening sockets there and leaves again. No relay process runs inside the box. mitmproxy serves these sockets in the `aqt egress run` process.
 3. **What the agent sees.** `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` (and the lower-case forms) point at `127.0.0.1:3128` inside the box. A private CA, created once, is trusted through `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, `GIT_SSL_CAINFO`, `PIP_CERT`, `NODE_EXTRA_CA_CERTS` and a combined system bundle. Its key is not visible inside the box.
 4. **Name lookups.** The box's resolver answers every name with the listener's address and records it. Names are resolved upstream only by the proxy. A client that ignores the proxy variables still reaches ports 80 and 443 this way; the proxy takes the destination from the TLS server name or the Host header.

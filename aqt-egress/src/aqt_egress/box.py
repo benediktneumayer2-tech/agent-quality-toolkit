@@ -22,6 +22,14 @@ configuration work unchanged. Exceptions:
 
 The empty ``/run`` has side effects: keyrings reached over the session D-Bus (``gh``, git's libsecret
 credential helper, secret-service clients) and aqt-sensei's bridge sockets are not available in the box.
+
+On macOS the box is a Seatbelt profile (``sandbox-exec``, see ``seatbelt_profile()``) instead. The proxy
+listens on a free port of the host's loopback, and the box may connect only to that port: no other TCP or
+UDP, no name lookups (the system resolver's socket is closed; the proxy resolves the names it is asked
+for). The same folders are hidden or read-only (as refusals, not empty folders), the system's service
+sockets are closed instead of ``/run`` (``/private/var/run``, launchd's per-user sockets in ``/private/tmp``,
+tmux, Docker, the user's socket folder except the trail writer's), and the box cannot signal or inspect
+the proxy. What Seatbelt cannot do is listed in ``MACOS_LIMITS`` and in ``docs/box.md``.
 """
 
 from __future__ import annotations
@@ -37,7 +45,7 @@ import tomllib
 from pathlib import Path
 
 from aqt_evidence import platform as aqt_platform
-from aqt_evidence import spool_file, state_dir
+from aqt_evidence import seatbelt, spool_file, state_dir
 
 from .netns import PROXY_PORT, system_tool
 from .settings import config_home, egress_state
@@ -49,6 +57,14 @@ CA_VARIABLES = ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "GIT_SS
 # launcher. The end of the pipe (a launcher killed before release) is not a start: the gate exits.
 GATE = ('IFS= read -r go < "/proc/self/fd/$1" && [ "$go" = "$2" ] || exit 125; '
         '[ "$1" -le 9 ] && eval "exec $1<&-"; shift 2; exec "$@"')        # the pipe is not left to the command
+
+
+MACOS_LIMITS = ("macOS (Seatbelt) box, unlike Linux: a direct connection is refused instead of recorded; the box "
+                "reaches no server on loopback (not even its own) except configured local endpoints through the "
+                "proxy; programs that check certificates only through the macOS keychain (Go, Swift) do not trust "
+                "the session CA; a process outside the box can reach the proxy's port (its requests are recorded "
+                "without a process chain); a launcher killed with SIGKILL leaves the command running, without "
+                "network; no --private-tmp")
 
 
 class BoxUnavailable(RuntimeError):
@@ -63,8 +79,9 @@ def bwrap_path() -> str | None:
 def tool_facts() -> dict:
     """Path and SHA-256 of the programs that build the box, for the session record."""
     facts = {}
-    for name in ("bwrap", "nft", "ip"):
-        path = system_tool(name)
+    names = ("sandbox-exec",) if aqt_platform.IS_MACOS else ("bwrap", "nft", "ip")
+    for name in names:
+        path = seatbelt.SANDBOX_EXEC if name == "sandbox-exec" else system_tool(name)
         if path:
             facts[name] = {"path": path, "sha256": "sha256:" + hashlib.sha256(Path(path).read_bytes()).hexdigest()}
     return facts
@@ -84,12 +101,12 @@ def installation() -> list[str]:
 
 
 def unsupported() -> str | None:
-    """None on Linux, else why the box cannot run on this system (macOS gets a Seatbelt profile later)."""
+    """None on Linux and on macOS with Seatbelt, else why the box cannot run on this system."""
     if aqt_platform.IS_LINUX:
         return None
     if aqt_platform.IS_MACOS:
-        return aqt_platform.not_available("the egress box", "it needs Linux network namespaces (bubblewrap); "
-                                          "a Seatbelt profile follows in a later version")
+        reason = seatbelt.unavailable()
+        return aqt_platform.not_available("the egress box", reason) if reason else None
     return aqt_platform.not_available("the egress box", "it needs Linux network namespaces (bubblewrap), and the "
                                       "system has no equivalent that works without administrator rights")
 
@@ -98,6 +115,8 @@ def available() -> tuple[bool, str]:
     """Can a box start here? (Linux, bubblewrap present, user and network namespaces allowed)."""
     if unsupported():
         return False, unsupported()
+    if aqt_platform.IS_MACOS:
+        return True, "Seatbelt (sandbox-exec) works; " + MACOS_LIMITS
     bwrap = bwrap_path()
     if not bwrap:
         return False, "bubblewrap (bwrap) is not installed"
@@ -110,6 +129,13 @@ def available() -> tuple[bool, str]:
     if done.returncode != 0:
         return False, f"bwrap cannot create the box here: {done.stderr.strip() or done.returncode}"
     return True, "bubblewrap with user and network namespaces works"
+
+
+def box_version() -> str | None:
+    """The sandbox's version for the session record: bwrap's, or the macOS release for Seatbelt."""
+    if aqt_platform.IS_MACOS:
+        return f"sandbox-exec, macOS {platform.mac_ver()[0]}"
+    return bwrap_version()
 
 
 def bwrap_version() -> str | None:
@@ -139,16 +165,24 @@ def write_public(folder: Path, ca_cert: bytes) -> dict[str, Path]:
     return files
 
 
-def box_environment(base: dict, session: str) -> dict:
-    proxy = f"http://127.0.0.1:{PROXY_PORT}"
+def box_environment(base: dict, session: str, *, port: int = PROXY_PORT, public: dict[str, Path] | None = None) -> dict:
+    """The boxed command's environment. ``public`` (macOS): the CA files where they are, since Seatbelt cannot
+    show them at ``/run/aqt-egress``."""
+    proxy = f"http://127.0.0.1:{port}"
     env = dict(base)
     for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
         env[name] = env[name.lower()] = proxy
-    # the box's own loopback is not outbound: local servers inside the box stay reachable directly
-    env["NO_PROXY"] = env["no_proxy"] = "localhost,127.0.0.1,::1"
+    if public is None:
+        # the box's own loopback is not outbound: local servers inside the box stay reachable directly
+        env["NO_PROXY"] = env["no_proxy"] = "localhost,127.0.0.1,::1"
+    else:
+        # macOS: loopback is the host's, closed to the box; local endpoints are reached through the proxy
+        for name in ("NO_PROXY", "no_proxy"):
+            env.pop(name, None)
+    bundle, ca = (str(public["bundle"]), str(public["ca"])) if public else (f"{BOX_DIR}/bundle.pem", f"{BOX_DIR}/ca.pem")
     for name in CA_VARIABLES:
-        env[name] = f"{BOX_DIR}/bundle.pem"
-    env["NODE_EXTRA_CA_CERTS"] = f"{BOX_DIR}/ca.pem"
+        env[name] = bundle
+    env["NODE_EXTRA_CA_CERTS"] = ca
     env["NODE_USE_ENV_PROXY"] = "1"
     env["AQT_EGRESS_SESSION"] = session
     env["AQT_AGENT_SESSION"] = session        # AQT human checks see an agent; hook records name this session
@@ -239,11 +273,87 @@ def bwrap_argv(command: list[str], *, project: Path, public: dict[str, Path], in
     return argv, facts
 
 
+# -- macOS: Seatbelt ------------------------------------------------------------------------------
+
+def closed_sockets() -> tuple[list[str], list[str]]:
+    """(folders, regexes) of Unix sockets the macOS box may not connect to: the system's services, launchd's
+    per-user sockets (ssh-agent, the X server), tmux, Docker and the user's socket folder. The trail writer's
+    folder there stays open (see ``open_sockets``)."""
+    uid = os.getuid()
+    folders = ["/private/var/run", f"/private/tmp/tmux-{uid}", str(Path.home() / ".docker")]
+    if os.environ.get("TMUX_TMPDIR"):
+        folders.append(os.environ["TMUX_TMPDIR"])
+    runtime = aqt_platform.runtime_base()
+    if runtime:
+        folders.append(str(runtime))
+    return [seatbelt.real(folder) for folder in folders], [r"^/private/tmp/com\.apple\.launchd\."]
+
+
+def open_sockets() -> list[str]:
+    runtime = aqt_platform.runtime_base()
+    return [seatbelt.real(runtime / "aqt")] if runtime else []
+
+
+def seatbelt_profile(*, port: int, hidden: list[str], read_only: list[str], writable: list[str],
+                     readable: list[str], closed: tuple[list[str], list[str]], opened: list[str]) -> str:
+    """The macOS box: files as they are, except ``hidden`` (no access), ``read_only`` (with ``writable`` and
+    ``readable`` put back inside); TCP only to the proxy on ``localhost:port``; Unix sockets except ``closed``
+    (``opened`` put back)."""
+    real = seatbelt.real
+    hidden, read_only = [real(path) for path in hidden], [real(path) for path in read_only]
+    lines = seatbelt.base_rules(seatbelt.MACH_SERVICES + seatbelt.KEYCHAIN_SERVICES)
+    lines += ["(allow file-read* file-write* file-ioctl)"]
+    lines += seatbelt.rule("deny", "file-write*", "subpath", read_only)
+    lines += seatbelt.rule("deny", "file-read* file-write*", "subpath", hidden)
+    lines += seatbelt.rule("allow", "file-read* file-write*", "subpath", [real(path) for path in writable])
+    lines += seatbelt.rule("allow", "file-read*", "subpath", [real(path) for path in readable])
+    lines += seatbelt.move_guard(hidden + read_only)
+    lines += [f'(allow network-outbound (remote ip "localhost:{int(port)}"))',
+              "(allow system-socket (socket-domain AF_UNIX))", "(allow network-bind (local unix-socket))",
+              "(allow network-outbound (remote unix-socket))"]
+    folders, patterns = closed
+    lines += [f"(deny network-outbound (remote unix-socket (subpath {seatbelt.quote(path)})))" for path in folders]
+    lines += [f'(deny network-outbound (remote unix-socket (regex #"{pattern}")))' for pattern in patterns]
+    lines += [f"(allow network-outbound (remote unix-socket (subpath {seatbelt.quote(path)})))" for path in opened]
+    return "\n".join(lines) + "\n"
+
+
+def seatbelt_argv(command: list[str], *, port: int, public: dict[str, Path], profile_path: Path, block_fd: int,
+                  token: str = "go", private_tmp: bool = False) -> tuple[list[str], dict]:
+    """The ``sandbox-exec`` command line and the facts about it (for the session record)."""
+    if private_tmp:
+        raise BoxUnavailable("--private-tmp is not available on macOS: Seatbelt cannot give the box its own /tmp")
+    hidden = [str(folder) for folder in (egress_state(), _quarantine_state())]
+    read_only = [str(folder) for folder in (config_home(), state_dir())] + installation()
+    spool = spool_file().parent
+    writable = [str(spool)] if spool.is_relative_to(state_dir()) else []
+    if writable:
+        spool.mkdir(parents=True, exist_ok=True)
+        os.chmod(spool, 0o700)
+    closed, opened = closed_sockets(), open_sockets()
+    text = seatbelt_profile(port=port, hidden=hidden, read_only=read_only, writable=writable,
+                            readable=[str(public["ca"].parent)], closed=closed, opened=opened)
+    seatbelt.write_profile(profile_path, text)
+    argv = [seatbelt.SANDBOX_EXEC, "-f", str(profile_path), "/bin/sh", "-c", GATE.replace("/proc/self/fd/", "/dev/fd/"),
+            "aqt-egress-gate", str(block_fd), token, *command]
+    facts = {"sandbox": "seatbelt", "version": box_version(), "tools": tool_facts(), "kernel": platform.release(),
+             "profile_sha256": "sha256:" + hashlib.sha256(text.encode()).hexdigest(), "hidden": hidden,
+             "read_only": read_only, "sockets_closed": closed[0] + closed[1], "network": f"localhost:{port} only",
+             "tmp": "shared", "new_session": False, "limits": MACOS_LIMITS}
+    return argv, facts
+
+
 class BoxProcess:
-    """A started bwrap whose command waits until ``release()``."""
+    """A started box (bwrap, or sandbox-exec on macOS) whose command waits until ``release()``.
+    ``port`` and ``profile_path`` are for macOS: the proxy's port on the host's loopback, where the profile is
+    written."""
 
     def __init__(self, command: list[str], *, project: Path, public: dict[str, Path], env: dict,
-                 private_tmp: bool = False):
+                 private_tmp: bool = False, port: int | None = None, profile_path: Path | None = None):
+        if aqt_platform.IS_MACOS:
+            self._start_seatbelt(command, project=project, public=public, env=env, private_tmp=private_tmp,
+                                 port=port, profile_path=profile_path)
+            return
         info_r, info_w = os.pipe()
         block_r, block_w = os.pipe()
         self._token = os.urandom(16).hex()
@@ -260,6 +370,23 @@ class BoxProcess:
         self._block = block_w
         self.info = self._read_info(info_r)
         self.init_pid: int = self.info["child-pid"]
+
+    def _start_seatbelt(self, command, *, project, public, env, private_tmp, port, profile_path) -> None:
+        """sandbox-exec execs the start gate, which execs the command: the process started is the box's root."""
+        block_r, block_w = os.pipe()
+        self._token = os.urandom(16).hex()
+        try:
+            argv, self.facts = seatbelt_argv(command, port=port, public=public, profile_path=profile_path,
+                                             block_fd=block_r, token=self._token, private_tmp=private_tmp)
+            self.process = subprocess.Popen(argv, pass_fds=(block_r,), env=env, cwd=project)
+        except BaseException:
+            os.close(block_r)
+            os.close(block_w)
+            raise
+        os.close(block_r)
+        self._block = block_w
+        self.init_pid = self.process.pid
+        self.info = {"child-pid": self.init_pid}
 
     def _read_info(self, fd: int) -> dict:
         data = b""
@@ -287,9 +414,9 @@ class BoxProcess:
     def kill(self) -> None:
         # The box's first process outlives the outer bwrap until the command starts (its parent-death
         # signal is set only then); the gate would exit on the pipe's end anyway, but kill it by its pid
-        # first, then bwrap, and only then close the pipe.
+        # first, then bwrap, and only then close the pipe. (macOS: the first process is the one started.)
         init_pid = getattr(self, "init_pid", None)
-        if init_pid:
+        if init_pid and init_pid != self.process.pid:
             try:
                 os.kill(init_pid, signal.SIGKILL)
             except ProcessLookupError:

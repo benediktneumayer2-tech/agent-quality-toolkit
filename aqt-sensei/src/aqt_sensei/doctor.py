@@ -19,7 +19,9 @@ from pathlib import Path
 
 from .config import Config, Paths
 from .launch import home_of, load_pair, prepare, profile_of
-from .sandbox import SandboxError, resolve_cli, resolve_profile, sandbox_unavailable
+from aqt_evidence import platform, seatbelt
+
+from .sandbox import SandboxError, env_names, resolve_cli, resolve_profile, sandbox_unavailable
 
 # Runs inside the sandbox with `python3 -I -c PROBE SPEC`; standard library only.
 PROBE = r'''
@@ -76,9 +78,11 @@ def host_checks(config: Config, paths: Paths, backend: str) -> list[dict]:
         checks.append({"name": name, "passed": bool(passed), "detail": str(detail)[:300]})
 
     blocked = sandbox_unavailable()
-    bwrap = None if blocked else shutil.which(config.bwrap)
+    bwrap = None if blocked or platform.IS_MACOS else shutil.which(config.bwrap)
     if blocked:
         check("sandbox available on this system", False, blocked)
+    elif platform.IS_MACOS:
+        check("sandbox-exec applies a Seatbelt profile", True, seatbelt.SANDBOX_EXEC)
     else:
         check("bubblewrap installed", bwrap, bwrap or f"{config.bwrap} not found")
     if bwrap:
@@ -100,10 +104,6 @@ def host_checks(config: Config, paths: Paths, backend: str) -> list[dict]:
     return checks
 
 
-def _env_names(argv: list[str]) -> list[str]:
-    return [argv[i + 1] for i, item in enumerate(argv[:-1]) if item == "--setenv"]
-
-
 def hidden_paths(paths: Paths, home: Path, pair_id: str) -> list[str]:
     candidates = [paths.token_file, paths.config_file, paths.state / "pairs.json", paths.state / "messages",
                   paths.owner_socket, paths.agent_socket, home / ".ssh", home / ".gnupg", home / ".claude",
@@ -119,9 +119,10 @@ def sandbox_probe(pair: dict, *, paths: Paths, config: Config, home: Path | None
             "socket": str(paths.advisor_socket(pair["id"])) if with_socket else None, "env_allowed": []}
     argv = prepare(pair, paths=paths, config=config, command=["python3", "-I", "-c", PROBE, "{spec}"], proxy=False,
                    resolve=resolve)
-    spec["env_allowed"] = _env_names(argv) + ["PWD"]  # bwrap sets PWD itself on --chdir
+    # bwrap sets PWD itself on --chdir; macOS's CoreFoundation sets its text encoding hint at process start
+    spec["env_allowed"] = env_names(argv) + ["PWD"] + (["__CF_USER_TEXT_ENCODING"] if platform.IS_MACOS else [])
     argv[-1] = json.dumps(spec)
-    done = runner(argv, capture_output=True, text=True, timeout=60)
+    done = runner(argv, capture_output=True, text=True, timeout=60, cwd=pair["scratch_dir"])
     try:
         checks = json.loads(done.stdout.strip().splitlines()[-1])
     except (ValueError, IndexError):
@@ -133,7 +134,7 @@ def sandbox_probe(pair: dict, *, paths: Paths, config: Config, home: Path | None
             cli_path = resolve(profile.command[0])[0]
             argv = prepare(pair, paths=paths, config=config, command=[cli_path, "--version"], proxy=False,
                            resolve=resolve)
-            version = runner(argv, capture_output=True, text=True, timeout=60)
+            version = runner(argv, capture_output=True, text=True, timeout=60, cwd=pair["scratch_dir"])
             checks.append({"name": "advisor CLI starts in the sandbox", "passed": version.returncode == 0,
                            "detail": (version.stdout or version.stderr).strip()[:300]})
         except (OSError, SandboxError, subprocess.TimeoutExpired) as error:

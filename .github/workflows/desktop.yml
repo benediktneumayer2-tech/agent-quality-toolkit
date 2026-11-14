@@ -46,6 +46,43 @@ jobs:
             aqt-desktop/dist/*.AppImage
             aqt-desktop/dist/*.deb
           if-no-files-found: error
+  macos:
+    # The desktop app on macOS, unsigned (ad-hoc signed, which Apple silicon needs to run it): the frozen runtime,
+    # the .app and the .dmg, a smoke run of the app taken out of the .dmg in the runner's login session, and the
+    # .dmg as an artifact. Apple silicon, and Intel on macos-15-intel (GitHub's last Intel image).
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: "**/pyproject.toml"
+      - uses: actions/cache@v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            aqt-desktop/src-tauri/target
+          key: desktop-macos-${{ matrix.arch }}-${{ hashFiles('aqt-desktop/src-tauri/Cargo.lock') }}
+          restore-keys: desktop-macos-${{ matrix.arch }}-
+      - name: Frozen runtime, .app and .dmg (ad-hoc signature checked)
+        run: aqt-desktop/scripts/build-macos.sh
+      - name: Smoke run of the app from the .dmg (a cold and a warm start) and of its aqt command
+        run: SMOKE_RUNS=2 aqt-desktop/scripts/smoke.sh --dmg aqt-desktop/dist/*.dmg
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: aqt-desktop-macos-${{ matrix.arch }}
+          path: aqt-desktop/dist/*.dmg
+          if-no-files-found: error
   windows:
     # The Windows app: the frozen AQT runtime and the per-user NSIS installer (unsigned, owner decision D3). On the
     # runner the installer is installed, aqt is checked from the user's PATH and through Git Bash (hook commands),

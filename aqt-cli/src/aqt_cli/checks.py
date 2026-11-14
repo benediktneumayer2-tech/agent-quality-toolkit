@@ -15,6 +15,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import plistlib
 import re
 import shutil
 import subprocess
@@ -34,6 +35,7 @@ OK, WARN, FAIL, SKIP, INFO = "ok", "warn", "fail", "skip", "info"   # info: wort
 DISTRIBUTIONS = ("aqt-spec", "aqt-trail", "aqt-signoff", "aqt-change", "aqt-sensei", "aqt-quarantine",
                  "aqt-validate", "aqt-capa", "aqt-ui")
 UNIT = "aqt-trail.service"
+LABEL = "io.github.benediktneumayer2tech.aqt.trail"   # the writer's LaunchAgent (macOS), after the app's identifier
 SIGNER_FIX = 'aqt-signoff init --id human:<you> --name "<Your Name>" --role <role>'
 
 
@@ -93,6 +95,17 @@ def schtasks(*args: str) -> tuple[int, str]:
     return done.returncode, (_decode(done.stdout).strip() or _decode(done.stderr).strip())
 
 
+def launchctl_run(*args: str) -> tuple[int, str]:
+    """Run ``launchctl ARGS`` (macOS); returns (exit code, stdout or else stderr)."""
+    if not shutil.which("launchctl"):
+        return 127, "launchctl not found"
+    try:
+        done = subprocess.run(["launchctl", *args], capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return 127, str(error)
+    return done.returncode, done.stdout.strip() or done.stderr.strip()
+
+
 @dataclass
 class Context:
     """What the checks and steps need from the outside; tests replace the runners."""
@@ -104,17 +117,22 @@ class Context:
     role: str | None = None
     systemctl: Callable[..., tuple[int, str]] | None = None   # default: systemctl_user
     schtasks: Callable[..., tuple[int, str]] | None = None    # default: schtasks (Windows)
+    launchctl: Callable[..., tuple[int, str]] | None = None   # default: launchctl_run (macOS)
     run_tool: Callable[[str, list[str]], int] | None = None   # default: tools.run_tool
     ask: Callable[[str], str] = input
     say: Callable[[str], None] = print
     writer_wait_s: float = 5.0                   # how long a step waits for a started writer
     _systemd: bool | None = field(default=None, repr=False)
+    _launchd: bool | None = field(default=None, repr=False)
 
     def systemd(self, *args: str) -> tuple[int, str]:
         return (self.systemctl or systemctl_user)(*args)
 
     def task(self, *args: str) -> tuple[int, str]:
         return (self.schtasks or schtasks)(*args)
+
+    def launchd(self, *args: str) -> tuple[int, str]:
+        return (self.launchctl or launchctl_run)(*args)
 
     def tool(self, name: str, argv: list[str]) -> int:
         return (self.run_tool or tools.run_tool)(name, argv)
@@ -123,6 +141,12 @@ class Context:
         if self._systemd is None:
             self._systemd = platform.IS_LINUX and self.systemd("show-environment")[0] == 0
         return self._systemd
+
+    def launchd_available(self) -> bool:
+        """macOS with a login session whose launchd domain takes LaunchAgents (``gui/<uid>``)."""
+        if self._launchd is None:
+            self._launchd = platform.IS_MACOS and self.launchd("print", launchd_domain())[0] == 0
+        return self._launchd
 
     def confirm(self, question: str) -> bool:
         try:
@@ -235,9 +259,71 @@ def _unit_executable(unit: Path) -> str | None:
     return None
 
 
+# macOS: a LaunchAgent in the user's login session, loaded with launchctl bootstrap (not at the next login only).
+def launchd_domain() -> str:
+    return f"gui/{os.getuid()}"
+
+
+def launchd_target() -> str:
+    return f"{launchd_domain()}/{LABEL}"
+
+
+def agent_path() -> Path:
+    return Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
+
+
+def writer_log() -> Path:
+    """Where the LaunchAgent's writer writes its output: the AQT state folder."""
+    return platform.state_dir() / "trail-writer.log"
+
+
+def agent_plist() -> bytes:
+    value = {"Label": LABEL, "ProgramArguments": [*trail_command(), "serve"], "RunAtLoad": True,
+             "KeepAlive": {"SuccessfulExit": False}, "ProcessType": "Background",
+             "StandardOutPath": str(writer_log()), "StandardErrorPath": str(writer_log())}
+    environment = {name: os.environ[name] for name in ("XDG_STATE_HOME", "XDG_CONFIG_HOME", "XDG_RUNTIME_DIR",
+                                                       "AQT_TRAIL_STATE") if os.environ.get(name)}
+    # the agent must use the same trail and socket as this shell (launchd sets none of these)
+    if environment:
+        value["EnvironmentVariables"] = environment
+    head, rest = plistlib.dumps(value).split(b"<plist", 1)
+    note = (b"<!-- Written by aqt setup: the aqt-trail audit-trail writer in user mode. aqt never overwrites this "
+            b"file; after editing it: launchctl bootout " + launchd_target().encode() + b", then launchctl "
+            b"bootstrap " + launchd_domain().encode() + b" <this file>. -->\n")
+    return head + note + b"<plist" + rest
+
+
+def _agent_program(path: Path) -> str | None:
+    try:
+        value = plistlib.loads(path.read_bytes())
+    except (OSError, ValueError, plistlib.InvalidFileException):
+        return None
+    argv = value.get("ProgramArguments") or ([value["Program"]] if value.get("Program") else [])
+    return str(argv[0]) if argv else None
+
+
+def _agent_state(ctx: Context) -> str | None:
+    """None when the agent is not loaded, else its state as launchctl prints it ("running", "not running")."""
+    code, output = ctx.launchd("print", launchd_target())
+    if code != 0:
+        return None
+    found = re.search(r"^\s*state = (.+)$", output, re.M)
+    return found.group(1).strip() if found else "loaded"
+
+
+def _service_installed(ctx: Context) -> bool:
+    if platform.IS_WINDOWS:
+        return query_task(ctx) is not None
+    if platform.IS_MACOS:
+        return ctx.launchd_available() and agent_path().exists()
+    return ctx.systemd_available() and unit_path().exists()
+
+
 def _start_fix(ctx: Context, config) -> str:
     if platform.IS_WINDOWS and query_task(ctx):
         return f"schtasks /Run /TN {TASK}"
+    if platform.IS_MACOS and _service_installed(ctx):
+        return f"launchctl kickstart {launchd_target()}"
     if ctx.systemd_available() and unit_path().exists():
         return "systemctl --user start aqt-trail"
     return serve_command()
@@ -512,6 +598,8 @@ def _command_fix(mine: Path | None) -> str:
     if getattr(sys, "frozen", False) and os.name == "nt":
         return (f"open a new terminal: the installer put {_quote(str(Path(sys.executable).parent))} on your PATH "
                 "(reinstall the app if it is missing there)")
+    if getattr(sys, "frozen", False) and platform.IS_MACOS:     # the runtime inside the .app
+        return f"sudo ln -s {_quote(str(mine))} /usr/local/bin/aqt"   # the app's Settings: Install 'aqt' command
     if getattr(sys, "frozen", False):
         return f"put {_quote(str(mine))} on PATH (the .deb package installs it as /usr/bin/aqt)"
     return f"add {_quote(str(Path(sys.executable).parent))} to PATH"
@@ -583,9 +671,9 @@ def step_trail_init(ctx: Context) -> None:
 
 
 def service_unavailable() -> str | None:
-    """None where ``aqt setup`` can install the writer as a user service (Linux: systemd; Windows: a logon
-    task of the Task Scheduler), else why not. A launchd agent (macOS) will plug in here."""
-    if platform.IS_LINUX or platform.IS_WINDOWS:
+    """None where ``aqt setup`` can install the writer as a user service (Linux: systemd, macOS: a launchd
+    LaunchAgent, Windows: a logon task of the Task Scheduler), else why not."""
+    if platform.IS_LINUX or platform.IS_MACOS or platform.IS_WINDOWS:
         return None
     return platform.not_available("the writer as a background service", "it is installed with systemd, which "
                                   "this system does not have; start the writer by hand")
@@ -597,6 +685,8 @@ def check_service(ctx: Context) -> Result:
         return Result(SKIP, unavailable)
     if platform.IS_WINDOWS:
         return _check_task(ctx)
+    if platform.IS_MACOS:
+        return check_agent(ctx)
     if not ctx.systemd_available():
         return Result(SKIP, Text("cli.check.service.no_systemd", "systemd --user is not available here; the writer is "
                                  "started by hand"))
@@ -619,12 +709,50 @@ def check_service(ctx: Context) -> Result:
                            executable=str(executable)))
 
 
+def check_agent(ctx: Context) -> Result:
+    if not ctx.launchd_available():
+        return Result(SKIP, Text("cli.check.service.no_launchd", "no launchd login session ({domain}) here; the writer is "
+                                 "started by hand", domain=launchd_domain()))
+    agent = agent_path()
+    if not agent.exists():
+        if _external_writer(_trail()):
+            return Result(SKIP, "the writer runs outside your LaunchAgents (separate-user mode)")
+        return Result(WARN, Text("cli.check.service.no_agent", "no LaunchAgent {agent}: the writer does not start at login",
+                                 agent=str(agent)), "aqt setup")
+    program = _agent_program(agent)
+    if not program or not Path(program).exists():
+        return Result(WARN, f"{agent} starts {program or 'no program'}, which does not exist",
+                      f"edit ProgramArguments in {agent}, then: launchctl bootout {launchd_target()}; "
+                      f"launchctl bootstrap {launchd_domain()} {agent}", can_apply=False)
+    state = _agent_state(ctx)
+    if state is None:
+        return Result(WARN, Text("cli.check.service.not_loaded", "the LaunchAgent {label} is installed but not loaded",
+                                 label=LABEL), f"launchctl bootstrap {launchd_domain()} {agent}")
+    return Result(OK, Text("cli.check.service.agent_ok", "LaunchAgent {label} loaded ({state}), starts {program}",
+                           label=LABEL, state=state, program=program))
+
+
+def step_agent(ctx: Context) -> None:
+    agent = agent_path()
+    if not agent.exists():
+        writer_log().parent.mkdir(parents=True, exist_ok=True)
+        _write_new(agent, agent_plist().decode())
+        ctx.say(f"wrote {agent}")
+    if _agent_state(ctx) is None:
+        code, output = ctx.launchd("bootstrap", launchd_domain(), str(agent))
+        if code != 0:
+            raise StepFailed(f"launchctl bootstrap {launchd_domain()} {agent}: {output}")
+    _wait_for_writer(ctx, _trail())
+
+
 def step_service(ctx: Context) -> None:
     if platform.IS_WINDOWS:
         _step_task(ctx)
         return
     if not _trail().meta_path.exists():
         raise StepSkipped("create the trail first (aqt-trail init)")
+    if platform.IS_MACOS:
+        return step_agent(ctx)
     unit = unit_path()
     if not unit.exists():
         _write_new(unit, unit_text())
@@ -645,8 +773,7 @@ def check_writer(ctx: Context) -> Result:
                       data={"socket": str(config.socket_path), "head_seq": head.get("seq")})
     if not config.meta_path.exists():
         return Result(SKIP, Text("cli.check.writer.no_trail", "no trail yet"))
-    can_start = (query_task(ctx) is not None) if platform.IS_WINDOWS else (
-        ctx.systemd_available() and unit_path().exists())
+    can_start = _service_installed(ctx)
     how = "" if can_start else Text("cli.check.writer.by_hand", "; start it in a terminal of its own and keep it running")
     return Result(FAIL, Text("cli.check.writer.down", "no writer answers on {socket}{how}", socket=str(config.socket_path),
                              how=how), _start_fix(ctx, config),
@@ -656,6 +783,16 @@ def check_writer(ctx: Context) -> Result:
 def step_writer(ctx: Context) -> None:
     if platform.IS_WINDOWS:
         _run_task(ctx)
+        return
+    if platform.IS_MACOS:
+        if _agent_state(ctx) is None:
+            code, output = ctx.launchd("bootstrap", launchd_domain(), str(agent_path()))
+        else:
+            code, output = ctx.launchd("kickstart", launchd_target())
+        if code != 0:
+            raise StepFailed(f"launchctl could not start {LABEL}: {output}")
+        if not _wait_for_writer(ctx, _trail()):
+            raise StepFailed(f"the LaunchAgent started, but the writer does not answer yet; see {writer_log()}")
         return
     code, output = ctx.systemd("start", "aqt-trail")
     if code != 0:
@@ -1019,6 +1156,8 @@ def check_egress(ctx: Context) -> Result:
     if not value.get("box"):
         return Result(WARN, ", ".join(parts) + f"; the box cannot start here: {value.get('box_detail')}",
                       _box_fix(), data=value)
+    if platform.IS_MACOS:          # what Seatbelt cannot do that the Linux box does, said rather than hidden
+        parts.append(value.get("box_detail"))
     return Result(OK, ", ".join(parts), data=value)
 
 
@@ -1028,9 +1167,11 @@ CHECKS: list[Check] = [
     Check("trail.init", check_trail_init, step_trail_init, "create the trail (aqt-trail init)"),
     Check("service", check_service, step_service,
           lambda ctx: f"register and start the logon task {TASK} (Task Scheduler)" if platform.IS_WINDOWS
+          else f"install and load the LaunchAgent {LABEL}" if platform.IS_MACOS
           else f"install and start the systemd user service {UNIT}"),
     Check("writer", check_writer, step_writer,
           lambda ctx: f"start the writer (schtasks /Run /TN {TASK})" if platform.IS_WINDOWS
+          else f"start the writer (launchctl kickstart {launchd_target()})" if platform.IS_MACOS
           else "start the writer (systemctl --user start aqt-trail)"),
     Check("spool", check_spool, step_spool, "move spooled records into the trail (aqt-trail drain)"),
     Check("sink", check_sink),

@@ -1,26 +1,35 @@
 #!/usr/bin/env bash
-# Smoke test of the app, always under xvfb-run (never on a real display), with throw-away HOME and XDG
+# Smoke test of the app, on Linux always under xvfb-run (never on a real display), with throw-away HOME and XDG
 # folders and its own D-Bus session (dbus-run-session), so it can reach neither a running AQT app nor the
-# desktop's tray and notifications. The app waits for the core's ready event, makes one request
-# (GET /api/overview), waits until the page itself got an answer from the core, prints one JSON line with
-# timings and exits 0 (ok) or 1. For a bundle, the bundle's aqt command then runs --version and status --json
-# (the .deb's usr/bin/aqt and usr/bin/aqt-toolkit, the AppImage's CLI mode).
+# desktop's tray and notifications. On macOS (--dmg) it runs in the login session (the CI runner's: never on
+# a Mac someone is using), from a copy of the app taken out of the .dmg as a person would install it.
+# The app waits for the core's ready event, makes one request (GET /api/overview), waits until the page itself
+# got an answer from the core, prints one JSON line with timings and exits 0 (ok) or 1. For a bundle, the bundle's aqt command then runs --version and status --json
+# (the .deb's usr/bin/aqt and usr/bin/aqt-toolkit, the AppImage's CLI mode, the runtime inside the .app).
 #
 # Usage: scripts/smoke.sh BINARY               e.g. src-tauri/target/debug/aqt-desktop (core: AQT_CORE or PATH)
 #        scripts/smoke.sh --appimage FILE      extracts the AppImage, then runs its AppRun
 #        scripts/smoke.sh --deb FILE           extracts the package (dpkg-deb -x), then runs usr/bin/aqt-desktop
+#        scripts/smoke.sh --dmg FILE           macOS: copies the .app out of the disk image, then runs it
 # SMOKE_RUNS=n runs it n times in the same HOME: the first run is cold (fresh files and HOME), the rest warm.
 set -euo pipefail
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/aqt-smoke-XXXXXX")"
+# the real path: Tauri finds no bundled resources for an app started through a symbolic link, such as macOS's
+# /var (-> /private/var), where $TMPDIR lies
+WORK="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/aqt-smoke-XXXXXX")" && pwd -P)"
 # WebKit's helper processes may still write their caches for a moment after the app exits: retry the cleanup.
 trap 'for _ in 1 2 3 4 5; do rm -rf "$WORK" 2>/dev/null && break; sleep 1; done' EXIT
-AQT=(); AQT2=()
+AQT=(); AQT2=(); DISPLAY_RUN=(xvfb-run -a -s "-screen 0 1440x900x24")
 case "${1:-}" in
+    --dmg) hdiutil attach -nobrowse -readonly -mountpoint "$WORK/mnt" "$2" >/dev/null
+           app="$(find "$WORK/mnt" -maxdepth 1 -name '*.app' | head -1)"
+           ditto "$app" "$WORK/$(basename "$app")"; hdiutil detach "$WORK/mnt" >/dev/null
+           app="$WORK/$(basename "$app")"
+           APP=("$app/Contents/MacOS/aqt-desktop"); AQT=("$app/Contents/Resources/runtime/aqt/aqt"); DISPLAY_RUN=() ;;
     --appimage) file="$(realpath "$2")"; (cd "$WORK" && "$file" --appimage-extract >/dev/null)
                 APP=("$WORK/squashfs-root/AppRun"); AQT=("$WORK/squashfs-root/AppRun" --cli) ;;
     --deb) dpkg-deb -x "$2" "$WORK/deb"; APP=("$WORK/deb/usr/bin/aqt-desktop"); AQT=("$WORK/deb/usr/bin/aqt")
            AQT2=("$WORK/deb/usr/bin/aqt-toolkit") ;;
-    "") echo "usage: $0 BINARY | --appimage FILE | --deb FILE" >&2; exit 2 ;;
+    "") echo "usage: $0 BINARY | --appimage FILE | --deb FILE | --dmg FILE" >&2; exit 2 ;;
     *) APP=("$(realpath "$1")") ;;
 esac
 mkdir -p "$WORK"/{home,config,state,data,cache,runtime}
@@ -34,7 +43,8 @@ SESSION=()
 command -v dbus-run-session >/dev/null && SESSION=(dbus-run-session --)
 status=0
 for _ in $(seq "${SMOKE_RUNS:-1}"); do
-    isolated "${SESSION[@]}" xvfb-run -a -s "-screen 0 1440x900x24" "${APP[@]}" --smoke >"$WORK/log" 2>&1 || status=1
+    isolated ${SESSION[@]+"${SESSION[@]}"} ${DISPLAY_RUN[@]+"${DISPLAY_RUN[@]}"} "${APP[@]}" --smoke >"$WORK/log" 2>&1 \
+        || status=1
     # xvfb-run merges the app's stderr into stdout: the JSON line goes to stdout, the log only on failure
     grep '^{"' "$WORK/log" || true
     [ "$status" -eq 0 ] || { tail -20 "$WORK/log" >&2; break; }

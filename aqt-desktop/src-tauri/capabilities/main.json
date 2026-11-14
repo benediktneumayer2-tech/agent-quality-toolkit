@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "The main window may call the AQT core, save a download, read or change the app's own settings (desktop_settings), word the notifications of new cases (show_notifications) and pick a folder (pick_folder); nothing else.",
+  "description": "The main window may call the AQT core, save a download, read or change the app's own settings (desktop_settings), word the notifications of new cases (show_notifications), pick a folder (pick_folder) and list, add, test, remove and choose the machines whose AQT it shows (machines); nothing else.",
   "windows": ["main"],
-  "permissions": ["allow-core-session", "allow-core-request", "allow-save-file", "allow-desktop-settings", "allow-show-notifications", "allow-pick-folder"]
+  "permissions": ["allow-core-session", "allow-core-request", "allow-save-file", "allow-desktop-settings", "allow-show-notifications", "allow-pick-folder", "allow-machines"]
 }

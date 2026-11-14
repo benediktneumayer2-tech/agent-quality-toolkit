@@ -1,4 +1,4 @@
-"""The real box: bubblewrap, the listeners in its network namespace, attribution, escapes.
+"""The real box on Linux: bubblewrap, the listeners in its network namespace, attribution, escapes.
 
 These tests run ``aqt-egress run`` as a subprocess against the local upstream servers (no internet):
 ``AQT_EGRESS_TEST`` maps the test names and IP literals to them. Records go through a real aqt-trail
@@ -17,12 +17,13 @@ from pathlib import Path
 
 import pytest
 
-from aqt_evidence import read_jsonl
+from aqt_evidence import platform, read_jsonl
 
 from aqt_egress.box import available
 
 OK, WHY = available()
-pytestmark = pytest.mark.skipif(not OK, reason=f"box tests need bubblewrap with user namespaces: {WHY}")
+pytestmark = pytest.mark.skipif(not OK or not platform.IS_LINUX,
+                                reason=f"box tests need bubblewrap with user namespaces (macOS: test_box_macos.py): {WHY}")
 NEEDS = [tool for tool in ("curl", "python3") if not shutil.which(tool)]
 
 SCRIPT = r"""

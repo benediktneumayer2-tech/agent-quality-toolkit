@@ -350,13 +350,17 @@ def test_x2_14_dns_names_keep_every_byte():
     assert name == "a\\255b\\.c.example"
 
 
-def test_off_linux_the_box_is_not_available_and_says_why(monkeypatch):
-    from aqt_evidence import platform
+def test_without_a_sandbox_the_box_is_not_available_and_says_why(monkeypatch):
+    from aqt_evidence import platform, seatbelt
     from aqt_egress import box
     monkeypatch.setattr(platform, "IS_LINUX", False)
     monkeypatch.setattr(platform, "IS_MACOS", True)
     monkeypatch.setattr(platform, "SYSTEM_NAME", "macOS")
+    monkeypatch.setattr(seatbelt, "unavailable", lambda: None)
     ok, why = box.available()
-    assert not ok and why.startswith("the egress box is not available on macOS")
+    assert ok and why.startswith("Seatbelt (sandbox-exec) works; macOS (Seatbelt) box, unlike Linux")
+    monkeypatch.setattr(seatbelt, "unavailable", lambda: "/usr/bin/sandbox-exec is missing")
+    ok, why = box.available()
+    assert not ok and why == "the egress box is not available on macOS: /usr/bin/sandbox-exec is missing"
     with pytest.raises(box.BoxUnavailable, match="not available on macOS"):
         box.bwrap_argv(["true"], project=Path("/"), public={}, info_fd=0, block_fd=0)

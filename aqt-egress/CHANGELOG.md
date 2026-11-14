@@ -5,6 +5,7 @@
 - Off Linux the proxy's own host addresses (refused as destinations) are those its host name resolves to; it no
   longer needs `fcntl` there.
 - Windows: `aqt-egress status` and `aqt status` load without `fcntl` and report that the box is not available.
+- The box on macOS: `sandbox-exec` with a Seatbelt profile generated per session; the proxy listens on a free port of the host's loopback, the only place the box may connect to. Requests are attributed to the box's processes through libproc. What Seatbelt cannot do that the Linux box does (direct connections refused rather than recorded, no name lookups in the box, no loopback servers, keychain-only TLS clients, no `--private-tmp`) is in `status` and in `docs/box.md`.
 - On macOS and Windows the box reports that it is not available on this system and why (it needs Linux network
   namespaces), in `status` and before a run. Folders, locks and no-follow opens come from `aqt_evidence.platform`
   (unchanged on Linux).

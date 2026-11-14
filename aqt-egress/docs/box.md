@@ -115,3 +115,33 @@ credentials in files (Claude Code, Codex, pi) are not affected.
   network namespace and are not reachable.
 - Attribution is read from `/proc` when a connection or query arrives; a sender that already exited is recorded
   as `unavailable`.
+
+## macOS: the Seatbelt box
+
+On macOS, `aqt egress run` starts the command with `sandbox-exec` and a profile generated for the session
+(`box.seatbelt_profile()`, kept as `box.sb` in the session folder; its SHA-256 is in the session record). The
+approach follows Anthropic's sandbox-runtime and the Codex CLI: closed by default, then what a command-line program
+needs. The proxy listens on a free port of the host's loopback, and the profile lets the box connect to that port and
+nothing else. Verified on macOS 26.6 (Apple silicon) by `tests/test_box_macos.py`, which also runs on the macOS CI
+runner, and by hand against the internet (`curl https://example.com` through the proxy: 200, recorded as
+`curl < bash < bash`; the same with `--noproxy '*'`: no name lookup; to `https://1.1.1.1`: connection refused).
+
+| | Linux (bubblewrap, own network namespace) | macOS (Seatbelt) |
+|---|---|---|
+| Way out | only the proxy; other TCP is redirected to it and recorded | only the proxy's port on `127.0.0.1`; other TCP and all UDP are refused (`EPERM`) and not recorded |
+| Name lookups | the box resolver answers and records each one (`egress.lookup`) | none in the box (the system resolver's socket is closed); the proxy resolves the names it is asked for, so there are no `egress.lookup` records |
+| Proxy-unaware programs | redirected (ports 80/443 through the resolver, the rest through nftables) | fail |
+| Servers on loopback | the box's own loopback works | refused, the box's own too (loopback is the host's); configured local endpoints are reached through the proxy (`NO_PROXY` is removed) |
+| Who reaches the proxy | only the box | any process on the host, during the session; its requests are recorded with `chain_status: unavailable` |
+| Attribution | `/proc` of the box's namespace | libproc, over the box's process tree; a process that left the tree (reparented to launchd) is `unavailable` |
+| Session CA | replaces the system bundle in the box | only through the variables (`SSL_CERT_FILE`, `NODE_EXTRA_CA_CERTS`, …); programs that check certificates only through the keychain (Go programs such as `gh`, Swift) do not trust it. `trustd` stays closed: it fetches URLs named in certificates itself, outside the proxy |
+| Hidden folders (egress and quarantine state) | empty | refused |
+| Read-only folders (AQT configuration and state, the installation) | read-only mounts | writes refused; renaming them or a folder above them refused; hard links to their files refused |
+| Service sockets | `/run` is empty | refused: `/private/var/run` (mDNSResponder, syslog, Docker), launchd's per-user sockets in `/private/tmp` (ssh-agent, the X server), tmux, `~/.docker`, the user's socket folder except `aqt/` (the trail writer) |
+| Processes | own PID namespace: the proxy is invisible | the proxy cannot be signalled or inspected; names and arguments of the user's processes stay readable through `sysctl`; setuid programs such as `ps` do not start |
+| Jobs outside the box | the systemd user manager is unreachable | launchd refuses to create jobs (`launchctl submit`, `bootstrap`) |
+| Keychain | D-Bus keyrings are unreachable | reachable (the files are shared anyway; agents such as Claude Code keep their login there on macOS) |
+| Launcher killed with SIGKILL | the box ends with it (`--die-with-parent`) | the command keeps running; its only way out is the closed port, until something else listens on it |
+| `--private-tmp` | yes | refused |
+
+`aqt egress status` and the `egress` line of `aqt status` say this in one sentence (`box.MACOS_LIMITS`).

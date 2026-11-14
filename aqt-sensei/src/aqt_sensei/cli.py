@@ -365,7 +365,7 @@ def _login(args, paths: Paths, config) -> int:
         cli = resolve_cli(profile.command[0])[0]
         argv = prepare(pair, paths=paths, config=config, command=[cli, *login], proxy=False)
         try:
-            return subprocess.call(argv)
+            return subprocess.call(argv, cwd=scratch)
         finally:
             shutil.rmtree(paths.pair_runtime(pair["id"]), ignore_errors=True)
 

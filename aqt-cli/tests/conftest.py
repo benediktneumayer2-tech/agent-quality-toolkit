@@ -14,8 +14,10 @@ from aqt_cli import checks
 PASSPHRASE = "correct-horse-battery-1"
 _SESSION_HOME: str | None = None
 
-# aqt setup installs the writer as a systemd user service on Linux and as a logon task on Windows (launchd follows)
+# aqt setup installs the writer as a systemd user service on Linux, as a LaunchAgent on macOS and as a logon task on
+# Windows
 LINUX_SYSTEMD = pytest.mark.skipif(not platform.IS_LINUX, reason="systemd user services exist only on Linux")
+MACOS_LAUNCHD = pytest.mark.skipif(not platform.IS_MACOS, reason="LaunchAgents exist only on macOS")
 WINDOWS_TASK = pytest.mark.skipif(not platform.IS_WINDOWS, reason="logon tasks of the Task Scheduler exist only "
                                                                    "on Windows")
 
@@ -92,10 +94,39 @@ class FakeSchtasks:
         return 0, "SUCCESS"
 
 
+class FakeLaunchctl:
+    """Stands in for ``launchctl``; loading or kickstarting the agent launches a real writer in a thread."""
+
+    def __init__(self):
+        self.available = False
+        self.loaded = False
+        self.calls: list[tuple] = []
+        self.on_start = None
+
+    def __call__(self, *args):
+        self.calls.append(args)
+        if not self.available:
+            return 112, "Could not find domain for port"
+        if args[0] == "print":
+            if args[1].count("/") == 1:                       # the domain (gui/<uid>)
+                return 0, "gui/501 = {\n\ttype = login\n}"
+            return (0, f"{args[1]} = {{\n\tstate = running\n}}") if self.loaded else \
+                (113, f"Could not find service in domain for port")
+        if args[0] == "bootstrap":
+            if self.loaded:
+                return 5, "Bootstrap failed: 5: Input/output error"
+            self.loaded = True
+        if args[0] == "kickstart" and not self.loaded:
+            return 113, "Could not find service in domain for port"
+        if args[0] in ("bootstrap", "kickstart") and self.on_start:
+            self.on_start()
+        return 0, ""
+
+
 @pytest.fixture(autouse=True)
 def env(tmp_path, monkeypatch):
     """Isolated HOME/XDG dirs, a short runtime dir (AF_UNIX path limit), a fixed time zone, no
-    AQT_* overrides, and a fake systemctl: the real one is never called."""
+    AQT_* overrides, and fake systemctl, launchctl and schtasks: the real ones are never called."""
     runtime = Path(tempfile.mkdtemp(prefix="aqt", dir="/tmp" if os.name == "posix" and len(str(tmp_path)) > 60
                                     else None))
     (tmp_path / "home").mkdir()
@@ -114,6 +145,7 @@ def env(tmp_path, monkeypatch):
     fake = FakeSystemd()
     monkeypatch.setattr(checks, "systemctl_user", fake)
     monkeypatch.setattr(checks, "schtasks", FakeSchtasks())     # the real Task Scheduler is never touched
+    monkeypatch.setattr(checks, "launchctl_run", FakeLaunchctl())
     yield tmp_path
     shutil.rmtree(runtime, ignore_errors=True)
 
@@ -126,6 +158,11 @@ def systemd():
 @pytest.fixture
 def schtasks():
     return checks.schtasks
+
+
+@pytest.fixture
+def launchd():
+    return checks.launchctl_run
 
 
 @pytest.fixture

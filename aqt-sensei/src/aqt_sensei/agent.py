@@ -24,13 +24,14 @@ class Blocked(Unavailable):
 
 
 class NotOnThisSystem(Unavailable):
-    """No bridge can exist here: the sensei needs its sandbox, which needs Linux (Windows)."""
+    """No bridge can exist here (Windows): the sensei needs its sandbox, which needs Linux or macOS."""
 
 
 def call(path, payload, timeout=60.0):
     """Send one JSON line to a bridge socket and return the JSON reply."""
     if not hasattr(socket, "AF_UNIX"):     # Windows: no sensei there (its sandbox needs Linux), so no bridge
-        raise NotOnThisSystem("the sensei is not available on this system: its sandbox needs Linux (bubblewrap)")
+        raise NotOnThisSystem("the sensei is not available on this system: its sandbox needs Linux (bubblewrap) "
+                              "or macOS (Seatbelt)")
     client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     client.settimeout(timeout)
     try:

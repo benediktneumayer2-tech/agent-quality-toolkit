@@ -58,8 +58,8 @@ The examples use two people: `human:alice` (quality manager) and `human:dave` (d
 | tmux (optional) | Only for aqt-sensei: the two agents run in terminal panes | `tmux -V` |
 | Python 3.12, nftables and iproute2 (optional) | Only for aqt-egress (4.10): it needs Python 3.12 or newer; `nft` and `ip` let the box catch programs that ignore the proxy | `nft --version`, `ip -V` |
 
-**On Windows 10 and 11** everything runs natively except aqt-sensei and the aqt-egress box, which need Linux
-(`aqt status` and both tools say so). The desktop app's installer brings the `aqt` command
+**On Windows 10 and 11** everything runs natively except aqt-sensei and the aqt-egress box, which need Linux's
+bubblewrap or macOS's Seatbelt (`aqt status` and both tools say so). The desktop app's installer brings the `aqt` command
 (`aqt-desktop/README.md`). Three differences:
 
 - The trail writer listens on a named pipe that only your user can open; `aqt setup` registers it as the logon
