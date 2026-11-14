@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Releases carry the desktop app: the installers of every platform job in `desktop.yml` (today the Linux AppImage and .deb and the macOS .dmg for Apple silicon and Intel), unsigned for now, and `SHA256SUMS` of every release file. The README's quick start is now a download per system, with the first start of an unsigned build; the clone stays the path for development and servers.
+- The app's own updates are prepared but off: with the owner's updater key (RELEASING.md), each release also gets a signed `latest.json`, and the app offers a newer version in Settings and installs it at the next start after the person agrees.
+- Package metadata: the classifiers name macOS besides Linux, and Windows for every package except aqt-sensei and aqt-egress, whose sandbox and box are not available there.
 - `aqt status` on macOS: the `egress` line names what the Seatbelt box cannot do that the Linux box does.
 - `aqt setup` on macOS installs the trail writer as a LaunchAgent (`~/Library/LaunchAgents/io.github.benediktneumayer2tech.aqt.trail.plist`, KeepAlive, output to `trail-writer.log` in the AQT state folder) and loads it with `launchctl bootstrap gui/$UID`; `aqt status` checks it with `launchctl print` and gives the fix, as for systemd on Linux.
 - The agent-instruction block of `aqt project init` names the commands as `aqt change ...` and `aqt ui` (`aqt-toolkit ...` where another aqt comes first on `PATH`); a rerun replaces an older block. The git hook's fix names `aqt change` too.

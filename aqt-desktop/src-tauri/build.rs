@@ -8,6 +8,7 @@ fn main() {
         "show_notifications",
         "pick_folder",
         "machines",
+        "updates",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest)).expect("tauri-build failed");
 }

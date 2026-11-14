@@ -23,7 +23,7 @@ signed; see [Install on macOS](#install-on-macos) for the first start).
   unknown paths with `index.html`, so a reload stays on the page.
 - **Security:**
   - the window may call only these commands: the three above, `desktop_settings`, `show_notifications`,
-    `pick_folder` and `machines` (`src-tauri/capabilities/main.json`);
+    `pick_folder`, `machines` and `updates` (`src-tauri/capabilities/main.json`);
   - a strict Content-Security-Policy allows no inline code and no remote content
     (`scripts/sync-frontend.mjs` refuses inline code in the HTML);
   - the window cannot navigate to another origin; http(s) links open in the system browser.
@@ -153,6 +153,28 @@ services; macOS and Windows not run yet):
   `aqt --version`, against 0.07 s through the .deb's `/usr/bin/aqt`); agent hooks run on every tool call, so
   the .deb is the better choice for heavy use.
 
+## Updates
+
+The app updates itself from the GitHub release (`src-tauri/src/updates.rs`, tauri-plugin-updater), but only in a
+build whose `tauri.conf.json` has the owner's public key in `plugins.updater.pubkey`. While it is empty, as now, the
+plugin is not loaded and the app never asks; [RELEASING.md](../RELEASING.md#updates-of-the-desktop-app) has the
+owner's steps to switch it on.
+
+- **Look:** a minute after start, then once a day, the app reads `latest.json` of the newest release
+  (`releases/latest/download/latest.json`). A newer version only shows: a dot at *Settings* in the rail and a line
+  under *Settings*, *This app*. Nothing is downloaded before the person agrees.
+- **Agree:** *Install at next start* downloads the file for this bundle type (`linux-x86_64-appimage`,
+  `linux-x86_64-deb`, `darwin-<arch>-app`, `windows-x86_64-nsis`) and checks its minisign signature against the
+  public key built into the app, including the version it was signed for (`requireSignedVersion`). It keeps the file
+  in the app's cache folder (`update/`) until the next start. *Don't install* drops it.
+- **Install:** the next start installs it before the core starts, after checking the signature again: the AppImage
+  file is replaced, the .deb goes through `pkexec dpkg -i`, the macOS app bundle is swapped, and on Windows the NSIS
+  installer runs and the app ends. Then the new version starts. A failed install is tried once; Settings shows why.
+- **The page's command** `updates` answers `{enabled, current}` and, when on, `checked`, `available` (`{version,
+  notes}`), `ready` (the version waiting for the next start), `busy`, `error` and `failed`. `{"change": {"install":
+  "<version>"}}` agrees, `{"change": {"cancel": true}}` drops it. The app also hands each check's result to the
+  page (`window.aqtUpdate`).
+
 ## Build (Linux)
 
 You need Docker. No sudo, and no `-dev` packages on the host.
@@ -174,15 +196,15 @@ the result: `aqt --version`, every tool's `--help`, and `aqt status --json` agai
 You need Xcode's command line tools, Rust, Node and uv.
 
 ```bash
-aqt-desktop/scripts/build-macos.sh        # .dmg for this Mac's architecture in aqt-desktop/dist/
+aqt-desktop/scripts/build-macos.sh        # .dmg (and .app.tar.gz, the update) for this Mac's architecture in aqt-desktop/dist/
 aqt-desktop/scripts/build-macos.sh --app  # only the .app (the .dmg's layout step talks to the Finder)
 ```
 
 The app is ad-hoc signed (`src-tauri/tauri.macos.conf.json`: Apple silicon runs no unsigned code), and the script
 checks that signature with `codesign --verify --deep --strict`; the frozen runtime inside is signed by PyInstaller.
 CI (the `macos` job of `.github/workflows/desktop.yml`) builds it on `macos-15` (Apple silicon) and
-`macos-15-intel` (Intel), runs the smoke test on the app taken out of the .dmg, and uploads the .dmg files as the
-artifacts `aqt-desktop-macos-arm64` and `aqt-desktop-macos-x86_64`.
+`macos-15-intel` (Intel), runs the smoke test on the app taken out of the .dmg, and uploads the .dmg and the
+.app.tar.gz files as the artifacts `aqt-desktop-macos-arm64` and `aqt-desktop-macos-x86_64`.
 
 ## Install on macOS
 
@@ -232,3 +254,10 @@ run it on a Mac someone is using, because the window opens on its screen.
 
 CI (`.github/workflows/desktop.yml`) builds both bundles, smoke-tests each of them, and uploads them as the
 artifact `aqt-desktop-linux`.
+
+## Releases
+
+The release workflow (`.github/workflows/release.yml`) calls `desktop.yml` and attaches every `aqt-desktop-*`
+artifact to the GitHub release, with `SHA256SUMS` and, once the updater key is set up, the signed `latest.json`
+(`scripts/desktop_release.py`). A new platform job in `desktop.yml` that uploads an `aqt-desktop-<platform>` artifact
+is released without a change there. [RELEASING.md](../RELEASING.md) has the steps.

@@ -27,6 +27,11 @@
     "linux": { "deb": { "desktopTemplate": "aqt-desktop.desktop" } }
   },
   "plugins": {
-    "deep-link": { "desktop": { "schemes": ["aqt"] } }
+    "deep-link": { "desktop": { "schemes": ["aqt"] } },
+    "updater": {
+      "pubkey": "",
+      "endpoints": ["https://github.com/benediktneumayer2-tech/agent-quality-toolkit/releases/latest/download/latest.json"],
+      "requireSignedVersion": true
+    }
   }
 }

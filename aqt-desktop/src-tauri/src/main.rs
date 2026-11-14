@@ -5,6 +5,7 @@
 mod core;
 mod desktop;
 mod machines;
+mod updates;
 
 use std::path::Path;
 use std::sync::OnceLock;
@@ -210,6 +211,9 @@ fn main() {
     let hidden = args.iter().any(|a| a == "--hidden"); // started at login: only the tray icon, if there is one
 
     let mut builder = tauri::Builder::default();
+    if updates::configured(context.config()) {
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build()); // only with the updater's public key
+    }
     if !smoke_mode {
         // a second start hands its arguments (and so its aqt:// link) to the running app and ends
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
@@ -230,7 +234,8 @@ fn main() {
             desktop::desktop_settings,
             desktop::show_notifications,
             pick_folder,
-            machines::machines
+            machines::machines,
+            updates::updates
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
@@ -241,6 +246,9 @@ fn main() {
             }
         })
         .setup(move |app| {
+            if !smoke_mode {
+                updates::start(app.handle()); // an agreed update installs here, before the core starts
+            }
             // this computer's core, or the core of the machine chosen in Settings, started over SSH
             let machines = Machines::start(app.handle(), core_command(app.handle(), read_only), read_only);
             app.manage(machines);

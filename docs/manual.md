@@ -2,7 +2,7 @@
 
 Version 0.2 (preview), November 2026.
 
-This manual shows you how to install the Agent Quality Toolkit (AQT), set it up on one developer machine, and use its tools in the right order. It is written for developers and QA people who are comfortable on the command line. You do not need to know anything about large language models, GMP/GDP or cryptography. Every term is explained when it first appears, and the [glossary](#7-glossary) at the end repeats the short definitions.
+This manual shows you how to install the Agent Quality Toolkit (AQT), set it up on one developer machine, and use its tools in the right order. It is written for developers and QA people. The desktop app needs no command line; the manual still shows the commands, because the app and the commands do the same and write to the same audit trail. You do not need to know anything about large language models, GMP/GDP or cryptography. Every term is explained when it first appears, and the [glossary](#7-glossary) at the end repeats the short definitions.
 
 > Agent Quality Toolkit supports quality-management practices; it is not a validated system and does not by itself make any process compliant with GMP, GDP, 21 CFR Part 11 or EU Annex 11.
 
@@ -46,19 +46,46 @@ The examples use two people: `human:alice` (quality manager) and `human:dave` (d
 
 ## 1. What you need, and installing
 
-### 1.1 Prerequisites
+AQT comes in two forms with the same functions. The **desktop app** is downloaded and opened like any other program (next section). The **packages from a clone** of the release (1.1 to 1.7) are for development, for servers without a desktop and for anyone who prefers the terminal. Both give you the `aqt` command, and both write to the same audit trail.
+
+### The desktop app
+
+The desktop app holds the whole toolkit as one program: the pages of aqt-ui (4.9) in a window of its own, and inside it the `aqt` command with every tool. It needs no Python and no web server, and it opens no port: the window starts the AQT core as its child process (`aqt core --stdio`) and talks to it through the program's standard input and output.
+
+**Download** the file for your system from the [latest release](https://github.com/benediktneumayer2-tech/agent-quality-toolkit/releases/latest). `SHA256SUMS` beside the files checks a download: `sha256sum -c SHA256SUMS --ignore-missing` (on macOS `shasum -a 256 -c SHA256SUMS --ignore-missing`). The files are not signed with an Apple or Microsoft certificate yet, so the first start needs one extra step:
+
+| System | File | Install and first start |
+|---|---|---|
+| Debian, Ubuntu (x86_64) | `aqt-desktop_<version>_amd64.deb` | `sudo apt install ./aqt-desktop_<version>_amd64.deb`, then start *Agent Quality Toolkit* from the applications menu. The package also installs `/usr/bin/aqt` and `/usr/bin/aqt-toolkit`. |
+| Other Linux (x86_64) | `aqt-desktop_<version>_amd64.AppImage` | Keep it under one name in a folder without spaces, for example `~/Applications/aqt-desktop.AppImage`, so that a newer version can replace it; `chmod +x` it and start it. Settings → *This app*: *Install the aqt command* links `aqt` and `aqt-toolkit` in `~/.local/bin` to the AppImage, and *Register aqt:// links* lets the links in notifications open the app. |
+| macOS 12 or later | `aqt-desktop_<version>_arm64.dmg` (Apple silicon), `aqt-desktop_<version>_x86_64.dmg` (Intel) | Drag *Agent Quality Toolkit* into *Applications* and open it. macOS refuses the first start: click *Done*, then *System Settings → Privacy & Security*, *Open Anyway* next to the message about the app, and confirm with your password or Touch ID. On macOS 14 and earlier: Control-click the app, *Open*, then *Open* again. Settings → *This app*: *Install 'aqt' command* links `aqt` and `aqt-toolkit` in `/usr/local/bin`, after macOS asks for an administrator's password. |
+| Windows 10 or 11 (x64) | `aqt-desktop_<version>_x64-setup.exe` | SmartScreen warns about an unknown publisher: click *More info*, then *Run anyway*. It installs for your user, without administrator rights, and puts `aqt` and `aqt-toolkit` on your `PATH`. |
+
+**First start.** Open the app yourself, from the applications menu, the Dock or the Start menu, not from an agent session: started by an agent, the app is read-only and says why. While there is no audit trail or no signer, it guides you through the setup: language, who you are, your passphrase, the audit trail and its writer, your first project. These are the checks and steps of `aqt setup` and `aqt project init` (chapter 3 and 3.9), so both ways give the same result.
+
+**Every day.** The window opens on *Needs you*, the cases waiting for a person. *Changes*, *Projects*, *Evidence* and *Settings* hold the rest; *Settings* also runs `aqt status`, with a fix per problem. The tray icon (on macOS the menu bar) shows the number of open cases, each new case brings a system notification, and a click on it opens the case. Closing the window keeps the app running there; Settings → *This app* can start it in the background at login. Every decision asks for your passphrase on the signing sheet.
+
+**Another machine.** When the agents work on a server, the app on your laptop can show the server's AQT: Settings → *This app* → *Machines*, add the server's SSH destination (`user@host`, or a `Host` from `~/.ssh/config`), then *Test connection*. The app runs `ssh <destination> aqt core --stdio` with your own SSH keys and agent: no tunnel, no web server, no open port. The server needs only the `aqt` command, from a clone (1.2 to 1.4). Decisions there are signed with the signing key on the server; your passphrase travels there through the SSH connection.
+
+**Systems.** Linux and macOS have every function. On Windows, the advisor sandbox of aqt-sensei (4.4) and the aqt-egress box (4.10) are not available; `aqt status` says so instead of failing.
+
+**Without the app.** `aqt ui` (4.9) serves the same pages as a local web page in your browser, for a machine where the app does not run.
+
+**A new version** installs the same way as the first: the `.deb` with `apt install`, the AppImage by replacing the file, the `.dmg` by dragging the app into *Applications* again, the Windows installer by running it. Your settings, keys and records stay where they are. Then restart the trail writer as in 1.7. Once updates are switched on for the releases, the app can do this itself: *Settings* shows a dot when a new version is out, and after you agree there, the app downloads it, checks its signature and installs it when it next starts.
+
+### 1.1 Prerequisites for a clone
 
 | What | Why | Check |
 |---|---|---|
-| Linux | The trail writer asks the kernel which process sent a record; the advisor sandbox uses Linux namespaces | `uname -s` prints `Linux` |
+| Linux or macOS | The commands of this chapter are written for them. On Windows, use the app | `uname -s` prints `Linux` or `Darwin` |
 | Python 3.11 or newer | All packages | `python3 --version` |
 | [uv](https://docs.astral.sh/uv/) | Creates the virtual environment and installs the packages | `uv --version` |
 | git | Getting the code; aqt-change and aqt-capa work on git repositories | `git --version` |
-| bubblewrap (optional) | For aqt-sensei (keeps the advisor agent read-only) and aqt-egress (the box around the agent). On Ubuntu 24.04 and later it also needs an AppArmor profile (6.4) | `bwrap --version`; `aqt status` checks the rest |
+| bubblewrap (optional, Linux) | For aqt-sensei (keeps the advisor agent read-only) and aqt-egress (the box around the agent). On Ubuntu 24.04 and later it also needs an AppArmor profile (6.4). macOS uses its own `sandbox-exec` instead | `bwrap --version`; `aqt status` checks the rest |
 | tmux (optional) | Only for aqt-sensei: the two agents run in terminal panes | `tmux -V` |
-| Python 3.12, nftables and iproute2 (optional) | Only for aqt-egress (4.10): it needs Python 3.12 or newer; `nft` and `ip` let the box catch programs that ignore the proxy | `nft --version`, `ip -V` |
+| Python 3.12, nftables and iproute2 (optional) | Only for aqt-egress (4.10): it needs Python 3.12 or newer; on Linux, `nft` and `ip` let the box catch programs that ignore the proxy | `nft --version`, `ip -V` |
 
-On Debian or Ubuntu, the optional tools come with `sudo apt install bubblewrap tmux nftables iproute2`. If your Python is older than 3.11, uv fetches a newer one: use `uv venv --python 3.12 .venv` in 1.3.
+On Debian or Ubuntu, the optional tools come with `sudo apt install bubblewrap tmux nftables iproute2`; on macOS, tmux with `brew install tmux`. If your Python is older than 3.11, uv fetches a newer one: use `uv venv --python 3.12 .venv` in 1.3.
 
 ### 1.2 Get the code
 
@@ -102,7 +129,7 @@ mkdir -p ~/.local/bin
 ln -sf ~/agent-quality-toolkit/.venv/bin/aqt ~/agent-quality-toolkit/.venv/bin/aqt-* ~/.local/bin/
 ```
 
-Most Linux distributions put `~/.local/bin` on the `PATH` at login. If `command -v aqt-trail` prints nothing in a new terminal, add `export PATH="$HOME/.local/bin:$PATH"` to `~/.profile`, then log out and in again.
+Most Linux distributions put `~/.local/bin` on the `PATH` at login. If `command -v aqt-trail` prints nothing in a new terminal, add `export PATH="$HOME/.local/bin:$PATH"` to `~/.profile` (on macOS to `~/.zprofile`), then log out and in again.
 
 The Claude Code hooks that `aqt project init` writes (3.9) call the commands by name, such as `aqt-trail hook claude-code`, so they must be on the `PATH` that Claude Code sees. That is the environment Claude Code was started from: a terminal, or for a desktop menu or an editor, the desktop session, which can differ from your terminal. Check it once by asking the agent to run `command -v aqt-trail aqt-quarantine aqt-change`: each must print a path. If a hook command is not found, Claude Code carries on without that hook, and so without its control.
 
@@ -165,7 +192,7 @@ uv pip install --python .venv/bin/python -e "aqt-spec[schema]" -e aqt-trail -e a
 
 Install the same packages and extras as the first time, for example `-e "aqt-cli[egress]"`. Editable installs use the new code at once. If a release adds a command, link it with the `ln` line of 1.4 again. On the branch `main`, `git pull` replaces the two git commands. What changed is in each package's `CHANGELOG.md` and in the release notes on GitHub.
 
-Afterwards restart the trail writer, which still runs the old code: `systemctl --user restart aqt-trail` (3.2). After a Claude Code upgrade, repeat the manual hook checks (4.1 and 4.2).
+Afterwards restart the trail writer, which still runs the old code: `systemctl --user restart aqt-trail` (3.2); on macOS `launchctl kickstart -k gui/$(id -u)/io.github.benediktneumayer2tech.aqt.trail`. After a Claude Code upgrade, repeat the manual hook checks (4.1 and 4.2).
 
 ## 2. Concepts in five minutes
 
@@ -1466,6 +1493,8 @@ The hooks of aqt-trail (record everything), aqt-quarantine (scan web results) an
 ### 4.9 The local web page (aqt-ui)
 
 `aqt-ui` is an optional web page on your own machine that shows the state of all tools in one place and lets you make the most frequent decisions without remembering commands. It reads the same files and settings as the commands above and writes decisions through the same package code into the same trail.
+
+The desktop app (chapter 1) shows the same pages in its own window, without a web server; use the web page where the app does not run.
 
 It comes with the install of section 1.3. Start it yourself in a terminal, not from an agent:
 
