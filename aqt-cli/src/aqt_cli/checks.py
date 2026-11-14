@@ -847,6 +847,8 @@ def check_egress(ctx: Context) -> Result:
     if not value.get("box"):
         return Result(WARN, ", ".join(parts) + f"; the box cannot start here: {value.get('box_detail')}",
                       _box_fix(), data=value)
+    if platform.IS_MACOS:          # what Seatbelt cannot do that the Linux box does, said rather than hidden
+        parts.append(value.get("box_detail"))
     return Result(OK, ", ".join(parts), data=value)
 
 

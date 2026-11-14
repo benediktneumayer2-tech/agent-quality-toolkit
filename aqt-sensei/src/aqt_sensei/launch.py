@@ -1,7 +1,8 @@
 """`aqt-sensei launch --pair ID`: started by the bridge inside the advisor pane.
 
 Renders the advisor prompt, starts the Herdr report proxy when the pane is a
-Herdr pane, and replaces itself with bubblewrap running the advisor CLI.
+Herdr pane, and replaces itself with the sandbox (bubblewrap, or sandbox-exec on
+macOS) running the advisor CLI.
 """
 
 from __future__ import annotations
@@ -9,10 +10,13 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import fields
+from pathlib import Path
 
 from .config import Config, Paths
-from .sandbox import (Profile, SandboxError, build_argv, require_sandbox, resolve_cli, start_herdr_proxy,
-                      write_prompt)
+from aqt_evidence import seatbelt
+
+from .sandbox import (TMP_FOLDER, Profile, SandboxError, build_argv, require_sandbox, resolve_cli,
+                      start_herdr_proxy, write_prompt)
 
 
 def load_pair(paths: Paths, pair_id: str) -> dict:
@@ -37,7 +41,7 @@ def home_of(paths: Paths, profile: Profile):
 
 def prepare(pair: dict, *, paths: Paths, config: Config, command: list[str] | None = None,
             environ: dict | None = None, resolve=resolve_cli, proxy: bool = True) -> list[str]:
-    """Everything up to the exec: prompt, private home, proxy; returns the bwrap argv."""
+    """Everything up to the exec: prompt, private home, proxy; returns the sandbox argv."""
     environ = os.environ if environ is None else environ
     profile = profile_of(pair)
     cli_path, cli_binds = resolve(profile.command[0])
@@ -50,8 +54,11 @@ def prepare(pair: dict, *, paths: Paths, config: Config, command: list[str] | No
         path = paths.pair_runtime(pair["id"]) / "herdr.sock"
         start_herdr_proxy(path, pair["advisor"]["pane_id"], upstream)
         bridge_proxy = (str(path), upstream)
-    return build_argv(pair, profile, paths=paths, config=config, cli_path=cli_path, cli_binds=cli_binds,
+    argv = build_argv(pair, profile, paths=paths, config=config, cli_path=cli_path, cli_binds=cli_binds,
                       environ=environ, command=command, proxy=bridge_proxy)
+    if argv[0] == seatbelt.SANDBOX_EXEC:          # macOS: TMPDIR is a folder in the scratch folder
+        (Path(pair["scratch_dir"]) / TMP_FOLDER).mkdir(exist_ok=True)
+    return argv
 
 
 def launch(pair_id: str, *, paths: Paths, config: Config, command: list[str] | None = None) -> int:

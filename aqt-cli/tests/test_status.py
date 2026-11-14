@@ -231,3 +231,13 @@ def test_on_other_systems_the_service_and_the_box_are_reported_as_not_available(
     assert results["service"].result == "skip" and "not available on FreeBSD" in results["service"].explanation
     assert results["egress"].result == "skip" and "not available on FreeBSD" in results["egress"].explanation
     assert results["egress"].fix is None
+
+
+def test_on_macos_the_egress_line_names_what_the_seatbelt_box_cannot_do(monkeypatch):
+    monkeypatch.setattr(platform, "IS_LINUX", False)
+    monkeypatch.setattr(platform, "IS_MACOS", True)
+    detail = "Seatbelt (sandbox-exec) works; macOS (Seatbelt) box, unlike Linux: a direct connection is refused"
+    monkeypatch.setattr(checks, "_egress_status", lambda: {"version": "0.2", "ca": True, "box": True,
+                                                            "box_detail": detail, "last_session": None})
+    line = by_id(run_checks(Context()))["egress"]
+    assert line.result == "ok" and line.explanation.endswith(detail)

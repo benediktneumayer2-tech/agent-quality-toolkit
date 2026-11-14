@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `aqt status` on macOS: the `egress` line names what the Seatbelt box cannot do that the Linux box does.
 - `aqt setup` on macOS installs the trail writer as a LaunchAgent (`~/Library/LaunchAgents/io.github.benediktneumayer2tech.aqt.trail.plist`, KeepAlive, output to `trail-writer.log` in the AQT state folder) and loads it with `launchctl bootstrap gui/$UID`; `aqt status` checks it with `launchctl print` and gives the fix, as for systemd on Linux.
 - `aqt status` on macOS and Windows: the writer service and the egress box say that they are not available on this
   system and why (systemd and bubblewrap are Linux only), as a skipped line instead of a warning with a Linux fix.

@@ -7,14 +7,16 @@ import json
 import logging
 import os
 import signal
+import socket
 import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
 
 from aqt_evidence import new_id, resolve_sink
+from aqt_evidence import platform as aqt_platform
 
-from .attribution import Box
+from .attribution import Box, MacBox
 from .box import BoxProcess, box_environment, write_public
 from .mask import load_key, masked_argv
 from .netns import open_listeners
@@ -33,6 +35,16 @@ def _test_options() -> dict:
     (the proxy may reach a test server on the host's loopback), ``upstream_ca`` (the test server's CA)."""
     raw = os.environ.get("AQT_EGRESS_TEST")
     return json.loads(raw) if raw else {}
+
+
+def host_listener() -> tuple[dict, dict[str, socket.socket]]:
+    """macOS: the proxy's listener on a free port of the host's loopback (the only port the box may reach)."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind(("127.0.0.1", 0))
+    sock.listen(512)
+    port = sock.getsockname()[1]
+    return ({"redirect": False, "sandbox": "seatbelt", "listeners": {"proxy": f"127.0.0.1:{port}"},
+             "dns": "no resolver in the box: the proxy resolves the names it is asked for"}, {"proxy": sock})
 
 
 def _log_to(path: Path):
@@ -87,13 +99,27 @@ def _run(command: list[str], *, project: Path, settings: Settings, private_tmp: 
         say(f"aqt-egress: test options in effect ({', '.join(sorted(test))}); this session's records say so",
             file=sys.stderr)
 
-    environ = box_environment(os.environ, session)
-    if private_tmp and environ.get("TMPDIR", "").startswith("/tmp/"):
-        environ["TMPDIR"] = "/tmp"                 # the host's folder under /tmp is not in the box
-    box = BoxProcess(command, project=project, public=public, env=environ, private_tmp=private_tmp)
+    if aqt_platform.IS_MACOS:                      # the listener first: the box's profile names its port
+        net, sockets = host_listener()
+        port = sockets["proxy"].getsockname()[1]
+        environ = box_environment(os.environ, session, port=port, public=public)
+        try:
+            box = BoxProcess(command, project=project, public=public, env=environ, private_tmp=private_tmp,
+                             port=port, profile_path=session_dir / "box.sb")
+        except BaseException:
+            sockets["proxy"].close()
+            raise
+    else:
+        environ = box_environment(os.environ, session)
+        if private_tmp and environ.get("TMPDIR", "").startswith("/tmp/"):
+            environ["TMPDIR"] = "/tmp"             # the host's folder under /tmp is not in the box
+        box = BoxProcess(command, project=project, public=public, env=environ, private_tmp=private_tmp)
     try:                                           # until the box is released, any failure ends it
-        net, sockets = open_listeners(box.init_pid, local_ports=[port for _ip, port in settings.local_endpoints])
-        attribution = Box(box.init_pid)
+        if aqt_platform.IS_MACOS:
+            attribution = MacBox(box.init_pid)
+        else:
+            net, sockets = open_listeners(box.init_pid, local_ports=[port for _ip, port in settings.local_endpoints])
+            attribution = Box(box.init_pid)
         writer = RecordWriter(log=log)
         drained = drain_spool(writer.sink)
         started = time.time()
@@ -106,7 +132,7 @@ def _run(command: list[str], *, project: Path, settings: Settings, private_tmp: 
             "box": {**box.facts, "network": net, "init_pid": box.init_pid},
             "test_options": sorted(test) or None, "spool_drained": drained.get("drained") or None,
         }
-        if not net.get("redirect"):
+        if not net.get("redirect") and not aqt_platform.IS_MACOS:
             say("aqt-egress: no nftables redirect in the box "
                 f"({net.get('redirect_error', 'unavailable')}); only proxy-aware clients and ports 80/443 work",
                 file=sys.stderr)
