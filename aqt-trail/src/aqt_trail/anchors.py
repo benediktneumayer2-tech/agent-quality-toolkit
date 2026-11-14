@@ -6,7 +6,7 @@ import base64
 import os
 from pathlib import Path
 
-from aqt_evidence import canonical_json, make_checkpoint, subject
+from aqt_evidence import canonical_json, make_checkpoint, platform, subject
 
 from . import tsa
 from .writer import TrailWriter
@@ -21,7 +21,7 @@ def current_checkpoint(writer: TrailWriter) -> dict:
 
 def save_checkpoint(writer: TrailWriter, checkpoint: dict) -> None:
     path = writer.state / "checkpoints.jsonl"
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, writer.file_mode)
+    fd = platform.open_fd(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, writer.file_mode)
     try:
         os.write(fd, canonical_json(checkpoint) + b"\n")
         os.fsync(fd)

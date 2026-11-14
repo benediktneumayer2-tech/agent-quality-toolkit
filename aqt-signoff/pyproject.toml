@@ -28,7 +28,7 @@ classifiers = [
     "Topic :: Security :: Cryptography",
     "Topic :: Software Development :: Quality Assurance",
 ]
-dependencies = ["aqt-spec>=0.2,<0.3", "cryptography>=41"]
+dependencies = ["aqt-spec>=0.2,<0.3", "cryptography>=41", "tzdata; sys_platform == 'win32'"]   # Windows has no IANA time zones
 
 [project.optional-dependencies]
 schema = ["jsonschema>=4.18"]

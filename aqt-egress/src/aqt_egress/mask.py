@@ -17,6 +17,8 @@ import os
 import re
 from pathlib import Path
 
+from aqt_evidence import platform
+
 MASK = "[masked]"
 
 CREDENTIAL_HEADERS = frozenset({
@@ -67,7 +69,7 @@ def load_key(path: Path) -> bytes:
         return path.read_bytes()
     except FileNotFoundError:
         key = os.urandom(32)
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        fd = platform.open_fd(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, "wb") as handle:
             handle.write(key)
         return key

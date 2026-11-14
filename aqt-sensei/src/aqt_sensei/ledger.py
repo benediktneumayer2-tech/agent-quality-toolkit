@@ -13,7 +13,7 @@ import json
 import os
 from pathlib import Path
 
-from aqt_evidence import SinkError, actor, bytes_hash, canonical_json, new_record, open_sink, subject
+from aqt_evidence import SinkError, actor, bytes_hash, canonical_json, new_record, open_sink, platform, subject
 
 EXCERPT = 280
 FILE_HASH_LIMIT = 16 * 1024 * 1024
@@ -83,7 +83,7 @@ class Ledger:
             except (SinkError, OSError):
                 pass
         self.spool.parent.mkdir(parents=True, exist_ok=True)
-        fd = os.open(self.spool, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        fd = platform.open_fd(self.spool, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
         with os.fdopen(fd, "ab") as handle:
             handle.write(canonical_json(record) + b"\n")
         return False

@@ -16,6 +16,9 @@ hidden += collect_submodules("mitmproxy")        # addons and content views are 
 datas = [item for package in PACKAGES for item in collect_data_files(package)]
 datas += collect_data_files("aqt_sensei", include_py_files=True)
 datas += collect_data_files("mitmproxy")
+if sys.platform == "win32":      # the IANA time zones, which Windows lacks, come from tzdata as package data
+    hidden += collect_submodules("tzdata")
+    datas += collect_data_files("tzdata")
 # versions and entry points (aqt.detectors) are read through importlib.metadata
 datas += [item for dist in DISTRIBUTIONS for item in copy_metadata(dist)]
 

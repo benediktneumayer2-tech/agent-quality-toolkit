@@ -4,8 +4,9 @@ Every AQT package asks this module instead of assuming Linux:
 
 - **folders**: ``config_dir()``, ``state_dir()`` (the AQT folders themselves) and
   ``runtime_base()`` (the user's folder for sockets, to which callers add their own name);
-- **files**: ``lock()`` / ``unlock()``, ``open_nofollow()``, ``make_private()``,
-  ``ensure_private_dir()``, ``owned_by_user()``;
+- **files**: ``lock()`` / ``unlock()``, ``open_fd()`` (binary), ``open_nofollow()``, ``make_private()``,
+  ``fchmod()``, ``ensure_private_dir()``, ``owned_by_user()``;
+- **environment**: ``environ_bytes()``;
 - **identity**: ``user_id()`` and ``peer_credentials()`` of a connected Unix socket or Windows named pipe;
 - **the trail writer's address**: ``trail_socket()`` (a Unix socket, or a named pipe on Windows,
   see ``aqt_evidence.pipes``);
@@ -213,6 +214,26 @@ def open_nofollow(path, flags: int, mode: int = 0o600) -> int:
             if stat_module.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & _REPARSE_POINT:
                 raise OSError(40, "refusing to follow a link", str(path))
     return os.open(path, flags | O_NOFOLLOW | O_BINARY, mode)
+
+
+def open_fd(path, flags: int, mode: int = 0o600) -> int:
+    """``os.open`` in binary mode. On Windows a descriptor from ``os.open`` is in text mode unless asked:
+    it would write CRLF for LF and stop reading at Ctrl-Z, which breaks records and file hashes."""
+    return os.open(path, flags | O_BINARY, mode)
+
+
+def fchmod(fd: int, mode: int) -> None:
+    """``os.fchmod``; nothing on Windows, which has no POSIX file modes (see the module text)."""
+    if not IS_WINDOWS:
+        os.fchmod(fd, mode)
+
+
+def environ_bytes() -> dict[bytes, bytes]:
+    """The environment as bytes: ``os.environb`` on POSIX; Windows keeps it as text, so it is encoded as UTF-8."""
+    if hasattr(os, "environb"):
+        return dict(os.environb)
+    return {key.encode("utf-8", "surrogatepass"): value.encode("utf-8", "surrogatepass")
+            for key, value in os.environ.items()}
 
 
 def make_private(path, *, directory: bool | None = None) -> None:

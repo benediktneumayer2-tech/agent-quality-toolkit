@@ -157,7 +157,7 @@ class Store:
         return record
 
     def _to_outbox(self, record: dict) -> None:
-        fd = os.open(self.outbox, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        fd = platform.open_fd(self.outbox, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
         with os.fdopen(fd, "ab") as handle:
             platform.lock(handle)
             handle.write(canonical_json(record) + b"\n")

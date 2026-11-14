@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Windows: the IANA time zones of manifests come from `tzdata` (a dependency on Windows only).
 - The configuration and state folders come from `aqt_evidence.platform` (unchanged on Linux).
 
 ## 0.2.0 — 2026-11-13

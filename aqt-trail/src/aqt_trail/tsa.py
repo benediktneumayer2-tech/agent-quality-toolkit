@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from aqt_evidence import platform
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
@@ -404,7 +405,7 @@ class TestTSA:
         pem = serialization.Encoding.PEM
         (self.directory / "ca.pem").write_bytes(self.ca_cert.public_bytes(pem))
         (self.directory / "tsa.pem").write_bytes(self.cert.public_bytes(pem))
-        fd = os.open(self.directory / "tsa.key", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        fd = platform.open_fd(self.directory / "tsa.key", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "wb") as handle:
             handle.write(self.key.private_bytes(pem, serialization.PrivateFormat.PKCS8,
                                                 serialization.NoEncryption()))

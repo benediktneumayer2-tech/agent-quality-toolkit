@@ -16,6 +16,8 @@ import tempfile
 import threading
 from pathlib import Path
 
+from aqt_evidence import platform as aqt_platform
+
 from . import __version__
 from .agent import Unavailable, call
 from .agent import run as agent_run
@@ -246,7 +248,11 @@ def _serve(args, paths: Paths, config) -> int:
     from .bridge import Bridge
     from .hosts import make_host
     from .ledger import Ledger
+    from .sandbox import sandbox_unavailable
     from .server import Server
+    if aqt_platform.IS_WINDOWS:  # owner decision D2: no sandbox on Windows, so no sensei there
+        print(f"aqt-sensei: {sandbox_unavailable()}; the sensei runs only with its sandbox", file=sys.stderr)
+        return 2
     if not read_token(paths.token_file):
         print("aqt-sensei: no owner token; run `aqt-sensei init` first", file=sys.stderr)
         return 2

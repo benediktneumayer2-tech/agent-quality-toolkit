@@ -293,7 +293,7 @@ def cmd_cases_export(args) -> int:
     cases, _ = decider.fold()
     _report_journal(store)
     count = 0
-    fd = os.open(args.out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    fd = platform.open_fd(args.out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         for case in cases.values():
             if case.state not in ("released", "threat"):

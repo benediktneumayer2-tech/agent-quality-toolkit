@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Windows: the log, lock, spool, checkpoint and TSA key files are opened in binary mode (LF, not CRLF); the IANA
+  time zones of the review come from `tzdata` there.
 - Runs on Windows: the writer serves its named pipe (`PipeTrailServer`; `TrailServer` is the transport of the
   system), `observed.uid` is the client's SID and `gid` is null, `via` stays `socket`. Windows does not re-parent
   orphans, so a chain ends at the first parent that has exited (`chain_status` `partial`). Without a console

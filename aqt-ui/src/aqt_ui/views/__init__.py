@@ -12,6 +12,7 @@ import sys
 from importlib import metadata
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
+from urllib.request import url2pathname
 
 
 class ViewProblem(Exception):
@@ -61,7 +62,7 @@ def _clone() -> Path | None:
     url = urlsplit(origin.get("url", ""))
     if not origin.get("dir_info", {}).get("editable") or url.scheme != "file":
         return None
-    return Path(unquote(url.path)).parent
+    return Path(url2pathname(unquote(url.path))).parent      # Windows: /D:/a/b is D:\\a\\b
 
 
 def install_command(package: str) -> str:

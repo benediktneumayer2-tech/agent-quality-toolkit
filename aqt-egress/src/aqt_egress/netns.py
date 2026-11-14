@@ -22,7 +22,6 @@ The sockets belong to the box's network namespace, but the proxy on the host acc
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import socket
@@ -30,6 +29,11 @@ import struct
 import subprocess
 import sys
 import time
+
+try:
+    import fcntl          # Linux: the box's network (box.unsupported() says why not elsewhere)
+except ImportError:
+    fcntl = None
 
 PROXY_PORT = 3128          # HTTP_PROXY / HTTPS_PROXY / ALL_PROXY (127.0.0.1)
 REDIRECT_PORT = 15001      # TCP redirected by nftables (original destination via SO_ORIGINAL_DST)

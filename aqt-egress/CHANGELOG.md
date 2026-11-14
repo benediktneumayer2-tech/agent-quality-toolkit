@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Windows: `aqt-egress status` and `aqt status` load without `fcntl` and report that the box is not available.
 - On macOS and Windows the box reports that it is not available on this system and why (it needs Linux network
   namespaces), in `status` and before a run. Folders, locks and no-follow opens come from `aqt_evidence.platform`
   (unchanged on Linux).

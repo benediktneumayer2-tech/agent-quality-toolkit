@@ -54,8 +54,11 @@ class _Handler(socketserver.StreamRequestHandler):
         self.wfile.write(json.dumps(reply, ensure_ascii=False).encode() + b"\n")
 
 
-class _UnixServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
-    daemon_threads = True
+if hasattr(socketserver, "UnixStreamServer"):
+    class _UnixServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+        daemon_threads = True
+else:   # Windows: the sensei is not available there (it needs its sandbox; sandbox.sandbox_unavailable)
+    _UnixServer = None
 
 
 class Server:
@@ -63,6 +66,9 @@ class Server:
                  describe=describe_pid):
         self.bridge, self.paths = bridge, paths
         self.proc = proc
+        if _UnixServer is None:
+            from .sandbox import SandboxError, sandbox_unavailable
+            raise SandboxError(sandbox_unavailable() or "the sensei bridge needs Unix sockets")
         self.daemon_uid = os.getuid() if daemon_uid is None else daemon_uid
         self.describe = describe
         self.servers: dict[str, _UnixServer] = {}

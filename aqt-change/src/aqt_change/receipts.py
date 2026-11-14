@@ -29,6 +29,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from aqt_evidence import Text, bytes_hash, new_record, subject, text_join
+from aqt_evidence import platform as aqt_platform
 
 from . import antigaming
 from .actors import current_actor
@@ -113,8 +114,9 @@ def _tail(data: bytes, lines: int) -> str | None:
 
 def _env_summary(argv: list[str]) -> dict:
     digest = hashlib.sha256()
-    for key in sorted(os.environb):
-        digest.update(key + b"=" + os.environb[key] + b"\0")
+    environ = aqt_platform.environ_bytes()
+    for key in sorted(environ):
+        digest.update(key + b"=" + environ[key] + b"\0")
     executable = shutil.which(argv[0]) if argv else None
     return {"platform": platform.platform(terse=True), "python": platform.python_version(),
             "executable": executable, "env_sha256": "sha256:" + digest.hexdigest(), "python_bytecode": "fresh"}

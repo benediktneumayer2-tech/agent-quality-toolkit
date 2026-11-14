@@ -144,11 +144,17 @@ Protection is against **agents**, not against the owner or root.
 | Not calling the writer at all / disabling hooks | possible | possible | not by the trail alone; session imports help |
 | Agent with root or `docker` group | anything | anything | only anchors made before the attack |
 
-Limits: tamper-evident, not tamper-proof. Attribution needs Linux (`SO_PEERCRED`, `/proc`). No revocation
+Limits: tamper-evident, not tamper-proof. Attribution comes from the system: Linux `SO_PEERCRED` and `/proc`,
+macOS `LOCAL_PEERCRED` and `sysctl`, Windows the named pipe's client pid and the SID in that process's token.
+On Windows a client whose token the writer cannot read (for example one running as administrator while the
+writer is not) is refused as `unauthorized`; and Windows does not re-parent a process whose parent has exited,
+so every process chain ends at such a parent and is `partial`: human claims show as unconfirmed in the review
+there, which is the true state, not an error. No revocation
 check for TSA certificates. The agent check before signing a review is a guard against agents deciding for
 themselves, not a security boundary. Native session formats are undocumented and change often; Codex's
 SQLite history store is not imported yet. Excerpts can still contain personal data (set `excerpt_chars = 0`).
-The default socket lives in `$XDG_RUNTIME_DIR`, so one writer per user session. The writer refuses to continue
+The default socket lives in `$XDG_RUNTIME_DIR`, so one writer per user session (on Windows a named pipe per user
+and trail that only that user can open). The writer refuses to continue
 a log that no longer links; run `verify` and decide.
 
 ## Licence

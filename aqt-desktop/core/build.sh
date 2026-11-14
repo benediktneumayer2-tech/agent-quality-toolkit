@@ -8,7 +8,10 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
 VENV="$HERE/build/venv"
 BIN=bin EXE=""
-case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) BIN=Scripts EXE=.exe ;; esac
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)       # Windows programs (uv, PyInstaller) need D:/a/... paths, not Git Bash's /d/a/...
+        BIN=Scripts EXE=.exe HERE="$(cygpath -m "$HERE")" REPO="$(cygpath -m "$REPO")" VENV="$(cygpath -m "$VENV")" ;;
+esac
 export UV_PYTHON_PREFERENCE=only-managed      # uv's Python 3.12, the same on every machine
 
 rm -rf "$VENV" "$HERE/dist"

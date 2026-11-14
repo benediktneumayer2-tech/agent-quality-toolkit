@@ -155,8 +155,8 @@ class TrailWriter:
         self.state.mkdir(parents=True, exist_ok=True)
         # 0600: in separate-user mode the clients group may read the state directory, and flock()
         # also works on a read-only descriptor, so a readable lock file would let a client block the writer.
-        lock_fd = os.open(self.state / "trail.lock", os.O_RDWR | os.O_CREAT, 0o600)
-        os.fchmod(lock_fd, 0o600)
+        lock_fd = platform.open_fd(self.state / "trail.lock", os.O_RDWR | os.O_CREAT, 0o600)
+        platform.fchmod(lock_fd, 0o600)
         self._lock_file = os.fdopen(lock_fd, "r+")
         try:
             platform.lock(self._lock_file, blocking=False)
@@ -165,8 +165,8 @@ class TrailWriter:
             self._lock_file = None
             raise WriterBusy(f"another aqt-trail writer holds {self.state / 'trail.lock'}") from error
         repaired = self._load()
-        self._fd = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, self.file_mode)
-        os.fchmod(self._fd, self.file_mode)
+        self._fd = platform.open_fd(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, self.file_mode)
+        platform.fchmod(self._fd, self.file_mode)
         if repaired:
             self.write_internal("trail.event", "log.repaired", data=repaired,
                                 reason="an incomplete last line (never acknowledged) was removed")

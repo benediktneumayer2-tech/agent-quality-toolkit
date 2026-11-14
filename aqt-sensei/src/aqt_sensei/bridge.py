@@ -19,7 +19,7 @@ import time
 import uuid
 from pathlib import Path
 
-from aqt_evidence import content_hash
+from aqt_evidence import content_hash, platform
 
 from .config import MODES, Budget, Config, Paths
 from .hosts import READY, HostError, TerminalHost, strip_ansi
@@ -93,13 +93,13 @@ class Store:
 
     def save_pairs(self, pairs: dict) -> None:
         temporary = self.pairs_path.with_suffix(".tmp")
-        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        fd = platform.open_fd(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as handle:
             handle.write(json.dumps({"pairs": list(pairs.values())}, ensure_ascii=False, indent=1))
         os.replace(temporary, self.pairs_path)
 
     def append(self, message: dict) -> None:
-        fd = os.open(self.messages_dir / f"{message['pair_id']}.jsonl", os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        fd = platform.open_fd(self.messages_dir / f"{message['pair_id']}.jsonl", os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
         with os.fdopen(fd, "a") as handle:
             handle.write(json.dumps(message, ensure_ascii=False) + "\n")
 

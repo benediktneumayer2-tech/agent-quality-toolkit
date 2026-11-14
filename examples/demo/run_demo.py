@@ -130,9 +130,15 @@ class Demo:
             "PATH": f"{self.bin}{os.pathsep}{os.environ.get('PATH', '')}",
             "NO_PROXY": "*", "PYTHONDONTWRITEBYTECODE": "1",
         })
+        if os.name == "nt":          # Windows takes the home and the AQT folders from these
+            os.environ.update({"USERPROFILE": str(self.home), "APPDATA": str(self.home / "AppData" / "Roaming"),
+                               "LOCALAPPDATA": str(self.home / "AppData" / "Local")})
         for name in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "all_proxy"):
             os.environ.pop(name, None)
-        self.sock = self.runtime / "aqt" / "trail.sock"
+        from aqt_evidence import platform
+        # the writer's address: a Unix socket in the temporary runtime folder; on Windows its named pipe
+        self.sock = (platform.trail_socket(self.state / "aqt" / "trail") if platform.IS_WINDOWS
+                     else self.runtime / "aqt" / "trail.sock")
         os.environ["AQT_SINK"] = f"unix:{self.sock}"
         self.trail_log = self.state / "aqt" / "trail" / "trail.jsonl"
 
@@ -146,7 +152,7 @@ class Demo:
 
     def run(self, *argv, env: dict | None = None, stdin: str | None = None, cwd: Path | None = None,
             codes=(0,), what: str | None = None) -> subprocess.CompletedProcess:
-        command = [str(self.bin / argv[0]) if (self.bin / argv[0]).exists() else argv[0], *map(str, argv[1:])]
+        command = [str(self.tool(argv[0])) if self.tool(argv[0]).exists() else argv[0], *map(str, argv[1:])]
         done = subprocess.run(command, input=stdin, text=True, capture_output=True, env=env or os.environ,
                               cwd=cwd, timeout=180)
         if codes is not None and done.returncode not in codes:
@@ -178,13 +184,14 @@ class Demo:
         (self.config / "aqt" / "signoff.toml").write_text(f'[signoff]\ntz = "{TZ}"\n')
         self.run("aqt-trail", "init", "--log-id", "aqt-demo", what="aqt-trail init")
         log = open(self.root / "trail-serve.log", "w")
-        self.trail_proc = subprocess.Popen([str(self.bin / "aqt-trail"), "serve"], stdout=log, stderr=log,
+        self.trail_proc = subprocess.Popen([str(self.tool("aqt-trail")), "serve"], stdout=log, stderr=log,
                                            env=os.environ, start_new_session=True)
         for _ in range(100):
             if self.ping():
                 break
             time.sleep(0.1)
-        self.expect(self.ping(), "aqt-trail serve answers on a temporary Unix socket", str(self.sock))
+        self.expect(self.ping(), "aqt-trail serve answers on a temporary Unix socket (Windows: its named pipe)",
+                    str(self.sock))
         self.note(f"writer socket {self.sock}; AQT_SINK=unix:… so every tool below writes into one chained log")
 
         from aqt_signoff import Signoff, StaticPassphrase, load_settings
@@ -208,18 +215,15 @@ class Demo:
         self.say("   DEMO ONLY: passphrases are fixed strings injected through aqt_signoff.StaticPassphrase.")
 
     def ping(self) -> bool:
-        import socket
-        if not self.sock.exists():
-            return False
+        from aqt_evidence import SinkError, writer_request
         try:
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conn:
-                conn.settimeout(2)
-                conn.connect(str(self.sock))
-                conn.sendall(b'{"op": "ping"}\n')
-                conn.shutdown(socket.SHUT_WR)
-                return b'"ok": true' in conn.recv(4096).replace(b'"ok":true', b'"ok": true')
-        except OSError:
+            return bool(writer_request(self.sock, {"op": "ping"}, timeout=2).get("ok"))
+        except SinkError:
             return False
+
+    def tool(self, name: str) -> Path:
+        """A console script of the demo's virtual environment (``name.exe`` on Windows)."""
+        return self.bin / (f"{name}.exe" if os.name == "nt" else name)
 
     def signoff(self, signer: str):
         Signoff, StaticPassphrase, load_settings = self._signoff

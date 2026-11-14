@@ -128,12 +128,16 @@ def show(ctx: ProjectContext, path: Path) -> str:
 
 def rule_path(path: Path) -> str:
     """A path for a Claude Code Read/Edit rule: ``~/…`` under the home folder, else ``//abs`` (a single
-    leading ``/`` would be relative to the settings file)."""
+    leading ``/`` would be relative to the settings file). Claude Code matches Windows paths in POSIX form
+    with the drive as a folder, so ``D:\\work`` is ``//d/work``."""
     path = Path(os.path.abspath(path))
     try:
         return "~/" + path.relative_to(_home()).as_posix()
     except ValueError:
-        return "/" + path.as_posix()
+        pass
+    if path.drive[1:2] == ":":
+        return "//" + path.drive[0].lower() + path.as_posix()[2:]
+    return "/" + path.as_posix()
 
 
 def config_dir() -> Path:

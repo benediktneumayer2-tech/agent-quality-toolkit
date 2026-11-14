@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Windows: `aqt-sensei serve` says that the sensei is not available there (its sandbox needs Linux) instead of
+  failing on import; the package's other commands load.
 - Runs on macOS except the advisor sandbox: the bridge identifies callers with `LOCAL_PEERCRED` and `sysctl`
   (through `aqt_evidence.platform`). Pairing, `launch`, `login` and `doctor` say that the sandbox is not available
   on this system and why (bubblewrap is Linux only; a Seatbelt profile follows); the fake backend still pairs.

@@ -66,7 +66,7 @@ def open_browser(app: App, link: str, *, opener=webbrowser.open) -> Path:
     text = ("<!doctype html><html lang=en><head><meta charset=utf-8><meta name=referrer content=no-referrer>"
             f'<meta http-equiv="refresh" content="0;url={target}"><title>aqt-ui login</title></head>'
             f'<body><p><a href="{target}">Open the AQT quality desk</a></p></body></html>\n')
-    fd = os.open(page, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    fd = platform.open_fd(page, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         handle.write(text)
 

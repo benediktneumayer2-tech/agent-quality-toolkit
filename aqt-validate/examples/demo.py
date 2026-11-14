@@ -66,7 +66,7 @@ compose = true
 [[detectors]]
 id = "keyword"
 version = "0.1"
-command = ["{python}", "{detector}"]
+command = ['{python}', '{detector}']
 
 [[bands]]
 name = "warn"
@@ -101,7 +101,7 @@ intended_use = "Demo: first-pass review of diffs in the synthetic repository."
 [reviewer]
 id = "stub"
 harness = "stub"
-argv = ["{python}", "{reviewer}", "perfect", "{{diff}}"]
+argv = ['{python}', '{reviewer}', "perfect", "{{diff}}"]
 stdin = "none"
 runs = 2
 
@@ -134,7 +134,7 @@ def synthetic_repo(repo: Path) -> None:
                 ("fix: area multiplies", "def area(w, h):\n    return w * h\n"),
                 ("refactor: rename area args", "def area(width, height):\n    return width * height\n")]
     for n, (message, content) in enumerate(versions):
-        (repo / "geometry.py").write_text(content)
+        (repo / "geometry.py").write_text(content, newline="\n")   # LF as committed on every system
         git(repo, "add", "-A")
         git(repo, "commit", "-q", "-m", message, date=f"2025-0{n + 1}-01T12:00:00+00:00")
 

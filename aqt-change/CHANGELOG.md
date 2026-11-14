@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Windows: the environment digest of a receipt reads the environment as UTF-8 (there is no `os.environb`), and the
+  ledger's files are written in binary mode.
 - Windows: a command that times out is ended with its process tree (`taskkill /T`); the Claude Code hook reads
   and writes UTF-8 whatever the console's code page.
 - `install_git_hook(ledger, name="aqt")`: the frozen runtime's commit-msg hook runs `aqt-toolkit change` when asked to.

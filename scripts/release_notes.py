@@ -53,11 +53,11 @@ def main(argv: list[str] | None = None) -> int:
     for _order, name, changelog in sorted(packages):
         found = section(changelog.read_text(encoding="utf-8"), args.version) if changelog.is_file() else None
         if found is None:
-            problems.append(f"{changelog.relative_to(root)}: no section for {args.version}")
+            problems.append(f"{changelog.relative_to(root).as_posix()}: no section for {args.version}")
             continue
         heading, body = found
         if "unreleased" in heading.lower() and not args.allow_unreleased:
-            problems.append(f"{changelog.relative_to(root)}: the {args.version} section is still marked unreleased")
+            problems.append(f"{changelog.relative_to(root).as_posix()}: the {args.version} section is still marked unreleased")
             continue
         out += ["", f"## {name} {args.version}", "", body or "No changes."]
     if problems:

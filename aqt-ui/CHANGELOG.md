@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Windows: a signed file's hash is read in binary mode, and the install hint of an editable clone names its
+  folder as `D:\…`, not `\D:\…`.
 - Windows: `aqt-ui` no longer asks for a POSIX uid when it picks the folder of the login page.
 - In the desktop app the page words the system notifications of new cases in its language (German or English); the `queue` event's new cases carry `key` and `args` for that.
 - From the desktop app's frozen runtime the change gates run the runtime itself (`aqt -I -m aqt_change.cli gate`), since it has no `aqt-change` program.

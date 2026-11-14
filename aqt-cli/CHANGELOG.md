@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Windows: deny rules for folders outside the home name the drive as Claude Code matches it (`//d/work/**`), and
+  the time zone `aqt setup` writes comes from `TZ` with `tzdata` (a dependency on Windows only).
 - Windows: `aqt setup` registers the writer as the logon task `aqt-trail` (Task Scheduler: at your logon, your
   normal rights, no time limit, started again every five minutes when it is not running; `pythonw.exe` or the
   app's `aqtw.exe`, so no console window) and never replaces an existing one; `aqt status` checks that it

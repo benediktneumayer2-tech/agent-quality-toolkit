@@ -225,7 +225,7 @@ def begin_base(record) -> str | None:
 def atomic_write(path: Path, data: bytes, mode: int = 0o600) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+    fd = platform.open_fd(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
     try:
         with os.fdopen(fd, "wb") as handle:
             handle.write(data)
@@ -336,7 +336,7 @@ class Ledger:
         stored = stored if isinstance(stored, dict) else record
         mirror = self.state / "records.jsonl"
         mirror.parent.mkdir(parents=True, exist_ok=True)
-        fd = os.open(mirror, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        fd = platform.open_fd(mirror, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
         with os.fdopen(fd, "ab") as handle:
             platform.lock(handle)
             try:

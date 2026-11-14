@@ -12,7 +12,7 @@ import stat
 from pathlib import Path
 from typing import Callable
 
-from aqt_evidence import HumanCheckError
+from aqt_evidence import HumanCheckError, platform
 
 from . import NotFound, UsageProblem, coded_fields, message, require
 
@@ -23,7 +23,7 @@ def bounded_file_hash(path: Path) -> str:
     """``sha256:<hex>`` of a regular file of at most ``MAX_FILE_BYTES`` (refused otherwise)."""
     limit = MAX_FILE_BYTES
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        fd = platform.open_fd(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
     except FileNotFoundError:
         raise NotFound(f"{path} does not exist") from None
     except OSError as error:

@@ -32,7 +32,7 @@ def request(socket_path: str | os.PathLike, payload: dict, *, timeout: float = 5
 def spool_append(record: dict, path: str | os.PathLike | None = None) -> Path:
     path = Path(path) if path else spool_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    fd = platform.open_fd(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     with os.fdopen(fd, "ab") as handle:
         platform.lock(handle)
         try:
@@ -55,7 +55,7 @@ def locked_spool(path: str | os.PathLike | None = None):
     if not path.exists():
         yield [], (lambda: None)
         return
-    fd = os.open(path, os.O_RDWR)
+    fd = platform.open_fd(path, os.O_RDWR)
     with os.fdopen(fd, "rb+") as handle:
         platform.lock(handle)
         try:

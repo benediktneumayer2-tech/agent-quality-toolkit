@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `platform.open_fd()` (`os.open` in binary mode), `platform.fchmod()` and `platform.environ_bytes()`: on Windows
+  a descriptor from `os.open` is in text mode (CRLF for LF, reads stop at Ctrl-Z), and `os.fchmod` and
+  `os.environb` do not exist. The packages use them for their record, spool, key and lock files.
 - Windows: the aqt-trail writer is reached over a named pipe (`aqt_evidence.pipes`, `\\.\pipe\aqt-trail-<hash>`
   per user and trail, `platform.trail_socket()`): only the user's SID may open it, remote clients are refused, a
   client sends nothing to a pipe owned by someone else, and the writer learns the client's pid and SID
