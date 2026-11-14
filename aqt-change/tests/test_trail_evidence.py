@@ -68,7 +68,7 @@ class FakeTrail:
 
 @pytest.fixture
 def trail(isolated, monkeypatch):
-    short = Path(tempfile.mkdtemp(prefix="aqtc", dir="/tmp"))
+    short = Path(tempfile.mkdtemp(prefix="aqtc", dir="/tmp" if os.name == "posix" else None))
     monkeypatch.setenv("AQT_SINK", f"unix:{short / 'trail.sock'}")
     fake = FakeTrail(isolated / "state" / "aqt" / "trail", short / "trail.sock")
     yield fake

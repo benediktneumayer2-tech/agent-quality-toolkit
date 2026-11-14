@@ -135,6 +135,9 @@ def cmd_hook(args) -> int:
     def factory():
         _, _, engine, decider = _setup(args)
         return engine, decider
+    for stream in (sys.stdin, sys.stdout, sys.stderr):   # Claude Code speaks UTF-8, whatever the code page
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     return run_hook(sys.stdin, sys.stdout, factory)
 
 

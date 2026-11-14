@@ -169,8 +169,12 @@ def main(argv: list[str] | None = None) -> int:
 
 def _dispatch(args) -> int:
     if args.command == "hook" and args.hook_command == "claude-code":
+        for stream in (sys.stdout, sys.stderr):  # Claude Code speaks UTF-8, whatever the code page (Windows)
+            if hasattr(stream, "reconfigure"):
+                stream.reconfigure(encoding="utf-8", errors="replace")
         try:
-            payload = json.loads(sys.stdin.read() or "{}")
+            stdin = getattr(sys.stdin, "buffer", None)          # bytes: UTF-8 whatever the code page
+            payload = json.loads((stdin.read().decode("utf-8") if stdin else sys.stdin.read()) or "{}")
         except ValueError:
             payload = {}
         ledger = None

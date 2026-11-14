@@ -36,6 +36,9 @@ def pytest_configure(config):
     global _HOME
     _HOME = tempfile.mkdtemp(prefix="aqt-egress-home-")
     os.environ["HOME"] = _HOME
+    if os.name == "nt":   # Windows takes the home and the AQT folders from these
+        for name, sub in (("USERPROFILE", ""), ("APPDATA", "appdata"), ("LOCALAPPDATA", "localappdata")):
+            os.environ[name] = os.path.join(_HOME, sub)
     for name, sub in (("XDG_STATE_HOME", "state"), ("XDG_CONFIG_HOME", "config")):
         os.environ[name] = os.path.join(_HOME, sub)
     os.environ.pop("XDG_RUNTIME_DIR", None)
@@ -48,8 +51,10 @@ def pytest_unconfigure(config):
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    runtime = Path(tempfile.mkdtemp(prefix="aqte", dir="/tmp"))      # AF_UNIX paths are short
+    runtime = Path(tempfile.mkdtemp(prefix="aqte", dir="/tmp" if os.name == "posix" else None))      # AF_UNIX paths are short
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    if os.name == "nt":
+        monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))

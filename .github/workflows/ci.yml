@@ -31,6 +31,8 @@ jobs:
     runs-on: windows-latest
     env:
       PYTHONUTF8: "1"
+      AQT_TEST_FULL_LOG: "1"
+      PYTEST_ADDOPTS: "--tb=short -rfEs"
     steps:
       - name: Keep LF line endings (vectors, catalogues and schemas are hashed byte for byte)
         run: git config --global core.autocrlf false
@@ -38,14 +40,9 @@ jobs:
       - uses: astral-sh/setup-uv@v10.3.3
         with:
           python-version: "3.12"
-      - name: aqt-spec with aqt_evidence.platform (the other packages follow on Windows later)
+      - name: All package suites and the integration demo in Git Bash (the sensei sandbox and the egress box say they are not available on Windows)
         shell: bash
-        working-directory: aqt-spec
-        run: |
-          uv venv -q .venv
-          uv pip install -q --python .venv/Scripts/python.exe -e ".[test]"
-          XDG_STATE_HOME="$RUNNER_TEMP/state" XDG_CONFIG_HOME="$RUNNER_TEMP/config" \
-            .venv/Scripts/python.exe -m pytest -q -p no:cacheprovider
+        run: scripts/test_all.sh
   clean-install:
     runs-on: ubuntu-latest
     steps:

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Windows: `aqt-ui` no longer asks for a POSIX uid when it picks the folder of the login page.
 - `aqt-ui core --stdio` (also `aqt core --stdio`): the JSON API without a web server, as JSON lines on stdin and stdout, for a desktop app that starts the core as its child process (protocol 1, described in `aqt_ui/core.py`). Decisions are on only when neither the core's environment nor its ancestors show an agent; no terminal is needed. Each decision request checks the parent process again, and `--read-only` refuses decisions as the web server does.
 - The API itself moved from the HTTP handler to `aqt_ui.core.Core`, which the web server's `App` extends; the web server behaves as before.
 - The page also runs in the desktop app (`aqt-desktop`): there it sends its requests through the app to the core, takes the session information from the core's ready event and saves downloads with the system's save dialog; in a browser it uses `fetch` as before.

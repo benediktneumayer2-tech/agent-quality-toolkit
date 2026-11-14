@@ -222,7 +222,7 @@ test -w /tmp && echo tmp=writable
 
 @pytest.mark.skipif(bool(NEEDS), reason=f"needs {', '.join(NEEDS)} in the box")
 def test_box_local_endpoint_loopback_boundary_private_tmp_and_session(env, upstream):
-    marker = Path(tempfile.mkstemp(prefix="aqt-egress-marker-", dir="/tmp")[1])
+    marker = Path(tempfile.mkstemp(prefix="aqt-egress-marker-", dir="/tmp" if os.name == "posix" else None)[1])
     try:
         done, results = run_box(env, upstream, "--local-endpoint", f"127.0.0.1:{upstream.http_port}",
                                 "--private-tmp", script=LOCAL, mapped=False,

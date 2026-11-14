@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Windows: a command that times out is ended with its process tree (`taskkill /T`); the Claude Code hook reads
+  and writes UTF-8 whatever the console's code page.
 - `examples/quickstart.sh` runs with BSD `sed` (macOS) too.
 - The configuration folder, and the lock of the records mirror, come from `aqt_evidence.platform` (unchanged on
   Linux; macOS and Windows get their own folders).

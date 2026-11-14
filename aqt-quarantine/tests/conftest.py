@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -33,6 +34,8 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("HOME", str(tmp_path / "home"))  # doctor looks for ~/.claude/settings.json
+    if os.name == "nt":
+        monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "run"))  # no discovery of a real trail writer
     for name in ("AQT_SINK", "AQT_SIGNERS", "AQT_KEYS_DIR", "AQT_QUARANTINE_CONFIG", "AQT_QUARANTINE_STATE",
                  "AQT_QUARANTINE_THRESHOLDS", "AQT_TRAIL_STATE", "TZ"):

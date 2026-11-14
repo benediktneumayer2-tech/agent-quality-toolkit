@@ -179,6 +179,10 @@ def _execute(argv: list[str], cwd: Path, timeout: int | None, echo: bool, env: d
 
 
 def _kill(process: subprocess.Popen) -> None:
+    """End the command and everything it started: its process group (POSIX), its process tree (Windows)."""
+    if not hasattr(os, "killpg"):
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)], capture_output=True, timeout=30)
+        return
     try:
         os.killpg(process.pid, signal.SIGTERM)
         try:

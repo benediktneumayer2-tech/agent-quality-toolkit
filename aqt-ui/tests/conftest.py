@@ -28,6 +28,9 @@ def pytest_configure(config):
     global _SESSION_HOME
     _SESSION_HOME = tempfile.mkdtemp(prefix="aqt-ui-home-")
     os.environ["HOME"] = _SESSION_HOME
+    if os.name == "nt":   # Windows takes the home and the AQT folders from these
+        for name, sub in (("USERPROFILE", ""), ("APPDATA", "appdata"), ("LOCALAPPDATA", "localappdata")):
+            os.environ[name] = os.path.join(_SESSION_HOME, sub)
     for name, sub in (("XDG_STATE_HOME", "state"), ("XDG_CONFIG_HOME", "config")):
         os.environ[name] = os.path.join(_SESSION_HOME, sub)
     os.environ.pop("XDG_RUNTIME_DIR", None)
@@ -46,8 +49,10 @@ def fast_keys(monkeypatch):
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    runtime = Path(tempfile.mkdtemp(prefix="aqtui", dir="/tmp" if len(str(tmp_path)) > 60 else None))
+    runtime = Path(tempfile.mkdtemp(prefix="aqtui", dir="/tmp" if os.name == "posix" and len(str(tmp_path)) > 60 else None))
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    if os.name == "nt":
+        monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))

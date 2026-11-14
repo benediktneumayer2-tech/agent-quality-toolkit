@@ -30,6 +30,8 @@ import threading
 import webbrowser
 from pathlib import Path
 
+from aqt_evidence import platform
+
 from . import __version__
 from .config import load_config
 from .guard import Guard, startup_mode
@@ -47,7 +49,7 @@ def login_dir() -> str | None:
     home = os.path.expanduser("~")
     try:
         info = os.stat(home)
-        if os.path.isdir(home) and info.st_uid == os.getuid() and os.access(home, os.W_OK | os.X_OK):
+        if os.path.isdir(home) and platform.owned_by_user(info) and os.access(home, os.W_OK | os.X_OK):
             return home
     except OSError:
         pass

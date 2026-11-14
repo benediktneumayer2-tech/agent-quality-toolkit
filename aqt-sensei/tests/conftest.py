@@ -59,7 +59,7 @@ def isolated_xdg(tmp_path_factory, monkeypatch):
     base = tmp_path_factory.mktemp("xdg")
     for name in ("XDG_STATE_HOME", "XDG_CONFIG_HOME"):
         monkeypatch.setenv(name, str(base / name.lower()))
-    runtime = Path(tempfile.mkdtemp(prefix="aqx", dir="/tmp"))
+    runtime = Path(tempfile.mkdtemp(prefix="aqx", dir="/tmp" if os.name == "posix" else None))
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
     for name in ("AQT_SINK", "AQT_EVIDENCE", "AQT_SENSEI_CONFIG", "AQT_SENSEI_STATE", "AQT_SENSEI_RUNTIME",
                  "AQT_SENSEI_TOKEN", "AQT_SENSEI_SOCKET"):
@@ -70,7 +70,7 @@ def isolated_xdg(tmp_path_factory, monkeypatch):
 
 @pytest.fixture
 def short_dir():
-    folder = Path(tempfile.mkdtemp(prefix="aqs", dir="/tmp"))
+    folder = Path(tempfile.mkdtemp(prefix="aqs", dir="/tmp" if os.name == "posix" else None))
     yield folder
     shutil.rmtree(folder, ignore_errors=True)
 
