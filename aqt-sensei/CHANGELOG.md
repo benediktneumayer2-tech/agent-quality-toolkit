@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Windows: `sensei ask` and the owner commands say that the sensei is not available on this system, not that the
+  bridge is offline.
 - Windows: `aqt-sensei serve` says that the sensei is not available there (its sandbox needs Linux) instead of
   failing on import; the package's other commands load.
 - Runs on macOS except the advisor sandbox: the bridge identifies callers with `LOCAL_PEERCRED` and `sysctl`

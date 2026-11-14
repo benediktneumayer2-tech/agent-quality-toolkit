@@ -438,10 +438,8 @@ def test_instruction_block_names_aqt_commands_and_a_rerun_replaces_an_older_bloc
 
 
 def test_instruction_block_names_aqt_toolkit_where_another_aqt_comes_first(repo, tmp_path, monkeypatch):
-    other = tmp_path / "aqtinstall" / "aqt"
-    other.parent.mkdir()
-    other.write_text("#!/bin/sh\necho 'aqtinstall(aqt) v3.1.21'\n")
-    other.chmod(0o755)
+    from test_desktop import fake_aqt
+    other = fake_aqt(tmp_path / "aqtinstall", version="aqtinstall(aqt) v3.1.21")      # a .CMD on Windows
     assert init(repo) == 0
     monkeypatch.setenv("PATH", f"{other.parent}{os.pathsep}{os.environ['PATH']}")
     assert status(repo)["instructions"].result == "warn"                  # the name changed: a rerun rewrites it

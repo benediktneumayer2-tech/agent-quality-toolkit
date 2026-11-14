@@ -55,7 +55,7 @@ def test_init_creates_config_and_keeps_token(tmp_path, monkeypatch, capsys):
     code, out, _ = run(capsys, "init", "--owner-id", "alice")
     assert code == 0 and 'id = "alice"' in paths.config_file.read_text()
     token = read_token(paths.token_file)
-    assert token and oct(paths.token_file.stat().st_mode & 0o777) == "0o600"
+    assert token and (os.name == "nt" or oct(paths.token_file.stat().st_mode & 0o777) == "0o600")
     run(capsys, "init")
     assert read_token(paths.token_file) == token
 
@@ -63,7 +63,8 @@ def test_init_creates_config_and_keeps_token(tmp_path, monkeypatch, capsys):
 def test_offline_bridge_exit_2(env, capsys):
     assert run(capsys, "list")[0] == 2
     code, _, err = run(capsys, "ask", "hello")
-    assert code == 2 and "offline" in err
+    # Windows: no bridge can exist there (the sensei needs its sandbox), and it says so
+    assert code == 2 and ("not available on this system" if os.name == "nt" else "offline") in err
 
 
 def test_usage_error_exit_2(capsys):

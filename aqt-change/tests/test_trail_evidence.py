@@ -568,7 +568,7 @@ def test_tracked_gitignore_rules_ignore_as_git_does(project):
         weird = ()
     for name, text in rules.items():
         (project / name).parent.mkdir(parents=True, exist_ok=True)
-        (project / name).write_text(text)
+        (project / name).write_bytes(text.encode())       # as written: no CRLF translation on Windows
     git(project, "add", *rules)
     git(project, "commit", "-qm", "ignore rules")
     for name in ("top.txt", "a/top.txt", "x.log", "keep.log", "a/x.log", "a/keep.log", "build/o", "a/build/o",

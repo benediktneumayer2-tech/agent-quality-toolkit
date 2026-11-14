@@ -35,9 +35,9 @@ Limits, stated rather than hidden:
   administrators. ``owned_by_user()`` cannot tell the owner from ``os.stat`` and returns True.
 - ``open_nofollow()`` on Windows checks for a link or reparse point before it opens; another
   process could swap the path in between.
-- Process start times have a different unit on each system (Linux: clock ticks since boot,
-  macOS: microseconds since 1970, Windows: 100 ns since 1601). They are only compared
-  within one system, to notice a reused pid.
+- Process start times have their own unit on Linux (clock ticks since boot); macOS and Windows
+  give microseconds since 1970 (Windows' own 100 ns since 1601 is converted: it would exceed the
+  integers of canonical JSON). They are only compared within one system, to notice a reused pid.
 - A process of another user may hide its executable, command line, environment and
   terminal (macOS, Windows); those functions then return None.
 - Windows process names drop the ``.exe`` suffix (``claude.exe`` -> ``claude``), so the agent
@@ -625,11 +625,16 @@ class _WinProcess:
             _kernel32.CloseHandle(self.handle)
 
 
+_FILETIME_1970 = 116444736000000000        # 1970-01-01 in FILETIME units (100 ns since 1601)
+
+
 def _win_start_time(handle) -> int | None:
+    """Microseconds since 1970, as on macOS: FILETIME itself (100 ns since 1601, about 1.3e17) is beyond the
+    integers canonical JSON allows (2**53)."""
     times = [wintypes.FILETIME() for _ in range(4)]
     if not _kernel32.GetProcessTimes(handle, *(ctypes.byref(item) for item in times)):
         return None
-    return (times[0].dwHighDateTime << 32) | times[0].dwLowDateTime
+    return (((times[0].dwHighDateTime << 32) | times[0].dwLowDateTime) - _FILETIME_1970) // 10
 
 
 def _win_token_sid(handle) -> str | None:

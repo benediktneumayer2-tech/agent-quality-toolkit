@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Windows: process start times are microseconds since 1970, as on macOS (Windows' 100 ns since 1601 would exceed
+  the integers of canonical JSON).
 - `platform.open_fd()` (`os.open` in binary mode), `platform.fchmod()` and `platform.environ_bytes()`: on Windows
   a descriptor from `os.open` is in text mode (CRLF for LF, reads stop at Ctrl-Z), and `os.fchmod` and
   `os.environb` do not exist. The packages use them for their record, spool, key and lock files.

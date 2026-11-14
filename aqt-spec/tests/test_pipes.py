@@ -83,7 +83,10 @@ def test_nul_is_not_a_terminal():
 
 @WINDOWS
 def test_process_names_without_exe():
+    import time
     me = platform.process_info(os.getpid())
     assert me.name.lower() == "python" and me.uid == platform.user_id()
+    # microseconds since 1970, as on macOS, and inside canonical JSON's integers
+    assert abs(me.start_time) < 2 ** 53 and 0 <= time.time() * 1e6 - me.start_time < 86400e6
     chain = platform.process_chain()
     assert chain[0].pid == os.getpid() and all(not info.name.lower().endswith(".exe") for info in chain)

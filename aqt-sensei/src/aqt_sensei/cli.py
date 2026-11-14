@@ -19,7 +19,7 @@ from pathlib import Path
 from aqt_evidence import platform as aqt_platform
 
 from . import __version__
-from .agent import Unavailable, call
+from .agent import NotOnThisSystem, Unavailable, call
 from .agent import run as agent_run
 from .config import EXAMPLE_CONFIG, Paths, create_token, load_config, read_token
 
@@ -217,6 +217,9 @@ def main(argv: list[str] | None = None) -> int:
         if command == "login":
             return _login(args, paths, config)
         return _owner(args, paths)
+    except NotOnThisSystem as error:
+        print(f"aqt-sensei: {error}", file=sys.stderr)
+        return 2
     except Unavailable:
         print("aqt-sensei: the bridge is offline (run `aqt-sensei serve`)", file=sys.stderr)
         return 2

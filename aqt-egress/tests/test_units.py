@@ -78,7 +78,8 @@ def test_excerpt_text_binary_and_cut():
 
 def test_fingerprint_is_keyed_and_stable(tmp_path):
     key = mask.load_key(tmp_path / "key")
-    assert mask.load_key(tmp_path / "key") == key and oct(os.stat(tmp_path / "key").st_mode)[-3:] == "600"
+    assert mask.load_key(tmp_path / "key") == key
+    assert os.name == "nt" or oct(os.stat(tmp_path / "key").st_mode)[-3:] == "600"      # Windows: no POSIX modes
     first = mask.credential("authorization", "Bearer abc", key)
     assert first == mask.credential("Authorization", "Bearer abc", key)
     assert first["scheme"] == "Bearer" and first["fingerprint"] != mask.credential("authorization", "Bearer abc", b"x" * 32)["fingerprint"]
@@ -92,7 +93,7 @@ def test_store_is_content_addressed_private_and_detects_changes(tmp_path):
     ref = store.put(b"hello")
     assert store.put(b"hello") == ref and store.read(ref["sha256"]) == b"hello"
     path = store.path(ref["sha256"])
-    assert oct(path.parent.stat().st_mode)[-3:] == "700" and oct(path.stat().st_mode)[-3:] == "600"
+    assert os.name == "nt" or (oct(path.parent.stat().st_mode)[-3:] == "700" and oct(path.stat().st_mode)[-3:] == "600")
     assert gzip.decompress(path.read_bytes()) == b"hello"
     path.unlink()
     with pytest.raises(StoreError, match="pruned or deleted"):
@@ -308,7 +309,7 @@ def test_x2_04_records_wait_in_the_private_spool_while_the_writer_is_down(env, t
                                  data={"session": "egs_x"}))
     writer.close()
     assert writer.routes["spooled"] == 1 and spool_path().exists()
-    assert oct(spool_path().stat().st_mode)[-3:] == "600"
+    assert os.name == "nt" or oct(spool_path().stat().st_mode)[-3:] == "600"            # Windows: no POSIX modes
 
 
 def test_x2_05_lost_records_are_counted(tmp_path):

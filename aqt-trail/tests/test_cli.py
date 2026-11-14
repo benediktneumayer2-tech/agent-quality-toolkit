@@ -163,6 +163,8 @@ def test_review_sign_checks_the_trail_not_the_worksheet(env, monkeypatch, capsys
         assert codes == ["worksheet_mismatch"] and entries[-1]["type"] == "trail.review"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="a read-only folder needs POSIX modes (Windows' read-only flag does not "
+                                          "stop new files in a folder)")
 def test_review_run_writes_elsewhere_when_the_state_is_not_writable(env, capsys, tmp_path):
     """C-18: separate-user mode, where the trail's state belongs to the writer's account."""
     from conftest import event

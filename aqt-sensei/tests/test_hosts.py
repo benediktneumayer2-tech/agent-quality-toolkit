@@ -11,6 +11,9 @@ import pytest
 from aqt_sensei.hosts import HerdrHost, HostError, TmuxHost, strip_ansi, write_pane_state
 
 
+SENSEI_HOSTS = pytest.mark.skipif(os.name == "nt", reason="the sensei needs its sandbox, which Windows does not have (owner decision D2); tmux and Herdr are its terminal hosts")
+
+
 def fake_binary(folder: Path, name: str, script: str) -> Path:
     path = folder / name
     path.write_text(f"#!{sys.executable}\n" + script)
@@ -53,6 +56,7 @@ def calls(host):
     return [json.loads(line) for line in host.log.read_text().splitlines()]
 
 
+@SENSEI_HOSTS
 def test_tmux_heuristic_needs_quiet_and_prompt(tmux):
     assert tmux.panes()["%1"].status == "unknown"            # first look
     assert tmux.panes()["%2"].agent is False                  # a plain shell
@@ -66,6 +70,7 @@ def test_tmux_heuristic_needs_quiet_and_prompt(tmux):
     assert tmux.panes()["%1"].status == "idle"
 
 
+@SENSEI_HOSTS
 def test_tmux_hook_state_wins(tmux):
     write_pane_state(tmux.state_dir, "%1", "blocked")
     assert tmux.panes()["%1"].status == "blocked"
@@ -73,6 +78,7 @@ def test_tmux_hook_state_wins(tmux):
         write_pane_state(tmux.state_dir, "%1", "sleeping")
 
 
+@SENSEI_HOSTS
 def test_tmux_delivery_uses_bracketed_paste_on_its_own_socket(tmux):
     tmux.deliver("%1", "[Worker → Sensei · 1]\nhello; rm -rf /")
     log = calls(tmux)
@@ -83,6 +89,7 @@ def test_tmux_delivery_uses_bracketed_paste_on_its_own_socket(tmux):
     assert enter == ["send-keys", "-t", "%1", "Enter"]
 
 
+@SENSEI_HOSTS
 def test_tmux_split_and_run(tmux):
     assert tmux.split("%1", "/tmp", {"AQT_AGENT_SESSION": "1"}) == "%3"
     tmux.run("%3", ["python3", "-m", "aqt_sensei", "launch", "--pair", "sp-1"])
@@ -108,6 +115,7 @@ elif args[:2] == ["agent", "prompt"]:
 '''
 
 
+@SENSEI_HOSTS
 def test_herdr_parsing_and_errors(tmp_path):
     host = HerdrHost(binary=str(fake_binary(tmp_path, "herdr", HERDR)))
     panes = host.panes()

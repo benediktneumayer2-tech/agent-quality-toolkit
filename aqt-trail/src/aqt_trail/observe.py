@@ -7,7 +7,7 @@ SID of that process's token as ``uid``, no ``gid``) and walks the parent chain
 This is evidence the writer saw, not a claim by the client. ``via`` stays ``socket`` for the
 named pipe: it is the writer's local connection on that system. PIDs are reused, so each process
 carries its start time (Linux: clock ticks since boot, ``/proc/<pid>/stat`` field
-22; macOS: microseconds since 1970; Windows: 100 ns since 1601).
+22; macOS and Windows: microseconds since 1970).
 
 ``chain_status`` says how far that evidence goes. Finding no agent marker in a
 chain only means something when the chain is ``complete``:

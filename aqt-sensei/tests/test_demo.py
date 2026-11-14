@@ -1,9 +1,13 @@
 """The offline demo (used by the suite's integration demo) runs and writes valid records."""
 
 import importlib.util
+import os
 from pathlib import Path
 
+import pytest
 from aqt_evidence import read_jsonl, validate_record
+
+pytestmark = pytest.mark.skipif(os.name == "nt", reason="the sensei needs its sandbox, which Windows does not have (owner decision D2)")
 
 
 def test_offline_demo(tmp_path, capsys):

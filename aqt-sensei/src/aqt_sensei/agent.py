@@ -23,8 +23,14 @@ class Blocked(Unavailable):
     """The caller's own shell sandbox forbids connecting to the socket."""
 
 
+class NotOnThisSystem(Unavailable):
+    """No bridge can exist here: the sensei needs its sandbox, which needs Linux (Windows)."""
+
+
 def call(path, payload, timeout=60.0):
     """Send one JSON line to a bridge socket and return the JSON reply."""
+    if not hasattr(socket, "AF_UNIX"):     # Windows: no sensei there (its sandbox needs Linux), so no bridge
+        raise NotOnThisSystem("the sensei is not available on this system: its sandbox needs Linux (bubblewrap)")
     client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     client.settimeout(timeout)
     try:
@@ -100,6 +106,9 @@ def run(command, text=None, files=(), last=None, socket_path=None, out=None, err
     except Blocked:
         print(f"{prog}: your shell sandbox blocks the bridge socket; rerun this command with escalated "
               "permissions (outside your tool's sandbox).", file=err)
+        return 2
+    except NotOnThisSystem as error:
+        print(f"{prog}: {error}.", file=err)
         return 2
     except Unavailable:
         print(f"{prog}: the aqt-sensei bridge is offline (aqt-sensei serve is not running).", file=err)

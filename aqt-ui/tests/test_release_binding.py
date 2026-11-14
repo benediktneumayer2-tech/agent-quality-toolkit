@@ -136,7 +136,7 @@ def test_the_page_shows_the_signed_copy_and_refuses_a_rewritten_mirror(finished,
 # -- E2-3: the release state follows the files aqt-signoff reads ----------------------------------------------
 def test_the_release_state_follows_the_sources_aqt_signoff_reads(signer, env, ui_factory, monkeypatch):
     side = env / "signoff-side.jsonl"
-    (env / "config" / "aqt" / "signoff.toml").write_text(f'[paths]\nsink = "file:{side}"\n')
+    (env / "config" / "aqt" / "signoff.toml").write_text(f"[paths]\nsink = 'file:{side}'\n")   # a TOML literal string: Windows paths
     root = finish_project(env / "project", env, monkeypatch)          # no trail: aqt-change uses the default sink
     client = ui_factory(config=UiConfig(projects=[root]))
     client.login()

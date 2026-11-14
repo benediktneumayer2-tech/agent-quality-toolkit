@@ -17,6 +17,8 @@ from aqt_sensei.sandbox import (Profile, SandboxError, build_argv, herdr_request
 
 from conftest import pair_up
 
+pytestmark = pytest.mark.skipif(os.name == "nt", reason="the sensei needs its sandbox, which Windows does not have (owner decision D2)")
+
 
 def binds(argv, flag):
     return [(argv[i + 1], argv[i + 2]) for i, item in enumerate(argv) if item == flag]

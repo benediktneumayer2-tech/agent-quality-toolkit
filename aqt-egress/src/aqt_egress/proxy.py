@@ -29,6 +29,7 @@ import hashlib
 import ipaddress
 import logging
 import socket
+import sys
 import time
 import zlib
 from datetime import UTC, datetime
@@ -258,7 +259,8 @@ HOOK_ERROR = "aqt-egress could not record this exchange fully"
 
 def host_addresses() -> set[str]:
     """Every address of this host's interfaces (LAN, VPN, bridges ...): ``ip -j addr`` from a system
-    folder, else /proc/net/if_inet6 plus the IPv4 address of each interface."""
+    folder, else /proc/net/if_inet6 plus the IPv4 address of each interface; off Linux the addresses the host
+    name resolves to."""
     from .netns import system_tool
     found: set[str] = set()
     ip = system_tool("ip")
@@ -273,6 +275,13 @@ def host_addresses() -> set[str]:
                         found.add(normal_ip(entry["local"]))
         except (OSError, ValueError, subprocess.SubprocessError):
             pass
+    if not found and not sys.platform.startswith("linux"):     # no ip, no /proc, no SIOCGIFADDR (macOS, Windows)
+        try:
+            for info in socket.getaddrinfo(socket.gethostname(), None):
+                found.add(normal_ip(info[4][0].split("%", 1)[0]))
+        except (OSError, ValueError):
+            pass
+        return found
     if not found:
         import fcntl
         import struct
