@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Windows: a check command's bare program name (`python -m pytest`) is found through `PATH` as a shell finds it.
+  Windows looks in the running program's own folder first, so `python` was aqt-change's interpreter, not the
+  project's, while the receipt named the one on `PATH`.
 - Windows: the environment digest of a receipt reads the environment as UTF-8 (there is no `os.environb`), and the
   ledger's files are written in binary mode.
 - Windows: a command that times out is ended with its process tree (`taskkill /T`); the Claude Code hook reads

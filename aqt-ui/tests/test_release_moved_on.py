@@ -4,6 +4,7 @@ now and, for a finish that committed, HEAD (or a commit with HEAD's files). The 
 user can do: git in the repository, aqt-change, appending to the mirror and ``Ledger.emit`` (the sink)."""
 
 import json
+import shlex
 import subprocess
 import sys
 import threading
@@ -147,7 +148,7 @@ def test_the_finish_of_an_older_plan_version_is_refused(trail, signer, env, ui_f
     root = finish_project(env / "ext", env, monkeypatch)
     monkeypatch.chdir(root)
     plan = root / P
-    plan.write_text(plan.read_text().replace("## Progress Log", "- [ ] [V02] Second check passes `$ " + sys.executable
+    plan.write_text(plan.read_text().replace("## Progress Log", "- [ ] [V02] Second check passes `$ " + shlex.quote(sys.executable)
                                              + " tests/check.py`\n\n## Progress Log"))
     plans.reconcile(Ledger.open(root), P, "semantic", "add V02 after finish")
     receipts.run(Ledger.open(root), [], plan_path=P, all_items=True, echo=False)

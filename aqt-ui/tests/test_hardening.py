@@ -324,6 +324,8 @@ def test_review_of_a_worksheet_not_prepared_here_is_refused(trail, held_case, re
     assert status == 409 and "nothing was signed" in result["message"]
 
 
+@pytest.mark.skipif(platform.IS_WINDOWS, reason="a folder that is not writable needs POSIX modes (Windows' "
+                                                 "read-only flag does not stop new files in a folder)")
 def test_review_runs_and_signs_when_the_trail_state_is_not_writable(trail, reviewer, held_case, ui_factory):
     from aqt_evidence import state_dir
     client = ui_factory()
@@ -494,6 +496,8 @@ def test_trail_edited_in_place_after_a_good_check_is_not_intact(trail, held_case
     assert verified_status(client)["state"] == "broken"     # a fresh check shows the damage
 
 
+@pytest.mark.skipif(platform.IS_WINDOWS, reason="Windows does not let a file be replaced while it is open, and the "
+                                                 "writer holds the trail open")
 def test_trail_replaced_after_a_good_check_is_not_intact(trail, held_case, ui_factory):
     client = ui_factory()
     client.login()
@@ -716,10 +720,11 @@ def test_file_verification_is_bounded(trail, signer, ui_factory, tmp_path, monke
     monkeypatch.setattr(signatures, "MAX_FILE_BYTES", 5)
     status, data, _ = client.get(f"/api/signatures/verify?file={small}")
     assert status == 400 and "larger than" in data["message"]
-    fifo = tmp_path / "pipe"
-    os.mkfifo(fifo)
-    status, data, _ = client.get(f"/api/signatures/verify?file={fifo}")
-    assert status in (400, 404) and "not a regular file" in data["message"]
+    if hasattr(os, "mkfifo"):          # Windows has no FIFOs in the file system
+        fifo = tmp_path / "pipe"
+        os.mkfifo(fifo)
+        status, data, _ = client.get(f"/api/signatures/verify?file={fifo}")
+        assert status in (400, 404) and "not a regular file" in data["message"]
 
 
 # -- E-3: hidden characters are shown in every text the page puts on screen -----------------------------------

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Windows: the check that the trail file has not changed since its verification uses the last write time, since
+  Windows' `st_ctime` is the creation time (`platform.change_time_ns`); an edit in place is caught there too.
 - Windows: a signed file's hash is read in binary mode, and the install hint of an editable clone names its
   folder as `D:\…`, not `\D:\…`.
 - Windows: `aqt-ui` no longer asks for a POSIX uid when it picks the folder of the login page.

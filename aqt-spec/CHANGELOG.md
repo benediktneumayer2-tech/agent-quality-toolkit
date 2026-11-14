@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `platform.change_time_ns()`: `st_ctime_ns` on POSIX, the last write time on Windows (where `st_ctime` is the
+  creation time).
 - `observed.sid` (optional, additive; the record format stays 0.1): on Windows the writer records the peer's user
   SID there and leaves out `uid` and `gid`, which Windows does not have. Records written on Linux and macOS are
   unchanged. Two vectors (89, was 87): a valid Windows `observed`, and a `sid` that is not a SID.

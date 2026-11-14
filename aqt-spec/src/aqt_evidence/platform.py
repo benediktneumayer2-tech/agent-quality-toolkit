@@ -5,7 +5,7 @@ Every AQT package asks this module instead of assuming Linux:
 - **folders**: ``config_dir()``, ``state_dir()`` (the AQT folders themselves) and
   ``runtime_base()`` (the user's folder for sockets, to which callers add their own name);
 - **files**: ``lock()`` / ``unlock()``, ``open_fd()`` (binary), ``open_nofollow()``, ``make_private()``,
-  ``fchmod()``, ``ensure_private_dir()``, ``owned_by_user()``;
+  ``fchmod()``, ``ensure_private_dir()``, ``owned_by_user()``, ``change_time_ns()``;
 - **environment**: ``environ_bytes()``;
 - **identity**: ``user_id()`` and ``peer_credentials()`` of a connected Unix socket or Windows named pipe;
 - **the trail writer's address**: ``trail_socket()`` (a Unix socket, or a named pipe on Windows,
@@ -252,6 +252,13 @@ def ensure_private_dir(path) -> Path:
     path.mkdir(parents=True, exist_ok=True, mode=0o700)
     make_private(path, directory=True)
     return path
+
+
+def change_time_ns(info: os.stat_result) -> int:
+    """When the file last changed, from ``os.stat``: ``st_ctime_ns`` on POSIX (a write or a metadata change moves
+    it, and no process can set it back). Windows' ``st_ctime`` is the creation time, so the last write time stands
+    in there, which a process that may write the file can also set back."""
+    return info.st_mtime_ns if IS_WINDOWS else info.st_ctime_ns
 
 
 def owned_by_user(info: os.stat_result) -> bool:

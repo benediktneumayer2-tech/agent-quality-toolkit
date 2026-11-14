@@ -42,7 +42,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
-from aqt_evidence import SinkError, Text, spool_file
+from aqt_evidence import SinkError, Text, platform, spool_file
 
 from . import NotFound, Stale, UsageProblem, coded_fields, coded_list, fingerprint, message, refusal_text
 
@@ -748,14 +748,15 @@ def take_snapshot(path: Path) -> dict:
     info = os.stat(path)
     digest = _prefix_sha256(path, info.st_size)
     after = os.stat(path)
-    same = (after.st_ctime_ns, after.st_size) == (info.st_ctime_ns, info.st_size)
+    same = (platform.change_time_ns(after), after.st_size) == (platform.change_time_ns(info), info.st_size)
     return {"dev": info.st_dev, "ino": info.st_ino, "size": info.st_size, "sha256": digest,
-            "confirmed": (info.st_ctime_ns, info.st_size) if same else None, "changed": None}
+            "confirmed": (platform.change_time_ns(info), info.st_size) if same else None, "changed": None}
 
 
 def snapshot_change(path: Path, snapshot: dict) -> str | None:
     """None while the file still starts with the snapshot's bytes, else what happened. The
-    content is hashed again only when the file's ctime or size moved since the last look."""
+    content is hashed again only when the file's ctime (Windows: last write time) or size moved since the last
+    look."""
     try:
         info = os.stat(path)
     except FileNotFoundError:
@@ -766,7 +767,7 @@ def snapshot_change(path: Path, snapshot: dict) -> str | None:
         return Text("ui.trail.file_replaced", "the trail file was replaced by another file")
     if info.st_size < snapshot["size"]:
         return Text("ui.trail.file_truncated", "the trail file was truncated")
-    key = (info.st_ctime_ns, info.st_size)
+    key = (platform.change_time_ns(info), info.st_size)
     if key == snapshot.get("confirmed"):
         return None
     try:
@@ -776,7 +777,8 @@ def snapshot_change(path: Path, snapshot: dict) -> str | None:
         return Text("ui.trail.file_unreadable", "the trail file cannot be read ({error})", error=error.strerror)
     if digest != snapshot["sha256"]:
         return Text("ui.trail.records_modified", "records covered by the check were modified")
-    if (again.st_dev, again.st_ino, again.st_ctime_ns) == (info.st_dev, info.st_ino, info.st_ctime_ns):
+    if (again.st_dev, again.st_ino, platform.change_time_ns(again)) == (info.st_dev, info.st_ino,
+                                                                          platform.change_time_ns(info)):
         snapshot["confirmed"] = key
     return None
 

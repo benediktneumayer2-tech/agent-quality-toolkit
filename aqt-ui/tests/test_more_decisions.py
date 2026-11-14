@@ -117,7 +117,7 @@ def candidates(trail, signer, env):
     (agent_home / "AGENTS.md").write_text("# Agent rules\n")
     config = env / "config" / "aqt"
     config.mkdir(parents=True, exist_ok=True)
-    (config / "capa.toml").write_text(f'[project]\nroot = "{agent_home}"\nid = "agents"\n')
+    (config / "capa.toml").write_text(f"[project]\nroot = '{agent_home}'\nid = \"agents\"\n")   # literal: Windows paths
     sink = open_sink()
     for attempted in ("release", "trust-source"):
         sink.append(new_record("quarantine.refused", actor("agent", "agent:test:worker-1"), "refused",

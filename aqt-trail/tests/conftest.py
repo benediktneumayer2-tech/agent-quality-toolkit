@@ -122,13 +122,27 @@ def observed_stub(**kw):
     return base
 
 
-def pipe_security(name) -> str:
-    """Windows: owner and access list (SDDL) of the writer's named pipe, read through a client handle."""
+def pipe_security(name) -> tuple[str, str]:
+    """Windows: the owner (SID) and the security descriptor (SDDL) of the writer's named pipe, read through a
+    client handle."""
     import _winapi
     from aqt_evidence import pipes
     handle = _winapi.CreateFile(str(name), _winapi.GENERIC_READ | _winapi.GENERIC_WRITE, 0, _winapi.NULL,
                                 _winapi.OPEN_EXISTING, 0, _winapi.NULL)
     try:
-        return pipes.security_text(handle)
+        return pipes.owner(handle), pipes.security_text(handle)
     finally:
         _winapi.CloseHandle(handle)
+
+
+def only_the_user(sid: str) -> str:
+    """The SDDL Windows writes for "owner and the only access entry: the user": well-known SIDs come back as
+    aliases (``LA`` for the built-in administrator account, which runs the CI)."""
+    import ctypes
+    from ctypes import wintypes
+    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+    descriptor, text = ctypes.c_void_p(), wintypes.LPWSTR()
+    assert advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW(f"O:{sid}D:P(A;;FA;;;{sid})", 1,
+                                                                        ctypes.byref(descriptor), None)
+    assert advapi32.ConvertSecurityDescriptorToStringSecurityDescriptorW(descriptor, 1, 0x5, ctypes.byref(text), None)
+    return text.value

@@ -146,6 +146,11 @@ def _execute(argv: list[str], cwd: Path, timeout: int | None, echo: bool, env: d
     err_file = tempfile.TemporaryFile()
     started, start_clock = utc_stamp(), time.monotonic()
     outcome, exit_code = "completed", 0
+    if os.name == "nt" and argv and not os.path.dirname(argv[0]):
+        # Windows looks for a bare program name in the running program's own folder before PATH (so `python`
+        # would be the interpreter aqt-change runs on, not the project's); resolve it through PATH like a shell
+        found = shutil.which(argv[0], path=env.get("PATH"))
+        argv = [found, *argv[1:]] if found else argv
     try:
         process = subprocess.Popen(argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                    stdin=subprocess.DEVNULL, start_new_session=True, env=env)

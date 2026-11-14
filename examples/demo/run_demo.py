@@ -37,6 +37,11 @@ SUITE = HERE.parent.parent
 VENV_PYTHON = HERE / ".venv" / "bin" / "python"
 
 
+def toml_path(path) -> str:
+    """A path as a TOML string: JSON's escapes are TOML's, so Windows' backslashes survive."""
+    return json.dumps(str(path))
+
+
 def _reexec_in_venv() -> None:
     """Run under examples/demo/.venv when started with another interpreter."""
     import importlib.util
@@ -504,14 +509,14 @@ class Demo:
             display = "{PEOPLE[DEV][0]}"
             tz = "{TZ}"
             [evidence]
-            paths = ["{self.trail_log}"]
+            paths = [{toml_path(self.trail_log)}]
             [project]
-            root = "{self.agent_home}"
+            root = {toml_path(self.agent_home)}
             id = "agent-instructions"
             [scan]
-            repos = ["{self.project}"]
+            repos = [{toml_path(self.project)}]
             [state]
-            db = "{self.state / 'aqt' / 'capa' / 'capa.db'}"
+            db = {toml_path(self.state / 'aqt' / 'capa' / 'capa.db')}
             """))
         dev = self.capa_as(DEV)
         found = dev.scan()

@@ -66,7 +66,9 @@ def test_a_real_writer_and_two_clients(config, tmp_path):
     records = {record["action"]: record for record in read_records(config.trail_path)}
     for action, pid in (("client-one", one.pid), ("client-two", answer["pid"])):
         observed = records[action]["observed"]
-        assert observed["via"] == "socket" and observed["pid"] == pid
+        # a venv's python.exe may be a launcher that runs the interpreter as its child: the started process is
+        # then the parent of the one that connected
+        assert observed["via"] == "socket" and pid in [entry["pid"] for entry in observed["processes"][:2]]
         assert observed["sid"] == platform.user_id() and "uid" not in observed and "gid" not in observed
         assert observed["process_chain"][0] == "python"            # python.exe, named as on Linux
         assert observed["chain_status"] in ("complete", "partial")  # the sender was alive and readable

@@ -26,9 +26,13 @@ def running(env, tmp_path):
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     from aqt_trail.config import load_config
     config = load_config()
+    from aqt_evidence import SinkError, writer_request
     for _ in range(100):
-        if config.socket_path.exists():
-            break
+        try:      # a ping, not a look at the path: on Windows a named pipe is opened by looking at it
+            if writer_request(config.socket_path, {"op": "ping"}, timeout=0.5).get("ok"):
+                break
+        except SinkError:
+            pass
         time.sleep(0.05)
     else:
         process.kill()

@@ -13,7 +13,7 @@ from aqt_trail.observe import observe, processes
 from aqt_trail.server import drain_local_spool
 from aqt_trail.state import open_writer, read_records
 
-from conftest import event, human, pipe_security
+from conftest import event, human, only_the_user, pipe_security
 
 
 def test_socket_append_observes_the_peer(server, config):
@@ -30,7 +30,8 @@ def test_socket_append_observes_the_peer(server, config):
     records = read_records(config.trail_path)
     assert [r["action"] for r in records] == ["service.start", "hello"]
     if platform.IS_WINDOWS:     # after the records: opening the pipe without a request is itself recorded
-        assert pipe_security(config.socket_path) == "O:{0}D:P(A;;FA;;;{0})".format(platform.user_id())
+        owner, sddl = pipe_security(config.socket_path)
+        assert owner == platform.user_id() and sddl == only_the_user(owner)
 
 
 def test_aqt_evidence_socket_sink_is_compatible(server, config):
