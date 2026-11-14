@@ -23,6 +23,8 @@ import re
 import sys
 from typing import Any, Iterator
 
+from aqt_evidence import aqt_command
+
 from .. import records
 from ..decisions import Decider
 from ..engine import Engine, Source, text_hash
@@ -172,7 +174,7 @@ def user_prompt_submit(event: dict, engine: Engine, decider: Decider) -> dict:
                 else:
                     parts.append(f"[aqt-quarantine: {label} released held case {case.case_id} "
                                  f"({source.get('tool')} {source.get('ref') or ''}). It is too long to include here; "
-                                 f"run `aqt-quarantine released {case.case_id}` to read it. It is still untrusted.]")
+                                 f"run `{aqt_command()} quarantine released {case.case_id}` to read it. It is still untrusted.]")
                     mode = "pointer"
             store.write(records.delivered(case_id=case.case_id, kind="content", decision_id=decision["id"],
                                           harness=HARNESS, session=session, mode=mode,

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The hook messages and the refusals that tell the agent what to run name `aqt change ...` (`aqt-toolkit change ...` when started under that name), which exists in every installation; the desktop app's runtime has no `aqt-change`.
 - `install_git_hook(ledger, name="aqt")`: the frozen runtime's commit-msg hook runs `aqt-toolkit change` when asked to.
 - `examples/quickstart.sh` runs with BSD `sed` (macOS) too.
 - The configuration folder, and the lock of the records mirror, come from `aqt_evidence.platform` (unchanged on

@@ -3,6 +3,7 @@
 ## Unreleased
 
 - `aqt_evidence.seatbelt`: the shared parts of the macOS Seatbelt profiles (`sandbox-exec`) of aqt-sensei and aqt-egress: closed by default, the system services and devices a command-line program needs, path rules that cannot be bypassed by renaming a folder above them.
+- `aqt_command()`: the name of the toolkit's command for the commands that messages to agents name: `aqt-toolkit` when the process was started under that name, else `aqt`.
 - `aqt_evidence.platform`: one module for what differs between Linux, macOS and Windows (folders, file locks,
   no-follow opens, private modes, user and socket-peer identity, process information). Linux behaviour and
   folders are unchanged; on macOS the folders are `~/Library/Application Support/AQT/config` and `…/state`,

@@ -125,7 +125,7 @@ def test_long_release_is_delivered_as_pointer(world):
     case_id = next(iter(world.decider().fold()[0]))
     world.decider().release(case_id, "ok")
     context = prompt(world)["hookSpecificOutput"]["additionalContext"]
-    assert f"aqt-quarantine released {case_id}" in context and "id_rsa" not in context
+    assert f"`aqt quarantine released {case_id}`" in context and "id_rsa" not in context
 
 
 def forged_release(world, case_id):
@@ -174,3 +174,13 @@ def test_all_written_records_are_valid(world):
     prompt(world)
     types = {record["type"] for record in world.journal()}
     assert {"quarantine.passed", "quarantine.held", "quarantine.released", "quarantine.delivered"} <= types
+
+
+def test_hold_notice_names_the_aqt_command(monkeypatch):
+    """The agent passes this on: `aqt quarantine ...` exists in every installation; as aqt-toolkit, that name."""
+    from aqt_quarantine.wrap import hold_notice
+    monkeypatch.setattr("sys.argv", ["/usr/bin/aqt"])
+    notice = hold_notice("Q7SEGGW", "score", ["asks to send data somewhere"])
+    assert "`aqt quarantine cases show Q7SEGGW`" in notice and "aqt://case/quarantine:Q7SEGGW" in notice
+    monkeypatch.setattr("sys.argv", ["/home/u/.local/bin/aqt-toolkit"])
+    assert "`aqt-toolkit quarantine cases show Q7SEGGW`" in hold_notice("Q7SEGGW", "score", [])

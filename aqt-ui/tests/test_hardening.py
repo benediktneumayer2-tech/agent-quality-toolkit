@@ -341,7 +341,7 @@ def test_review_runs_and_signs_when_the_trail_state_is_not_writable(trail, revie
     assert not (trail.state / "reviews").exists()
 
 
-def test_needs_you_counts_only_valid_reviews_and_writer_anchors(trail, reviewer, held_case, ui_factory):
+def test_needs_you_counts_only_valid_reviews_and_writer_anchors(trail, reviewer, held_case, ui_factory, env):
     from aqt_evidence import new_record
     from aqt_trail.client import TrailClient, request
     client = ui_factory()
@@ -351,8 +351,19 @@ def test_needs_you_counts_only_valid_reviews_and_writer_anchors(trail, reviewer,
         status = client.get("/api/trail/status")[1]["status"]
         return status["last_review"], status["last_anchor"], {n["code"] for n in client.get("/api/overview")[1]["needs"]}
 
+    # a fresh install: the first review is due review_due_days after the first record, and without a time-stamp
+    # service there is no "no external time stamp" case (Settings recommends one)
+    last_review, last_anchor, needs = state()
+    assert last_review is None and last_anchor is None and not {"review_due", "unanchored"} & needs
+    (env / "config/aqt").mkdir(parents=True, exist_ok=True)
+    (env / "config/aqt/trail.toml").write_text('[anchor]\ntsa_url = "test:"\n')
+    from aqt_ui.config import UiConfig
+    client = ui_factory(config=UiConfig(review_due_days=0))
+    client.login()
     last_review, last_anchor, needs = state()
     assert last_review is None and last_anchor is None and {"review_due", "unanchored"} <= needs
+    client = ui_factory()                                    # the review is due again only after 7 days
+    client.login()
     status, sheet, _ = client.post("/api/trail/review/run", {"since": reviewer})
     status, result, _ = client.post(f"/api/trail/review/{sheet['id']}/sign", {
         "head": sheet["scope"]["head"], "worksheet_sha256": sheet["worksheet_sha256"], "dispositions": {"all": "ok"},

@@ -28,8 +28,15 @@ static QUEUE_SEQ: AtomicU64 = AtomicU64::new(0);
 static UNANNOUNCED: Mutex<Option<HashMap<u64, Vec<Value>>>> = Mutex::new(None); // new cases waiting for words
 const WORDS_WAIT: Duration = Duration::from_secs(3); // how long the page may take to word the notifications
 
-/// The tray menu's "Needs you (n)" entry, kept to update its text.
-struct NeedsItem(MenuItem<Wry>);
+/// The tray menu's entries, kept to update their text: the count, and the page's language.
+struct TrayItems {
+    open: MenuItem<Wry>,
+    needs: MenuItem<Wry>,
+    quit: MenuItem<Wry>,
+}
+
+/// The tray menu's words: Open, Needs you ({n}), Quit; English until the page gives its own.
+static MENU_WORDS: Mutex<Option<[String; 3]>> = Mutex::new(None);
 
 // -- views ------------------------------------------------------------------------------------------------
 
@@ -160,8 +167,8 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
         tray = tray.icon(icon.clone());
     }
     tray.build(app)?;
-    app.manage(NeedsItem(needs));
-    set_count(app, COUNT.load(Ordering::SeqCst));
+    app.manage(TrayItems { open, needs, quit });
+    set_menu_words(app, None);
     Ok(())
 }
 
@@ -177,9 +184,31 @@ fn set_count(app: &AppHandle, count: u64) {
         let _ = tray.set_title((count > 0).then(|| count.to_string()));
         let _ = tray.set_tooltip(Some(format!("Agent Quality Toolkit: {count} open case(s)")));
     }
-    if let Some(item) = app.try_state::<NeedsItem>() {
-        let _ = item.0.set_text(format!("Needs you ({count})"));
+    if let Some(items) = app.try_state::<TrayItems>() {
+        let needs = MENU_WORDS.lock().unwrap().as_ref().map_or("Needs you ({n})".into(), |words| words[1].clone());
+        let _ = items.needs.set_text(needs.replace("{n}", &count.to_string()));
     }
+}
+
+/// The page's words for the tray menu (`{"open", "needs", "quit"}`, `needs` with `{n}` for the count), or
+/// None to apply the words kept; English where a word is missing.
+fn set_menu_words(app: &AppHandle, words: Option<&Value>) {
+    if let Some(words) = words {
+        let word = |key: &str, english: &str| -> String {
+            let text = words.get(key).and_then(Value::as_str).map(str::trim).filter(|t| !t.is_empty());
+            text.unwrap_or(english).chars().take(60).collect()
+        };
+        let needs = word("needs", "Needs you ({n})");
+        let needs = if needs.contains("{n}") { needs } else { format!("{needs} ({{n}})") };
+        *MENU_WORDS.lock().unwrap() = Some([word("open", "Open"), needs, word("quit", "Quit")]);
+    }
+    if let Some(items) = app.try_state::<TrayItems>() {
+        if let Some([open, _, quit]) = MENU_WORDS.lock().unwrap().as_ref() {
+            let _ = items.open.set_text(open);
+            let _ = items.quit.set_text(quit);
+        }
+    }
+    set_count(app, COUNT.load(Ordering::SeqCst));
 }
 
 // -- the queue event and notifications -----------------------------------------------------------------
@@ -314,15 +343,19 @@ fn save(app: &AppHandle, key: &str, value: Value) -> Result<(), String> {
 }
 
 /// The app's own settings and what it set up in the system, for the page's Settings. `change` may set
-/// `close_to_tray` and `autostart` (true or false), and ask for `aqt_command: true` (the AppImage's
-/// `~/.local/bin/aqt`, the macOS app's `/usr/local/bin/aqt`) or `links: true` (register `aqt://` for the AppImage).
-/// `aqt_command` is null where there is nothing to install (the .deb has `/usr/bin/aqt`). Async, so that the D-Bus
+/// `close_to_tray` and `autostart` (true or false), ask for `aqt_command: true` (the AppImage's
+/// `~/.local/bin/aqt`, the macOS app's `/usr/local/bin/aqt`) or `links: true` (register `aqt://` for the AppImage),
+/// and give the tray menu's words in the page's language (`menu`: `{"open", "needs", "quit"}`, kept until the app
+/// ends). `aqt_command` is null where there is nothing to install (the .deb has `/usr/bin/aqt`). Async, so that the D-Bus
 /// and `xdg-mime` calls run off the main thread.
 #[tauri::command]
 pub async fn desktop_settings(app: AppHandle, change: Option<Value>) -> Result<Value, String> {
     let change = change.unwrap_or(Value::Null);
     if let Some(on) = change.get("close_to_tray").and_then(Value::as_bool) {
         save(&app, "close_to_tray", on.into())?;
+    }
+    if let Some(words) = change.get("menu").filter(|words| words.is_object()) {
+        set_menu_words(&app, Some(words));
     }
     if let Some(on) = change.get("autostart").and_then(Value::as_bool) {
         let launcher = app.autolaunch();

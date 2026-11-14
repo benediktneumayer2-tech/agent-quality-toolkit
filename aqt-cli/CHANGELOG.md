@@ -4,6 +4,7 @@
 
 - `aqt status` on macOS: the `egress` line names what the Seatbelt box cannot do that the Linux box does.
 - `aqt setup` on macOS installs the trail writer as a LaunchAgent (`~/Library/LaunchAgents/io.github.benediktneumayer2tech.aqt.trail.plist`, KeepAlive, output to `trail-writer.log` in the AQT state folder) and loads it with `launchctl bootstrap gui/$UID`; `aqt status` checks it with `launchctl print` and gives the fix, as for systemd on Linux.
+- The agent-instruction block of `aqt project init` names the commands as `aqt change ...` and `aqt ui` (`aqt-toolkit ...` where another aqt comes first on `PATH`); a rerun replaces an older block. The git hook's fix names `aqt change` too.
 - Where the first `aqt` on `PATH` is another program (aqtinstall's), `aqt project init` writes the hooks, and from the desktop app's runtime the commit-msg hook, as `aqt-toolkit <tool> ...`; the `command` check reports which name agents run.
 - `aqt status` on macOS and Windows: the writer service and the egress box say that they are not available on this
   system and why (systemd and bubblewrap are Linux only), as a skipped line instead of a warning with a Linux fix.
@@ -14,6 +15,7 @@
 - From the desktop app's frozen runtime, `aqt setup` writes the trail writer's systemd unit with a path that stays valid (the `aqt` on `PATH`, or the AppImage file with `--cli`), not the AppImage's changing mount point.
 - `aqt core --stdio [--read-only]`: the core of the AQT desktop app, aqt-ui's API as JSON lines on stdin and stdout with no network; the same as `aqt-ui core --stdio`.
 - The desktop app's first-run setup, Settings and Projects area run `aqt status`, `aqt setup` and `aqt project status/init` through the same checks and steps (`checks.CHECKS`, `project.PROJECT_CHECKS`). The project step that writes the Claude Code hooks can leave the deny rules out when the person deselects them.
+- `aqt status`: the command check warns only when the first `aqt` on PATH is another program or another AQT version; the same version installed elsewhere is `info` (not a problem). In an AppImage its fix is one `ln -s` line (the app's Settings install it too). Check results carry message codes, so the desktop app shows them in German.
 - `aqt setup` checks the signer ID as soon as it is typed (lower case letters, digits, `.`, `_`, `-`; `alice` becomes `human:alice`), suggests a valid one and asks again, before the name, the role and the passphrase. An invalid `--id` fails before anything is asked.
 - `aqt status`: when the egress box cannot start because Ubuntu's AppArmor blocks bubblewrap's user namespaces, the fix names the AppArmor profile (manual 6.4) instead of "allow unprivileged user namespaces".
 

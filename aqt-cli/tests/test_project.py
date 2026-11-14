@@ -363,7 +363,7 @@ def test_an_existing_commit_msg_hook_is_kept(repo):
     hook = repo / ".git/hooks/commit-msg"
     hook.write_text("#!/bin/sh\nexit 0\n")
     result = status(repo)["git.hook"]
-    assert result.result == "warn" and not result.can_apply and 'aqt-change hook commit-msg "$1"' in result.fix
+    assert result.result == "warn" and not result.can_apply and 'aqt change hook commit-msg "$1"' in result.fix
     init(repo)
     assert hook.read_text() == "#!/bin/sh\nexit 0\n"
 
@@ -405,3 +405,32 @@ def test_git_hook_from_the_frozen_runtime_calls_aqt_change(repo, monkeypatch):
     text = (repo / ".git/hooks/commit-msg").read_text()
     assert 'exec aqt change hook commit-msg "$1"' in text
     assert status(repo)["git.hook"].result == "ok"
+
+
+# -- the commands that the agent instructions name ---------------------------------------------------
+def test_instruction_block_names_aqt_commands_and_a_rerun_replaces_an_older_block(repo):
+    old = (f"{project.BEGIN}\n## Change control (aqt-change)\n\n- Verify only with `aqt-change run --plan "
+           f"plans/<id>.md --item <V-id>`.\n{project.END}")
+    (repo / "CLAUDE.md").write_text(f"# My project\n\nMy own rule.\n\n{old}\n\nAfter the block.\n")
+    assert status(repo)["instructions"].result == "warn"                  # outdated: a rerun replaces it
+    assert init(repo) == 0
+    text = (repo / "CLAUDE.md").read_text()
+    assert text.startswith("# My project\n\nMy own rule.\n") and text.endswith("After the block.\n")
+    assert text.count(project.BEGIN) == 1 and project.instructions_block() in text and old not in text
+    for sub in ("plan new", "reconcile", "begin", "run --plan", "finish"):
+        assert f"`aqt change {sub} " in text
+    assert "aqt-change " not in text.replace("(aqt-change)", "") and "`aqt ui`" in text
+    assert status(repo)["instructions"].result == "ok"
+
+
+def test_instruction_block_names_aqt_toolkit_where_another_aqt_comes_first(repo, tmp_path, monkeypatch):
+    other = tmp_path / "aqtinstall" / "aqt"
+    other.parent.mkdir()
+    other.write_text("#!/bin/sh\necho 'aqtinstall(aqt) v3.1.21'\n")
+    other.chmod(0o755)
+    assert init(repo) == 0
+    monkeypatch.setenv("PATH", f"{other.parent}{os.pathsep}{os.environ['PATH']}")
+    assert status(repo)["instructions"].result == "warn"                  # the name changed: a rerun rewrites it
+    assert init(repo) == 0
+    text = (repo / "CLAUDE.md").read_text()
+    assert "`aqt-toolkit change finish " in text and "`aqt change " not in text and "`aqt-toolkit ui`" in text

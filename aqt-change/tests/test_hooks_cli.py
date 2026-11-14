@@ -151,3 +151,21 @@ def test_every_written_record_is_valid(project, capsys, evidence_file):
     assert {r["type"] for r in records} == {"change.plan.reconciled", "change.receipt", "change.review",
                                             "change.reconciliation", "change.finish"}
     assert all(validate_record(r) == [] for r in records)
+
+
+def test_hook_messages_name_the_aqt_command_the_hook_ran_as(ledger, project, monkeypatch):
+    """The agent reads these: `aqt change ...` exists in every installation (the app's runtime has no aqt-change),
+    and a hook started as aqt-toolkit (another aqt first on PATH) names aqt-toolkit."""
+    plans.begin(ledger, P)
+    (project / "plans/s02.md").write_text((project / P).read_text().replace("s01", "s02"))
+    edit(project / P, "Add a calculator.", "Add a calculator (edited).")
+    edit(project / P, "- [ ] [V01]", "- [x] [V01]")
+    for argv0, name in (("/usr/bin/aqt", "aqt"), ("/opt/x/aqt-change", "aqt"), ("/usr/bin/aqt-toolkit", "aqt-toolkit")):
+        monkeypatch.setattr("sys.argv", [argv0, "hook", "claude-code"])
+        code, message = hooks.claude_code({"hook_event_name": "Stop", "stop_hook_active": True}, ledger)
+        assert f"run '{name} change reconcile {P}" in message and f"Run '{name} change run --plan" in message
+        assert f"'{name} change finish' will still refuse" in message and "aqt-change " not in message.replace(
+            "aqt-change: completion", "")
+        with pytest.raises(Exception) as refused:          # a plan file nobody registered
+            receipts.run(ledger, [], plan_path="plans/s02.md", item="V01", echo=False)
+        assert f"run '{name} change plan add' or 'begin'" in str(refused.value)

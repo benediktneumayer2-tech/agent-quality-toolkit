@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Tests: the connection-cap test accepts a reset as well as an end of file for a refused connection (macOS reports the close of a connection with an unread request as a reset); the server is unchanged.
+- In the desktop app the page also gives the tray menu its words in its language, at start and after each change of language.
 - In the desktop app the page words the system notifications of new cases in its language (German or English); the `queue` event's new cases carry `key` and `args` for that.
 - From the desktop app's frozen runtime the change gates run the runtime itself (`aqt -I -m aqt_change.cli gate`), since it has no `aqt-change` program.
 - The stdio core sends a `queue` event whenever the "Needs you" queue changes (`count`, the `new` cases with id, title and kind, the `removed` ids); it looks every 5 s (`AQT_CORE_QUEUE_SECONDS`, 0 turns it off) with the overview's data, without verifying the trail again. The first event after a start only carries the count. The desktop app shows the count in its tray and a notification per new case.
@@ -18,6 +19,9 @@
 - One signing sheet for every signature: what is signed in one sentence, ID, reason, passphrase, and *What exactly is signed?*; a wrong passphrase keeps the sheet open. *Show as command* on every decision.
 - New API routes (web server and `aqt core --stdio`): `GET /api/setup`, `GET /api/setup/signer-id`, `POST /api/setup/apply`, `POST /api/setup/enrol`, `GET /api/projects`, `GET /api/projects/preview`, `POST /api/projects/connect`. They need aqt-cli (`agent-quality-toolkit`); every route that changes something is refused in read-only mode and runs the decision guard first. `GET /api/overview` says whether the setup is still needed.
 - German labels use the informal address (*du*), as the desktop design does.
+- Usability pass: decisions are equal buttons with nothing chosen in advance; a wrong passphrase shows under its field; in-app fixes for an external time stamp (`POST /api/trail/anchor`), keeping review parameters that differ from the built-in ones (`POST /api/trail/review-params/keep`, until they change) and the outcome of an action that ran unseen (`POST /api/changes/actions/<id>/resolve`, signed); Needs-you entries, the audit trail list, check details and connect results in plain words and in German, with real plurals.
+- Keeping review parameters that differ from the built-in ones is on record: `ui.review_params.kept` names the person (no signature), the values before and after and their fingerprint. The setup keeps the time zone it writes into trail.toml the same way.
+- Without a time-stamp service ([anchor] tsa_url), neither "no external time stamp for 24 h" nor the ALCOA++ "enduring" failure is a Needs-you case; Settings recommends setting one up, and Evidence still shows the attribute as not met. The first audit-trail review is due review_due_days after the trail's first record. A fresh install reaches "Everything in order".
 
 ## 0.2.0 — 2026-11-13
 

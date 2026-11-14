@@ -44,8 +44,9 @@ signed; see [Install on macOS](#install-on-macos) for the first start).
   sends `{"event":"queue","body":{"count":n,"new":[{"id","title","kind"}],"removed":["<id>"]}}`; the first such
   event after a start only carries the count.
 - **Tray or menu-bar icon** with the number of open cases (the label beside the icon on Linux, the text in the
-  macOS menu bar, the tooltip on Windows). Its menu: *Open*, *Needs you (n)*, *Quit*. Closing the window keeps
-  the app running there; the setting `close_to_tray: false` makes closing quit instead.
+  macOS menu bar, the tooltip on Windows). Its menu: *Open window*, *Needs you (n)*, *Quit*, in the page's
+  language once the page has loaded (it sends the words with `desktop_settings`, `menu`), English before.
+  Closing the window keeps the app running there; the setting `close_to_tray: false` makes closing quit instead.
 - **Notifications:** one per new case ("Quarantine holds content from example.com"), or one for all of them
   when four or more arrive at once. A click opens that case (or *Needs you*). The page words them in its
   language: the app hands it the queue event (`window.aqtQueue`) and it answers with `show_notifications`.
@@ -70,14 +71,17 @@ signed; see [Install on macOS](#install-on-macos) for the first start).
     another program is never replaced; a link to an AQT app that moved is renewed.
 
   `aqt project init` writes hooks that call `aqt <tool> ...` from `PATH`, never a path inside the app. When the
-  first `aqt` on `PATH` is another program (aqtinstall's), they call `aqt-toolkit <tool> ...` instead.
+  first `aqt` on `PATH` is another program (aqtinstall's), they call `aqt-toolkit <tool> ...` instead. The texts
+  agents read name the commands the same way (the agent-instruction block, the hook messages, aqt-change's
+  refusals): never `aqt-<tool>`, which the app's runtime does not have.
   `aqt status` reports which AQT command agents run (the `command` check).
 
 **The page's commands** besides the three of the core: `show_notifications(seq, words)` (above; it can only
 word the cases the core reported) and `desktop_settings`, which answers
 `{close_to_tray, tray, autostart, appimage, aqt_command, links}`. Called with `{"change": {...}}` it first applies
-`close_to_tray` and `autostart` (true or false), and `aqt_command: true` or `links: true` (AppImage only: make
-`~/.local/bin/aqt`, register `aqt://`). `tray` says whether a tray icon shows now; `aqt_command` is null outside
+`close_to_tray` and `autostart` (true or false), `aqt_command: true` or `links: true` (AppImage only: make
+`~/.local/bin/aqt`, register `aqt://`), and `menu` (`{"open", "needs", "quit"}`, `needs` with `{n}`: the tray
+menu's words). `tray` says whether a tray icon shows now; `aqt_command` is null outside
 an AppImage, where there is nothing to install. The settings are kept in `desktop.json` in the app's config folder
 (`~/.config/io.github.benediktneumayer2tech.aqt/` on Linux). Onboarding's last step turns `autostart` on.
 
