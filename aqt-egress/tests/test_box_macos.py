@@ -20,7 +20,9 @@ from aqt_egress import box
 MACOS = pytest.mark.skipif(not platform.IS_MACOS, reason="Seatbelt (sandbox-exec) exists only on macOS")
 
 
-# -- the profile, on every system ------------------------------------------------------------------------------
+# -- the profile, on every POSIX system -------------------------------------------------------------------------
+@pytest.mark.skipif(platform.IS_WINDOWS, reason="Seatbelt profiles name POSIX paths; on Windows os.path.realpath "
+                                                "makes /s/aqt into D:\\s\\aqt")
 def test_profile_reaches_only_the_proxy_port_and_protects_the_aqt_folders():
     text = box.seatbelt_profile(port=40123, hidden=["/s/aqt/egress"], read_only=["/c/aqt", "/s/aqt"],
                                 writable=["/s/aqt/spool"], readable=["/s/aqt/egress/sessions/x/public"],

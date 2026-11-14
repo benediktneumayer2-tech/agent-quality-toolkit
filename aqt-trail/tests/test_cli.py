@@ -19,11 +19,16 @@ def run(*argv, stdin=None, monkeypatch=None):
     return cli.main(list(argv))
 
 
+STOP = signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGTERM   # how the writer is stopped with a record
+
+
 @pytest.fixture
 def running(env, tmp_path):
     assert cli.main(["init", "--log-id", "trail_cli"]) == 0
+    # Windows: a process group of its own, so that Ctrl+Break (STOP) reaches the writer and nothing else
+    group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {}
     process = subprocess.Popen([sys.executable, "-m", "aqt_trail.cli", "serve"], env=os.environ.copy(),
-                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, **group)
     from aqt_trail.config import load_config
     config = load_config()
     from aqt_evidence import SinkError, writer_request
@@ -39,7 +44,7 @@ def running(env, tmp_path):
         pytest.fail(process.stderr.read().decode())
     yield config, process
     if process.poll() is None:
-        process.send_signal(signal.SIGTERM)
+        process.send_signal(STOP)
         process.wait(timeout=10)
 
 
@@ -87,7 +92,7 @@ def test_end_to_end(running, fixtures, local_fixture, tmp_path, monkeypatch, cap
     assert cli.main(["verify", "--bundle", str(tmp_path / "bundle")]) == 0
     assert cli.main(["report", "--format", "html", "--out", str(tmp_path / "r.html")]) == 0
 
-    process.send_signal(signal.SIGTERM)
+    process.send_signal(STOP)
     process.wait(timeout=10)
     records = read_records(config.trail_path)
     types = [r["type"] for r in records]

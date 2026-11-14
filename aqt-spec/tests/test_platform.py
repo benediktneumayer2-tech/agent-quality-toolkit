@@ -243,3 +243,13 @@ def test_aqt_command_is_the_name_the_process_was_started_as():
     assert aqt_command("/usr/bin/aqt") == "aqt" and aqt_command("aqt-trail") == "aqt"
     assert aqt_command("/home/u/.local/bin/aqt-toolkit") == "aqt-toolkit"
     assert aqt_command("C:\\Tools\\AQT-TOOLKIT.EXE".replace("\\", "/")) == "aqt-toolkit"
+
+
+def test_seatbelt_ancestors_end_at_the_root_on_every_system(tmp_path):
+    """The folders above a path, nearest first, without the root: on Windows the root is ``D:\\``, where
+    ``dirname`` stops changing (a walk that waited for ``/`` never ended there)."""
+    from aqt_evidence import seatbelt
+    path = tmp_path / "a" / "b"
+    found = seatbelt.ancestors(path)
+    assert found[0] == os.path.realpath(tmp_path / "a") and len(found) == len(Path(found[0]).parents)
+    assert all(os.path.dirname(folder) != folder for folder in found)

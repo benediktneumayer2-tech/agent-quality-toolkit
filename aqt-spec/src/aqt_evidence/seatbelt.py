@@ -60,9 +60,10 @@ def real(path) -> str:
 
 
 def ancestors(path) -> list[str]:
-    """The folders above ``path``, nearest first, without ``/``."""
+    """The folders above ``path``, nearest first, without the root. The walk ends at any root, where
+    ``dirname`` stops changing (``/``; on Windows, where tests build profiles too, ``D:\\``)."""
     found, current = [], os.path.dirname(real(path))
-    while current not in ("/", ""):
+    while current and os.path.dirname(current) != current:
         found.append(current)
         current = os.path.dirname(current)
     return found

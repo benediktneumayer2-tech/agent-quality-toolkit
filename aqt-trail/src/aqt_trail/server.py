@@ -294,7 +294,9 @@ def run_service(config: Config, *, ready=None) -> int:
         stop_reason["value"] = signal.Signals(signum).name
         threading.Thread(target=server.shutdown, daemon=True).start()
 
-    for which in (signal.SIGTERM, signal.SIGINT):
+    # Windows: Ctrl+C and Ctrl+Break (SIGBREAK, what a console or a parent sends a process group) stop the writer
+    # with its service.stop record; SIGTERM there is TerminateProcess, which ends it without one
+    for which in (signal.SIGTERM, signal.SIGINT, *([signal.SIGBREAK] if hasattr(signal, "SIGBREAK") else [])):
         signal.signal(which, stop)
     try:
         start_event(config, writer)

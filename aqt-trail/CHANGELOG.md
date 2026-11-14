@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Windows: Ctrl+C and Ctrl+Break stop the writer with its `service.stop` record (ending the process from outside,
+  as the Task Scheduler's "End" does, leaves none).
 - Windows: `observed.processes[].start_time` is in microseconds since 1970, as on macOS.
 - Windows: the log, lock, spool, checkpoint and TSA key files are opened in binary mode (LF, not CRLF); the IANA
   time zones of the review come from `tzdata` there.
