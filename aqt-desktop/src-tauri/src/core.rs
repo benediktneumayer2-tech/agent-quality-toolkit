@@ -58,6 +58,13 @@ impl Core {
     fn spawn(self: &Arc<Self>) {
         let mut command = Command::new(&self.command[0]);
         command.args(&self.command[1..]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        #[cfg(windows)]
+        {
+            // the core is a console program: without this flag Windows opens a console window for it
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            command.creation_flags(CREATE_NO_WINDOW);
+        }
         let mut child = match command.spawn() {
             Ok(child) => child,
             Err(error) => {

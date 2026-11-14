@@ -1,5 +1,7 @@
 # PyInstaller spec of the frozen AQT runtime: one folder (onedir, no unpacking at each start) with the
 # program `aqt` and every package of the toolkit. Build it with core/build.sh.
+import sys
+
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
 
 PACKAGES = ["aqt_evidence", "aqt_trail", "aqt_signoff", "aqt_change", "aqt_sensei", "aqt_quarantine",
@@ -19,5 +21,13 @@ datas += [item for dist in DISTRIBUTIONS for item in copy_metadata(dist)]
 
 a = Analysis(["aqt_entry.py"], hiddenimports=hidden, datas=datas, excludes=["tkinter"], noarchive=False)
 pyz = PYZ(a.pure)
-exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="aqt", console=True, upx=False, strip=False)
-coll = COLLECT(exe, a.binaries, a.datas, name="aqt", upx=False, strip=False)
+WINDOWS = sys.platform == "win32"
+# Windows: Python's UTF-8 mode (hooks and records are UTF-8 whatever the console's code page), and a second
+# program aqtw.exe without a console window, for the writer's logon task.
+options = [("X utf8_mode=1", None, "OPTION")] if WINDOWS else []
+exe = EXE(pyz, a.scripts, options, exclude_binaries=True, name="aqt", console=True, upx=False, strip=False)
+programs = [exe]
+if WINDOWS:
+    programs.append(EXE(pyz, a.scripts, options, exclude_binaries=True, name="aqtw", console=False, upx=False,
+                        strip=False))
+coll = COLLECT(*programs, a.binaries, a.datas, name="aqt", upx=False, strip=False)

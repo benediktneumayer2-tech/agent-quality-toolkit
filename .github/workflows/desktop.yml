@@ -46,3 +46,39 @@ jobs:
             aqt-desktop/dist/*.AppImage
             aqt-desktop/dist/*.deb
           if-no-files-found: error
+  windows:
+    # The Windows app: the frozen AQT runtime and the per-user NSIS installer (unsigned, owner decision D3). On the
+    # runner the installer is installed, aqt is checked from the user's PATH and through Git Bash (hook commands),
+    # the app is smoke-tested (WebView2 is preinstalled) and uninstalled again; the installer is the artifact.
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Keep LF line endings (the frozen runtime ships vectors and schemas that are hashed byte for byte)
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: "**/pyproject.toml"
+      - uses: actions/cache@v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/AppData/Local/tauri
+            aqt-desktop/src-tauri/target
+          key: desktop-windows-${{ hashFiles('aqt-desktop/src-tauri/Cargo.lock') }}
+          restore-keys: desktop-windows-
+      - name: Frozen runtime and the NSIS installer
+        run: aqt-desktop/scripts/build-bundles.sh
+      - name: Install per user, aqt from PATH and Git Bash, smoke run of the app (a cold and a warm start), uninstall
+        shell: pwsh
+        run: aqt-desktop/scripts/smoke-windows.ps1 -Installer (Get-Item aqt-desktop/dist/*-setup.exe).FullName -Runs 2
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: aqt-desktop-windows
+          path: aqt-desktop/dist/*-setup.exe
+          if-no-files-found: error

@@ -10,7 +10,7 @@ The Agent Quality Toolkit as a desktop app: one window with the aqt-ui pages, an
 - **Runtime:** a bundle ships a frozen Python 3.12 with all eleven packages (PyInstaller, one folder). It is
   also the full `aqt` command, at `runtime/aqt/aqt` inside the installed app.
 
-Builds are unsigned for now. Only Linux (AppImage and .deb) is built so far.
+Builds are unsigned for now: Linux (AppImage and .deb) and Windows (a per-user NSIS installer).
 
 ## How it fits together
 
@@ -49,6 +49,25 @@ On an Ubuntu 24.04 machine with the Tauri build dependencies installed, as in CI
 does the same without Docker. The frozen runtime alone is `core/build.sh`. It needs only uv, and it checks
 the result: `aqt --version`, every tool's `--help`, and `aqt status --json` against a temp HOME.
 
+## Build and install (Windows)
+
+CI builds the installer on a Windows runner (`.github/workflows/desktop.yml`, job `windows`): in Git Bash,
+`scripts/build-bundles.sh` freezes the runtime and runs the NSIS bundler (`src-tauri/tauri.windows.conf.json`).
+The result is `dist/aqt-desktop_<version>_x64-setup.exe`, the artifact `aqt-desktop-windows`.
+
+- **Per user, no administrator rights:** the installer goes to the user's own programs folder and has its own
+  uninstaller (Settings > Apps). It is unsigned, so SmartScreen warns on the first start ("More info", "Run anyway").
+- **The `aqt` command:** the installer puts the folder of the bundled `aqt.exe` (`<install folder>\runtime\aqt`) on
+  the user's `PATH` and the uninstaller takes it off (`src-tauri/windows/installer-hooks.nsh`). New terminals find
+  `aqt`, PowerShell, cmd and Git Bash alike; the folder holds only `aqt.exe`, `aqtw.exe` (the same program without
+  a console window, for the writer's logon task) and `_internal\`.
+- **Not available on Windows** (owner decision D2): the sensei sandbox and the egress box, which need Linux
+  (bubblewrap); `aqt status`, `aqt-sensei` and `aqt-egress` say so. Everything else runs natively.
+
+`scripts/smoke-windows.ps1` (CI only: it installs and uninstalls the app and opens its window) installs the
+installer silently, checks `aqt` from the `PATH` entry and Claude Code hook commands through Git Bash, runs
+`--smoke`, and checks that the uninstaller removes the app and the `PATH` entry.
+
 ## Smoke test
 
 `--smoke` (or `AQT_DESKTOP_SMOKE=1`) makes the app:
@@ -72,5 +91,5 @@ AQT_CORE="$PWD/aqt-desktop/core/dist/aqt/aqt core --stdio" \
 
 `SMOKE_RUNS=3` repeats it in the same HOME: the first run is cold, the others are warm.
 
-CI (`.github/workflows/desktop.yml`) builds both bundles, smoke-tests each of them, and uploads them as the
-artifact `aqt-desktop-linux`.
+CI (`.github/workflows/desktop.yml`) builds both Linux bundles, smoke-tests each of them, and uploads them as the
+artifact `aqt-desktop-linux`; the Windows job does the same for the installer (`aqt-desktop-windows`).
