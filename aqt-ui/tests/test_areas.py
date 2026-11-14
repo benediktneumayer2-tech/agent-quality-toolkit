@@ -98,6 +98,10 @@ def test_add_a_time_stamp_from_the_page(trail, signer, ui_factory, env):
 
 
 def test_keeping_the_review_values_closes_the_case_until_they_change(trail, signer, ui_factory, env):
+    from aqt_ui.guard import Mode
+    refusing = ui_factory(mode=Mode(False, "started with --read-only", explicit=True))
+    refusing.login()
+    assert refusing.post("/api/trail/review-params/keep", {"params": {}})[0] == 403
     (env / "config/aqt").mkdir(parents=True, exist_ok=True)
     toml = env / "config/aqt/trail.toml"
     toml.write_text("[review]\nrepeated_failures = 100000\n")
@@ -109,6 +113,10 @@ def test_keeping_the_review_values_closes_the_case_until_they_change(trail, sign
     assert client.post("/api/trail/review-params/keep", {"params": stale})[0] == 409
     status, data, _ = client.post("/api/trail/review-params/keep", {"params": differs})
     assert status == 200 and data["ok"] and data["kept"] == ["repeated_failures"]
+    kept = next(r for r in trail_records(trail) if r["id"] == data["record_id"])       # on record, attributable
+    assert kept["type"] == "ui.review_params.kept" and kept["actor"]["id"] == SIGNER and kept["actor"]["kind"] == "human"
+    assert kept["before"] == {"repeated_failures": 3} and kept["after"] == {"repeated_failures": 100000}
+    assert kept["data"]["digest"] and kept["observed"] and "sig" not in kept["data"]
     assert "review_params" not in {n["code"] for n in client.get("/api/overview")[1]["needs"]}
     toml.write_text("[review]\nrepeated_failures = 99\n")
     client = ui_factory()

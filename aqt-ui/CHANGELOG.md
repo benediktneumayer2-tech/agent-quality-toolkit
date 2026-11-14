@@ -19,6 +19,8 @@
 - New API routes (web server and `aqt core --stdio`): `GET /api/setup`, `GET /api/setup/signer-id`, `POST /api/setup/apply`, `POST /api/setup/enrol`, `GET /api/projects`, `GET /api/projects/preview`, `POST /api/projects/connect`. They need aqt-cli (`agent-quality-toolkit`); every route that changes something is refused in read-only mode and runs the decision guard first. `GET /api/overview` says whether the setup is still needed.
 - German labels use the informal address (*du*), as the desktop design does.
 - Usability pass: decisions are equal buttons with nothing chosen in advance; a wrong passphrase shows under its field; in-app fixes for an external time stamp (`POST /api/trail/anchor`), keeping review parameters that differ from the built-in ones (`POST /api/trail/review-params/keep`, until they change) and the outcome of an action that ran unseen (`POST /api/changes/actions/<id>/resolve`, signed); Needs-you entries, the audit trail list, check details and connect results in plain words and in German, with real plurals.
+- Keeping review parameters that differ from the built-in ones is on record: `ui.review_params.kept` names the person (no signature), the values before and after and their fingerprint. The setup keeps the time zone it writes into trail.toml the same way.
+- Without a time-stamp service ([anchor] tsa_url), neither "no external time stamp for 24 h" nor the ALCOA++ "enduring" failure is a Needs-you case; Settings recommends setting one up, and Evidence still shows the attribute as not met. The first audit-trail review is due review_due_days after the trail's first record. A fresh install reaches "Everything in order".
 
 ## 0.2.0 — 2026-11-13
 

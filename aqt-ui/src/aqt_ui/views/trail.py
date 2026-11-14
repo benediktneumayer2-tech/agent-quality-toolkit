@@ -256,6 +256,7 @@ class TrailView:
     def __init__(self):
         from aqt_trail.config import load_config
         self.config = load_config()
+        self._config_stamp = self._toml_stamp()
         self.index = TrailIndex(self.config.trail_path,
                                 test_tsa=self.config.section("anchor").get("test_tsa") is True)
         self.check: dict | None = None          # last verification + ALCOA++ result
@@ -266,6 +267,19 @@ class TrailView:
         self._sheets: dict[str, tuple[str, dict]] = {}   # worksheet id -> (digest, sheet) prepared here
         self._review_cache: tuple = (None, None)         # (index version, registry, rows) -> last review time
         self._signers_cache: tuple = (None, None)        # (index version, enrolments, registry) -> checked registry
+
+    @staticmethod
+    def _toml_stamp() -> tuple:
+        from aqt_trail.config import config_dir
+        return fingerprint(config_dir() / "trail.toml")
+
+    def fresh_config(self) -> None:
+        """Read trail.toml again when it changed (the setup writes it while the core runs)."""
+        from aqt_trail.config import load_config
+        stamp = self._toml_stamp()
+        if stamp != self._config_stamp:
+            self.config, self._config_stamp = load_config(), stamp
+            self.index.test_tsa = self.config.section("anchor").get("test_tsa") is True
 
     # -- writer and spool --------------------------------------------------------------------------
     def writer(self) -> dict:
@@ -360,6 +374,7 @@ class TrailView:
 
     # -- status band -----------------------------------------------------------------------------------
     def status(self) -> dict:
+        self.fresh_config()
         check = self.check
         changed = self.changed_since_check(check) if self.config.trail_path.exists() else None
         rows = self.index.refresh()
@@ -391,7 +406,7 @@ class TrailView:
             "last_anchor": self.index.last_anchor, "last_review": self.last_review(),
             "writer": self.writer(), "unreadable": self.index.unreadable,
             "test_mode": self.test_mode(), "review_profile": self.review_profile(),
-            "time_stamps": bool(self.config.section("anchor").get("tsa_url")),
+            "time_stamps": bool(self.config.section("anchor").get("tsa_url")), "trail_toml": str(self._toml_path()),
         }
 
     # -- external time stamp and the review parameters, from the page ----------------------------------
@@ -415,6 +430,11 @@ class TrailView:
                 "seq": (response.get("checkpoint") or {}).get("seq")}
 
     @staticmethod
+    def _toml_path():
+        from aqt_trail.config import config_dir
+        return config_dir() / "trail.toml"
+
+    @staticmethod
     def _accepted_path():
         from aqt_evidence import state_dir
         return state_dir() / "ui" / "review-params-accepted.json"
@@ -433,18 +453,38 @@ class TrailView:
             return False
         return isinstance(kept, dict) and kept.get("digest") == self._params_digest(differs)
 
-    def accept_review_params(self, shown: dict) -> dict:
-        """Keep the review parameters of trail.toml that differ from the built-in ones, as shown to the person."""
+    def accept_review_params(self, shown: dict, *, reason: str | None = None) -> dict:
+        """Keep the review parameters of trail.toml that differ from the built-in ones, as shown to the person: an
+        accepted deviation, so it goes on record. The record ``ui.review_params.kept`` names the person (the default
+        or only enrolled signer; the writer adds who sent it), the values before (built-in) and after (trail.toml) and
+        the fingerprint; no signature. The case returns when the values change."""
+        from aqt_evidence import content_hash, new_record, open_sink, subject
+        from aqt_trail.config import config_dir
         differs = self.review_profile()["differs_from_builtin"]
         if not differs:
             return {"ok": False, "message": "the review parameters are the built-in ones; nothing to keep"}
         if self._params_digest(shown) != self._params_digest(differs):
             raise Stale("trail.toml changed since the page showed it; look at the parameters again")
+        person = _person()
+        if person is None:
+            raise UsageProblem("set up your signing identity first: keeping the values is recorded under your ID")
+        toml = config_dir() / "trail.toml"
+        digest = self._params_digest(differs)
+        record = new_record(
+            "ui.review_params.kept", person, "keep",
+            subject=subject("file", str(toml), sha256=content_hash({"review": differs})),
+            reason=reason or "kept the review parameters of trail.toml that differ from the built-in ones",
+            before={key: value["builtin"] for key, value in sorted(differs.items())},
+            after={key: value["value"] for key, value in sorted(differs.items())},
+            data={"digest": digest, "params": differs})
+        sink = open_sink()
+        stored = sink.append(record)
         path = self._accepted_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"digest": self._params_digest(differs), "params": differs,
+        path.write_text(json.dumps({"digest": digest, "params": differs, "record": stored.get("id"),
                                     "kept_at": _stamp()}, indent=2, default=str), encoding="utf-8")
-        return {"ok": True, "kept": sorted(differs)}
+        return {"ok": True, "kept": sorted(differs), "record_id": stored.get("id"), "time": stored.get("time"),
+                "spooled": bool(getattr(sink, "last_spooled", False))}
 
     def test_mode(self) -> bool:
         """``[anchor] test_tsa = true``: TEST ONLY anchors count, here and in reviews (as in aqt-trail)."""
@@ -455,6 +495,7 @@ class TrailView:
         values of trail.toml (plus ``test_tsa`` in test mode), with every parameter that differs from the
         built-in defaults (``differs_from_builtin``) and a one-line ``description``."""
         from aqt_trail.review import describe_params, load_profile, profile_differences
+        self.fresh_config()
         defaults = dict(self.config.section("review"))
         if self.test_mode():
             defaults["test_tsa"] = True          # bound into the profile: shown and signed as a difference
@@ -752,6 +793,21 @@ def _count_lines(path: Path) -> int:
             return sum(1 for line in handle if line.strip())
     except OSError:
         return 0
+
+
+def _person() -> dict | None:
+    """The person at this desk as a record actor: the default signer of signoff.toml, else the only (first) enrolled
+    signer with an active key; None without one."""
+    from . import installed
+    if not installed("aqt_signoff"):
+        return None
+    from aqt_evidence import actor
+    from .changes import _signers
+    from .signatures import open_signoff
+    rows = _signers()
+    default = open_signoff().settings.signer
+    pick = next((row for row in rows if row["id"] == default), rows[0] if rows else None)
+    return actor("human", pick["id"], role=pick.get("role") or None, display=pick.get("name") or None) if pick else None
 
 
 def _stamp() -> str:

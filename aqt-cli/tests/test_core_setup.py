@@ -107,6 +107,11 @@ def test_onboarding_sets_up_trail_writer_and_signer_and_never_keeps_the_passphra
     assert all(rows[name]["result"] == "ok" for name in ("trail.init", "service", "writer", "signer", "signoff.config",
                                                          "trail.config")), rows
     assert get(core, "/api/setup/signer-id", id="alice-example")[1]["taken"] is True
+    # the setup wrote trail.toml with this computer's time zone: kept on record, so a fresh install is in order
+    kept = [r for r in json.loads("[" + ",".join(load_config().trail_path.read_text().splitlines()) + "]")
+            if r["type"] == "ui.review_params.kept"]
+    assert kept and kept[-1]["after"] == {"timezone": "Europe/Vienna"} and kept[-1]["actor"]["id"] == "human:alice-example"
+    assert get(core, "/api/overview")[1]["needs"] == []
     assert PASSPHRASE not in json.dumps(body) and PASSPHRASE not in "\n".join(core.log_lines)
     assert PASSPHRASE not in home_text()
     assert any("aqt-ui decision /api/setup/enrol from pid" in line and "recorded" in line for line in core.log_lines)

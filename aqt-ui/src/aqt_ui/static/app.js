@@ -1483,6 +1483,7 @@ const EVENT_WORDS = {
   "capa.effectiveness": "Effectiveness checked", "capa.closure": "Deviation closed",
   "validate.run": "Validation run", "validate.report": "Validation report", "validate.qualification": "Qualification",
   "validate.requalification": "Requalification needed", "egress.session": "Outbound session", "egress.request": "Outbound request",
+  "ui.review_params.kept": "Review values kept",
 };
 const EVENT_ACTIONS = { "service.start": "Background service started", "service.stop": "Background service stopped", "clock.jump": "Clock jump noted" };
 function eventWords(r) {
@@ -2239,6 +2240,18 @@ async function renderSettings(main) {
         h("summary", { text: tn(fine.length, "Show the check that is in order", "Show the {n} checks that are in order") }),
         h("ul", { class: "checks" }, fine.map((row) => checkRow(row, { onFix }))))));
   } else put(page, section(t("Is everything running?"), errorBox(problem)));
+  // a recommendation, not a problem: external time stamps need a service the organisation chooses
+  const status = (S.overview && S.overview.status) || data.status || {};
+  if (status.time_stamps === false) {
+    const snippet = '[anchor]\ntsa_url = "https://…"';
+    put(page, section(t("Recommended"), h("div", { class: "recommend" },
+      h("p", {}, st("info", t("Recommended")), " ", h("strong", { text: t("Set up external time stamps") })),
+      h("p", { class: "lede", text: t("An external time-stamp service (RFC 3161) confirms when the audit trail had a given state, so a later rewrite of the whole trail would show. Which service to trust is your organisation's choice, so AQT does not pick one; only the hash of the trail's newest record is sent to it.") }),
+      h("p", { class: "small", text: t("Add these lines to {file}, with the address of your time-stamp service:", { file: status.trail_toml || "trail.toml" }) }),
+      h("div", { class: "snippet" }, h("pre", { class: "json", text: snippet }),
+        h("button", { class: "btn small ghost", type: "button", text: t("Copy"), onclick: () => { navigator.clipboard?.writeText(snippet).then(() => announce(t("Copied")), () => {}); } })),
+      h("p", { class: "small muted", text: t("Until then the ALCOA++ attribute Enduring stays not met under Evidence, and no case asks for a time stamp.") }))));
+  }
   // 2. who you are
   put(page, await identitySection(setup));
   // 3. the audit trail and the tools

@@ -77,8 +77,10 @@ def build(app) -> dict:
         needs.append(item("critical", "trail", "Trail verification found problems",
                           text_join("; ", (status["check"] or {}).get("problems", [])[:2]), code="trail_problems",
                           since=(status["check"] or {}).get("checked_at")))
+    time_stamps = bool(status.get("time_stamps"))
     for result in alcoa:
-        if result["status"] == "fail":
+        # without a time-stamp service, "enduring" cannot be met; Settings recommends one, Evidence shows the result
+        if result["status"] == "fail" and (time_stamps or result["id"] != "alcoa:enduring"):
             needs.append(item("critical", "trail", f"ALCOA++ {result['attribute']} failed", result["detail"],
                               code=result["id"], key="alcoa_fail", page=f"trail:alcoa:{result['id']}",
                               since=(status["check"] or {}).get("checked_at"), attribute=result["attribute"]))
@@ -102,14 +104,16 @@ def build(app) -> dict:
         needs.append(item("medium", "trail", waiting, "Move them into the trail on this case's page", code="spooled",
                           n=writer["spooled"]))
     if status["records"]:
-        review_age = _age_hours(status["last_review"])
+        rows = trail.index.refresh()
+        # never reviewed: due review_due_days after the trail's first record, not at once
+        review_age = _age_hours(status["last_review"] or (rows[0].get("time") if rows else None))
         if review_age is None or review_age > 24 * app.config.review_due_days:
             needs.append(item("low", "trail", "Audit-trail review due",
                               f"No signed audit-trail review in {app.config.review_due_days} days", ref="review",
                               code="review_due", since=status["last_review"],
                               days=app.config.review_due_days))
         anchor_age = _age_hours(status["last_anchor"])
-        if anchor_age is None or anchor_age > 24:
+        if time_stamps and (anchor_age is None or anchor_age > 24):      # only once a service is set
             needs.append(item("low", "trail", "Audit trail has had no external time stamp for 24 h",
                               "An external time stamp proves when the trail had this state", code="unanchored",
                               since=status["last_anchor"]))

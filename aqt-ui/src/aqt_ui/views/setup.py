@@ -91,10 +91,11 @@ def apply(check_id: str) -> dict:
     check = next(c for c in checks.CHECKS if c.id == check_id)
     said: list[str] = []
     ctx = checks.Context(yes=True, say=said.append)
+    applied = checks.needs_step(check, checks.run_check(ctx, check))
     error = _apply(checks, ctx, check)
     result = checks.run_check(ctx, check)
     return {"ok": error is None and result.result != checks.FAIL, "check": _row(checks, check, result),
-            "error": error, "said": said}
+            "error": error, "said": said, "applied": applied and error is None}
 
 
 def _apply(checks, ctx, check, step: Callable | None = None) -> str | None:
