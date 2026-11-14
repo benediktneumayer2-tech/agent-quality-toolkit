@@ -21,8 +21,8 @@ Builds are unsigned for now. Only Linux (AppImage and .deb) is built so far.
 - **Routing:** the page keeps its pathname routes (`/case/...`, `/change/...`). In the app, Tauri answers
   unknown paths with `index.html`, so a reload stays on the page.
 - **Security:**
-  - the window may call only these five commands: the three above, `desktop_settings` and `pick_folder`
-    (`src-tauri/capabilities/main.json`);
+  - the window may call only these commands: the three above, `desktop_settings`, `show_notifications`,
+    `pick_folder` and `machines` (`src-tauri/capabilities/main.json`);
   - a strict Content-Security-Policy allows no inline code and no remote content
     (`scripts/sync-frontend.mjs` refuses inline code in the HTML);
   - the window cannot navigate to another origin; http(s) links open in the system browser.
@@ -32,7 +32,8 @@ Builds are unsigned for now. Only Linux (AppImage and .deb) is built so far.
   2. `AQT_CORE`, a command line split on spaces, e.g. `AQT_CORE="/path/to/aqt core --stdio"`;
   3. `aqt core --stdio` from `PATH`.
 
-  If the core stops, it is restarted once. If it stops again, the page shows the error. The app's own
+  On another machine the core is started over SSH (below). If the core stops, it is restarted once. If it
+  stops again, the page shows why, with a button to start it again. The app's own
   `--read-only` is passed on to the core. The tray, the count and the notifications go on after a restart: the
   new core's first `queue` event sets the count again and announces nothing.
 
@@ -70,7 +71,7 @@ Builds are unsigned for now. Only Linux (AppImage and .deb) is built so far.
   refusals): never `aqt-<tool>`, which the app's runtime does not have.
   `aqt status` reports which AQT command agents run (the `command` check).
 
-**The page's commands** besides the three of the core: `show_notifications(seq, words)` (above; it can only
+**The page's commands** besides the three of the core: `machines` (below), `show_notifications(seq, words)` (above; it can only
 word the cases the core reported) and `desktop_settings`, which answers
 `{close_to_tray, tray, autostart, appimage, aqt_command, links}`. Called with `{"change": {...}}` it first applies
 `close_to_tray` and `autostart` (true or false), `aqt_command: true` or `links: true` (AppImage only: make
@@ -78,6 +79,47 @@ word the cases the core reported) and `desktop_settings`, which answers
 menu's words). `tray` says whether a tray icon shows now; `aqt_command` is null outside
 an AppImage, where there is nothing to install. The settings are kept in `desktop.json` in the app's config folder
 (`~/.config/io.github.benediktneumayer2tech.aqt/` on Linux). Onboarding's last step turns `autostart` on.
+
+## Another machine over SSH
+
+The window can show the AQT of another machine, e.g. the server where the agents run: the app starts the core
+there with `ssh <destination> aqt core --stdio`. There is no tunnel, no port and no web page; the protocol is
+the same.
+
+- **Machines** are kept under Settings, *This app*, *Machines*: *This computer* and entries with a name and an
+  SSH destination (`user@host`, or a `Host` from `~/.ssh/config`). *Test connection* shows the AQT version
+  there, the command found and whether decisions are on. The list holds no secrets: `machines` and `machine` in
+  `desktop.json`. The page's command `machines` lists them and can `add`, `remove`, `select`, `reconnect` and
+  `test`.
+- **The window always shows the machine it is on:** the top bar has a choice of machine once there is one
+  besides this computer, and so does the first-run setup's header. The rail and the window title name a remote
+  machine. Choosing another machine stops the core and starts it there; the page then loads its data again.
+- **ssh** is the system's OpenSSH (built into Windows 10 and 11), with the user's config, keys and agent. The app
+  adds `-T -a -x`, `BatchMode=yes` (never a password or passphrase prompt: a key with a passphrase works
+  through the ssh-agent), `ConnectTimeout=15`, `ServerAliveInterval=15` with `ServerAliveCountMax=3`,
+  `ClearAllForwardings=yes` and, outside Windows, `ControlPath=none`. Host keys are checked as the user's ssh
+  checks them: an unknown host is refused, with the command to run once in a terminal (`ssh <destination>`).
+  The destination follows `--` and can never be an option. Nothing passes through a local shell, and the line
+  run on the other machine is fixed. `AQT_SSH` sets the ssh command line, split on spaces like `AQT_CORE`.
+- **The command there** is found with one probe in one connection: `aqt` when it is AQT's, else `aqt-toolkit`
+  (where aqtinstall's `aqt` comes first), else `~/.local/bin/aqt-toolkit`. That last one is the link the
+  install makes, and an SSH command often lacks it on its `PATH`: on Ubuntu only a login shell adds
+  `~/.local/bin`. The app's `--read-only` is passed on.
+- **The guard** is the remote core's. Started by `sshd`, it sees no agent among its ancestors, so a person at
+  the app can decide. Each decision asks for the passphrase of the signing key on that machine, which travels
+  there through the SSH connection.
+- **States:**
+  - an unreachable host or a lost connection keeps the last data greyed, with *Reconnect* and *Use this
+    computer*;
+  - a machine without AQT gets the install hint, with the command that shows what an SSH command finds there;
+  - a refused key gets the list of what to check;
+  - a lost connection is started again once by itself.
+
+  A request that was sent and got no answer is never sent again: the signing sheet says the outcome is unknown
+  and offers a reload.
+- **The queue and notifications** come from the chosen machine. Notifications and the tray's tooltip name it.
+- **Files:** downloads are saved on this computer. The folder dialog shows this computer's folders, so for
+  another machine Projects asks for the path there, as the browser page does.
 
 **Platform limits** (Linux checked under Xvfb on a private D-Bus session with stand-in notification and tray
 services; macOS and Windows not run yet):
@@ -96,6 +138,11 @@ services; macOS and Windows not run yet):
   desktop cannot run that entry's quoted command line.
 - **AppImage start at login:** the autostart entry names the AppImage file without quotes, so it fails for a
   path with spaces; keep the AppImage in a folder without spaces.
+- **SSH** was checked on Linux against an sshd in a container: the round trip, a queue event and its
+  notification, an unknown host, a refused key, an unreachable host, no AQT, a dropped connection, and a
+  decision whose connection was lost. The OpenSSH of Windows and macOS has not been run yet. On Windows a key
+  with a passphrase needs the *OpenSSH Authentication Agent* service. Agent forwarding is off (`-a`): the remote
+  core signs with that machine's own key and needs none.
 - **AppImage `aqt` speed:** each call mounts the AppImage and runs its start script first (here 0.16 s for
   `aqt --version`, against 0.07 s through the .deb's `/usr/bin/aqt`); agent hooks run on every tool call, so
   the .deb is the better choice for heavy use.

@@ -180,7 +180,8 @@ fn set_count(app: &AppHandle, count: u64) {
     if let Some(tray) = app.tray_by_id(TRAY) {
         // the title is the label beside the icon on Linux and the text in the macOS menu bar
         let _ = tray.set_title((count > 0).then(|| count.to_string()));
-        let _ = tray.set_tooltip(Some(format!("Agent Quality Toolkit: {count} open case(s)")));
+        let on = crate::machines::remote_name().map_or(String::new(), |name| format!(" on {name}"));
+        let _ = tray.set_tooltip(Some(format!("Agent Quality Toolkit{on}: {count} open case(s)")));
     }
     if let Some(items) = app.try_state::<TrayItems>() {
         let needs = MENU_WORDS.lock().unwrap().as_ref().map_or("Needs you ({n})".into(), |words| words[1].clone());
@@ -277,8 +278,10 @@ fn announce(app: &AppHandle, new: &[Value], words: &Value) {
     }
 }
 
-/// One system notification; a click on it opens `path` where the platform reports the click.
+/// One system notification; a click on it opens `path` where the platform reports the click. On another
+/// machine than this computer the title starts with that machine's name.
 fn notify(app: &AppHandle, title: &str, body: &str, button: &str, path: &str) {
+    let title = &crate::machines::remote_name().map_or(title.to_string(), |name| format!("{name}: {title}"));
     #[cfg(target_os = "macos")]
     {
         static NAMED: std::sync::Once = std::sync::Once::new(); // notifications in this app's name, not Terminal's
@@ -320,7 +323,7 @@ fn settings_file(app: &AppHandle) -> Option<PathBuf> {
     app.path().app_config_dir().ok().map(|dir| dir.join("desktop.json"))
 }
 
-fn settings(app: &AppHandle) -> Value {
+pub(crate) fn settings(app: &AppHandle) -> Value {
     settings_file(app)
         .and_then(|file| std::fs::read_to_string(file).ok())
         .and_then(|text| serde_json::from_str::<Value>(&text).ok())
@@ -332,7 +335,7 @@ fn close_to_tray(app: &AppHandle) -> bool {
     settings(app).get("close_to_tray").and_then(Value::as_bool).unwrap_or(true)
 }
 
-fn save(app: &AppHandle, key: &str, value: Value) -> Result<(), String> {
+pub(crate) fn save(app: &AppHandle, key: &str, value: Value) -> Result<(), String> {
     let file = settings_file(app).ok_or("no folder for the app's settings")?;
     let mut all = settings(app);
     all[key] = value;
