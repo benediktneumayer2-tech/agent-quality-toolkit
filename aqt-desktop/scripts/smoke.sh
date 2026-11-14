@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Smoke test of the app, always under xvfb-run (never on a real display), with throw-away HOME and XDG
 # folders and its own D-Bus session (dbus-run-session), so it can reach neither a running AQT app nor the
-# desktop's tray and notifications. The app waits for the core's ready event, makes one request
+# desktop's tray and notifications. That bus starts no services on demand: no desktop portal or accessibility bus
+# to wait for (on a desktop machine the portal alone held the window up for 25 s). The app waits for the core's ready event, makes one request
 # (GET /api/overview), waits until the page itself got an answer from the core, prints one JSON line with
 # timings and exits 0 (ok) or 1. For a bundle, the bundle's aqt command then runs --version and status --json
 # (the .deb's usr/bin/aqt and usr/bin/aqt-toolkit, the AppImage's CLI mode).
@@ -31,7 +32,12 @@ isolated() {
         XDG_DATA_HOME="$WORK/data" XDG_CACHE_HOME="$WORK/cache" XDG_RUNTIME_DIR="$WORK/runtime" "$@"
 }
 SESSION=()
-command -v dbus-run-session >/dev/null && SESSION=(dbus-run-session --)
+cat > "$WORK/bus.conf" <<'EOF'
+<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN" "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig><type>session</type><listen>unix:tmpdir=/tmp</listen><auth>EXTERNAL</auth>
+<policy context="default"><allow send_destination="*" eavesdrop="true"/><allow eavesdrop="true"/><allow own="*"/></policy></busconfig>
+EOF
+command -v dbus-run-session >/dev/null && SESSION=(dbus-run-session --config-file="$WORK/bus.conf" --)
 status=0
 for _ in $(seq "${SMOKE_RUNS:-1}"); do
     isolated "${SESSION[@]}" xvfb-run -a -s "-screen 0 1440x900x24" "${APP[@]}" --smoke >"$WORK/log" 2>&1 || status=1

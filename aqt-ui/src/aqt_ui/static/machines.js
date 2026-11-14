@@ -49,6 +49,19 @@ export const MACHINE_DE = {
   "The connection was lost after the request was sent, so whether it was carried out is unknown. The app does not send it again. Reload to see what happened before you try again.":
     "Die Verbindung ist abgerissen, nachdem die Anfrage gesendet war. Ob sie ausgeführt wurde, ist daher unbekannt. Die App sendet sie nicht noch einmal. Lade neu, um zu sehen, was geschehen ist, bevor du es noch einmal versuchst.",
   "Outcome unknown.": "Ergebnis unbekannt.", "Reload": "Neu laden",
+  "A machine's name has 1 to 40 characters.": "Der Name eines Rechners hat 1 bis 40 Zeichen.",
+  "A machine's name cannot contain control characters.": "Der Name eines Rechners darf keine Steuerzeichen enthalten.",
+  "There is a machine named {name} already.": "Es gibt schon einen Rechner namens {name}.",
+  "An SSH destination has 1 to 255 characters.": "Ein SSH-Ziel hat 1 bis 255 Zeichen.",
+  "An SSH destination cannot start with -.": "Ein SSH-Ziel darf nicht mit - beginnen.",
+  "An SSH destination has only letters, digits and . _ - @ : % [ ] /, e.g. user@server or a Host from ~/.ssh/config.":
+    "Ein SSH-Ziel hat nur Buchstaben, Ziffern und . _ - @ : % [ ] /, z. B. user@server oder ein Host aus ~/.ssh/config.",
+  "There is no machine named {name}.": "Es gibt keinen Rechner namens {name}.",
+  "The app could not save its settings: {message}": "Die App konnte ihre Einstellungen nicht speichern: {message}",
+  "Setting up takes about five minutes: who you are, your passphrase, the audit trail and your first project. Nothing leaves {machine}; this app only shows it, over SSH.":
+    "Die Einrichtung dauert etwa fünf Minuten: wer du bist, deine Passphrase, der Audit Trail und dein erstes Projekt. Nichts verlässt {machine}; diese App zeigt es nur an, über SSH.",
+  "{machine} has no systemd user session, so AQT cannot install the background service there. Start the writer there yourself when the step asks for it; it must keep running.":
+    "{machine} hat keine systemd-Benutzersitzung, daher kann AQT den Hintergrunddienst dort nicht einrichten. Starte den Schreibdienst dort selbst, wenn der Schritt danach fragt; er muss weiterlaufen.",
 };
 
 let ui = null;            // the helpers of app.js: APP, h, t, put, clear, announce, commandLine, onBack
@@ -60,6 +73,21 @@ let loaded = false;       // the page has its data
 
 const t = (text, vars) => ui.t(text, vars);
 const call = (change) => ui.APP.invoke("machines", change ? { change } : {});
+// The app refuses with {code, message, name}; the page words the code in its language.
+function refusal(error) {
+  const v = { name: (error && error.name) || "", message: (error && error.message) || String(error) };
+  const words = {
+    name_length: () => t("A machine's name has 1 to 40 characters."),
+    name_control: () => t("A machine's name cannot contain control characters."),
+    name_taken: () => t("There is a machine named {name} already.", v),
+    destination_length: () => t("An SSH destination has 1 to 255 characters."),
+    destination_option: () => t("An SSH destination cannot start with -."),
+    destination_chars: () => t("An SSH destination has only letters, digits and . _ - @ : % [ ] /, e.g. user@server or a Host from ~/.ssh/config."),
+    unknown_machine: () => t("There is no machine named {name}.", v),
+    settings: () => t("The app could not save its settings: {message}", v),
+  }[error && error.code];
+  return words ? words() : v.message;
+}
 function take(answer) {
   list = answer.machines || [];
   current = answer.current || null;
@@ -68,6 +96,14 @@ function take(answer) {
 
 /** The name of the other machine the window is on, or null on this computer (and in a browser). */
 export function machineName() { return current ? current.name : null; }
+/** The page's sentences that speak of "this computer", worded for another machine; null on this computer. */
+export function onMachine(which) {
+  if (!current) return null;
+  const v = { machine: current.name };
+  if (which === "setup") return t("Setting up takes about five minutes: who you are, your passphrase, the audit trail and your first project. Nothing leaves {machine}; this app only shows it, over SSH.", v);
+  if (which === "no-service") return t("{machine} has no systemd user session, so AQT cannot install the background service there. Start the writer there yourself when the step asks for it; it must keep running.", v);
+  return null;
+}
 /** The rail's line under the product name on another machine, else null. */
 export function machineLine() { return current ? t("quality desk on {machine}", { machine: current.name }) : null; }
 
@@ -122,11 +158,11 @@ export function setupPicker() { return ui && (list.length || current) ? newPicke
 async function switchTo(name) {
   const pick = document.getElementById("machine");
   if (pick) pick.disabled = true;
-  try { await call({ select: name }); } catch (error) { if (pick) pick.disabled = false; ui.announce(String(error)); return; }
+  try { await call({ select: name }); } catch (error) { if (pick) pick.disabled = false; ui.announce(refusal(error)); return; }
   location.replace("/");                 // the page reloads its data from the core of that machine
 }
 async function reconnect() {
-  try { await call({ reconnect: true }); } catch (error) { ui.announce(String(error)); return; }
+  try { await call({ reconnect: true }); } catch (error) { ui.announce(refusal(error)); return; }
   location.reload();
 }
 
@@ -211,7 +247,7 @@ export function machinesPart() {
   const { h, put, clear, st, announce } = ui;
   const box = h("div", { class: "machines" });
   const out = h("div", { "aria-live": "polite" });
-  const fail = (error) => put(clear(out), h("div", { class: "result refused", text: String(error.message || error) }));
+  const fail = (error) => put(clear(out), h("div", { class: "result refused", text: refusal(error) }));
   const name = h("input", { id: "machine-name", type: "text", maxlength: "40", placeholder: t("e.g. Build server"), autocomplete: "off" });
   const dest = h("input", { id: "machine-dest", type: "text", class: "grow", spellcheck: "false", autocomplete: "off", placeholder: t("user@host, or a Host from ~/.ssh/config") });
   const add = h("button", { class: "btn", type: "button", text: t("Add") });
@@ -243,9 +279,10 @@ export function machinesPart() {
           const r = answer.test || {};
           if (r.ok) {
             const mode = r.mode && r.mode.decisions ? t("decisions are on") : t("read-only: {reason}", { reason: (r.mode && r.mode.reason) || "" });
-            put(clear(result), st("pass", `${t("Connected: AQT {version}, {command}", { version: r.version || "?", command: r.command || "aqt" })} · ${mode}`));
+            put(clear(result), st("pass", t("Connected: AQT {version}, {command}", { version: r.version || "?", command: r.command || "aqt" })),
+              h("span", { class: "muted", text: ` · ${mode}` }));
           } else put(clear(result), h("div", { class: "result refused" }, failureBox({ ...(r.failure || {}), machine: m.name, destination: m.destination })));
-        } catch (error) { put(clear(result), h("div", { class: "result refused", text: String(error) })); }
+        } catch (error) { put(clear(result), h("div", { class: "result refused", text: refusal(error) })); }
         finally { test.disabled = false; }
       });
       buttons.push(test, h("button", { class: "btn small ghost", type: "button", text: t("Remove"), onclick: async () => {
