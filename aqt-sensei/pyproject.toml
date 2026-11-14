@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "aqt-sensei"
-version = "0.2.0"
+version = "0.3.0"
 description = "Independent advisor for a coding agent: any vendor, read-only enforced by the OS, owner modes and budgets, advice ledger (Agent Quality Toolkit)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -28,7 +28,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Software Development :: Quality Assurance",
 ]
-dependencies = ["aqt-spec>=0.2,<0.3"]
+dependencies = ["aqt-spec>=0.3,<0.4"]
 
 [project.optional-dependencies]
 test = ["pytest>=8"]

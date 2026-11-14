@@ -1,6 +1,6 @@
 # Agent Quality Toolkit: user manual
 
-Version 0.2 (preview), November 2026.
+Version 0.3 (preview), November 2026.
 
 This manual shows you how to install the Agent Quality Toolkit (AQT), set it up on one developer machine, and use its tools in the right order. It is written for developers and QA people. The desktop app needs no command line; the manual still shows the commands, because the app and the commands do the same and write to the same audit trail. You do not need to know anything about large language models, GMP/GDP or cryptography. Every term is explained when it first appears, and the [glossary](#7-glossary) at the end repeats the short definitions.
 
@@ -101,10 +101,10 @@ On Debian or Ubuntu, the optional tools come with `sudo apt install bubblewrap t
 
 ### 1.2 Get the code
 
-PyPI packages are planned; until then, install from a clone of the release. Each release is a tag of the repository, `v` followed by the version. Clone this one, 0.2.0:
+PyPI packages are planned; until then, install from a clone of the release. Each release is a tag of the repository, `v` followed by the version. Clone this one, 0.3.0:
 
 ```bash
-git clone --branch v0.2.0 https://github.com/benediktneumayer2-tech/agent-quality-toolkit.git ~/agent-quality-toolkit
+git clone --branch v0.3.0 https://github.com/benediktneumayer2-tech/agent-quality-toolkit.git ~/agent-quality-toolkit
 cd ~/agent-quality-toolkit
 ```
 
@@ -1513,7 +1513,7 @@ It comes with the install of section 1.3. Start it yourself in a terminal, not f
 ```bash
 aqt-ui
 # aqt-ui: decisions are on (each one asks for your passphrase)
-# aqt-ui 0.2.0 on http://127.0.0.1:41377/
+# aqt-ui 0.3.0 on http://127.0.0.1:41377/
 # login link (works once): http://127.0.0.1:41377/login?t=…
 ```
 
@@ -1554,7 +1554,7 @@ cd ~/agent-quality-toolkit
 uv pip install --python .venv/bin/python -e "aqt-cli[egress]"
 ln -sf ~/agent-quality-toolkit/.venv/bin/aqt-egress ~/.local/bin/      # 1.4
 aqt egress status
-# aqt-egress 0.2.0: box ok (bubblewrap with user and network namespaces works)
+# aqt-egress 0.3.0: box ok (bubblewrap with user and network namespaces works)
 #   CA: not created yet (the first run creates it)
 #   last session: none
 ```

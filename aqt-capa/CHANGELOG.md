@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-11-14
 
+- Packaging: released at 0.3.0, the version of every AQT package; the other AQT packages it needs are required at `>=0.3,<0.4`.
 - The configuration folder comes from `aqt_evidence.platform` (unchanged on Linux).
 
 ## 0.2.0 — 2026-11-13

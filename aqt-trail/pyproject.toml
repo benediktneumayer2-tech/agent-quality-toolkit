@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "aqt-trail"
-version = "0.2.0"
+version = "0.3.0"
 description = "Tamper-evident audit trail for AI coding agents, with an ALCOA++ report and a signed audit-trail review (Agent Quality Toolkit)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -31,7 +31,7 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
     "Topic :: System :: Logging",
 ]
-dependencies = ["aqt-spec>=0.2,<0.3", "cryptography>=42", "tzdata; sys_platform == 'win32'"]   # Windows has no IANA time zones
+dependencies = ["aqt-spec>=0.3,<0.4", "cryptography>=42", "tzdata; sys_platform == 'win32'"]   # Windows has no IANA time zones
 
 [project.optional-dependencies]
 test = ["pytest>=8", "jsonschema>=4.18"]  # jsonschema: payload checks of aqt-evidence conform

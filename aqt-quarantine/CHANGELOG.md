@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-11-14
 
+- Packaging: released at 0.3.0, the version of every AQT package; the other AQT packages it needs are required at `>=0.3,<0.4`.
 - Windows: the outbox and the report file are written in binary mode.
 - The Claude Code hook reads and writes UTF-8 whatever the console's code page (Windows).
 - The hold notice and the pointer to a long released page name `aqt quarantine ...` (or `aqt-toolkit quarantine ...`), not `aqt-quarantine ...`.

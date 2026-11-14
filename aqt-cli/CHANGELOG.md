@@ -1,15 +1,18 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-11-14
 
+**New: the desktop app**, for Linux, macOS and Windows. It holds the whole toolkit, the `aqt` command included, so no Python is needed. It guides you through the setup, opens on what needs you, signs every decision in one signing sheet, connects projects, shows another machine's AQT over SSH, and updates itself once you agree. Its installers are in this release; they are not signed with an Apple or Microsoft certificate yet, and the README's quick start says how to open them the first time. The Python packages now run on macOS and Windows too; on Windows the advisor sandbox of aqt-sensei and the aqt-egress box are not available.
+
+- Packaging: released as `agent-quality-toolkit` at 0.3.0, the version of every AQT package; it requires the nine packages at `>=0.3,<0.4`, and the extra `egress` adds aqt-egress (Python 3.12+).
 - Windows: deny rules for folders outside the home name the drive as Claude Code matches it (`//d/work/**`), and
   the time zone `aqt setup` writes comes from `TZ` with `tzdata` (a dependency on Windows only).
 - Windows: `aqt setup` registers the writer as the logon task `aqt-trail` (Task Scheduler: at your logon, your
   normal rights, no time limit, started again every five minutes when it is not running; `pythonw.exe` or the
   app's `aqtw.exe`, so no console window) and never replaces an existing one; `aqt status` checks that it
   exists, is enabled and starts a program that exists.
-- Releases carry the desktop app: the installers of every platform job in `desktop.yml` (today the Linux AppImage and .deb and the macOS .dmg for Apple silicon and Intel), unsigned for now, and `SHA256SUMS` of every release file. The README's quick start is now a download per system, with the first start of an unsigned build; the clone stays the path for development and servers.
-- The app's own updates are prepared but off: with the owner's updater key (RELEASING.md), each release also gets a signed `latest.json`, and the app offers a newer version in Settings and installs it at the next start after the person agrees.
+- Releases carry the desktop app: the installers of every platform job in `desktop.yml` (the Linux AppImage and .deb, the macOS .dmg for Apple silicon and Intel, and the Windows setup .exe), unsigned for now, and `SHA256SUMS` of every release file. The README's quick start is now a download per system, with the first start of an unsigned build; the clone stays the path for development and servers.
+- The app updates itself: each release has a `latest.json` signed with the owner's updater key (RELEASING.md), and the app offers a newer version in Settings and installs it at the next start after the person agrees.
 - Package metadata: the classifiers name macOS besides Linux, and Windows for every package except aqt-sensei and aqt-egress, whose sandbox and box are not available there.
 - `aqt status` on macOS: the `egress` line names what the Seatbelt box cannot do that the Linux box does.
 - `aqt setup` on macOS installs the trail writer as a LaunchAgent (`~/Library/LaunchAgents/io.github.benediktneumayer2tech.aqt.trail.plist`, KeepAlive, output to `trail-writer.log` in the AQT state folder) and loads it with `launchctl bootstrap gui/$UID`; `aqt status` checks it with `launchctl print` and gives the fix, as for systemd on Linux.

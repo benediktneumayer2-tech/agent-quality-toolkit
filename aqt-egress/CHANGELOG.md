@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-11-14
 
+- Packaging: released at 0.3.0, the version of every AQT package; the other AQT packages it needs are required at `>=0.3,<0.4`.
 - Off Linux the proxy's own host addresses (refused as destinations) are those its host name resolves to; it no
   longer needs `fcntl` there.
 - Windows: `aqt-egress status` and `aqt status` load without `fcntl` and report that the box is not available.

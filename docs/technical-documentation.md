@@ -1,6 +1,6 @@
 # Agent Quality Toolkit: technical documentation
 
-This document explains how the Agent Quality Toolkit (AQT) works inside. It is for developers who want to integrate or extend the suite, and for technically minded QA people who want to judge how far its evidence can be trusted. It describes version 0.2.0 (a preview, November 2026) as implemented in this repository.
+This document explains how the Agent Quality Toolkit (AQT) works inside. It is for developers who want to integrate or extend the suite, and for technically minded QA people who want to judge how far its evidence can be trusted. It describes version 0.3.0 (a preview, November 2026) as implemented in this repository.
 
 - For step-by-step use of the tools, read the [user manual](manual.md).
 - For the project overview and the one-command demo, read the [README](../README.md).
@@ -1074,25 +1074,25 @@ Tamper evidence is not tamper prevention. A record set is trustworthy to the deg
 
 ### 9.1 Suites
 
-Each package has an offline pytest suite in `<package>/tests/` with synthetic fixtures: no network, no real agents or models, no GPU. Counts observed on 2026-11-10 (Python 3.13), for the 0.2.0 release:
+Each package has an offline pytest suite in `<package>/tests/` with synthetic fixtures: no network, no real agents or models, no GPU. Counts observed on 2026-11-14 (Linux, Python 3.13), for the 0.3.0 release:
 
 | Suite | Passed | Skipped | Notes |
 |---|---|---|---|
-| aqt-spec | 206 | 0 | Message codes (`Text`); vectors, schemas, catalogues (every cited catalogue ID exists), spec documents agree with the code; Hypothesis property tests for canonical JSON, hashing, chain and signature verification |
-| aqt-trail | 200 | 0 | Writer, server, tamper cases, TSA and test mode, importers, review and profile parameters, enrolment-backed registry keys, ALCOA++, bundles |
+| aqt-spec | 229 | 5 | Message codes (`Text`); vectors, schemas, catalogues (every cited catalogue ID exists), spec documents agree with the code; Hypothesis property tests for canonical JSON, hashing, chain and signature verification; `aqt_evidence.platform` on the system at hand. The skipped tests need Windows (named pipes) or macOS (its runtime folder) |
+| aqt-trail | 200 | 2 | Writer, server, tamper cases, TSA and test mode, importers, review and profile parameters, enrolment-backed registry keys, ALCOA++, bundles. The skipped tests need Windows (the writer's named pipe) |
 | aqt-signoff | 79 | 0 | Signatures, statuses, replays, counter-signed enrolment (bootstrap, approval, roles, rotation, re-bootstrap and its confirmation, unsigned revocations, replayed requests, one import, export with enrolment evidence), key format, actions, CLI, L1 conformance of its records |
-| aqt-change | 124 | 0 | Plan format, reconciliation, receipts, content fingerprint, hidden changes, ignore rules and the fresh bytecode cache, trail confirmation, project settings and the plan's base commit, finish, gate, hooks, quick start |
-| aqt-sensei | 56 | 3 | The skipped tests need real tmux and bubblewrap (opt-in) |
-| aqt-quarantine | 89 | 0 | Detectors, engine, decisions and their replays, enrolment-checked keys, journal problems, Claude Code adapter, payload conformance of every record type |
+| aqt-change | 125 | 0 | Plan format, reconciliation, receipts, content fingerprint, hidden changes, ignore rules and the fresh bytecode cache, trail confirmation, project settings and the plan's base commit, finish, gate, hooks, quick start |
+| aqt-sensei | 60 | 7 | Three skipped tests need real tmux and bubblewrap (opt-in), four need macOS (the Seatbelt sandbox) |
+| aqt-quarantine | 90 | 0 | Detectors, engine, decisions and their replays, enrolment-checked keys, journal problems, Claude Code adapter, payload conformance of every record type |
 | aqt-validate | 110 | 0 | Statistics against reference values, loaders, detector and reviewer runs |
 | aqt-capa | 25 | 0 | Units, CLI, end to end, signature-based approval |
-| aqt-ui | 154 | 0 | Queue, case and change pages, Sign released bound to the change's own finish (record, plan version, receipts, HEAD), message codes and the German catalogue; login, Host, CSRF and Origin, session key, request limits, read-only and peer checks for every decision, substituted content, release only after every page was shown, the record inspector, test mode and review parameters, each decision end to end, German labels, paging and a 50,000-record trail |
-| aqt-cli | 69 | 0 | `aqt status` (including the signer check and the optional `egress` line), `aqt setup`, `aqt project init` and `aqt project status` (merging into existing settings, user-level hooks, `--local`, instruction blocks and links, `.aqt/change.toml`, `ui.toml` shapes, no terminal), tool pass-through, the install hints for the installation at hand, the second name `aqt-toolkit` |
-| aqt-egress | 83 | 0 | Settings, masking, fingerprints, the body store, the resolver and the `/proc` parsing; the proxy against local test servers (records per request, `opened` before data, loopback and host-address refusal, TLS pass-through, LLM structure, local endpoints, full mode, hook and store errors); the report, `prune`, `drain` and `status`; real boxes (attribution, escape attempts, read-only and hidden folders, redirect, `--private-tmp`), with records through a real aqt-trail writer and a verified trail. The box tests skip themselves without bubblewrap or user namespaces; `test_all.sh` skips the suite on Python 3.11 |
+| aqt-ui | 181 | 0 | The desktop app's stdio core (protocol 1) against a real trail writer, the areas and first-run setup of the page shell, the machines module; queue, case and change pages, Sign released bound to the change's own finish (record, plan version, receipts, HEAD), message codes and the German catalogue; login, Host, CSRF and Origin, session key, request limits, read-only and peer checks for every decision, substituted content, release only after every page was shown, the record inspector, test mode and review parameters, each decision end to end, German labels, paging and a 50,000-record trail |
+| aqt-cli | 112 | 7 | The desktop app's setup routes in the core; the writer as a macOS LaunchAgent and as a Windows logon task (skipped on other systems; loading a real LaunchAgent on CI runners only); `aqt status` (including the signer check and the optional `egress` line), `aqt setup`, `aqt project init` and `aqt project status` (merging into existing settings, user-level hooks, `--local`, instruction blocks and links, `.aqt/change.toml`, `ui.toml` shapes, no terminal), tool pass-through, the install hints for the installation at hand, the second name `aqt-toolkit` |
+| aqt-egress | 86 | 3 | Settings, masking, fingerprints, the body store, the resolver and the `/proc` parsing; the proxy against local test servers (records per request, `opened` before data, loopback and host-address refusal, TLS pass-through, LLM structure, local endpoints, full mode, hook and store errors); the report, `prune`, `drain` and `status`; real boxes (attribution, escape attempts, read-only and hidden folders, redirect, `--private-tmp`), with records through a real aqt-trail writer and a verified trail. The box tests skip themselves without bubblewrap or user namespaces; the three skipped tests need macOS's Seatbelt box (one also the internet, CI runners only); `test_all.sh` skips the suite on Python 3.11 |
 | demo | 1 | 0 | `examples/demo/test_demo.py`: the full story, 43 expected outcomes |
-| scripts | 12 | 0 | `scripts/tests/`: the release helpers (README links for PyPI, one version also in `CITATION.cff`, release notes), with the real package READMEs |
+| scripts | 18 | 0 | `scripts/tests/`: the release helpers (README links for PyPI, one version also in `CITATION.cff` and the desktop app, release notes, the desktop app's signed updates and `SHA256SUMS`), with the real package READMEs |
 
-In total 1208 tests pass: 1195 package tests (including the optional aqt-ui and aqt-egress, and aqt-cli), the demo test and 12 tests of the release scripts. Some tests skip themselves when a tool is missing: `openssl` (aqt-trail token cross-check) and `git` (aqt-change quick start).
+In total 1316 tests pass: 1297 package tests (including the optional aqt-ui and aqt-egress, and aqt-cli), the demo test and 18 tests of the release scripts; 24 skip themselves on Linux, none fails. Some tests skip themselves when a tool is missing: `openssl` (aqt-trail token cross-check) and `git` (aqt-change quick start).
 
 ### 9.2 Running them
 

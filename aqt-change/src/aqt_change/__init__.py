@@ -1,6 +1,6 @@
 """aqt-change: change control and verification receipts for AI coding agent work."""
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 from .errors import ChangeError  # noqa: E402
 from .ledger import Ledger  # noqa: E402

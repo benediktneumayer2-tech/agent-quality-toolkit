@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-11-14
 
+- Packaging: released at 0.3.0, the version of every AQT package; the other AQT packages it needs are required at `>=0.3,<0.4`.
 - Windows: `sensei ask` and the owner commands say that the sensei is not available on this system, not that the
   bridge is offline.
 - Windows: `aqt-sensei serve` says that the sensei is not available there (its sandbox needs Linux) instead of

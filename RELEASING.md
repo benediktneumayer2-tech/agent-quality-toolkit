@@ -2,7 +2,7 @@
 
 All eleven packages and the desktop app are released together, under one version, by the workflow [`release.yml`](.github/workflows/release.yml). A tag `v<version>` starts it. It builds every package, installs the built files into a clean environment, builds and smoke-tests the desktop installers of every platform, and creates a GitHub release with the packages, the installers, a `SHA256SUMS` file and the CHANGELOG notes. [Zenodo](https://zenodo.org) archives each GitHub release and gives it a DOI, using the metadata in [`CITATION.cff`](CITATION.cff); it archives the source code of the tag, while the installers stay on GitHub.
 
-The installers are not signed with an Apple or Windows certificate yet; the README tells users how to open them the first time. The desktop app can update itself from the GitHub release once the owner has set up the updater key ([Updates of the desktop app](#updates-of-the-desktop-app)); until then it never checks for updates.
+The installers are not signed with an Apple or Windows certificate yet; the README tells users how to open them the first time. The desktop app updates itself from the GitHub release, with updates signed by the owner's updater key ([Updates of the desktop app](#updates-of-the-desktop-app)).
 
 PyPI is not used yet. The PyPI jobs are in the workflow, switched off until the repository variable `PUBLISH_PYPI` is `true` ([Later: PyPI](#later-pypi)).
 
@@ -12,7 +12,7 @@ PyPI is not used yet. The PyPI jobs are in the workflow, switched off until the 
 |---|---|---|
 | `build` | checks out the tag; checks that every package has the same version and the tag is `v` + that version (`scripts/check_versions.py`); collects the CHANGELOG notes (`scripts/release_notes.py`); `scripts/build_dist.sh`: rewrites the package READMEs' relative links to GitHub URLs at the tag (`scripts/pypi_readmes.py`, for project pages on PyPI later), `uv build` of every package, `twine check` | always |
 | `verify` | installs the built wheels into a fresh environment outside the checkout and runs every command, `aqt status` and the demo (`scripts/clean_install_check.sh --dist`) | always |
-| `desktop` | calls [`desktop.yml`](.github/workflows/desktop.yml): every platform job there builds its installers and smoke-tests them, and uploads them as an artifact `aqt-desktop-<platform>`. Today: Linux (AppImage and .deb) and macOS (.dmg for Apple silicon and for Intel, each with the `.app.tar.gz` the app updates itself from); a new platform job, such as Windows, is picked up without a change to `release.yml` | always |
+| `desktop` | calls [`desktop.yml`](.github/workflows/desktop.yml): every platform job there builds its installers and smoke-tests them, and uploads them as an artifact `aqt-desktop-<platform>`. Today: Linux (AppImage and .deb), macOS (.dmg for Apple silicon and for Intel, each with the `.app.tar.gz` the app updates itself from) and Windows (setup .exe); a new platform job is picked up without a change to `release.yml` | always |
 | `release-files` | puts the 22 Python files and every `aqt-desktop-*` artifact into one folder and runs `scripts/desktop_release.py`: with the updater key it signs the updates and writes `latest.json`; without it the `.app.tar.gz` files are left out; then `SHA256SUMS` of every file. A tag fails here when the app checks for updates but the key is missing. The only job that sees the key | always |
 | `github-release` | a GitHub release for the tag with every file of `release-files` and the CHANGELOG notes; Zenodo archives it | tag only |
 | `testpypi` | uploads to TestPyPI (environment `testpypi`) | only with `PUBLISH_PYPI` |
@@ -44,7 +44,7 @@ Zenodo then reads `CITATION.cff` from each tagged commit: title, authors, abstra
    git push origin vX.Y.Z
    ```
 
-7. **Check.** The GitHub release lists the 22 Python files, the installers (`aqt-desktop_X.Y.Z_amd64.AppImage`, `_amd64.deb`, `_arm64.dmg`, `_x86_64.dmg`, and `_x64-setup.exe` once the Windows job is in `desktop.yml`), `SHA256SUMS` and the notes; with the updater key also `latest.json` and the two `.app.tar.gz`. A few minutes later, Zenodo (Profile menu → GitHub) shows the release with its DOI. Download one installer and check it with `sha256sum -c SHA256SUMS --ignore-missing`, then open it as the README describes. In a fresh terminal, the install from the README works with the new tag, and `aqt --version` prints X.Y.Z.
+7. **Check.** The GitHub release lists the 22 Python files, the installers (`aqt-desktop_X.Y.Z_amd64.AppImage`, `_amd64.deb`, `_arm64.dmg`, `_x86_64.dmg` and `_x64-setup.exe`), the two `.app.tar.gz`, `latest.json`, `SHA256SUMS` and the notes. A few minutes later, Zenodo (Profile menu → GitHub) shows the release with its DOI. Download one installer and check it with `sha256sum -c SHA256SUMS --ignore-missing`, then open it as the README describes. In a fresh terminal, the install from the README works with the new tag, and `aqt --version` prints X.Y.Z.
 8. **First release only:** add the DOI badge that Zenodo offers to the README, and the concept DOI to `CITATION.cff` (`doi: 10.5281/zenodo.…`).
 
 **If something fails before the GitHub release,** fix it, delete the tag (`git tag -d vX.Y.Z && git push origin :refs/tags/vX.Y.Z`) and tag the fixed commit again. **Once the GitHub release exists,** Zenodo has archived it, and a DOI cannot be withdrawn: release the fix as X.Y.(Z+1), all packages together.
@@ -53,7 +53,7 @@ Zenodo then reads `CITATION.cff` from each tagged commit: title, authors, abstra
 
 The app can update itself from the GitHub release: it reads `latest.json` of the newest release, shows a dot at Settings when there is a newer version, and installs it only after the person agrees there, at the next start. Each update must carry a signature made with the **updater key**, a key pair that belongs to the owner: the app trusts only the public key built into it, so nobody else can hand it an update, not even through the GitHub release.
 
-It is **off** until the owner sets it up. While `plugins.updater.pubkey` in [`aqt-desktop/src-tauri/tauri.conf.json`](aqt-desktop/src-tauri/tauri.conf.json) is empty, the app never asks for updates, and a release without the key has no `latest.json`.
+It is **on** since 0.3.0: `plugins.updater.pubkey` in [`aqt-desktop/src-tauri/tauri.conf.json`](aqt-desktop/src-tauri/tauri.conf.json) holds the owner's public key. A build whose `pubkey` is empty (a fork, for example) never asks for updates, and a release without the key has no `latest.json`.
 
 ### Switching it on (owner, once)
 

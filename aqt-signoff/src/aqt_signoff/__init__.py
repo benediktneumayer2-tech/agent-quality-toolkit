@@ -16,7 +16,7 @@ from .registry import Registry, StaticPassphrase, TtyAuthenticator
 from .settings import Policy, Settings, load_settings
 from .statements import SignatureStatus, build_statement, check_block, sign, statement_digest
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 
 def _open(sources) -> Signoff:

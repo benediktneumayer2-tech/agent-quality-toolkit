@@ -1,7 +1,7 @@
 {
   "name": "aqt-desktop",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "sync": "node scripts/sync-frontend.mjs",

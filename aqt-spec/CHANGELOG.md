@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-11-14
 
+- Packaging: released at 0.3.0, the version of every AQT package.
 - `seatbelt.ancestors()` ends at any root: on Windows (where tests build profiles) it waited for `/` and never ended.
 - `platform.change_time_ns()`: `st_ctime_ns` on POSIX, the last write time on Windows (where `st_ctime` is the
   creation time).

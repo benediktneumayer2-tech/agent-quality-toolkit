@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "aqt-spec"
-version = "0.2.0"
+version = "0.3.0"
 description = "Evidence records for AI coding agents: specification, JSON Schemas, test vectors, GxP catalogues and the Python reference library (Agent Quality Toolkit)"
 readme = "README.md"
 requires-python = ">=3.11"

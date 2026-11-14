@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-11-14
 
+- Packaging: released at 0.3.0, the version of every AQT package; the other AQT packages it needs are required at `>=0.3,<0.4`.
 - Windows: a check command's bare program name (`python -m pytest`) is found through `PATH` as a shell finds it.
   Windows looks in the running program's own folder first, so `python` was aqt-change's interpreter, not the
   project's, while the receipt named the one on `PATH`.

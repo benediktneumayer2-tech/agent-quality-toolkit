@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "aqt-quarantine"
-version = "0.2.0"
+version = "0.3.0"
 description = "Quarantine for untrusted inputs to AI agents: risk bands, withheld content and signed human release decisions (Agent Quality Toolkit)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -30,7 +30,7 @@ classifiers = [
     "Topic :: Security",
     "Topic :: Software Development :: Quality Assurance",
 ]
-dependencies = ["aqt-spec>=0.2,<0.3", "cryptography>=41"]
+dependencies = ["aqt-spec>=0.3,<0.4", "cryptography>=41"]
 
 [project.optional-dependencies]
 # Transformer detectors as local ONNX exports (Horizon, Wolf Defender, PIGuard, deepset ...).

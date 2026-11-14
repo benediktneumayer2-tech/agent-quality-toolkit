@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-11-14
 
+- Packaging: released at 0.3.0, the version of every AQT package; the other AQT packages it needs are required at `>=0.3,<0.4`.
 - Windows: Ctrl+C and Ctrl+Break stop the writer with its `service.stop` record (ending the process from outside,
   as the Task Scheduler's "End" does, leaves none).
 - Windows: `observed.processes[].start_time` is in microseconds since 1970, as on macOS.

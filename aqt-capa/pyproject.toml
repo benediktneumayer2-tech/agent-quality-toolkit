@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "aqt-capa"
-version = "0.2.0"
+version = "0.3.0"
 description = "Deviations and CAPA for AI coding agent work: evidence-driven intake, root cause, hash-bound actions and effectiveness checks (Agent Quality Toolkit)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -29,7 +29,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Software Development :: Quality Assurance",
 ]
-dependencies = ["aqt-spec>=0.2,<0.3", "cryptography>=41"]
+dependencies = ["aqt-spec>=0.3,<0.4", "cryptography>=41"]
 
 [project.optional-dependencies]
 test = ["pytest>=8"]

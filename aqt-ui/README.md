@@ -111,9 +111,9 @@ A detached signature in the record inspector is shown with its status against th
 
 What this does not protect against, as for the rest of the toolkit: an agent that learns your passphrase; an agent that drives your own browser and gets you to type the passphrase into a decision it prepared (the decision panel therefore shows plainly who signs, with which meaning, over which content); and a same-user process that deliberately works around the checks, for example one that detaches from the agent and clears its environment, reads the private login page before the browser does, or swaps the trail file exactly while it is being verified. A same-user process can read the files the page shows anyway. The agent checks are a guard, not a boundary. The passphrase is the real control.
 
-## Limits of version 0.2
+## Limits of version 0.3
 
-- Linux only (the agent check and the connection lookup read `/proc`). A light design; a quiet dark variant follows the system setting.
+- The browser page takes decisions on Linux only: it finds the program behind each request in `/proc/net/tcp`. On macOS and Windows, use the desktop app. A light design; a quiet dark variant follows the system setting.
 - Signing a file or a record other than a plan version or a finished change, resolving an action whose outcome is unknown, the CAPA steps of the person handling a deviation (investigation, action plan, implementation, extending a window) and qualifying a detector stay in the terminal for now.
 - Large trails: the Trail list is paged on the server, and the Overview reuses what it derived from the trail until the trail grows. With 50,000 records the first request reads the trail once (about 0.6 s); after that the Overview and any page answer in a few milliseconds (measured by the test suite). The full verification still reads the whole trail, at start and on demand; records added since are shown as "not yet verified". After the file changed, the status hashes the verified part once more to see that it is unchanged.
 - Gate evaluation runs `aqt-change gate` for each configured plan and is cached for a minute.

@@ -1,6 +1,6 @@
 [package]
 name = "aqt-desktop"
-version = "0.2.0"
+version = "0.3.0"
 description = "Agent Quality Toolkit desktop app: a window around the aqt-ui pages, talking to the AQT core over stdin/stdout"
 authors = ["Benedikt Neumayer"]
 license = "Apache-2.0"

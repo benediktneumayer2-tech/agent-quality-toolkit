@@ -5,6 +5,6 @@ from .config import Config, load_config
 from .store import Store
 from .trends import render_markdown, trends
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = ["Blocked", "Capa", "CapaError", "Config", "Refused", "Store", "load_config", "render_markdown", "trends"]

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "aqt-egress"
-version = "0.2.0"
+version = "0.3.0"
 description = "Outbound checkpoint for AI coding agents: every request leaves a sandbox through one proxy and is recorded with the process that sent it (Agent Quality Toolkit)"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -30,10 +30,10 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
     "Topic :: System :: Networking :: Monitoring",
 ]
-dependencies = ["aqt-spec>=0.2,<0.3", "mitmproxy>=12.2,<13"]
+dependencies = ["aqt-spec>=0.3,<0.4", "mitmproxy>=12.2,<13"]
 
 [project.optional-dependencies]
-test = ["pytest>=8", "jsonschema>=4.18", "aqt-trail>=0.2,<0.3"]  # records checked against the schemas, written through a real writer and verified
+test = ["pytest>=8", "jsonschema>=4.18", "aqt-trail>=0.3,<0.4"]  # records checked against the schemas, written through a real writer and verified
 
 [project.urls]
 Homepage = "https://github.com/benediktneumayer2-tech/agent-quality-toolkit/tree/main/aqt-egress"

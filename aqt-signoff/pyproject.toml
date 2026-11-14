@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "aqt-signoff"
-version = "0.2.0"
+version = "0.3.0"
 description = "Signatures with a stated meaning, bound to exact content, and approved agent actions that run once (Agent Quality Toolkit)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -30,7 +30,7 @@ classifiers = [
     "Topic :: Security :: Cryptography",
     "Topic :: Software Development :: Quality Assurance",
 ]
-dependencies = ["aqt-spec>=0.2,<0.3", "cryptography>=41", "tzdata; sys_platform == 'win32'"]   # Windows has no IANA time zones
+dependencies = ["aqt-spec>=0.3,<0.4", "cryptography>=41", "tzdata; sys_platform == 'win32'"]   # Windows has no IANA time zones
 
 [project.optional-dependencies]
 schema = ["jsonschema>=4.18"]

@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-11-14
 
+- Packaging: released at 0.3.0, the version of every AQT package; the other AQT packages it needs are required at `>=0.3,<0.4`.
 - Windows: the IANA time zones of manifests come from `tzdata` (a dependency on Windows only).
 - The configuration and state folders come from `aqt_evidence.platform` (unchanged on Linux).
 

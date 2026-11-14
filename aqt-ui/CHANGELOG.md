@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-11-14
 
+- Packaging: released at 0.3.0, the version of every AQT package; the other AQT packages it needs are required at `>=0.3,<0.4`.
 - Windows: the check that the trail file has not changed since its verification uses the last write time, since
   Windows' `st_ctime` is the creation time (`platform.change_time_ns`); an edit in place is caught there too.
 - Windows: a signed file's hash is read in binary mode, and the install hint of an editable clone names its
@@ -13,11 +14,10 @@
   - *Machines* under Settings, *This app*: add, *Test connection* (version, command and mode there), remove;
   - a connection banner: connecting, connected again, or why not (unreachable, connection lost, unknown or changed host key, refused key, no AQT there, no ssh), with *Reconnect* and the last data greyed;
   - for a request that was sent but got no answer, a message that its outcome is unknown: the signing sheet offers a reload and never sends the decision again;
-  - for a project on another machine, a path field instead of the folder dialog.
-- Tests: the connection-cap test accepts a reset as well as an end of file for a refused connection (macOS reports the close of a connection with an unread request as a reset); the server is unchanged.
   - for a project on another machine, a path field instead of the folder dialog;
   - the app's refusals in the Add form, worded from their codes in the page's language;
   - the first-run sentences that spoke of "this computer", worded for the other machine.
+- Tests: the connection-cap test accepts a reset as well as an end of file for a refused connection (macOS reports the close of a connection with an unread request as a reset); the server is unchanged.
 - `aqt core --mode-check` prints the mode a core started here would have (JSON: `decisions`, `reason`, `markers`, `harness`, `explicit`) and exits. The desktop app asks it before it opens another machine: an app started by an agent opens it read-only.
 - In the desktop app the page also gives the tray menu its words in its language, at start and after each change of language.
 - In the desktop app the page words the system notifications of new cases in its language (German or English); the `queue` event's new cases carry `key` and `args` for that.

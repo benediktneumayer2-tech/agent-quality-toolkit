@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "aqt-ui"
-version = "0.2.0"
+version = "0.3.0"
 description = "Local web page for the person supervising AI coding agents: trail, quarantine, changes, signatures, CAPA and qualifications (Agent Quality Toolkit)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -30,12 +30,12 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Software Development :: Quality Assurance",
 ]
-dependencies = ["aqt-spec>=0.2,<0.3", "aqt-trail>=0.2,<0.3"]
+dependencies = ["aqt-spec>=0.3,<0.4", "aqt-trail>=0.3,<0.4"]
 
 [project.optional-dependencies]
 # Every view imports its package lazily; a missing one shows "not installed".
-all = ["aqt-quarantine>=0.2,<0.3", "aqt-signoff>=0.2,<0.3", "aqt-change>=0.2,<0.3", "aqt-capa>=0.2,<0.3",
-       "aqt-validate>=0.2,<0.3"]
+all = ["aqt-quarantine>=0.3,<0.4", "aqt-signoff>=0.3,<0.4", "aqt-change>=0.3,<0.4", "aqt-capa>=0.3,<0.4",
+       "aqt-validate>=0.3,<0.4"]
 test = ["pytest>=8"]
 
 [project.urls]
