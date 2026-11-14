@@ -142,11 +142,15 @@ def _integer(value: Any) -> bool:
     return type(value) is int  # bool is not an integer here
 
 
+_SID = re.compile(r"S-1-[0-9]+(-[0-9]+)*")   # observed.sid: a Windows user SID (Windows has no uid or gid)
+
+
 def _observed_ok(seen: Any) -> bool:
     if not isinstance(seen, dict):
         return False
     chain, processes = seen.get("process_chain", []), seen.get("processes", [])
     return (all(_integer(seen[name]) for name in ("pid", "uid", "gid") if name in seen)
+            and ("sid" not in seen or (isinstance(seen["sid"], str) and _SID.fullmatch(seen["sid"]) is not None))
             and isinstance(chain, list) and all(isinstance(item, str) for item in chain)
             and isinstance(processes, list)
             and all(isinstance(p, dict) and _integer(p.get("pid")) and _strings(p, ("comm",))

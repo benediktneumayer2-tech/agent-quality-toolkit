@@ -67,7 +67,7 @@ def test_a_real_writer_and_two_clients(config, tmp_path):
     for action, pid in (("client-one", one.pid), ("client-two", answer["pid"])):
         observed = records[action]["observed"]
         assert observed["via"] == "socket" and observed["pid"] == pid
-        assert observed["uid"] == platform.user_id() and observed["gid"] is None
+        assert observed["sid"] == platform.user_id() and "uid" not in observed and "gid" not in observed
         assert observed["process_chain"][0] == "python"            # python.exe, named as on Linux
         assert observed["chain_status"] in ("complete", "partial")  # the sender was alive and readable
     assert one.pid != answer["pid"]

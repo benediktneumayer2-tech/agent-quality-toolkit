@@ -1,0 +1,38 @@
+{
+  "name": "observed-windows-sid",
+  "category": "valid",
+  "kind": "record",
+  "description": "A Windows peer: observed.sid (the user SID) in place of uid and gid.",
+  "input": {
+    "aqt": "0.1",
+    "id": "rec_019a0f3c2b000000000000000029",
+    "type": "trail.event",
+    "time": "2026-10-21T12:00:41.000000Z",
+    "actor": {
+      "kind": "agent",
+      "id": "agent:claude-code:s-0001",
+      "agent": {
+        "harness": "claude-code",
+        "model": "example-model",
+        "session": "s-0001"
+      }
+    },
+    "action": "step-41",
+    "observed": {
+      "pid": 4242,
+      "sid": "S-1-5-21-1004336348-1177238915-682003330-1001",
+      "process_chain": [
+        "python",
+        "bash"
+      ],
+      "via": "socket"
+    }
+  },
+  "expect": {
+    "valid": true,
+    "schema_valid": true,
+    "record_hash": "sha256:031ad9d04e60c2daf314a747d4d319eb69d9642390684afd0fa1104038840a51",
+    "content_hash": "sha256:a30c285d5dc5253a2cbe1c944452b4ce9aef7113bd5c4dfa08aab1e90fc1e9a8",
+    "canonical": "{\"action\":\"step-41\",\"actor\":{\"agent\":{\"harness\":\"claude-code\",\"model\":\"example-model\",\"session\":\"s-0001\"},\"id\":\"agent:claude-code:s-0001\",\"kind\":\"agent\"},\"aqt\":\"0.1\",\"id\":\"rec_019a0f3c2b000000000000000029\",\"observed\":{\"pid\":4242,\"process_chain\":[\"python\",\"bash\"],\"sid\":\"S-1-5-21-1004336348-1177238915-682003330-1001\",\"via\":\"socket\"},\"time\":\"2026-10-21T12:00:41.000000Z\",\"type\":\"trail.event\"}"
+  }
+}

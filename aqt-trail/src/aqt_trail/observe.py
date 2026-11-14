@@ -2,7 +2,7 @@
 
 The writer reads the peer's pid, uid and gid from the kernel (``SO_PEERCRED``;
 macOS ``LOCAL_PEERPID`` and ``LOCAL_PEERCRED``; Windows: the named pipe's client pid and the
-SID of that process's token as ``uid``, no ``gid``) and walks the parent chain
+SID of that process's token, recorded as ``sid`` with no ``uid`` or ``gid``) and walks the parent chain
 (``/proc``; macOS ``sysctl``; Windows a Toolhelp snapshot, through ``aqt_evidence.platform``).
 This is evidence the writer saw, not a claim by the client. ``via`` stays ``socket`` for the
 named pipe: it is the writer's local connection on that system. PIDs are reused, so each process
@@ -152,8 +152,14 @@ def observe(pid: int | None, uid: int | str | None, gid: int | None, *, via: str
     status, detail = chain_status(chain, sessions, end) if pid else ("unavailable", "no peer pid")
     if pidfd is not None and _exited(pidfd):
         status, detail = "unavailable", "the sender exited before it could be observed"
+    # A Windows peer has a SID (a string) in place of uid and gid: observed.sid, and no uid or gid. What the
+    # system did not tell (None, or a user name instead of a SID) is left out rather than written as null.
+    if isinstance(uid, str):
+        who = {"sid": uid} if uid.startswith("S-1-") else {}
+    else:
+        who = {name: value for name, value in (("uid", uid), ("gid", gid)) if value is not None}
     observed = {
-        "pid": pid, "uid": uid, "gid": gid,
+        "pid": pid, **who,
         "process_chain": [entry["comm"] for entry in chain],
         "processes": chain,
         "harness": harness_of(chain),

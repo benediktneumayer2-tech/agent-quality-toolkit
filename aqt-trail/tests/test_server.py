@@ -21,7 +21,8 @@ def test_socket_append_observes_the_peer(server, config):
     observed = stored["observed"]
     assert observed["via"] == "socket"
     if platform.IS_WINDOWS:     # a named pipe: the client's SID, no group; only the user may open it
-        assert observed["pid"] == os.getpid() and observed["uid"] == platform.user_id() and observed["gid"] is None
+        assert observed["pid"] == os.getpid() and observed["sid"] == platform.user_id()
+        assert "uid" not in observed and "gid" not in observed          # Windows has neither
     else:
         assert observed["pid"] == os.getpid() and observed["uid"] == os.getuid() and observed["gid"] == os.getgid()
         assert stat.S_IMODE(os.stat(config.socket_path).st_mode) == 0o600

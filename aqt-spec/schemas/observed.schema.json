@@ -14,6 +14,11 @@
     "gid": {
       "type": "integer"
     },
+    "sid": {
+      "type": "string",
+      "pattern": "^S-1-[0-9]+(-[0-9]+)*$",
+      "description": "Windows: the peer's user SID, in place of uid and gid (Windows has neither)"
+    },
     "process_chain": {
       "type": "array",
       "items": {

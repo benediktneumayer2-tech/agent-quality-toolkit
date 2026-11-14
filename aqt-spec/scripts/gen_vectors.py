@@ -212,6 +212,11 @@ record_bad("sig-key-not-key-id", "sig[].key is a key ID, ed25519:<16 hex>.",
            minimal(71, sig=[{"alg": "ed25519", "key": "alice", "value": "AAAA"}]))
 record_bad("observed-bad-type", "observed members have fixed types (pid is an integer).",
            minimal(72, observed={"pid": "4242", "via": "socket"}))
+record_ok("observed-windows-sid", "A Windows peer: observed.sid (the user SID) in place of uid and gid.",
+          minimal(41, observed={"pid": 4242, "sid": "S-1-5-21-1004336348-1177238915-682003330-1001",
+                                "process_chain": ["python", "bash"], "via": "socket"}))
+record_bad("observed-sid-not-a-sid", "observed.sid is a SID (S-1-…), not a user name.",
+           minimal(42, observed={"pid": 4242, "sid": "alice", "via": "socket"}))
 # Patterns match the whole string with ASCII digits only.
 record_bad("id-trailing-newline", "A pattern matches the whole value: an ID followed by a newline is invalid. "
            "(Python's jsonschema lets $ match before a final newline, so the schema result is left open.)",

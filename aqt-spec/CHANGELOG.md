@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `observed.sid` (optional, additive; the record format stays 0.1): on Windows the writer records the peer's user
+  SID there and leaves out `uid` and `gid`, which Windows does not have. Records written on Linux and macOS are
+  unchanged. Two vectors (89, was 87): a valid Windows `observed`, and a `sid` that is not a SID.
 - Windows: process start times are microseconds since 1970, as on macOS (Windows' 100 ns since 1601 would exceed
   the integers of canonical JSON).
 - `platform.open_fd()` (`os.open` in binary mode), `platform.fchmod()` and `platform.environ_bytes()`: on Windows

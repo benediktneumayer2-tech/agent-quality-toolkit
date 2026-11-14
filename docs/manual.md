@@ -459,7 +459,7 @@ The same checks by hand:
 | Your key is registered | `aqt-signoff signers list` | your ID, `active` |
 | Every key has its enrolment record | `aqt-signoff signers check` | `all keys are backed by enrolment records` |
 | Trail intact | `aqt-trail verify` | `intact: N records, head seq …` |
-| Record library | `aqt-evidence vectors` | `87 of 87 vectors agree` |
+| Record library | `aqt-evidence vectors` | `89 of 89 vectors agree` |
 
 ### 3.7 Back up, and keep secrets out of the agent's reach
 

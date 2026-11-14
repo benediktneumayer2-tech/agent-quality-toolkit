@@ -84,6 +84,7 @@ An optional member without a value is left out; `null` is not a valid value for 
 | Field | Content |
 |---|---|
 | `pid`, `uid`, `gid` | Peer credentials (`SO_PEERCRED`) |
+| `sid` | Windows only, in place of `uid` and `gid`: the peer's user SID (`S-1-5-21-…`), from the token of the process that opened the writer's named pipe. Optional; added in 0.1 without changing other fields |
 | `process_chain` | Command names from the peer process up its ancestry, nearest first |
 | `processes` | `[{pid, comm, start_time}]` for the same chain |
 | `harness` | Detected agent harness, or `null` |

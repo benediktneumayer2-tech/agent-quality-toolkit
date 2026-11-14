@@ -1,6 +1,6 @@
 {
   "aqt": "0.1",
-  "count": 87,
+  "count": 89,
   "vectors": [
     {
       "file": "canonical/key-order.json",
@@ -246,6 +246,16 @@
       "file": "invalid/observed-bad-type.json",
       "kind": "record",
       "description": "observed members have fixed types (pid is an integer)."
+    },
+    {
+      "file": "valid/observed-windows-sid.json",
+      "kind": "record",
+      "description": "A Windows peer: observed.sid (the user SID) in place of uid and gid."
+    },
+    {
+      "file": "invalid/observed-sid-not-a-sid.json",
+      "kind": "record",
+      "description": "observed.sid is a SID (S-1-…), not a user name."
     },
     {
       "file": "invalid/id-trailing-newline.json",

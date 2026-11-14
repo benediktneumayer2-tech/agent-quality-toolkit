@@ -307,11 +307,11 @@ $ aqt-evidence conform ~/.local/state/aqt/trail/trail.jsonl --level 3 \
 L3 reached (target L3), 11 records
 ```
 
-**Test vectors** in `aqt-spec/vectors/` are language-neutral JSON files, generated deterministically by `aqt-spec/scripts/gen_vectors.py`. There are 87 vectors in six folders: `canonical` (13), `valid` (6), `invalid` (34), `chained` (2), `tampered` (20) and `signed` (12). Since the security review of October 2026 they include a tamper corpus (wrong member types, `null` members, trailing newlines, non-ASCII digits, impossible dates; stripped, moved, re-signed and `null` signatures, duplicated and unchained records, signatures required without a key, malformed checkpoints) and the vector kind `log`, a stored JSON-lines log that must be parsed strictly before its chain is verified. Signed vectors use the published RFC 8032 TEST 1 and TEST 2 keys from `vectors/keys.json`; anyone can sign with them, so records signed with them prove nothing. An implementation in another language conforms when it agrees with every vector; [`aqt-spec/docs/implementers.md`](../aqt-spec/docs/implementers.md) describes the file format.
+**Test vectors** in `aqt-spec/vectors/` are language-neutral JSON files, generated deterministically by `aqt-spec/scripts/gen_vectors.py`. There are 89 vectors in six folders: `canonical` (13), `valid` (7), `invalid` (35), `chained` (2), `tampered` (20) and `signed` (12). Since the security review of October 2026 they include a tamper corpus (wrong member types, `null` members, trailing newlines, non-ASCII digits, impossible dates; stripped, moved, re-signed and `null` signatures, duplicated and unchained records, signatures required without a key, malformed checkpoints) and the vector kind `log`, a stored JSON-lines log that must be parsed strictly before its chain is verified. Signed vectors use the published RFC 8032 TEST 1 and TEST 2 keys from `vectors/keys.json`; anyone can sign with them, so records signed with them prove nothing. An implementation in another language conforms when it agrees with every vector; [`aqt-spec/docs/implementers.md`](../aqt-spec/docs/implementers.md) describes the file format.
 
 ```text
 $ aqt-evidence vectors
-87 of 87 vectors agree
+89 of 89 vectors agree
 ```
 
 ### 2.9 Units, naming and the registry

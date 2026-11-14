@@ -6,7 +6,7 @@
 - Windows: the log, lock, spool, checkpoint and TSA key files are opened in binary mode (LF, not CRLF); the IANA
   time zones of the review come from `tzdata` there.
 - Runs on Windows: the writer serves its named pipe (`PipeTrailServer`; `TrailServer` is the transport of the
-  system), `observed.uid` is the client's SID and `gid` is null, `via` stays `socket`. Windows does not re-parent
+  system); `observed.sid` is the client's SID, with no `uid` or `gid`; `via` stays `socket`. Windows does not re-parent
   orphans, so a chain ends at the first parent that has exited (`chain_status` `partial`). Without a console
   (the logon task) `serve` writes its messages to `writer.log` in the trail folder. `append` reads UTF-8.
 - Runs on macOS: the writer reads the peer with `LOCAL_PEERPID`/`LOCAL_PEERCRED` and walks the process chain with

@@ -151,7 +151,7 @@ Each first result runs offline. The package READMEs have a 60-second quick start
 | [aqt-validate](aqt-validate/README.md) | `python aqt-validate/examples/demo.py /tmp/aqt-validate-demo` tests a toy detector and a stub reviewer and prints `conclusion: meets` for both. This shows the workflow on made-up data, not a real validation. | Valid only for the data and settings tested. |
 | [aqt-capa](aqt-capa/README.md) | `python aqt-capa/examples/demo.py` runs the loop from deviation to closure and prints a trend review. | Sees only failures that some tool recorded. |
 | [aqt-trail](aqt-trail/README.md) | In its quick start, `aqt-trail verify` prints `intact: … records`; change one stored line and it prints `broken from seq …`. | Tamper-evident, not tamper-proof. |
-| [aqt-spec](aqt-spec/README.md) | `aqt-evidence vectors` prints `87 of 87 vectors agree`. | The catalogues paraphrase the rules; they are not legal advice. |
+| [aqt-spec](aqt-spec/README.md) | `aqt-evidence vectors` prints `89 of 89 vectors agree`. | The catalogues paraphrase the rules; they are not legal advice. |
 
 ## Why not use an existing tool?
 

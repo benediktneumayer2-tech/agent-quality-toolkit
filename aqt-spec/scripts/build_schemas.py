@@ -72,6 +72,8 @@ OBSERVED = {
     "$schema": DIALECT, "$id": BASE + "observed", "title": "observed (writer-owned process attribution)",
     "description": "Set only by the aqt-trail writer (or, inside data.peer, by a tool that observes a peer itself).",
     **obj(pid=INT, uid=INT, gid=INT,
+          sid={"type": "string", "pattern": r"^S-1-[0-9]+(-[0-9]+)*$",
+               "description": "Windows: the peer's user SID, in place of uid and gid (Windows has neither)"},
           process_chain={**STRS, "description": "command names, nearest first"},
           processes={"type": "array", "items": obj(["pid"], pid=INT, comm=STR, start_time=INT)},
           harness={"type": ["string", "null"]}, client_time=TIME, via=enum("socket", "spool")),
