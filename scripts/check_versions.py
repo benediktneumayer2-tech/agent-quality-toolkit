@@ -3,6 +3,8 @@
 
 All packages are released together under one version (tag `v<version>`, for example v0.2.0). The root
 CITATION.cff, which Zenodo reads for the DOI record, must carry the same version, and on a tag a release date.
+So must the desktop app (aqt-desktop/src-tauri: `tauri.conf.json` names its installers and updates, `Cargo.toml`
+its program).
 
 Usage: scripts/check_versions.py [--tag TAG] [--root DIR]
 Prints the version and exits 0 when all packages agree (and the tag is `v` + that version);
@@ -12,6 +14,7 @@ exits 1 otherwise, naming each package and its version.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 import tomllib
@@ -41,6 +44,21 @@ def citation(root: Path) -> dict[str, str]:
     return fields
 
 
+def app_versions(root: Path) -> dict[str, str]:
+    """The desktop app's version in tauri.conf.json and Cargo.toml (empty if there is no app)."""
+    app = root / "aqt-desktop" / "src-tauri"
+    versions = {}
+    conf = app / "tauri.conf.json"
+    if conf.is_file():
+        versions["aqt-desktop/src-tauri/tauri.conf.json"] = str(
+            json.loads(conf.read_text(encoding="utf-8")).get("version", "(missing)"))
+    cargo = app / "Cargo.toml"
+    if cargo.is_file():
+        package = tomllib.loads(cargo.read_text(encoding="utf-8")).get("package", {})
+        versions["aqt-desktop/src-tauri/Cargo.toml"] = str(package.get("version", "(missing)"))
+    return versions
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--tag", help="the release tag, for example v0.2.0")
@@ -53,6 +71,7 @@ def main(argv: list[str] | None = None) -> int:
     cff = citation(args.root.resolve())
     if cff:
         versions["CITATION.cff"] = cff.get("version", "(missing)")
+    versions.update(app_versions(args.root.resolve()))
     found = sorted(set(versions.values()))
     if len(found) != 1:
         print("the packages have different versions:", file=sys.stderr)

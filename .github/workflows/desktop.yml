@@ -1,9 +1,16 @@
 name: desktop
-on: [push, pull_request]
+# The desktop app's installers for every platform, smoke-tested, as artifacts named aqt-desktop-<platform>. The
+# release workflow calls this workflow (workflow_call) and attaches every aqt-desktop-* artifact to the release, so
+# a new platform job here is released without a change there.
+on:
+  push:
+    branches: ["**"]      # not on a tag: the release workflow builds a tag's installers
+  pull_request:
+  workflow_call:
 permissions:
   contents: read
 concurrency:
-  group: desktop-${{ github.ref }}
+  group: desktop-${{ github.workflow }}-${{ github.ref }}   # called by the release: its own group
   cancel-in-progress: true
 jobs:
   linux:
@@ -49,7 +56,8 @@ jobs:
   macos:
     # The desktop app on macOS, unsigned (ad-hoc signed, which Apple silicon needs to run it): the frozen runtime,
     # the .app and the .dmg, a smoke run of the app taken out of the .dmg in the runner's login session, and the
-    # .dmg as an artifact. Apple silicon, and Intel on macos-15-intel (GitHub's last Intel image).
+    # .dmg and the .app.tar.gz (the update) as an artifact. Apple silicon, and Intel on macos-15-intel (GitHub's last
+    # Intel image).
     strategy:
       fail-fast: false
       matrix:
@@ -81,7 +89,9 @@ jobs:
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: aqt-desktop-macos-${{ matrix.arch }}
-          path: aqt-desktop/dist/*.dmg
+          path: |
+            aqt-desktop/dist/*.dmg
+            aqt-desktop/dist/*.app.tar.gz
           if-no-files-found: error
   windows:
     # The Windows app: the frozen AQT runtime and the per-user NSIS installer (unsigned, owner decision D3). On the

@@ -1,8 +1,11 @@
-"""Tests for the release helpers: pypi_readmes.py, check_versions.py and release_notes.py."""
+"""Tests for the release helpers: pypi_readmes.py, check_versions.py, release_notes.py and desktop_release.py."""
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import importlib.util
+import json
 import textwrap
 from pathlib import Path
 
@@ -22,6 +25,7 @@ def load(name: str):
 
 
 readmes, versions, notes = load("pypi_readmes"), load("check_versions"), load("release_notes")
+desktop = load("desktop_release")
 
 
 def package(root: Path, folder: str, name: str, version: str = "0.2.0", readme: str = "", changelog: str = "",
@@ -142,6 +146,22 @@ def test_the_real_citation_file_matches_the_packages():
     assert versions.main([]) == 0
 
 
+def test_the_desktop_app_carries_the_package_version(tmp_path, capsys):
+    package(tmp_path, "aqt-a", "aqt-a")
+    app = tmp_path / "aqt-desktop" / "src-tauri"
+    app.mkdir(parents=True)
+    (app / "tauri.conf.json").write_text('{"productName": "AQT", "version": "0.2.0"}')
+    (app / "Cargo.toml").write_text('[package]\nname = "aqt-desktop"\nversion = "0.2.1"\n')
+    assert versions.main(["--root", str(tmp_path)]) == 1
+    assert "aqt-desktop/src-tauri/Cargo.toml 0.2.1" in capsys.readouterr().err
+    (app / "Cargo.toml").write_text('[package]\nname = "aqt-desktop"\nversion = "0.2.0"\n')
+    (app / "tauri.conf.json").write_text('{"productName": "AQT"}')
+    assert versions.main(["--root", str(tmp_path)]) == 1
+    assert "tauri.conf.json (missing)" in capsys.readouterr().err
+    (app / "tauri.conf.json").write_text('{"productName": "AQT", "version": "0.2.0"}')
+    assert versions.main(["--root", str(tmp_path), "--tag", "v0.2.0"]) == 0
+
+
 def test_different_versions_fail(tmp_path, capsys):
     package(tmp_path, "aqt-a", "aqt-a")
     package(tmp_path, "aqt-b", "aqt-b", version="0.2.0.dev0")
@@ -186,3 +206,86 @@ def test_notes_need_a_dated_section(tmp_path, capsys):
     assert "aqt-b/CHANGELOG.md: no section for 0.2.0" in err
     (tmp_path / "aqt-b" / "CHANGELOG.md").write_text("## 0.2.0 — unreleased\n- soon\n")
     assert notes.main(["0.2.0", "--root", str(tmp_path), "--allow-unreleased"]) == 0
+
+
+# ---- desktop_release ------------------------------------------------------------------------------------
+
+def minisign(kind: str, key_id: bytes) -> str:
+    """A stand-in for a Tauri updater public key or signature (base64 of the minisign file): only the key id is real."""
+    if kind == "key":
+        text = "untrusted comment: minisign public key\n" + base64.b64encode(b"Ed" + key_id + bytes(32)).decode()
+    else:
+        text = ("untrusted comment: signature from tauri secret key\n" + base64.b64encode(b"ED" + key_id + bytes(64)).decode()
+                + "\ntrusted comment: timestamp:0\tfile:x\tversion:0.3.0\n" + base64.b64encode(bytes(64)).decode())
+    return base64.b64encode(text.encode()).decode()
+
+
+@pytest.fixture
+def release(tmp_path, monkeypatch):
+    monkeypatch.delenv("TAURI_SIGNING_PRIVATE_KEY", raising=False)
+    files = tmp_path / "files"
+    files.mkdir()
+    for name in ("aqt_spec-0.3.0-py3-none-any.whl", "aqt_desktop_x", "aqt-desktop_0.3.0_amd64.AppImage",
+                 "aqt-desktop_0.3.0_amd64.deb", "aqt-desktop_0.3.0_arm64.dmg", "aqt-desktop_0.3.0_arm64.app.tar.gz",
+                 "aqt-desktop_0.3.0_x64-setup.exe"):
+        (files / name).write_bytes(name.encode())
+    conf = tmp_path / "tauri.conf.json"
+    conf.write_text('{"version": "0.3.0", "plugins": {"updater": {"pubkey": ""}}}')
+    run = lambda *extra: desktop.main([str(files), "--version", "0.3.0", "--repo", "o/r", "--config", str(conf), *extra])
+    return files, conf, run
+
+
+def sums(folder: Path) -> dict[str, str]:
+    lines = (folder / "SHA256SUMS").read_text().splitlines()
+    return {name: digest for digest, name in (line.split("  ") for line in lines)}
+
+
+def test_without_the_updater_key_the_release_gets_sha256sums_and_no_manifest(release, capsys):
+    files, _, run = release
+    assert run() == 0
+    assert "no signatures: no latest.json" in capsys.readouterr().out
+    assert not (files / "latest.json").exists()
+    assert not (files / "aqt-desktop_0.3.0_arm64.app.tar.gz").exists()      # macOS updates only with a manifest
+    listed = sums(files)
+    assert sorted(listed) == sorted(p.name for p in files.iterdir() if p.name != "SHA256SUMS")
+    assert listed["aqt-desktop_0.3.0_arm64.dmg"] == hashlib.sha256(b"aqt-desktop_0.3.0_arm64.dmg").hexdigest()
+
+
+def test_signatures_become_latest_json(release):
+    files, conf, run = release
+    for name in ("aqt-desktop_0.3.0_amd64.AppImage", "aqt-desktop_0.3.0_arm64.app.tar.gz", "aqt-desktop_0.3.0_x64-setup.exe"):
+        (files / f"{name}.sig").write_text(minisign("sig", b"K" * 8) + "\n")
+    conf.write_text(json.dumps({"plugins": {"updater": {"pubkey": minisign("key", b"K" * 8)}}}))
+    assert run() == 0
+    latest = json.loads((files / "latest.json").read_text())
+    assert latest["version"] == "0.3.0" and latest["notes"].endswith("https://github.com/o/r/releases/tag/v0.3.0")
+    assert sorted(latest["platforms"]) == ["darwin-aarch64-app", "linux-x86_64-appimage", "windows-x86_64-nsis"]
+    entry = latest["platforms"]["darwin-aarch64-app"]
+    assert entry["url"] == "https://github.com/o/r/releases/download/v0.3.0/aqt-desktop_0.3.0_arm64.app.tar.gz"
+    assert entry["signature"] == minisign("sig", b"K" * 8)
+    assert not list(files.glob("*.sig")) and (files / "aqt-desktop_0.3.0_arm64.app.tar.gz").exists()
+    assert "latest.json" in sums(files)
+
+
+def test_a_signature_by_another_key_than_the_apps_fails(release, capsys):
+    files, conf, run = release
+    (files / "aqt-desktop_0.3.0_amd64.deb.sig").write_text(minisign("sig", b"A" * 8))
+    conf.write_text(json.dumps({"plugins": {"updater": {"pubkey": minisign("key", b"B" * 8)}}}))
+    assert run() == 1
+    assert "not signed by the key whose public key is in tauri.conf.json" in capsys.readouterr().err
+    assert not (files / "latest.json").exists()
+
+
+def test_a_tag_of_an_app_that_checks_for_updates_needs_the_key(release, capsys):
+    _, conf, run = release
+    conf.write_text(json.dumps({"plugins": {"updater": {"pubkey": minisign("key", b"B" * 8)}}}))
+    assert run() == 0                                                          # a dry run only says so
+    assert run("--tag-run") == 1
+    assert "TAURI_SIGNING_PRIVATE_KEY is not set" in capsys.readouterr().err
+
+
+def test_desktop_files_of_another_version_fail(release, capsys):
+    files, _, run = release
+    (files / "aqt-desktop_0.2.0_amd64.deb").write_bytes(b"old")
+    assert run() == 1
+    assert "aqt-desktop_0.2.0_amd64.deb" in capsys.readouterr().err

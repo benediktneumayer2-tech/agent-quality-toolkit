@@ -356,11 +356,12 @@ function shellLabels() {
   lang.setAttribute("aria-label", t("Language"));
 }
 
-function navLink(area, count, hot) {
+function navLink(area, count, hot, dot) {
   return h("li", {}, h("a", {
     href: area.path, "aria-current": S.view === area.id ? "page" : null,
     onclick: (event) => { event.preventDefault(); go(area.path); $("rail").classList.remove("open"); $("menu-btn").setAttribute("aria-expanded", "false"); },
   }, h("span", { class: "label", text: t(area.label) }),
+     dot ? h("span", { class: "dot", title: dot, role: "img", "aria-label": dot }) : null,
      count ? h("span", { class: `count ${hot ? "hot" : ""}`, "aria-label": t("{n} need attention", { n: count }), text: count }) : null));
 }
 function renderRail() {
@@ -370,9 +371,10 @@ function renderRail() {
     const n = area.id === "home" ? counts.overview : area.id === "changes" ? counts.changes : 0;
     put(nav, navLink(area, n || 0, true));
   }
-  // Settings at the foot of the rail; a mark when the setup has a problem
+  // Settings at the foot of the rail; a mark when the setup has a problem, a dot when the app has an update
   const problems = setupProblems().length;
-  put(clear($("nav-settings")), navLink(SETTINGS, problems, problems > 0));
+  const update = S.update && S.update.available && !S.update.ready ? t("Update available") : null;
+  put(clear($("nav-settings")), navLink(SETTINGS, problems, problems > 0, update));
   const foot = clear($("railfoot"));
   if (S.overview) put(foot, t("Checked {time}", { time: fmtTime(S.overview.checked_at) }));
 }
@@ -830,6 +832,11 @@ function trayWords() {
   if (APP) APP.invoke("desktop_settings", { change: { menu: { open: t("Open window"), needs: t("Needs you ({n})"), quit: t("Quit") } } }).catch(() => {});
 }
 trayWords();
+// ... and whether the app has an update (updates): at start, and from the app when a check finds one.
+if (APP) {
+  window.aqtUpdate = (status) => { S.update = status; renderRail(); };
+  APP.invoke("updates").then(window.aqtUpdate, () => {});
+}
 // The page of a case: /case/<id> (the id is readable: "quarantine:Q7SEGGW", "plan:0:s01" ...).
 function casePath(item) { return `/case/${encodeURIComponent(item.id).replace(/%3A/gi, ":")}`; }
 // How long a case has been waiting ("waiting for 3 h"), or "" when its start is unknown.
@@ -2341,7 +2348,45 @@ async function appSection() {
   if (!APP) return null;
   let d;
   try { d = await desktopSettings(); } catch (error) { return section(t("This app"), errorBox(error), machinesPart()); }
-  return section(t("This app"), appSettingRows(d, { keys: ["autostart", "close_to_tray", "aqt_command", "links"] }), machinesPart());
+  return section(t("This app"), await updatePart(), appSettingRows(d, { keys: ["autostart", "close_to_tray", "aqt_command", "links"] }), machinesPart());
+}
+// ---- updates of the app itself (updates), only in a build that has the updater's key: a newer version shows here
+// and as a dot at Settings. Agreeing downloads it and checks its signature; it installs when the app next starts.
+async function updatePart() {
+  try { S.update = await APP.invoke("updates"); } catch (error) { return null; }
+  if (!S.update.enabled) return null;
+  const box = h("div", { class: "update-part", "aria-live": "polite" });
+  const can = !!(S.mode && S.mode.decisions);
+  const change = async (button, busyWords, what) => {
+    button.disabled = true;
+    button.textContent = vis(busyWords);
+    try { S.update = await APP.invoke("updates", { change: what }); renderRail(); draw(); }
+    catch (error) { draw(); put(box, h("div", { class: "result refused", text: `${t("Not done:")} ${error.message || error}` })); }
+  };
+  const draw = () => {
+    const u = S.update;
+    clear(box);
+    if (u.failed) put(box, h("div", { class: "result refused", text: t("The update to version {version} could not be installed: {reason}", u.failed) }));
+    if (u.ready) {
+      const undo = h("button", { class: "btn small ghost", type: "button", text: t("Don't install"), disabled: !can });
+      undo.addEventListener("click", () => change(undo, t("Don't install"), { cancel: true }));
+      put(box, h("p", {}, st("pass", t("Version {version} is installed when the app next starts.", { version: u.ready })), " ", undo));
+    } else if (u.available) {
+      const v = u.available.version;
+      const agree = h("button", { class: "btn small primary", type: "button", text: t("Install at next start"), disabled: !can || u.busy });
+      agree.addEventListener("click", () => change(agree, t("Downloading…"), { install: v }));
+      put(box, h("p", {}, h("strong", { text: t("Update available: version {version}", { version: v }) }), " ",
+        h("span", { class: "small muted", text: t("(you have {version})", { version: u.current }) }),
+        u.available.notes ? [" ", h("a", { href: u.available.notes, target: "_blank", rel: "noopener noreferrer", text: t("What's new") })] : null),
+      h("p", { class: "small" }, agree),
+      h("p", { class: "small muted consequence-line", text: t("The app downloads it now and checks its signature. It is installed when the app next starts, not before.") }));
+    } else {
+      put(box, h("p", { class: "small muted", text: u.error ? t("Could not look for updates: {reason}", { reason: u.error })
+        : u.checked ? t("Up to date: version {version}.", { version: u.current }) : t("Version {version}. The app looks for updates a minute after it starts.", { version: u.current }) }));
+    }
+  };
+  draw();
+  return box;
 }
 function glossaryList() {
   return h("dl", { class: "glossary" }, Object.keys(GLOSSARY).map((key) => {

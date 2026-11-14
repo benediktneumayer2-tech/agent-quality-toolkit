@@ -7,6 +7,7 @@
 - Windows: a signed file's hash is read in binary mode, and the install hint of an editable clone names its
   folder as `D:\…`, not `\D:\…`.
 - Windows: `aqt-ui` no longer asks for a POSIX uid when it picks the folder of the login page.
+- In the desktop app, Settings shows when a newer version of the app is out: a dot at *Settings* in the rail and, under *This app*, the version with *Install at next start* (download and signature check now, install at the next start) or *Don't install*. Only in a build that has the updater key; the browser page shows nothing of it.
 - In the desktop app the page can show another machine's AQT over SSH (`static/machines.js`). It adds:
   - the machine in the top bar, in the first-run setup's header, the rail and the window title, with a choice of machine;
   - *Machines* under Settings, *This app*: add, *Test connection* (version, command and mode there), remove;

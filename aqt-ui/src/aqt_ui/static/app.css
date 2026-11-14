@@ -89,6 +89,7 @@ code, .mono { font-family: var(--mono); font-size: 12.5px; }
 .count { min-width: 20px; font: 600 12px/20px var(--sans); text-align: right; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .count.hot { color: var(--stop); }
 .count.hot::before { content: "●"; font-size: 8px; vertical-align: 2px; margin-right: 5px; }
+.nav .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
 .rail-foot { margin-top: auto; padding: 14px 22px 18px; color: var(--ink-2); font-size: 12px; }
 
 .center { grid-area: main; min-width: 0; min-height: 0; overflow-y: auto; background: var(--paper); }
