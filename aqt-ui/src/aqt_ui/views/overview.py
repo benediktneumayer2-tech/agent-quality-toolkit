@@ -36,6 +36,12 @@ def item(severity: str, view: str, title: str, detail: str = "", ref: str | None
             "args": {name: value for name, value in args.items() if value is not None}}
 
 
+def suspicion(score_ppm) -> str:
+    """How suspicious the detectors found a page, in a word: high from 80 %, medium from 40 %, else low."""
+    score = score_ppm if isinstance(score_ppm, (int, float)) else 0
+    return "high" if score >= 800_000 else "medium" if score >= 400_000 else "low"
+
+
 def _word(value) -> str:
     return json.dumps(value)
 
@@ -56,7 +62,8 @@ def build(app) -> dict:
     # trail
     if status["state"] == "missing":
         needs.append(item("high", "trail", "No audit trail yet",
-                          "Set up the trail, a signing key and the hooks with: aqt setup", code="trail_missing"))
+                          "Open the setup: it creates the audit trail and your signing key (or: aqt setup)",
+                          code="trail_missing"))
     elif status["state"] == "broken":
         check = status["check"] or {}
         needs.append(item("critical", "trail", f"Trail broken from seq {check.get('first_bad_seq')}",
@@ -78,35 +85,40 @@ def build(app) -> dict:
     refusals = trail.refusals_since(24)
     if refusals:
         tools = sorted({row["type"].split(".")[0] for row in refusals})
-        needs.append(item("medium", "trail", f"{len(refusals)} refused decision attempt(s) in the last 24 h",
+        attempts = "1 refused decision attempt" if len(refusals) == 1 else f"{len(refusals)} refused decision attempts"
+        needs.append(item("medium", "trail", f"{attempts} in the last 24 h",
                           "An agent or another process tried to decide: " + ", ".join(tools),
                           ref="type=*.refused", code="refusals", since=refusals[0].get("time"), n=len(refusals),
                           tools=", ".join(tools)))
     writer = status["writer"]
     if status["state"] != "missing" and not writer["running"]:
-        needs.append(item("medium", "trail", "Trail writer is not running",
-                          f"Start it with: aqt-trail serve (socket {writer['socket']})", code="writer_down",
+        needs.append(item("medium", "trail", "The background service (writer) is not running",
+                          "Records wait in a spool until it runs again; restart it on this case's page",
+                          code="writer_down",
                           socket=writer["socket"]))
     if writer["spooled"]:
-        needs.append(item("medium", "trail", f"{writer['spooled']} record(s) waiting in the spool",
-                          "They reach the trail with: aqt-trail drain", code="spooled", n=writer["spooled"]))
+        waiting = ("1 record waits outside the audit trail" if writer["spooled"] == 1
+                   else f"{writer['spooled']} records wait outside the audit trail")
+        needs.append(item("medium", "trail", waiting, "Move them into the trail on this case's page", code="spooled",
+                          n=writer["spooled"]))
     if status["records"]:
         review_age = _age_hours(status["last_review"])
         if review_age is None or review_age > 24 * app.config.review_due_days:
             needs.append(item("low", "trail", "Audit-trail review due",
-                              f"No signed review in {app.config.review_due_days} days: prepare and sign it in the "
-                              "Trail view", ref="review", code="review_due", since=status["last_review"],
+                              f"No signed audit-trail review in {app.config.review_due_days} days", ref="review",
+                              code="review_due", since=status["last_review"],
                               days=app.config.review_due_days))
         anchor_age = _age_hours(status["last_anchor"])
         if anchor_age is None or anchor_age > 24:
-            needs.append(item("low", "trail", "Trail head not anchored for 24 h",
-                              "aqt-trail checkpoint --anchor", code="unanchored", since=status["last_anchor"]))
+            needs.append(item("low", "trail", "Audit trail has had no external time stamp for 24 h",
+                              "An external time stamp proves when the trail had this state", code="unanchored",
+                              since=status["last_anchor"]))
     if status.get("test_mode"):
         needs.append(item("high", "trail", "TEST MODE: TEST ONLY anchors count",
                           "trail.toml sets [anchor] test_tsa = true: anchors from the built-in TEST ONLY authority "
                           "count, here and in reviews. Never for real use; remove the line.", code="test_mode"))
     differs = (status.get("review_profile") or {}).get("differs_from_builtin") or {}
-    if differs:
+    if differs and not trail.review_params_accepted(differs):
         what = ", ".join(f"{key}={_word(value['value'])} (built-in {_word(value['builtin'])})"
                          for key, value in sorted(differs.items()))
         needs.append(item("medium", "trail", "Review parameters differ from the built-in defaults",
@@ -121,13 +133,20 @@ def build(app) -> dict:
             cases = app.quarantine().cases()
             for case in cases["cases"]:
                 if case["state"] in ("held", "warned"):
-                    needs.append(item("high", "quarantine",
-                                      f"{'Held' if case['state'] == 'held' else 'Warned'} case {case['case_id']}",
-                                      f"{case['domain'] or case['tool'] or 'unknown source'}, score {case['score_ppm']} ppm",
-                                      ref=case["case_id"], code=case["state"], key=f"case_{case['state']}",
+                    source = case["domain"] or case["tool"] or "?"
+                    held = case["state"] == "held"
+                    if case["domain"]:
+                        title = (f"A web page from {source} was held back" if held
+                                 else f"A web page from {source} came through with a warning")
+                    else:
+                        title = (f"Content from {source} was held back" if held
+                                 else f"Content from {source} came through with a warning")
+                    level = suspicion(case["score_ppm"])
+                    needs.append(item("high", "quarantine", title, f"Suspicion: {level} (case {case['case_id']})",
+                                      ref=case["case_id"], code=case["state"],
+                                      key=f"case_{case['state']}" + ("" if case["domain"] else "_tool"),
                                       page=f"quarantine:{case['case_id']}", since=case["opened"],
-                                      case=case["case_id"], source=case["domain"] or case["tool"] or "?",
-                                      score=case["score_ppm"]))
+                                      case=case["case_id"], source=source, score=case["score_ppm"], suspicion=level))
                     counts["quarantine"] += 1
         except (ViewProblem, OSError, ValueError) as error:
             tools_state["aqt-quarantine"] = str(error)
@@ -167,12 +186,14 @@ def build(app) -> dict:
         try:
             capa = capa_counts(app)
             if capa["candidates"]:
-                needs.append(item("medium", "capa", f"{capa['candidates']} CAPA candidate(s) to accept or dismiss",
+                needs.append(item("medium", "capa", "1 CAPA candidate to accept or dismiss" if capa["candidates"] == 1
+                                  else f"{capa['candidates']} CAPA candidates to accept or dismiss",
                                   "aqt-capa found new candidates in the evidence", ref="candidates",
                                   code="capa_candidates", page="capa:candidates", since=capa.get("oldest"),
                                   n=capa["candidates"]))
             if capa["overdue"]:
-                needs.append(item("medium", "capa", f"{capa['overdue']} deviation(s) overdue",
+                needs.append(item("medium", "capa", "1 deviation overdue" if capa["overdue"] == 1
+                                  else f"{capa['overdue']} deviations overdue",
                                   "Investigation not recorded by the due date", code="capa_overdue",
                                   page="capa:overdue", n=capa["overdue"]))
             counts["capa"] = capa["candidates"] + capa["overdue"]
@@ -184,7 +205,8 @@ def build(app) -> dict:
     quals = qualifications(app.config.qualification_warn_days)
     for row in quals["qualifications"]:
         if row["state"] in ("expired", "expiring", "triggered"):
-            words = {"expired": "expired", "expiring": f"expires in {row['days_left']} day(s)",
+            words = {"expired": "expired", "expiring": "expires in 1 day" if row["days_left"] == 1
+                     else f"expires in {row['days_left']} days",
                      "triggered": "requalification triggered: " + ", ".join(row["triggers"])}[row["state"]]
             needs.append(item("medium", "qualifications", f"Qualification of {row['subject_id']} {words}",
                               f"{row['kind']}, valid until {row['valid_until']}", ref=row["subject_id"],
