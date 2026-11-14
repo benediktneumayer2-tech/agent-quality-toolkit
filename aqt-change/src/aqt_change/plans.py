@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 from datetime import UTC, datetime
 
-from aqt_evidence import new_record, subject
+from aqt_evidence import aqt_command, new_record, subject
 
 from . import plan as planmod
 from .actors import current_actor
@@ -174,7 +174,7 @@ def reconcile(ledger: Ledger, path: str | os.PathLike, kind: str, reason: str | 
     require_valid(plan, rel)
     state = ledger.plan_state(plan.id)
     if not state:
-        raise refused("plan_unregistered", f"{rel} is not registered; run 'aqt-change plan add' first")
+        raise refused("plan_unregistered", f"{rel} is not registered; run '{aqt_command()} change plan add' first")
     if state["path"] != rel:
         raise refused("plan_id_conflict", f"plan id {plan.id} is registered for {state['path']}")
     if expect and expect != plan.raw_hash:
@@ -208,7 +208,7 @@ def reconcile(ledger: Ledger, path: str | os.PathLike, kind: str, reason: str | 
     else:
         if terminal:
             raise refused("terminal_plan_semantic_change", "semantic changes to a terminal plan need a follow-up "
-                          "plan ('aqt-change plan new --follows')", status=status_value)
+                          f"plan ('{aqt_command()} change plan new --follows')", status=status_value)
         if not reason:
             raise refused("plan_reason_required", "semantic changes need a reason")
         if active:

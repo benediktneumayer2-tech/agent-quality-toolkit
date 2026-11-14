@@ -84,6 +84,7 @@ function setLang(lang) {
   try { localStorage.setItem("aqt-ui-lang", LANG); } catch (e) { /* not remembered; works for this page */ }
   shellLabels();
   renderTopbar();
+  trayWords();
   route();
 }
 
@@ -800,6 +801,11 @@ if (APP) window.aqtQueue = (seq, body) => {
   const words = { cases, many: t("{n} new cases need you", { n: (body.new || []).length }), review: t("Review it in Agent Quality Toolkit"), show: t("Show the case") };
   APP.invoke("show_notifications", { seq, words }).catch(() => {});
 };
+// ... and the tray menu's words, when the page starts and after each change of language (setLang).
+function trayWords() {
+  if (APP) APP.invoke("desktop_settings", { change: { menu: { open: t("Open window"), needs: t("Needs you ({n})"), quit: t("Quit") } } }).catch(() => {});
+}
+trayWords();
 // The page of a case: /case/<id> (the id is readable: "quarantine:Q7SEGGW", "plan:0:s01" ...).
 function casePath(item) { return `/case/${encodeURIComponent(item.id).replace(/%3A/gi, ":")}`; }
 // How long a case has been waiting ("waiting for 3 h"), or "" when its start is unknown.

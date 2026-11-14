@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- In the desktop app the page also gives the tray menu its words in its language, at start and after each change of language.
 - In the desktop app the page words the system notifications of new cases in its language (German or English); the `queue` event's new cases carry `key` and `args` for that.
 - From the desktop app's frozen runtime the change gates run the runtime itself (`aqt -I -m aqt_change.cli gate`), since it has no `aqt-change` program.
 - The stdio core sends a `queue` event whenever the "Needs you" queue changes (`count`, the `new` cases with id, title and kind, the `removed` ids); it looks every 5 s (`AQT_CORE_QUEUE_SECONDS`, 0 turns it off) with the overview's data, without verifying the trail again. The first event after a start only carries the count. The desktop app shows the count in its tray and a notification per new case.

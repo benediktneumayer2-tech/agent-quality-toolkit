@@ -28,7 +28,7 @@ import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
 from pathlib import Path
 
-from aqt_evidence import Text, bytes_hash, new_record, subject, text_join
+from aqt_evidence import Text, aqt_command, bytes_hash, new_record, subject, text_join
 
 from . import antigaming
 from .actors import current_actor
@@ -204,7 +204,7 @@ def _resolve_targets(plan: Plan | None, item: str | None, argv: list[str], all_i
         if not found:
             raise usage("item_unknown", f"no item {item} in the plan")
         if not found.commands:
-            raise refused("item_manual", f"{item} declares no command; use 'aqt-change attest'")
+            raise refused("item_manual", f"{item} declares no command; use '{aqt_command()} change attest'")
         if not argv:
             return [(item, cmd) for cmd in found.commands]
         if argv not in found.commands:
@@ -229,7 +229,7 @@ def run(ledger: Ledger, argv: list[str], *, plan_path: str | None = None, item: 
         require_valid(plan, rel)
         state = status(ledger, rel)
         if state["state"] == "unregistered":
-            raise refused("plan_unregistered", f"{rel} is not registered; run 'aqt-change plan add' or 'begin'")
+            raise refused("plan_unregistered", f"{rel} is not registered; run '{aqt_command()} change plan add' or 'begin'")
     targets = _resolve_targets(plan, item, argv, all_items)
     receipts = []
     for item_id, command in targets:
@@ -322,7 +322,7 @@ def attest(ledger: Ledger, plan_path: str, item: str, evidence: list[str], reaso
     if not found or found.section != "verification":
         raise usage("item_unknown", f"no verification item {item}")
     if found.commands:
-        raise refused("item_has_command", f"{item} declares a command; use 'aqt-change run --item {item}'")
+        raise refused("item_has_command", f"{item} declares a command; use '{aqt_command()} change run --item {item}'")
     files = []
     for path in evidence:
         relpath = ledger.rel(path)
