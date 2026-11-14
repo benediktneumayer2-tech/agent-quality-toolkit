@@ -9,7 +9,7 @@
 use std::io::Read;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -63,29 +63,48 @@ fn ssh_from_env() -> Vec<String> {
 }
 
 /// An SSH destination as ssh takes it: `host`, `user@host`, an alias from `~/.ssh/config`, `ssh://user@host:2222`.
-/// Never an option (a leading `-`), no spaces, quotes or shell characters.
-pub fn check_destination(destination: &str) -> Result<(), String> {
+/// Never an option (a leading `-`), no spaces, quotes or shell characters. Err: the code of the refusal.
+pub fn check_destination(destination: &str) -> Result<(), &'static str> {
     let ok_char = |c: char| c.is_ascii_alphanumeric() || "._-@:%[]/".contains(c);
     if destination.is_empty() || destination.len() > 255 {
-        return Err("an SSH destination has 1 to 255 characters".into());
+        return Err("destination_length");
     }
     if destination.starts_with('-') {
-        return Err("an SSH destination cannot start with -".into());
+        return Err("destination_option");
     }
     if !destination.chars().all(ok_char) {
-        return Err("an SSH destination has only letters, digits and . _ - @ : % [ ] / (e.g. user@server or an alias from ~/.ssh/config)".into());
+        return Err("destination_chars");
     }
     Ok(())
 }
 
-pub fn check_name(name: &str) -> Result<(), String> {
+pub fn check_name(name: &str) -> Result<(), &'static str> {
     if name.is_empty() || name.chars().count() > 40 {
-        return Err("a machine's name has 1 to 40 characters".into());
+        return Err("name_length");
     }
     if name.chars().any(char::is_control) {
-        return Err("a machine's name has no control characters".into());
+        return Err("name_control");
     }
     Ok(())
+}
+
+/// A refusal of the page's `machines` command: a code the page words in its language, and English words.
+fn refused(code: &str, name: &str) -> Value {
+    let english = match code {
+        "name_length" => "a machine's name has 1 to 40 characters".to_string(),
+        "name_control" => "a machine's name has no control characters".to_string(),
+        "name_taken" => format!("there is a machine named {name} already"),
+        "destination_length" => "an SSH destination has 1 to 255 characters".to_string(),
+        "destination_option" => "an SSH destination cannot start with -".to_string(),
+        "destination_chars" => "an SSH destination has only letters, digits and . _ - @ : % [ ] /".to_string(),
+        "unknown_machine" => format!("there is no machine named {name}"),
+        other => other.to_string(),
+    };
+    json!({"code": code, "message": english, "name": name})
+}
+
+fn settings_failed(error: String) -> Value {
+    json!({"code": "settings", "message": error})
 }
 
 /// `ssh <options> -- <destination> <remote>`: the destination and the remote command are single arguments.
@@ -163,13 +182,13 @@ pub fn classify(machine: &Machine, code: Option<i32>, stderr: &str, spawn_error:
     json!({"kind": kind, "message": message, "detail": detail, "machine": machine.name, "destination": dest})
 }
 
-/// The probe over SSH: Ok with the command name (and the version), or the classified failure.
-pub fn probe(machine: &Machine) -> Result<Found, Value> {
-    let args = ssh_command(&ssh_from_env(), &machine.destination, &probe_line());
+/// Runs a command (no shell) to its end, or kills it after `timeout` (an error of kind TimedOut):
+/// (exit code, stdout, stderr).
+fn output(args: &[String], timeout: Duration) -> std::io::Result<(Option<i32>, String, String)> {
     let mut command = Command::new(&args[0]);
     command.args(&args[1..]).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     core::no_window(&mut command);
-    let mut child = command.spawn().map_err(|error| classify(machine, None, "", Some(&error)))?;
+    let mut child = command.spawn()?;
     let take = |mut pipe: Box<dyn Read + Send>| {
         thread::spawn(move || {
             let mut text = String::new();
@@ -179,7 +198,7 @@ pub fn probe(machine: &Machine) -> Result<Found, Value> {
     };
     let stdout = take(Box::new(child.stdout.take().expect("piped stdout")));
     let stderr = take(Box::new(child.stderr.take().expect("piped stderr")));
-    let deadline = Instant::now() + PROBE_TIMEOUT;
+    let deadline = Instant::now() + timeout;
     let code = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status.code(),
@@ -187,12 +206,23 @@ pub fn probe(machine: &Machine) -> Result<Found, Value> {
             _ => {
                 let _ = child.kill();
                 let _ = child.wait();
-                let failure = format!("no answer within {} s", PROBE_TIMEOUT.as_secs());
-                return Err(classify(machine, Some(255), &format!("{failure}: timed out"), None));
+                return Err(std::io::Error::new(std::io::ErrorKind::TimedOut, format!("no answer within {} s", timeout.as_secs())));
             }
         }
     };
-    let (stdout, stderr) = (stdout.join().unwrap_or_default(), stderr.join().unwrap_or_default());
+    Ok((code, stdout.join().unwrap_or_default(), stderr.join().unwrap_or_default()))
+}
+
+/// The probe over SSH: Ok with the command name (and the version), or the classified failure.
+pub fn probe(machine: &Machine) -> Result<Found, Value> {
+    let args = ssh_command(&ssh_from_env(), &machine.destination, &probe_line());
+    let (code, stdout, stderr) = match output(&args, PROBE_TIMEOUT) {
+        Ok(done) => done,
+        Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {
+            return Err(classify(machine, Some(255), &format!("{error}: timed out"), None))
+        }
+        Err(error) => return Err(classify(machine, None, "", Some(&error))),
+    };
     if code == Some(255) {
         return Err(classify(machine, code, &stderr, None));
     }
@@ -207,11 +237,63 @@ pub fn probe(machine: &Machine) -> Result<Found, Value> {
     Ok(found)
 }
 
-/// The core of `machine`: probed before each start (so a failed restart says why), started again once.
-fn remote_launch(machine: Machine, read_only: bool, restarts: u32) -> Launch {
+// -- who started this app ---------------------------------------------------------------------------------
+
+/// The local core's command with `--mode-check` in place of `--stdio` (and without `--read-only`).
+pub fn mode_check_command(local: &[String]) -> Vec<String> {
+    let mut command: Vec<String> = local.iter().filter(|a| *a != "--stdio" && *a != "--read-only").cloned().collect();
+    command.push("--mode-check".into());
+    command
+}
+
+/// The guard's verdict as `--mode-check` printed it: a JSON object with a boolean `decisions` on its last line.
+pub fn parse_mode(stdout: &str) -> Option<Value> {
+    let line = stdout.lines().rev().find(|line| !line.trim().is_empty())?;
+    let mode: Value = serde_json::from_str(line).ok()?;
+    mode.get("decisions")?.as_bool()?;
+    Some(mode)
+}
+
+/// No verdict: read-only, with why.
+pub fn unchecked(why: &str) -> Value {
+    json!({
+        "decisions": false, "markers": [], "harness": null, "explicit": false,
+        "reason": format!("This app could not check who started it ({why}), so another machine opens read-only."),
+    })
+}
+
+static LOCAL_MODE: OnceLock<Value> = OnceLock::new();
+const MODE_CHECK_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Whether a person started this app, as the Python guard sees it: `aqt core --mode-check`, run by the app like
+/// its local core (the same environment, the app among its ancestors). The remote guard cannot see who started
+/// the app, so an app started by an agent opens other machines read-only, and so does an app whose check could
+/// not run. Asked once: the start of the app does not change.
+fn local_mode(local: &[String]) -> Value {
+    LOCAL_MODE
+        .get_or_init(|| {
+            let mode = match output(&mode_check_command(local), MODE_CHECK_TIMEOUT) {
+                Ok((Some(0), stdout, _)) => parse_mode(&stdout).unwrap_or_else(|| unchecked("no answer from aqt core --mode-check")),
+                Ok((code, _, stderr)) => unchecked(&format!("aqt core --mode-check: exit {code:?}: {}", stderr.trim().chars().take(200).collect::<String>())),
+                Err(error) => unchecked(&format!("aqt core --mode-check: {error}")),
+            };
+            eprintln!("[aqt desktop] this app was started {}", if allows(&mode) { "by a person" } else { "without a person's check: other machines open read-only" });
+            mode
+        })
+        .clone()
+}
+
+fn allows(mode: &Value) -> bool {
+    mode.get("decisions") == Some(&Value::Bool(true))
+}
+
+/// The core of `machine`: probed before each start (so a failed restart says why), started again once. Read-only
+/// when the app is, and when the local guard did not find a person behind the app.
+fn remote_launch(machine: Machine, local: Vec<String>, read_only: bool, restarts: u32) -> Launch {
     let (probed, worded) = (machine.clone(), machine);
     Launch {
         command: Box::new(move || {
+            let read_only = read_only || !allows(&local_mode(&local));
             let found = probe(&probed)?;
             let remote = remote_core(found.name.unwrap_or("aqt"), read_only);
             Ok(ssh_command(&ssh_from_env(), &probed.destination, &remote))
@@ -284,6 +366,17 @@ impl Machines {
         self.now.lock().unwrap().machine.clone()
     }
 
+    /// The core's ready body for the page. On another machine whose core was opened read-only because no person
+    /// was found behind this app, `mode` is the local guard's verdict, so the page says why.
+    pub fn session(&self, mut body: Value) -> Value {
+        if self.machine().is_some() {
+            if let Some(local) = LOCAL_MODE.get().filter(|mode| !allows(mode)) {
+                body["mode"] = local.clone();
+            }
+        }
+        body
+    }
+
     /// Another machine (or the same again): a new core there; the old one is stopped. Its requests still waiting
     /// fail as sent (their outcome is unknown); nothing is sent again.
     fn connect(&self, app: &AppHandle, machine: Option<Machine>) {
@@ -313,7 +406,7 @@ fn launch(app: &AppHandle, generation: &Arc<AtomicU64>, machine: &Option<Machine
         None => Core::start(Launch::local(local.to_vec()), on_event),
         Some(machine) => {
             eprintln!("[aqt desktop] machine {} ({})", machine.name, machine.destination);
-            Core::start(remote_launch(machine.clone(), read_only, 1), on_event)
+            Core::start(remote_launch(machine.clone(), local.to_vec(), read_only, 1), on_event)
         }
     }
 }
@@ -335,13 +428,19 @@ fn view(app: &AppHandle, machines: &Machines) -> Value {
 }
 
 /// "Test connection": the probe, then a core started there until its ready event (version and mode), then stopped.
-async fn test(machine: Machine, read_only: bool) -> Value {
+async fn test(machine: Machine, local: Vec<String>, read_only: bool) -> Value {
     let probed = machine.clone();
-    let found = match tauri::async_runtime::spawn_blocking(move || probe(&probed)).await {
+    let checked = tauri::async_runtime::spawn_blocking(move || {
+        let local = if read_only { None } else { Some(local_mode(&local)) };
+        probe(&probed).map(|found| (found, local))
+    });
+    let (found, local) = match checked.await {
         Ok(Ok(found)) => found,
         Ok(Err(failure)) => return json!({"ok": false, "failure": failure}),
         Err(error) => return json!({"ok": false, "failure": {"kind": "stopped", "message": error.to_string()}}),
     };
+    let local = local.filter(|mode| !allows(mode));
+    let read_only = read_only || local.is_some();
     let name = found.name.unwrap_or("aqt");
     let remote = remote_core(name, read_only);
     let args = ssh_command(&ssh_from_env(), &machine.destination, &remote);
@@ -356,7 +455,7 @@ async fn test(machine: Machine, read_only: bool) -> Value {
     let stopped = core.clone();
     let _ = tauri::async_runtime::spawn_blocking(move || stopped.stop()).await;
     match ready {
-        Ok(body) => json!({"ok": true, "version": body.get("version"), "mode": body.get("mode"), "command": name}),
+        Ok(body) => json!({"ok": true, "version": body.get("version"), "mode": local.or(body.get("mode").cloned()), "command": name}),
         Err(_) => json!({"ok": false, "failure": core.status().get("failure").cloned().unwrap_or(Value::Null)}),
     }
 }
@@ -364,45 +463,46 @@ async fn test(machine: Machine, read_only: bool) -> Value {
 /// The machines for the page's Settings and its machine indicator: {machines, current, state}. `change` may
 /// `add` {name, destination}, `remove` a name, `select` a name (null: this computer), `reconnect` (true), or
 /// `test` a name: the answer then carries `test` {ok, version, mode, command} or {ok: false, failure}.
+/// A refusal is {code, message, name}: the page words the code in its language.
 #[tauri::command]
-pub async fn machines(app: AppHandle, machines: State<'_, Machines>, change: Option<Value>) -> Result<Value, String> {
+pub async fn machines(app: AppHandle, machines: State<'_, Machines>, change: Option<Value>) -> Result<Value, Value> {
     let change = change.unwrap_or(Value::Null);
     let mut tested = None;
+    let find = |name: &str| list(&app).into_iter().find(|m| m.name == name).ok_or_else(|| refused("unknown_machine", name));
     if let Some(add) = change.get("add") {
         let field = |key: &str| add.get(key).and_then(Value::as_str).map(str::trim).unwrap_or_default().to_string();
         let machine = Machine { name: field("name"), destination: field("destination") };
-        check_name(&machine.name)?;
-        check_destination(&machine.destination)?;
+        check_name(&machine.name).map_err(|code| refused(code, &machine.name))?;
+        check_destination(&machine.destination).map_err(|code| refused(code, &machine.name))?;
         let mut all = list(&app);
         if all.iter().any(|m| m.name.to_lowercase() == machine.name.to_lowercase()) {
-            return Err(format!("there is a machine named {} already", machine.name));
+            return Err(refused("name_taken", &machine.name));
         }
         all.push(machine);
-        save_list(&app, &all)?;
+        save_list(&app, &all).map_err(settings_failed)?;
     }
     if let Some(name) = change.get("remove").and_then(Value::as_str) {
         let mut all = list(&app);
         all.retain(|m| m.name != name);
-        save_list(&app, &all)?;
+        save_list(&app, &all).map_err(settings_failed)?;
         if machines.machine().is_some_and(|m| m.name == name) {
-            desktop::save(&app, "machine", Value::Null)?;
+            desktop::save(&app, "machine", Value::Null).map_err(settings_failed)?;
             machines.connect(&app, None);
         }
     }
     if let Some(choice) = change.get("select") {
         let machine = match choice.as_str() {
-            Some(name) => Some(list(&app).into_iter().find(|m| m.name == name).ok_or(format!("no machine named {name}"))?),
+            Some(name) => Some(find(name)?),
             None => None,
         };
-        desktop::save(&app, "machine", choice.as_str().map_or(Value::Null, |n| Value::String(n.into())))?;
+        desktop::save(&app, "machine", choice.as_str().map_or(Value::Null, |n| Value::String(n.into()))).map_err(settings_failed)?;
         machines.connect(&app, machine);
     }
     if change.get("reconnect") == Some(&Value::Bool(true)) {
         machines.connect(&app, machines.machine());
     }
     if let Some(name) = change.get("test").and_then(Value::as_str) {
-        let machine = list(&app).into_iter().find(|m| m.name == name).ok_or(format!("no machine named {name}"))?;
-        tested = Some(test(machine, machines.read_only).await);
+        tested = Some(test(find(name)?, machines.local.clone(), machines.read_only).await);
     }
     let mut answer = view(&app, &machines);
     if let Some(tested) = tested {
@@ -464,6 +564,9 @@ mod tests {
         ] {
             assert!(check_destination(bad).is_err(), "{bad:?}");
         }
+        assert_eq!(check_destination("-p"), Err("destination_option"));
+        assert_eq!(check_destination("a b"), Err("destination_chars"));
+        assert_eq!(refused("name_taken", "Build")["message"], "there is a machine named Build already");
         assert!(check_name("Build server").is_ok());
         assert!(check_name("").is_err() && check_name("a\u{7}b").is_err() && check_name(&"n".repeat(41)).is_err());
     }
@@ -482,6 +585,21 @@ mod tests {
         assert_eq!((none.name, none.other), (None, None));
         let rc_noise = parse_probe(&format!("welcome from .bashrc\n{ours}\n{MARK}\n"));
         assert_eq!(rc_noise.name, Some("aqt"));
+    }
+
+    #[test]
+    fn the_local_guard_decides_and_no_answer_is_read_only() {
+        let local = ["/opt/aqt/aqt".to_string(), "core".into(), "--stdio".into(), "--read-only".into()];
+        assert_eq!(mode_check_command(&local), ["/opt/aqt/aqt", "core", "--mode-check"]);
+        let person = parse_mode("aqt core: noise\n{\"decisions\": true, \"reason\": \"\", \"markers\": []}\n").unwrap();
+        assert!(allows(&person));
+        let agent = parse_mode(r#"{"decisions": false, "reason": "Started inside claude-code", "markers": ["env:CLAUDECODE"]}"#).unwrap();
+        assert!(!allows(&agent));
+        for nothing in ["", "not json", r#"{"decisions": "yes"}"#, "[true]"] {
+            assert_eq!(parse_mode(nothing), None, "{nothing}");
+        }
+        let failed = unchecked("aqt core --mode-check: No such file or directory");
+        assert!(!allows(&failed) && failed["reason"].as_str().unwrap().contains("read-only"));
     }
 
     #[test]

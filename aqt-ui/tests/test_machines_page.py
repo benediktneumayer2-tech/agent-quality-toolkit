@@ -22,7 +22,7 @@ def test_every_machine_label_has_german_words():
     used = set(re.findall(r"\bt\(" + LITERAL, source))
     assert len(used) > 30
     start = source.index("export const MACHINE_DE")
-    german = set(re.findall(LITERAL + r":\s*", source[start:source.index("};", start)]))
+    german = set(re.findall(LITERAL + r":\s*", source[start:source.index("\n};", start)]))
     assert not used - german, sorted(used - german)
     assert not german - used, f"words nothing uses: {sorted(german - used)}"
 

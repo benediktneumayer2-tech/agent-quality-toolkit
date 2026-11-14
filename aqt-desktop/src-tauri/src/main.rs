@@ -71,7 +71,7 @@ fn open_outside(app: &AppHandle, url: &Url) {
 
 #[tauri::command]
 async fn core_session(machines: State<'_, Machines>) -> Result<Value, String> {
-    machines.core().ready().await
+    Ok(machines.session(machines.core().ready().await?))
 }
 
 /// The core's answer; else {"message", "sent"}: `sent` when the request had reached the core (or the SSH
@@ -127,7 +127,7 @@ async fn pick_folder(app: AppHandle, machines: State<'_, Machines>) -> Result<Op
 async fn smoke(app: AppHandle) {
     let core = app.state::<Machines>().core();
     let machine = app.state::<Machines>().machine().map(|m| m.name);
-    let ready = core.ready().await;
+    let ready = core.ready().await.map(|body| app.state::<Machines>().session(body)); // the page's view of it
     let core_ready_ms = ms();
     let first = match &ready {
         Ok(_) => core.request("GET", "/api/overview", Value::Null).await.map_err(|e| e.message),

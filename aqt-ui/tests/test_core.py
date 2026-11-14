@@ -152,6 +152,20 @@ def test_core_start_needs_no_terminal_but_no_agent():
     assert peer.pid == os.getppid() and (peer.chain or not sys.platform.startswith("linux"))
 
 
+def test_mode_check_prints_the_start_up_verdict_of_its_caller():
+    """The desktop app asks this before it opens another machine: started by an agent, the answer is read-only."""
+    def check(*args, **env):
+        done = subprocess.run([sys.executable, "-c", "import sys; from aqt_ui.core import main; sys.exit(main(sys.argv[1:]))",
+                               "--mode-check", *args], env={**os.environ, **env}, capture_output=True, text=True, timeout=60)
+        assert done.returncode == 0 and len(done.stdout.splitlines()) == 1, done.stderr
+        return json.loads(done.stdout)
+    agent = check(CLAUDECODE="1")
+    assert agent["decisions"] is False and "env:CLAUDECODE" in agent["markers"] and agent["harness"] == "claude-code"
+    assert "outside any agent session" in agent["reason"]
+    assert check("--read-only") == {"decisions": False, "reason": "started with --read-only", "markers": [],
+                                    "harness": None, "explicit": True}
+
+
 NOISY = """
 import subprocess, sys
 from aqt_ui import core
