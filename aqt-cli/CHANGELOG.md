@@ -13,6 +13,7 @@
 - From the desktop app's frozen runtime, `aqt setup` writes the trail writer's systemd unit with a path that stays valid (the `aqt` on `PATH`, or the AppImage file with `--cli`), not the AppImage's changing mount point.
 - `aqt core --stdio [--read-only]`: the core of the AQT desktop app, aqt-ui's API as JSON lines on stdin and stdout with no network; the same as `aqt-ui core --stdio`.
 - The desktop app's first-run setup, Settings and Projects area run `aqt status`, `aqt setup` and `aqt project status/init` through the same checks and steps (`checks.CHECKS`, `project.PROJECT_CHECKS`). The project step that writes the Claude Code hooks can leave the deny rules out when the person deselects them.
+- `aqt status`: the command check warns only when the first `aqt` on PATH is another program or another AQT version; the same version installed elsewhere is `info` (not a problem). In an AppImage its fix is one `ln -s` line (the app's Settings install it too). Check results carry message codes, so the desktop app shows them in German.
 - `aqt setup` checks the signer ID as soon as it is typed (lower case letters, digits, `.`, `_`, `-`; `alice` becomes `human:alice`), suggests a valid one and asks again, before the name, the role and the passphrase. An invalid `--id` fails before anything is asked.
 - `aqt status`: when the egress box cannot start because Ubuntu's AppArmor blocks bubblewrap's user namespaces, the fix names the AppArmor profile (manual 6.4) instead of "allow unprivileged user namespaces".
 

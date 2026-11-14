@@ -26,6 +26,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from aqt_evidence import Text, text_join
+
 from .checks import FAIL, OK, SKIP, WARN, Check, Context, Result, StepSkipped, _trail, command_name
 from .tools import TOOLS
 
@@ -351,12 +353,14 @@ def check_hooks(ctx: ProjectContext) -> Result:
     wanted = wanted_hooks()
     tools = list(dict.fromkeys(hook[0] for hook in wanted))
     if not wanted:
-        return Result(SKIP, "none of aqt-trail, aqt-quarantine and aqt-change is installed")
+        return Result(SKIP, Text("cli.project.hooks.no_tools", "none of aqt-trail, aqt-quarantine and aqt-change is installed"))
     if not missing:
-        return Result(OK, f"all {len(wanted)} Claude Code hooks of {', '.join(tools)} are set")
+        return Result(OK, Text("cli.project.hooks.ok", "all {n} Claude Code hooks of {tools} are set", n=len(wanted),
+                               tools=", ".join(tools)))
     per_tool = ", ".join(f"{tool} {sum(1 for hook in missing if hook[0] == tool)}" for tool in tools
                          if any(hook[0] == tool for hook in missing))
-    return Result(FAIL, f"{len(missing)} of {len(wanted)} Claude Code hooks are missing ({per_tool})",
+    return Result(FAIL, Text("cli.project.hooks.missing", "{missing} of {n} Claude Code hooks are missing ({per_tool})",
+                             missing=len(missing), n=len(wanted), per_tool=per_tool),
                   "aqt project init", data={"target": show(ctx, settings_target(ctx)), "missing": [
                       {"tool": tool, "event": event, "matcher": matcher, "command": command}
                       for tool, event, matcher, command in missing]})
@@ -369,9 +373,10 @@ def check_deny(ctx: ProjectContext) -> Result:
         return _settings_fail(error)
     total = len(deny_rules())
     if not missing:
-        return Result(OK, f"all {total} deny rules are set (decision commands, AQT folders)")
-    return Result(WARN, f"{len(missing)} of {total} deny rules are missing: the agent is not stopped before "
-                        "decision commands or edits of the AQT folders", "aqt project init",
+        return Result(OK, Text("cli.project.deny.ok", "all {n} deny rules are set (decision commands, AQT folders)", n=total))
+    return Result(WARN, Text("cli.project.deny.missing", "{missing} of {n} deny rules are missing: the agent is not "
+                             "stopped before decision commands or edits of the AQT folders", missing=len(missing),
+                             n=total), "aqt project init",
                   data={"target": show(ctx, settings_target(ctx)), "missing": missing})
 
 
@@ -457,9 +462,15 @@ def check_instructions(ctx: ProjectContext) -> Result:
     names = ", ".join(show(ctx, path) for path, _state, _text in edits)
     todo = [(path, state) for path, state, _text in edits if state != "current"]
     if not todo:
-        return Result(OK, f"the agent instructions in {names} are current")
-    words = {"new": "no CLAUDE.md or AGENTS.md", "missing": "no aqt block in {}", "outdated": "outdated aqt block in {}"}
-    return Result(WARN, "; ".join(words[state].format(show(ctx, path)) for path, state in todo), "aqt project init",
+        return Result(OK, Text("cli.project.instructions.ok", "the agent instructions in {files} are current", files=names))
+
+    def word(path, state):
+        if state == "new":
+            return Text("cli.project.instructions.new", "no CLAUDE.md or AGENTS.md")
+        if state == "missing":
+            return Text("cli.project.instructions.missing", "no aqt block in {file}", file=show(ctx, path))
+        return Text("cli.project.instructions.outdated", "outdated aqt block in {file}", file=show(ctx, path))
+    return Result(WARN, text_join("; ", [word(path, state) for path, state in todo]), "aqt project init",
                   data={"files": {show(ctx, path): state for path, state, _text in edits}})
 
 
@@ -516,9 +527,9 @@ def plans_in_progress(ctx: ProjectContext) -> list[str]:
 
 def check_change(ctx: ProjectContext) -> Result:
     if not installed("aqt-change"):
-        return Result(SKIP, "aqt-change is not installed")
+        return Result(SKIP, Text("cli.project.change.not_installed", "aqt-change is not installed"))
     if not ctx.git:
-        return Result(SKIP, "not a git repository (aqt-change needs git)")
+        return Result(SKIP, Text("cli.project.change.no_git", "not a git repository (aqt-change needs git)"))
     from aqt_change.config import PROJECT_FILE, parse_project_settings
     from aqt_change.errors import ChangeError
     path, key = ctx.root / PROJECT_FILE, service_key_id()
@@ -528,8 +539,9 @@ def check_change(ctx: ProjectContext) -> Result:
             return Result(WARN, f"no {PROJECT_FILE}, and plan {', '.join(busy)} is in progress: writing it now gives "
                                 "MANUAL_VERIFY_REQUIRED (project_settings_changed)",
                           f"after 'aqt-change finish': aqt project init, then commit {PROJECT_FILE}", can_apply=False)
-        return Result(WARN, f"no {PROJECT_FILE}: the project sets no trail check, signed approval or review "
-                            "independence for aqt-change", "aqt project init", data={"service_key": key})
+        return Result(WARN, Text("cli.project.change.missing", "no {file}: the project sets no trail check, signed approval "
+                                 "or review independence for aqt-change", file=PROJECT_FILE),
+                      "aqt project init", data={"service_key": key})
     try:
         settings = parse_project_settings(path.read_text(encoding="utf-8"), PROJECT_FILE)
     except (ChangeError, OSError, UnicodeDecodeError) as error:
@@ -543,8 +555,8 @@ def check_change(ctx: ProjectContext) -> Result:
         return Result(WARN, f"{PROJECT_FILE}: require_trail is off, so receipts count without the trail's confirmation",
                       f"set require_trail = true and trail_keys = [\"<service key id>\"] {edit}", data=data,
                       can_apply=False)
-    return Result(OK, f"{PROJECT_FILE}: trail check on" + (f" ({', '.join(settings['trail_keys'])})"
-                                                          if settings["trail_keys"] else ""), data=data)
+    keys = Text("cli.project.change.keys", " ({keys})", keys=", ".join(settings["trail_keys"])) if settings["trail_keys"] else ""
+    return Result(OK, Text("cli.project.change.ok", "{file}: trail check on{keys}", file=PROJECT_FILE, keys=keys), data=data)
 
 
 def step_change(ctx: ProjectContext) -> None:
@@ -622,17 +634,19 @@ def _ui_edit(ctx: ProjectContext) -> tuple[str, str | None, str]:
 
 def check_ui(ctx: ProjectContext) -> Result:
     if not installed("aqt-ui"):
-        return Result(SKIP, "aqt-ui is not installed")
+        return Result(SKIP, Text("cli.project.ui.not_installed", "aqt-ui is not installed"))
     path = ui_config_path()
     try:
         state, _text, fix = _ui_edit(ctx)
     except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError) as error:
         return Result(FAIL, f"{show(ctx, path)} cannot be read: {error}", f"repair {show(ctx, path)}", can_apply=False)
     if state == "ok":
-        return Result(OK, f"aqt-ui shows this repository's changes ({show(ctx, path)})")
-    what = {"new": f"no {show(ctx, path)}", "append": f"{show(ctx, path)} has no [changes] table"}.get(
-        state, f"this repository is not in [changes] projects of {show(ctx, path)}")
-    return Result(WARN, f"{what}: aqt-ui does not show this repository's plans and gates", fix,
+        return Result(OK, Text("cli.project.ui.ok", "aqt-ui shows this repository's changes ({file})", file=show(ctx, path)))
+    what = {"new": Text("cli.project.ui.no_file", "no {file}", file=show(ctx, path)),
+            "append": Text("cli.project.ui.no_table", "{file} has no [changes] table", file=show(ctx, path))}.get(
+        state, Text("cli.project.ui.not_listed", "this repository is not in [changes] projects of {file}", file=show(ctx, path)))
+    return Result(WARN, Text("cli.project.ui.missing", "{what}: aqt-ui does not show this repository's plans and gates",
+                             what=what), fix,
                   can_apply=state != "manual")
 
 
@@ -655,17 +669,18 @@ def _commit_msg_hook(ctx: ProjectContext) -> Path:
 
 def check_git_hook(ctx: ProjectContext) -> Result:
     if not installed("aqt-change"):
-        return Result(SKIP, "aqt-change is not installed")
+        return Result(SKIP, Text("cli.project.change.not_installed", "aqt-change is not installed"))
     if not ctx.git:
-        return Result(SKIP, "not a git repository")
+        return Result(SKIP, Text("cli.project.no_git", "not a git repository"))
     hook = _commit_msg_hook(ctx)
     if not hook.exists():
-        return Result(WARN, "no git commit-msg hook: commits are not checked for valid AQT-* trailers (optional)",
+        return Result(WARN, Text("cli.project.git_hook.missing", "no git commit-msg hook: commits are not checked for valid "
+                                 "AQT-* trailers (optional)"),
                       f"{command_name()} change hooks install-git")
     text = hook.read_text(encoding="utf-8", errors="replace")
     if any(f"{program} hook commit-msg" in text
            for program in ("aqt_change.cli", "aqt-change", "aqt change", "aqt-toolkit change")):
-        return Result(OK, f"the commit-msg hook runs aqt-change ({show(ctx, hook)})")
+        return Result(OK, Text("cli.project.git_hook.ok", "the commit-msg hook runs aqt-change ({file})", file=show(ctx, hook)))
     return Result(WARN, f"{show(ctx, hook)} does not run aqt-change: AQT-* trailers are not checked (optional)",
                   f"add the line  {command_name()} change hook commit-msg \"$1\"  to {show(ctx, hook)}", can_apply=False)
 
@@ -679,7 +694,7 @@ def step_git_hook(ctx: ProjectContext) -> None:
 # -- committed -------------------------------------------------------------------------------
 def check_committed(ctx: ProjectContext) -> Result:
     if not ctx.git:
-        return Result(SKIP, "not a git repository")
+        return Result(SKIP, Text("cli.project.no_git", "not a git repository"))
     names = [name for name in (".claude/settings.json", "CLAUDE.md", "AGENTS.md", ".aqt/change.toml")
              if (ctx.root / name).exists()]
     pending = {}
@@ -694,25 +709,29 @@ def check_committed(ctx: ProjectContext) -> Result:
         from aqt_change.gitio import Git
         unignored = LOCAL_SETTINGS in Git(ctx.root).untracked(repository_rules=True)
     if not pending and not unignored:
-        return Result(OK, "the files aqt project init writes here are committed" if names else
-                          "aqt project init has written nothing here yet")
+        return Result(OK, Text("cli.project.committed.ok", "the files aqt project init writes here are committed") if names
+                      else Text("cli.project.committed.nothing", "aqt project init has written nothing here yet"))
     ordered = [name for name in names if name in pending]
     files = ordered + ([".gitignore"] if unignored else [])
     command = (f"echo {LOCAL_SETTINGS} >> .gitignore && " if unignored else "") + \
         f"git add {' '.join(shlex.quote(name) for name in files)} && git commit -m \"{COMMIT_MESSAGE}\""
     if Path.cwd().resolve() != ctx.root:
         command = f"cd {shlex.quote(str(ctx.root))} && {command}"
-    what = [f"{name} ({pending[name]})" for name in ordered]
+    what = [Text("cli.project.committed.untracked", "{file} (untracked)", file=name) if pending[name] == "untracked"
+            else Text("cli.project.committed.changed", "{file} (changed)", file=name) for name in ordered]
     if unignored:
-        what.append(f"{LOCAL_SETTINGS} (no committed .gitignore rule: aqt-change counts it as a change)")
-    return Result(WARN, "not committed yet: " + ", ".join(what), command, can_apply=False,
+        what.append(Text("cli.project.committed.unignored", "{file} (no committed .gitignore rule: aqt-change counts it as a "
+                         "change)", file=LOCAL_SETTINGS))
+    return Result(WARN, Text("cli.project.committed.pending", "not committed yet: {files}", files=text_join(", ", what)),
+                  command, can_apply=False,
                   data={"files": pending, "local_settings_unignored": unignored})
 
 
 def check_project(ctx: ProjectContext) -> Result:
     if ctx.git:
-        return Result(OK, f"git repository {ctx.root}")
-    return Result(WARN, f"{ctx.root} is not a git repository: aqt-change needs git (its checks are skipped)",
+        return Result(OK, Text("cli.project.git.ok", "git repository {root}", root=str(ctx.root)))
+    return Result(WARN, Text("cli.project.git.missing", "{root} is not a git repository: aqt-change needs git (its checks "
+                             "are skipped)", root=str(ctx.root)),
                   "git init", can_apply=False)
 
 

@@ -345,6 +345,32 @@ class ChangesView:
                 "record_id": (stored or {}).get("id"),
                 "time": (stored or {}).get("time"), "approvals": view.get("approvals") or []}
 
+    @staticmethod
+    def resolve_action(action_id: str, *, outcome: str, expected_hash: str, reason: str, passphrase: str,
+                       signer_id: str | None, human_check: Callable) -> dict:
+        """Record what happened to an action whose outcome is unknown, as ``aqt-signoff resolve ACTION --as
+        succeeded|not-applied``: signed with the meaning "verified", after the person checked the external state."""
+        if outcome not in ("succeeded", "not-applied"):
+            raise UsageProblem("record the outcome as succeeded or not-applied")
+        so = open_signoff(passphrase=passphrase, human_check=human_check)
+
+        def resolve():
+            guard_first(so, "resolve", signer_id)
+            signer = so.signer_entry(signer_id or None)
+            current = so.actions.show(action_id)
+            if current["action_sha256"] != expected_hash:
+                raise Stale("nothing was signed: the action is not the version shown. Reload it.")
+            return so.actions.resolve(action_id, outcome, reason, signer_id=signer.id)
+        _view, refusal = signoff_call(so, resolve)
+        if refusal:
+            return refusal
+        found = [r for r in so.records() if r.get("type") == "signoff.action.outcome"]
+        stored = found[-1] if found else {}
+        done = Text("ui.changes.action_resolved", "outcome of {action} recorded as {outcome}", action=action_id,
+                    outcome=outcome)
+        return {"ok": True, "message": done, **coded_fields("message", done), "record_id": (stored or {}).get("id"),
+                "time": (stored or {}).get("time")}
+
 
     # -- plan approval ---------------------------------------------------------------------------------
     def approve_plan(self, root: str, plan_id: str, *, shown_record: str, shown_sha256: str, reason: str,

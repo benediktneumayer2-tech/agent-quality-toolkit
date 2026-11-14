@@ -68,6 +68,15 @@ def test_command_check_names_another_aqt_installation_that_comes_first(tmp_path,
     assert checks.command_name() == "aqt"                     # another AQT still answers to aqt
 
 
+def test_the_same_aqt_version_installed_elsewhere_is_only_worth_knowing(tmp_path, monkeypatch):
+    from aqt_cli import __version__
+    other = fake_aqt(tmp_path / "clone", version=f"agent-quality-toolkit {__version__} (commands aqt and aqt-toolkit)")
+    monkeypatch.setenv("PATH", f"{other.parent}{os.pathsep}{os.environ['PATH']}")
+    result = check_command(Context())
+    assert result.result == "info" and str(other) in result.explanation and result.data["version"] == __version__
+    assert checks.verdict([result]) == "ok" and not checks.needs_step(checks.CHECKS[1], result)
+
+
 def test_aqt_toolkit_stands_in_when_another_programs_aqt_comes_first(tmp_path, repo_root, monkeypatch):
     other = fake_aqt(tmp_path / "aqtinstall", version="aqtinstall(aqt) v3.1.21 on Python 3.12")
     monkeypatch.setenv("PATH", f"{other.parent}{os.pathsep}{os.environ['PATH']}")
@@ -110,7 +119,8 @@ def test_frozen_appimage_runtime_counts_the_link_to_its_appimage(tmp_path, monke
     assert trail_command() == [str(bin_dir / "aqt"), "trail"]             # the systemd unit's stable command
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
     result = check_command(Context())
-    assert result.result == "warn" and "install the aqt command" in result.fix
+    assert result.result == "warn" and result.fix == f"ln -s {image} ~/.local/bin/aqt"
+    assert result.data["in_app"] == "aqt_command"                       # the app's Settings install it
     assert trail_command() == [str(image), "--cli", "trail"]
 
 

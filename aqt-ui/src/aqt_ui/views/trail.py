@@ -391,7 +391,60 @@ class TrailView:
             "last_anchor": self.index.last_anchor, "last_review": self.last_review(),
             "writer": self.writer(), "unreadable": self.index.unreadable,
             "test_mode": self.test_mode(), "review_profile": self.review_profile(),
+            "time_stamps": bool(self.config.section("anchor").get("tsa_url")),
         }
+
+    # -- external time stamp and the review parameters, from the page ----------------------------------
+    def anchor_now(self) -> dict:
+        """Sign the head and add an RFC 3161 time stamp now, as ``aqt-trail checkpoint --anchor``: through the
+        writer, from the time-stamp service set in trail.toml ([anchor] tsa_url). Only the head's hash is sent."""
+        from aqt_trail.client import request
+        tsa_url = self.config.section("anchor").get("tsa_url", "")
+        if not tsa_url:
+            return {"ok": False, "reason_code": "no_tsa", "message": "no time-stamp service is set: add tsa_url under "
+                    "[anchor] in trail.toml"}
+        try:
+            response = request(self.config.socket_path, {"op": "checkpoint", "anchor": True, "tsa_url": tsa_url},
+                               timeout=float(self.config.section("anchor").get("timeout_s", 10)) + 20)
+        except (SinkError, OSError, ValueError) as error:
+            return {"ok": False, "reason_code": "writer_down", "message": f"the trail writer does not answer: {error}"}
+        if not response.get("ok"):
+            return {"ok": False, "reason_code": "tsa_failed", "message": str(response.get("message") or "no time stamp")}
+        anchor = response.get("anchor") or {}
+        return {"ok": True, "record_id": anchor.get("id"), "time": anchor.get("time"),
+                "seq": (response.get("checkpoint") or {}).get("seq")}
+
+    @staticmethod
+    def _accepted_path():
+        from aqt_evidence import state_dir
+        return state_dir() / "ui" / "review-params-accepted.json"
+
+    @staticmethod
+    def _params_digest(differs: dict) -> str:
+        import hashlib
+        return hashlib.sha256(json.dumps(differs, sort_keys=True, default=str).encode()).hexdigest()
+
+    def review_params_accepted(self, differs: dict) -> bool:
+        """Whether a person kept exactly these review parameters (they stay a case until then, and again when
+        they change). A review still shows them and signs them."""
+        try:
+            kept = json.loads(self._accepted_path().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return False
+        return isinstance(kept, dict) and kept.get("digest") == self._params_digest(differs)
+
+    def accept_review_params(self, shown: dict) -> dict:
+        """Keep the review parameters of trail.toml that differ from the built-in ones, as shown to the person."""
+        differs = self.review_profile()["differs_from_builtin"]
+        if not differs:
+            return {"ok": False, "message": "the review parameters are the built-in ones; nothing to keep"}
+        if self._params_digest(shown) != self._params_digest(differs):
+            raise Stale("trail.toml changed since the page showed it; look at the parameters again")
+        path = self._accepted_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"digest": self._params_digest(differs), "params": differs,
+                                    "kept_at": _stamp()}, indent=2, default=str), encoding="utf-8")
+        return {"ok": True, "kept": sorted(differs)}
 
     def test_mode(self) -> bool:
         """``[anchor] test_tsa = true``: TEST ONLY anchors count, here and in reviews (as in aqt-trail)."""

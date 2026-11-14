@@ -267,6 +267,16 @@ class Core:
             return Response(200, self.changes.summary())
         if len(route) == 4 and route[:3] == ("GET", "changes", "actions"):
             return Response(200, self.changes.action(route[3]))
+        if len(route) == 5 and route[:3] == ("POST", "changes", "actions") and route[4] == "resolve":
+            return self._decide(req, lambda body, check: self.changes.resolve_action(
+                route[3], outcome=str(body.get("outcome") or ""), expected_hash=str(body.get("expected_hash") or ""),
+                reason=str(body.get("reason") or ""), passphrase=req.secret or "", signer_id=body.get("signer_id"),
+                human_check=check))
+        if route == ("POST", "trail", "anchor"):
+            return self._setup_step(req, lambda body: self.trail.anchor_now())
+        if route == ("POST", "trail", "review-params", "keep"):
+            return self._setup_step(req, lambda body: self.trail.accept_review_params(
+                body.get("params") if isinstance(body.get("params"), dict) else {}))
         if len(route) == 5 and route[:3] == ("POST", "changes", "actions") and route[4] in ("approve", "reject"):
             return self._decide(req, lambda body, check: self.changes.decide_action(
                 route[3], route[4], expected_hash=str(body.get("expected_hash") or ""),
