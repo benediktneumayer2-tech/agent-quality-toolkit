@@ -18,6 +18,9 @@ date-released: 2026-11-14
 doi: 10.5281/zenodo.24183902
 identifiers:
   - type: doi
+    value: 10.5281/zenodo.24221020
+    description: "Version 0.3.0"
+  - type: doi
     value: 10.5281/zenodo.24183903
     description: "Version 0.2.0"
 license: Apache-2.0

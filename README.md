@@ -263,9 +263,9 @@ Copyright 2026 Benedikt Neumayer. The code is under Apache-2.0 ([`LICENSES/Apach
 
 Benedikt Neumayer built the toolkit with AI coding agents, under his product ownership, architecture and review. The only third-party library it needs at run time is `cryptography`.
 
-**How to cite.** Every release is archived on Zenodo with its own DOI. For version 0.2.0:
+**How to cite.** Every release is archived on Zenodo with its own DOI. For version 0.3.0:
 
-> Neumayer, B. (2026). *Agent Quality Toolkit* (Version 0.2.0) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.24183903
+> Neumayer, B. (2026). *Agent Quality Toolkit* (Version 0.3.0) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.24221020
 
 The DOI [10.5281/zenodo.24183902](https://doi.org/10.5281/zenodo.24183902) always points to the newest version. GitHub's *Cite this repository* button (from [`CITATION.cff`](CITATION.cff)) gives the same in APA and BibTeX.
 
