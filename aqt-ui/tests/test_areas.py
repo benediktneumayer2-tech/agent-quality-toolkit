@@ -4,6 +4,8 @@ are tested there (aqt-cli/tests/test_core_setup.py)."""
 
 import importlib.util
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -134,3 +136,13 @@ def test_record_the_outcome_of_an_action_that_ran_unseen(trail, signer, ui_facto
     assert status == 200 and result["ok"] and result["message_code"] == "ui.changes.action_resolved", result
     assert result["record_id"] in {r["id"] for r in trail_records(trail) if r["type"] == "signoff.action.outcome"}
     assert so.actions.show(view["id"])["status"] == "failed" and PASSPHRASE.encode() not in raw
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node is not installed")
+def test_the_page_scripts_parse_as_modules(tmp_path):
+    """The browser loads app.js as an ES module; a syntax error there leaves an empty window."""
+    for name in ("app.js", "i18n.js", "messages.js", "text.js"):
+        copy = tmp_path / (Path(name).stem + ".mjs")
+        copy.write_text((STATIC / name).read_text(encoding="utf-8"), encoding="utf-8")
+        done = subprocess.run(["node", "--check", str(copy)], capture_output=True, text=True, timeout=60)
+        assert done.returncode == 0, f"{name}: {done.stderr}"

@@ -1843,7 +1843,7 @@ function quarantineParts(c, { full, open, onDone }) {
     history: c.decisions.length || c.refusals.length ? inspSection(t("History"),
       c.decisions.map((d) => h("p", { class: "small" }, `${fmtTime(d.time)} ${t(HISTORY_WORDS[d.action] || d.action || "–")} · ${d.display || ""} ${d.by} · ${t("signature")} `, stWord(d.status), d.honoured ? "" : ` (${t("not honoured")})`, d.note ? ` ${msgOf(d, "note")}` : "", h("br"), h("span", { class: "muted", text: `${t("Reason")}: ${d.reason}` }))),
       c.refusals.map((r) => h("p", { class: "small" }, stWord("fail", t("refused")), ` ${fmtTime(r.time)} ${t(ATTEMPT_WORDS[r.attempted] || r.attempted || "–")}${refusalWords(r.reason_code) ? ": " + refusalWords(r.reason_code) : ""} `,
-        h("span", { class: "muted", text: `(${r.reason_code}${r.markers.length ? "; " + r.markers.join(", ") : ""})` }))) : null,
+        h("span", { class: "muted", text: `(${r.reason_code}${r.markers.length ? "; " + r.markers.join(", ") : ""})` })))) : null,
     decision: fullFirst ? inspSection(t("Decision"), fullFirst) : panel,
   };
 }
