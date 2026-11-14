@@ -8,10 +8,9 @@
 - Windows: `aqt-sensei serve` says that the sensei is not available there (its sandbox needs Linux) instead of
   failing on import; the package's other commands load.
 - The advisor sandbox on macOS: `sandbox-exec` with a Seatbelt profile generated per pair (`launch`, `login`, `doctor`). The project is read-only, the user folders are refused except the project, the CLI, the private home, the scratch folder and the pair's runtime folder; the keychain is closed; `HOME` is the private home and `TMPDIR` a folder in the scratch folder. `docs/sandbox.md` compares it with the bubblewrap sandbox.
-- Runs on macOS except the advisor sandbox: the bridge identifies callers with `LOCAL_PEERCRED` and `sysctl`
-  (through `aqt_evidence.platform`). Pairing, `launch`, `login` and `doctor` say that the sandbox is not available
-  on this system and why (bubblewrap is Linux only; a Seatbelt profile follows); the fake backend still pairs.
-  Linux behaviour is unchanged.
+- Runs on macOS: the bridge identifies callers with `LOCAL_PEERCRED` and `sysctl` (through `aqt_evidence.platform`).
+  Where there is no sandbox (Windows), pairing, `launch`, `login` and `doctor` say that it is not available on this
+  system and why; the fake backend still pairs. Linux behaviour is unchanged.
 - macOS: a CLI started through a link in a user folder, such as Claude Code's installer's `~/.local/bin/claude`,
   starts in the advisor sandbox (the link was refused). With the keychain closed, Claude Code reads the advisor's
   login from `.credentials.json` in the private home.
