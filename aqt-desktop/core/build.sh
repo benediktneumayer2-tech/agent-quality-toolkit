@@ -33,7 +33,10 @@ isolated() { env -u PYTHONPATH -u PYTHONHOME HOME="$SANDBOX/home" XDG_CONFIG_HOM
     ${WINDOWS_HOME[@]+"${WINDOWS_HOME[@]}"} "$@"; }
 mkdir -p "$SANDBOX/home"
 if [ -n "$EXE" ]; then
-    [ -f "$HERE/dist/aqt/aqtw.exe" ] || { echo "aqtw.exe (the runtime without a console window) is missing" >&2; exit 1; }
+    for program in aqtw.exe aqt-toolkit.exe; do   # without a console window (the logon task); the second name
+        [ -f "$HERE/dist/aqt/$program" ] || { echo "$program is missing from the runtime" >&2; exit 1; }
+    done
+    isolated "$HERE/dist/aqt/aqt-toolkit.exe" --version
 fi
 isolated "$AQT" --version
 for tool in trail signoff change sensei quarantine validate capa ui egress evidence; do

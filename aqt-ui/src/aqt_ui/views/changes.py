@@ -67,9 +67,13 @@ CLAIMED = re.compile(r"[A-Za-z0-9._:@+-]{1,128}")   # a signer id named by a req
 
 def gate_cli(root: Path, rel: str) -> dict:
     """``aqt-change gate`` run in the project root. aqt-change resolves plan paths against the
-    working directory, which a threaded server cannot change safely, so the CLI does it."""
-    exe = shutil.which("aqt-change") or str(Path(sys.executable).parent / "aqt-change")
-    done = subprocess.run([exe, "gate", rel], cwd=root, capture_output=True, text=True, timeout=120,
+    working directory, which a threaded server cannot change safely, so the CLI does it. The desktop
+    app's frozen runtime has no ``aqt-change`` program: there the runtime itself runs the module."""
+    if getattr(sys, "frozen", False):
+        command = [sys.executable, "-I", "-m", "aqt_change.cli"]
+    else:
+        command = [shutil.which("aqt-change") or str(Path(sys.executable).parent / "aqt-change")]
+    done = subprocess.run([*command, "gate", rel], cwd=root, capture_output=True, text=True, timeout=120,
                           env=dict(os.environ))
     if done.returncode not in (0, 1) or not done.stdout.strip():
         raise ValueError((done.stderr or done.stdout).strip()[-500:] or f"aqt-change gate exited {done.returncode}")

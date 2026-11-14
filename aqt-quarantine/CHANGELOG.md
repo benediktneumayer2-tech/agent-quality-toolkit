@@ -5,6 +5,7 @@
 - The Claude Code hook reads and writes UTF-8 whatever the console's code page (Windows).
 - Folders, locks, no-follow opens and the owner check come from `aqt_evidence.platform` (unchanged on Linux). The
   Claude Code deny rules that `aqt-quarantine hooks` prints name the default AQT folders of macOS there.
+- The hold and warning notices name the case's link in the AQT desktop app (`aqt://case/quarantine:<id>`); `doctor` also finds the hook when it is written as `aqt quarantine hook claude-code`.
 
 ## 0.2.0 — 2026-11-13
 

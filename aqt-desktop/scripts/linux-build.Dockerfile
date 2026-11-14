@@ -9,7 +9,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 ENV RUSTUP_HOME=/opt/rustup PATH=/opt/cargo/bin:$PATH
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-      | CARGO_HOME=/opt/cargo sh -s -- -y --no-modify-path --profile minimal --default-toolchain 1.98.1 \
+      | CARGO_HOME=/opt/cargo sh -s -- -y --no-modify-path --profile minimal --component clippy --default-toolchain 1.98.1 \
  && chmod -R a+rX /opt/rustup /opt/cargo
 COPY --from=ghcr.io/astral-sh/uv:0.12.10 /uv /uvx /usr/local/bin/
 # A new named volume takes this folder's mode, so the build user (the caller's uid) can write to it.

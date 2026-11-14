@@ -22,12 +22,12 @@ datas += [item for dist in DISTRIBUTIONS for item in copy_metadata(dist)]
 a = Analysis(["aqt_entry.py"], hiddenimports=hidden, datas=datas, excludes=["tkinter"], noarchive=False)
 pyz = PYZ(a.pure)
 WINDOWS = sys.platform == "win32"
-# Windows: Python's UTF-8 mode (hooks and records are UTF-8 whatever the console's code page), and a second
-# program aqtw.exe without a console window, for the writer's logon task.
+# Windows: Python's UTF-8 mode (hooks and records are UTF-8 whatever the console's code page); the second name
+# aqt-toolkit.exe (Linux links it), and aqtw.exe without a console window, for the writer's logon task.
 options = [("X utf8_mode=1", None, "OPTION")] if WINDOWS else []
 exe = EXE(pyz, a.scripts, options, exclude_binaries=True, name="aqt", console=True, upx=False, strip=False)
 programs = [exe]
 if WINDOWS:
-    programs.append(EXE(pyz, a.scripts, options, exclude_binaries=True, name="aqtw", console=False, upx=False,
-                        strip=False))
+    programs += [EXE(pyz, a.scripts, options, exclude_binaries=True, name=name, console=console, upx=False,
+                     strip=False) for name, console in (("aqt-toolkit", True), ("aqtw", False))]
 coll = COLLECT(*programs, a.binaries, a.datas, name="aqt", upx=False, strip=False)

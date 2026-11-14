@@ -15,13 +15,24 @@ fi
 bash core/build.sh
 npx tauri build --config src-tauri/tauri.bundle.conf.json
 VERSION="$(node -p 'require("./src-tauri/tauri.conf.json").version')"
+PRODUCT="$(node -p 'require("./src-tauri/tauri.conf.json").productName')"
 mkdir -p dist
 rm -f dist/aqt-desktop_*
 case "$(uname -s)" in
     MINGW*|MSYS*|CYGWIN*)
+        # the installer puts the runtime's folder (aqt.exe, aqt-toolkit.exe) on the user's PATH itself
         cp src-tauri/target/release/bundle/nsis/*-setup.exe "dist/aqt-desktop_${VERSION}_x64-setup.exe" ;;
     *)
         cp src-tauri/target/release/bundle/appimage/*.AppImage "dist/aqt-desktop_${VERSION}_amd64.AppImage"
-        cp src-tauri/target/release/bundle/deb/*.deb "dist/aqt-desktop_${VERSION}_amd64.deb" ;;
+        # the .deb gets /usr/bin/aqt and /usr/bin/aqt-toolkit (its second name, where another aqt comes first on PATH):
+        # relative links to the bundled runtime, so agents and terminals find the command (Tauri's deb "files" would
+        # copy the program, which then misses its _internal folder)
+        PKG="$(mktemp -d)"
+        trap 'rm -rf "$PKG"' EXIT
+        dpkg-deb -R src-tauri/target/release/bundle/deb/*.deb "$PKG/root"
+        ln -s "../lib/$PRODUCT/runtime/aqt/aqt" "$PKG/root/usr/bin/aqt"
+        ln -s "../lib/$PRODUCT/runtime/aqt/aqt" "$PKG/root/usr/bin/aqt-toolkit"
+        dpkg-deb --root-owner-group -b "$PKG/root" "dist/aqt-desktop_${VERSION}_amd64.deb" >/dev/null
+        ;;
 esac
 ls -l dist/

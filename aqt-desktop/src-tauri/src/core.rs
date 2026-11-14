@@ -1,6 +1,7 @@
 //! The AQT core as a child process: JSON lines over its stdin and stdout, logs on its stderr.
 //! It first writes {"event":"ready","body":{...}}, then answers each {"id","method","path","body"} request
 //! with a line carrying the same id. Requests may overlap. EOF on its stdin makes it exit.
+//! Other events ({"event":"queue",...}) go to the handler given at the start; it outlives restarts.
 
 use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Write};
@@ -24,8 +25,11 @@ enum State {
     Failed(String),
 }
 
+type OnEvent = Box<dyn Fn(&str, &Value) + Send + Sync>;
+
 pub struct Core {
     command: Vec<String>,
+    on_event: OnEvent,
     state: watch::Sender<State>,
     stdin: Mutex<Option<ChildStdin>>,
     child: Mutex<Option<Child>>,
@@ -36,9 +40,10 @@ pub struct Core {
 }
 
 impl Core {
-    pub fn start(command: Vec<String>) -> Arc<Core> {
+    pub fn start(command: Vec<String>, on_event: impl Fn(&str, &Value) + Send + Sync + 'static) -> Arc<Core> {
         let core = Arc::new(Core {
             command,
+            on_event: Box::new(on_event),
             state: watch::channel(State::Starting).0,
             stdin: Mutex::new(None),
             child: Mutex::new(None),
@@ -107,10 +112,13 @@ impl Core {
                 continue;
             };
             if let Some(event) = message.get("event").and_then(Value::as_str) {
+                let body = message.get("body").cloned().unwrap_or(Value::Null);
                 if event == "ready" {
-                    self.state.send_replace(State::Ready(message.get("body").cloned().unwrap_or(Value::Null)));
+                    self.state.send_replace(State::Ready(body));
+                } else {
+                    (self.on_event)(event, &body);
                 }
-                continue; // other events are reserved for later notifications
+                continue;
             }
             if let Some(id) = message.get("id").and_then(Value::as_str) {
                 if let Some(answer) = self.pending.lock().unwrap().remove(id) {

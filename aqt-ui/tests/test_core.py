@@ -7,11 +7,12 @@ import os
 import subprocess
 import sys
 import threading
+import time
 
 from conftest import PASSPHRASE, SIGNER, trail_records
 
 from aqt_ui.config import UiConfig
-from aqt_ui.core import PROTOCOL, Core, Response, serve
+from aqt_ui.core import PROTOCOL, Core, QueueWatch, Response, queue_seconds, serve
 from aqt_ui.guard import Guard, Mode, parent_peer, startup_mode
 
 APP_PARENT = ["aqt-desktop", "gnome-shell", "systemd"]
@@ -170,6 +171,63 @@ def test_stdout_carries_only_protocol_lines(env):
     done = subprocess.run([sys.executable, "-c", NOISY], input=request.encode(), capture_output=True, timeout=60)
     assert done.returncode == 0, done.stderr.decode()
     lines = [json.loads(line) for line in done.stdout.splitlines()]
+    lines = [line for line in lines if line.get("event") != "queue"]       # the queue watcher may have looked
     assert [line.get("event") or line.get("id") for line in lines] == ["ready", "1"]
     assert lines[1]["status"] == 200 and lines[1]["body"]["mode"]["explicit"] is True
     assert b"stray print" in done.stderr and b"child output" in done.stderr
+
+
+# -- the queue event --------------------------------------------------------------------------------------
+def held(case_url="https://news.example/item"):
+    """A new held quarantine case, as the hook would open it."""
+    from conftest import INJECTION
+    from aqt_quarantine.config import load_config
+    from aqt_quarantine.engine import Engine, Source
+    from aqt_quarantine.store import Store
+    config = load_config()
+    result = Engine(config, Store(config.state_dir, sink=config.sink)).scan(
+        INJECTION, Source("WebFetch", case_url, "claude-code", "worker-1", "toolu_2"))
+    assert result.band == "hold", result
+    return result.case_id
+
+
+def test_queue_watch_counts_first_then_reports_new_and_removed_cases(trail, signer):
+    core = core_for()
+    watch = QueueWatch(core)
+    first = watch.poll()
+    assert first["new"] == [] and first["removed"] == [] and first["count"] == len(watch.known)
+    assert watch.poll() is None                                       # nothing changed: no event
+    case_id = held()
+    change = watch.poll()
+    assert change["count"] == first["count"] + 1 and change["removed"] == []
+    [entry] = change["new"]
+    assert entry["id"] == f"quarantine:{case_id}" and entry["kind"] == "quarantine" and entry["key"] == "case_held"
+    assert entry["title"] == "Quarantine holds content from news.example"
+    assert entry["args"]["source"] == "news.example" and entry["args"]["case"] == case_id
+    assert watch.poll() is None
+    sha = get(core, f"/api/quarantine/{case_id}")["body"]["content_sha256"]
+    _, answer = release(core, case_id, sha)
+    assert answer["status"] == 200, answer
+    assert watch.poll() == {"count": first["count"], "new": [], "removed": [f"quarantine:{case_id}"]}
+
+
+def test_queue_event_follows_the_ready_event_while_the_core_runs(env):
+    read, write = os.pipe()
+    stdout = io.BytesIO()
+    core = core_for()
+    with os.fdopen(read, "rb") as stdin:
+        runner = threading.Thread(target=serve, args=(core, stdin, stdout), kwargs={"queue_seconds": 0.05})
+        runner.start()
+        deadline = time.monotonic() + 10
+        while stdout.getvalue().count(b"\n") < 2 and time.monotonic() < deadline:
+            time.sleep(0.02)
+        os.close(write)                          # end of input: the core stops, and so does the watcher
+        runner.join(10)
+    assert not runner.is_alive()
+    lines = [json.loads(line) for line in stdout.getvalue().splitlines()]
+    assert [line.get("event") for line in lines[:2]] == ["ready", "queue"]
+    body = lines[1]["body"]
+    assert body["new"] == [] and body["removed"] == [] and body["count"] >= 1     # a fresh HOME: no trail yet
+    assert all(line.get("event") == "queue" for line in lines[1:])               # nothing changed after that
+    assert queue_seconds({}) == 5.0 and queue_seconds({"AQT_CORE_QUEUE_SECONDS": "0"}) == 0
+    assert queue_seconds({"AQT_CORE_QUEUE_SECONDS": "x"}) == 5.0

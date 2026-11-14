@@ -18,7 +18,14 @@ Protocol 1 of ``--stdio``: newline-delimited UTF-8 JSON, one object per line.
   answered with status 400 (405 for another method) and the ``id`` it carried, ``null`` if none.
 - Requests may overlap: a small thread pool answers them, each response is written as one line under a
   lock, so responses can arrive in another order than the requests; match them by ``id``.
-- Lines with ``"event"`` are messages the core sends unasked; ``ready`` is the only one so far.
+- Lines with ``"event"`` are messages the core sends unasked: ``ready``, then ``queue`` whenever the "Needs
+  you" queue changes: ``{"event": "queue", "body": {"count": n, "new": [{"id", "title", "kind", "key",
+  "args"}, ...], "removed": ["<id>", ...]}}``. ``id`` is the case id (its page is ``/case/<id>``), ``kind`` the
+  area (``quarantine``, ``changes``, ``trail``, ``capa``, ``qualifications``), ``title`` one English line,
+  ``key`` and ``args`` what the page needs to say it in its language (as in the overview's entries). The core
+  looks every few seconds (``AQT_CORE_QUEUE_SECONDS``, default 5; 0 turns it off) with the overview's own
+  data, which the trail's state answers without verifying the trail again. The first ``queue`` event after
+  the start carries the count with ``new`` and ``removed`` empty, so a restart announces nothing.
 - End of input (stdin closed) lets running requests finish, then the core exits with code 0.
 
 Stdout carries protocol lines only: at start the real stdout is kept for them and file descriptor 1 is
@@ -48,15 +55,19 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlsplit
 
+from aqt_evidence import HumanCheckError
+
 from . import __version__
 from .config import UiConfig, load_config
 from .guard import Guard, Mode, parent_peer, startup_mode
-from .views import NotInstalled, UsageProblem, ViewProblem, coded_fields, install_command, installed
+from .views import (NotInstalled, UsageProblem, ViewProblem, coded_fields, install_command, installed, message,
+                    refusal_text)
 from .views.trail import PAGE
 
 JSON_TYPE = "application/json; charset=utf-8"
 PROTOCOL = 1
 WORKERS = 4                    # stdio requests answered at once
+QUEUE_SECONDS = 5.0            # how often the core looks at the "Needs you" queue
 REMOVED = "[passphrase removed]"
 
 
@@ -311,7 +322,73 @@ class Core:
         if route == ("GET", "qualifications"):
             from .views.qualifications import qualifications
             return Response(200, qualifications(self.config.qualification_warn_days))
+        if route[1:2] in (("setup",), ("projects",)):
+            return self._setup_route(req, route)
         return problem(404, "not found")
+
+    # -- first-run setup, Settings and Projects: aqt-cli's checks and steps (views/setup.py) ---------------
+    def _setup_route(self, req: Request, route: tuple) -> Response:
+        from .views import setup
+        query = req.query
+        if route == ("GET", "setup"):
+            return Response(200, setup.status())
+        if route == ("GET", "setup", "signer-id"):
+            return Response(200, setup.signer_id(str(query.get("name") or ""), str(query.get("id") or "")))
+        if route == ("POST", "setup", "apply"):
+            return self._setup_step(req, lambda body: setup.apply(str(body.get("check") or "")))
+        if route == ("POST", "setup", "enrol"):
+            return self._decide(req, lambda body, check: setup.enrol(
+                name=str(body.get("name") or ""), role=str(body.get("role") or ""),
+                signer=str(body.get("signer_id") or ""), passphrase=req.secret or "", human_check=check))
+        if route == ("GET", "projects"):
+            self.reload_config()
+            return Response(200, setup.projects(self.config.projects))
+        if route == ("GET", "projects", "preview"):
+            return Response(200, setup.project_preview(str(query.get("path") or "")))
+        if route == ("POST", "projects", "connect"):
+            def connect(body):
+                items = body.get("items")
+                result = setup.project_connect(str(body.get("path") or ""), items if isinstance(items, list) else [])
+                self.reload_config()                 # ui.toml may list the project now
+                return result
+            return self._setup_step(req, connect)
+        return problem(404, "not found")
+
+    def reload_config(self) -> None:
+        """Read ui.toml again (the Projects area and project init change it); keep the old one if it is broken."""
+        from .views.changes import ChangesView
+        try:
+            fresh = load_config(self.config.path)
+        except (OSError, ValueError) as error:
+            self.log(f"aqt-ui: ui.toml cannot be read again: {error}")
+            return
+        if fresh.projects != self.config.projects:
+            self.changes = ChangesView(fresh.projects)
+        self.config = fresh
+
+    def _setup_step(self, req: Request, call) -> Response:
+        """A setup step that changes files or services (no signature): refused in read-only mode and checked by
+        the same human check as a decision, before anything is done."""
+        body = req.read_body()
+        if self.mode.explicit:
+            return problem(403, f"refused: this {self.kind} was started with --read-only")
+        check = req.human_check()
+        peer = getattr(check, "peer", None)
+        outcome = "failed"
+        try:
+            try:
+                check()
+            except HumanCheckError as error:
+                code = "agent_context" if error.context.is_agent else "no_tty"
+                outcome = f"refused ({code})"
+                return Response(403, {"ok": False, "message": message(error), "reason_code": code,
+                                      "reason_text": refusal_text(code)})
+            result = call(body)
+            outcome = "done" if result.get("ok") else "not done"
+            return Response(200, result)
+        finally:
+            who = peer.describe() if peer is not None else "an unidentified process"
+            self.log(f"aqt-ui setup {req.path} from {who}: {outcome}")
 
     def _decide(self, req: Request, call) -> Response:
         """A human-only request. The package runs the guard first and records a refusal itself;
@@ -344,14 +421,70 @@ def signer_list() -> list[dict]:
     return _signers()
 
 
+# -- the queue event -------------------------------------------------------------------------------------
+def notice_title(entry: dict) -> str:
+    """One line for a system notification about a queue entry."""
+    args = entry.get("args") or {}
+    if entry.get("view") == "quarantine" and entry.get("code") in ("held", "warned"):
+        verb = "holds" if entry["code"] == "held" else "warns about"
+        return f"Quarantine {verb} content from {args.get('source') or 'an unknown source'}"
+    return str(entry.get("title") or entry.get("id"))
+
+
+class QueueWatch:
+    """What changed in the "Needs you" queue since the last look (``poll``). The queue comes from the
+    overview, which reads the tools' stored state; the trail is not verified for it."""
+
+    def __init__(self, core: Core):
+        self.core = core
+        self.known: dict[str, dict] | None = None
+
+    def poll(self) -> dict | None:
+        """The body of a ``queue`` event, or None when nothing changed. The first look reports only the count."""
+        from .views.overview import build
+        current = {entry["id"]: {"id": entry["id"], "title": notice_title(entry), "kind": entry["view"],
+                                 "key": entry["key"], "args": entry["args"]}
+                   for entry in build(self.core)["needs"]}
+        known, self.known = self.known, current
+        if known is None:
+            return {"count": len(current), "new": [], "removed": []}
+        new = [entry for key, entry in current.items() if key not in known]
+        removed = [key for key in known if key not in current]
+        return {"count": len(current), "new": new, "removed": removed} if new or removed else None
+
+
+def watch_queue(core: Core, write: Callable[[dict], None], stop: threading.Event, seconds: float) -> None:
+    """Every ``seconds`` until ``stop`` is set: a ``queue`` event when the queue changed."""
+    watch = QueueWatch(core)
+    while True:
+        try:
+            body = watch.poll()
+        except Exception:  # noqa: BLE001 - the next look tries again; the requests go on
+            core.log(f"aqt core: the queue could not be read: {traceback.format_exc()}")
+            body = None
+        if body is not None:
+            write({"event": "queue", "body": body})
+        if stop.wait(seconds):
+            return
+
+
+def queue_seconds(environ=os.environ) -> float:
+    try:
+        return max(0.0, float(environ.get("AQT_CORE_QUEUE_SECONDS", QUEUE_SECONDS)))
+    except ValueError:
+        return QUEUE_SECONDS
+
+
 # -- stdio -----------------------------------------------------------------------------------------------
 def _line(message: dict) -> bytes:
     return json.dumps(message, default=str, ensure_ascii=False).encode("utf-8") + b"\n"
 
 
-def serve(core: Core, stdin, stdout, *, workers: int = WORKERS) -> int:
-    """Answer protocol lines from ``stdin`` (bytes) on ``stdout`` (bytes) until end of input; returns 0."""
+def serve(core: Core, stdin, stdout, *, workers: int = WORKERS, queue_seconds: float = 0) -> int:
+    """Answer protocol lines from ``stdin`` (bytes) on ``stdout`` (bytes) until end of input; returns 0.
+    With ``queue_seconds`` > 0 a ``queue`` event follows the ready event, and again on every change."""
     lock = threading.Lock()
+    stop = threading.Event()
 
     def write(message: dict) -> None:
         try:
@@ -378,6 +511,17 @@ def serve(core: Core, stdin, stdout, *, workers: int = WORKERS) -> int:
         write(response.message(request_id))
 
     write({"event": "ready", "body": {**core.session_info(), "protocol": PROTOCOL}})
+    if queue_seconds > 0:
+        threading.Thread(target=watch_queue, args=(core, write, stop, queue_seconds), daemon=True,
+                         name="aqt-core-queue").start()
+    try:
+        _answer_lines(stdin, write, answer, workers)
+    finally:
+        stop.set()
+    return 0
+
+
+def _answer_lines(stdin, write, answer, workers: int) -> None:
     with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="aqt-core") as pool:
         for raw in stdin:
             if not raw.strip():
@@ -401,7 +545,6 @@ def serve(core: Core, stdin, stdout, *, workers: int = WORKERS) -> int:
                 write(problem(404, "not found").message(request_id))
             else:
                 pool.submit(answer, request_id, method, path, request.get("body"))
-    return 0
 
 
 def _protocol_streams():
@@ -443,6 +586,6 @@ def main(argv: list[str] | None = None) -> int:
     stdin, stdout = _protocol_streams()
     core.trail.verify_now()          # full verification once at start, in the background
     try:
-        return serve(core, stdin, stdout)
+        return serve(core, stdin, stdout, queue_seconds=queue_seconds())
     except KeyboardInterrupt:
         return 0

@@ -2,13 +2,14 @@
 // Every piece of data is put into the page with textContent or attributes, never as markup,
 // because evidence (quarantined pages, reasons, excerpts) is untrusted. All text goes through
 // vis(), which shows hidden characters (bidi controls, zero-width characters, ...) as <U+XXXX>.
-import { DE, NEEDS, REASONS_DE, REFUSALS_DE, STEPS_DE } from "./i18n.js";
+import { DE, GLOSSARY, NEEDS, REASONS_DE, REFUSALS_DE, STEPS_DE } from "./i18n.js";
 import { MESSAGES } from "./messages.js";
 import { vis } from "./text.js";
 
 // ---- language: English by default, German on request; the choice stays in this browser ------------
 let LANG = "en";
-try { if (localStorage.getItem("aqt-ui-lang") === "de") LANG = "de"; } catch (e) { /* storage blocked: stay English */ }
+// the stored choice; without one, the system's language (German or English)
+try { const kept = localStorage.getItem("aqt-ui-lang"); if (kept === "de" || (kept === null && /^de\b/i.test(navigator.language || ""))) LANG = "de"; } catch (e) { /* storage blocked: stay English */ }
 // t('English words {n}', { n: 3 }): the German entry when German is chosen, else the English words.
 function t(text, vars) {
   const out = (LANG === "de" && DE[text]) || text;
@@ -86,19 +87,33 @@ function setLang(lang) {
   route();
 }
 
-// Home is the queue; Health and the tool views are secondary (auditors use them read-only).
-// Case pages (/case/<id>) and change pages (/change/<project>/<plan>) have no inspector.
-const VIEWS = [
+// Navigation by tasks: four areas and Settings. The tools behind them are not menu entries: their open
+// points are cases (Needs you), their history is under Evidence. Case pages (/case/<id>) and change
+// pages (/change/<project>/<plan>) have no inspector. The first-run setup is /welcome.
+const AREAS = [
   { id: "home", path: "/", label: "Needs you" },
-  { id: "health", path: "/health", label: "Health", inspector: true },
-  { id: "trail", path: "/trail", label: "Trail", tool: true, inspector: true },
-  { id: "quarantine", path: "/quarantine", label: "Quarantine", tool: true, inspector: true },
-  { id: "changes", path: "/changes", label: "Changes", tool: true, inspector: true },
-  { id: "signatures", path: "/signatures", label: "Signatures", tool: true, inspector: true },
-  { id: "capa", path: "/capa", label: "CAPA", tool: true, inspector: true },
-  { id: "qualifications", path: "/qualifications", label: "Qualifications", tool: true, inspector: true },
+  { id: "changes", path: "/changes", label: "Changes", inspector: true },
+  { id: "projects", path: "/projects", label: "Projects" },
+  { id: "evidence", path: "/evidence", label: "Evidence" },
 ];
-const S = { csrf: "", mode: null, overview: null, view: "home", installed: {}, install: {} };
+const SETTINGS = { id: "settings", path: "/settings", label: "Settings" };
+const WELCOME = { id: "welcome", path: "/welcome", label: "Set up AQT" };
+// Evidence: the records of each tool, one section each (/evidence/<id>).
+const EVIDENCE = [
+  { id: "trail", label: "Audit trail", tip: "trail", inspector: true },
+  { id: "signatures", label: "Signatures", inspector: true },
+  { id: "quarantine", label: "Held pages", tip: "quarantine", inspector: true },
+  { id: "capa", label: "Deviations and CAPA", tip: "capa", inspector: true },
+  { id: "qualifications", label: "Qualifications", tip: "qualification", inspector: true },
+  { id: "export", label: "Export for auditors" },
+];
+// The views of 0.2 and where they are now: old bookmarks and links keep working.
+const MOVED = { "/health": "/settings", "/trail": "/evidence/trail", "/quarantine": "/evidence/quarantine",
+  "/signatures": "/evidence/signatures", "/capa": "/evidence/capa", "/qualifications": "/evidence/qualifications",
+  "/evidence": "/evidence/trail" };
+// Where a "Needs you" entry comes from, in words.
+const VIEW_WORDS = { trail: "Audit trail", quarantine: "Held pages", changes: "Changes", capa: "CAPA", qualifications: "Qualifications" };
+const S = { csrf: "", mode: null, overview: null, view: "home", installed: {}, install: {}, setup: null };
 // the command that adds a package to this installation (the server knows how it was installed)
 function installOf(pkg) { return S.install[pkg] || `pip install ${pkg}`; }
 const TEXT_ATTRS = new Set(["title", "aria-label", "placeholder"]);
@@ -305,30 +320,34 @@ function downloadButton(path, name, label, cls) {
 function shellLabels() {
   document.documentElement.lang = LANG;
   $("skip").textContent = vis(t("Skip to content"));
-  $("menu-btn").textContent = vis(t("Views"));
+  $("menu-btn").textContent = vis(t("Menu"));
   $("refresh").textContent = vis(t("Refresh"));
   $("brand-sub").textContent = vis(t("quality desk, this machine only"));
-  $("rail").setAttribute("aria-label", t("Views"));
+  $("rail").setAttribute("aria-label", t("Areas"));
+  $("status-pill").setAttribute("aria-label", t("Status"));
   inspector().setAttribute("aria-label", t("Details"));
   const lang = $("lang");
   lang.value = LANG;
   lang.setAttribute("aria-label", t("Language"));
 }
 
+function navLink(area, count, hot) {
+  return h("li", {}, h("a", {
+    href: area.path, "aria-current": S.view === area.id ? "page" : null,
+    onclick: (event) => { event.preventDefault(); go(area.path); $("rail").classList.remove("open"); $("menu-btn").setAttribute("aria-expanded", "false"); },
+  }, h("span", { class: "label", text: t(area.label) }),
+     count ? h("span", { class: `count ${hot ? "hot" : ""}`, "aria-label": t("{n} need attention", { n: count }), text: count }) : null));
+}
 function renderRail() {
   const nav = clear($("nav"));
   const counts = (S.overview && S.overview.counts) || {};
-  let grouped = false;
-  for (const view of VIEWS) {
-    if (view.tool && !grouped) { put(nav, h("li", { class: "nav-group", text: t("Records and tools") })); grouped = true; }
-    const n = (view.id === "home" ? counts.overview : view.id === "health" ? 0 : counts[view.id]) || 0;
-    const link = h("a", {
-      href: view.path, "aria-current": S.view === view.id ? "page" : null,
-      onclick: (event) => { event.preventDefault(); go(view.path); $("rail").classList.remove("open"); $("menu-btn").setAttribute("aria-expanded", "false"); },
-    }, h("span", { class: "label", text: t(view.label) }),
-       n ? h("span", { class: `count ${view.id === "signatures" ? "" : "hot"}`, "aria-label": t("{n} need attention", { n }), text: n }) : null);
-    put(nav, h("li", {}, link));
+  for (const area of AREAS) {
+    const n = area.id === "home" ? counts.overview : area.id === "changes" ? counts.changes : 0;
+    put(nav, navLink(area, n || 0, true));
   }
+  // Settings at the foot of the rail; a mark when the setup has a problem
+  const problems = setupProblems().length;
+  put(clear($("nav-settings")), navLink(SETTINGS, problems, problems > 0));
   const foot = clear($("railfoot"));
   if (S.overview) put(foot, t("Checked {time}", { time: fmtTime(S.overview.checked_at) }));
 }
@@ -350,7 +369,6 @@ function trailLine(status) {
   return [kind, text];
 }
 function renderTopbar() {
-  const pill = clear($("trail-pill"));
   const broken = $("broken");
   broken.hidden = true;
   const status = S.overview && S.overview.status;
@@ -363,28 +381,82 @@ function renderTopbar() {
       put(clear(broken), t("Trail changed since the last check: {reason}. Verify it again.", { reason: msgOf(status, "changed") }));
     }
     writerBar(status);
-    const [kind, text] = trailLine(status);
-    pill.className = `pill ${kind}`;
-    put(pill, h("span", { "aria-hidden": "true", text: ICON[kind] }), text);
-  } else put(pill, t("Trail: loading"));
+  }
+  renderPill();
   const badge = clear($("mode-badge"));
   const ribbon = clear($("ribbon"));
   if (S.mode) {
-    badge.className = `badge ${S.mode.decisions ? "on" : "off"}`;
-    put(badge, S.mode.decisions ? t("Decisions on · passphrase per decision") : t("Read-only"));
+    badge.hidden = S.mode.decisions;
+    badge.className = "badge off";
+    put(badge, t("Read-only"));
     ribbon.hidden = S.mode.decisions;
     if (!S.mode.decisions) put(ribbon, h("strong", { text: `${t("Read-only")}. ` }), S.mode.reason);
   }
 }
 
-// Writer down: a banner on every page with the fix (records wait in the spool until it runs again).
+// ---- the status pill: "Everything in order", or the most important problem with its one fix ---------
+// Setup checks that need a look (from GET /api/setup; aqt status's own list).
+function setupProblems() {
+  const rows = (S.setup && S.setup.checks) || [];
+  return rows.filter((c) => c.result === "fail").concat(rows.filter((c) => c.result === "warn" && c.id !== "egress"));
+}
+function pillState() {
+  const ov = S.overview;
+  if (!ov) return { kind: "info", text: t("Checking…") };
+  const setup = ov.setup || {};
+  const status = ov.status || {};
+  if (setup.needed) return { kind: "warn", text: t("Setup not finished"), fix: t("Continue setup"), path: "/welcome" };
+  if (["broken", "changed", "problems"].includes(status.state)) return { kind: "fail", text: t("The audit trail does not verify"), fix: t("See why"), path: `/case/trail:trail_${status.state}` };
+  if (status.state !== "missing" && status.writer && !status.writer.running) return { kind: "fail", text: t("Trail writer stopped"), fix: t("Restart"), apply: "writer", path: "/settings" };
+  if (status.writer && status.writer.spooled) return { kind: "warn", text: t("{n} record(s) wait outside the trail", { n: status.writer.spooled }), fix: t("Move them in"), apply: "spool", path: "/settings" };
+  const problem = setupProblems()[0];
+  if (problem) return { kind: problem.result === "fail" ? "fail" : "warn", text: `${t(CHECK_WORDS[problem.id] || problem.id)}: ${problem.result === "fail" ? t("needs a fix") : t("needs a look")}`,
+    fix: t("Fix"), apply: problem.can_apply ? problem.id : null, path: `/settings#check-${problem.id}` };
+  if (status.test_mode) return { kind: "warn", text: t("Test mode is on"), fix: t("See why"), path: "/case/trail:test_mode" };
+  return { kind: "pass", text: t("Everything in order") };
+}
+function renderPill() {
+  const box = clear($("status-pill"));
+  const p = pillState();
+  put(box, h("span", { class: `pill ${p.kind}` }, h("span", { "aria-hidden": "true", text: ICON[p.kind] }), p.text));
+  if (p.fix) {
+    const button = h("button", { class: "btn small pill-fix", type: "button", text: p.fix });
+    button.addEventListener("click", async () => {
+      if (p.apply && S.mode && S.mode.decisions) { button.disabled = true; await applyStep(p.apply); button.disabled = false; }
+      else go(p.path);
+    });
+    put(box, button);
+  }
+}
+// Apply one setup step (aqt setup's own) and show what happened; returns the answer.
+async function applyStep(id) {
+  const { status, data } = await post("/api/setup/apply", { check: id });
+  const ok = status === 200 && data.ok;
+  announce(ok ? t("Done: {what}", { what: t(CHECK_WORDS[id] || id) }) : `${t("Not done:")} ${data.error || (data.check && data.check.explanation) || data.message || ""}`);
+  await Promise.all([refresh().catch(() => null), loadSetup().catch(() => null)]);
+  if (!ok && location.pathname !== "/settings") go(`/settings#check-${id}`);
+  else if (S.view === "settings") route();
+  return { status, data };
+}
+// The setup checks (aqt status). Kept in S.setup for the pill and Settings.
+async function loadSetup() {
+  try { S.setup = await api("/api/setup"); } catch (error) { S.setup = null; throw error; }
+  renderRail();
+  renderTopbar();               // the pill and the writer banner use the checks
+  return S.setup;
+}
+
+// Writer down: a banner on every page with the one fix (records wait in the spool until it runs again).
 function writerBar(status) {
   const bar = $("writer");
   if (!bar) return;
   const down = status && status.state !== "missing" && status.writer && !status.writer.running;
   bar.hidden = !down;
-  if (down) put(clear(bar), h("strong", { text: `${t("The trail writer is not running.")} ` }),
-    t("Start it in a terminal:"), " ", h("code", { text: "aqt-trail serve" }), status.writer.socket ? h("span", { class: "small", text: ` (${t("socket")} ${status.writer.socket})` }) : null);
+  if (!down) return;
+  const service = S.setup && S.setup.service;
+  put(clear(bar), h("strong", { text: `${t("The trail writer is not running.")} ` }), t("Records wait in a spool until it runs again."), " ",
+    service && S.mode && S.mode.decisions ? h("button", { class: "btn small", type: "button", text: t("Restart the writer"), onclick: (e) => { e.target.disabled = true; applyStep("writer"); } })
+      : [t("Start it in a terminal:"), " ", h("code", { text: "aqt-trail serve" })]);
 }
 
 const inspector = () => $("inspector");
@@ -418,7 +490,7 @@ function moveQueue(step) {
 }
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") { closeSheet(); return; }
-  if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || typing(event.target)) return;
+  if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || typing(event.target) || document.querySelector("dialog[open]")) return;
   if ((event.key === "j" || event.key === "k") && S.view === "home" && !S.page) {
     if (moveQueue(event.key === "j" ? 1 : -1)) event.preventDefault();
   } else if (event.key === "n" && (S.view === "home" || S.caseId)) {
@@ -454,13 +526,41 @@ function plainTable(headers, rows) {
     h("tbody", {}, rows.map((cells) => h("tr", {}, cells.map((cell) => (cell instanceof Node && cell.tagName === "TD" ? cell : h("td", {}, cell)))))));
 }
 
+// ---- glossary: the everyday word first, the GMP term beside it, two sentences when the pointer rests ----
+function gloss(key) {
+  const entry = GLOSSARY[key];
+  if (!entry) return null;
+  return (LANG === "de" && entry.de) || entry.en;
+}
+let termCount = 0;
+// The noun of a term (e.g. "Release" / "Freigabe") with its explanation as a tooltip and as the description a
+// screen reader reads on focus.
+function termNode(key, text) {
+  const g = gloss(key);
+  if (!g) return h("span", { text: text || key });
+  const id = `term-${++termCount}`;
+  return h("span", { class: "term-wrap" }, h("span", { class: "term", tabindex: "0", "data-tip": g.tip, "aria-describedby": id, text: text || g.noun }),
+    h("span", { class: "sr-only", id, text: g.tip }));
+}
+// A word for a list or a heading: "Release for use (release)", with the tooltip.
+function termLabel(key) {
+  const g = gloss(key);
+  if (!g) return key;
+  return h("span", {}, termNode(key, g.word), g.term.toLowerCase() !== g.word.toLowerCase() ? h("span", { class: "gmp", text: ` (${g.term})` }) : null);
+}
+// A value as a shell word: plain when it is safe, else in single quotes.
+function sq(value) {
+  const text = String(value ?? "");
+  return /^[A-Za-z0-9._:/@%+=,-]+$/.test(text) ? text : `'${text.replace(/'/g, "'\\''")}'`;
+}
+
 // ---- decision panel ----------------------------------------------------------------------------------
-// One component for every human-only action, laid out like a signature manifestation. An action
-// may carry one sentence on its consequence; with several, they are offered as a list of choices.
+// One component for every human-only action: the choices, each with the one sentence of what it does, and
+// a button with a verb and an object. The button opens the signing sheet, the same for every signature.
+// command(action) gives the equivalent aqt command ("Show as command"), where one exists.
 // onDone(result, action) replaces the default reload after a recorded decision (case pages).
 let panelCount = 0;
-function decisionPanel({ actions, subject, signers, submit, note, fields, noSigners, title, onDone }) {
-  const n = ++panelCount;
+function decisionPanel({ actions, subject, signers, submit, note, fields, noSigners, title, onDone, command }) {
   const box = h("section", { class: "decision", "aria-label": title || t("Decision") });
   put(box, h("h3", { text: title || t("Decision") }));
   if (!S.mode || !S.mode.decisions) {
@@ -468,21 +568,32 @@ function decisionPanel({ actions, subject, signers, submit, note, fields, noSign
     return box;
   }
   if (!signers || !signers.length) {
-    put(box, h("div", { class: "off", text: noSigners || t("No signer is registered. Enrol yourself in a terminal first: aqt-signoff init") }));
+    put(box, h("div", { class: "off" }, noSigners || [t("No signing identity is set up yet."), " ", link(t("Set up your identity"), "/welcome")]));
     return box;
   }
   let chosen = actions[0];
-  const signerSelect = h("select", { id: `dp-signer-${n}` }, signers.map((s) => h("option", { value: s.id, text: `${s.name || s.id} (${s.role || t("no role")})` })));
-  const meaningCell = h("dd", { text: t(chosen.meaning) });
-  const signerCell = h("dd");
-  const showSigner = () => {
-    const s = signers.find((x) => x.id === signerSelect.value) || signers[0];
-    put(clear(signerCell), `${s.name || "?"} · ${s.id} · ${s.role || t("no role")}`);
-  };
   const button = h("button", { class: `btn ${chosen.danger ? "danger" : "primary"}`, type: "button", text: chosen.button });
+  const shown = h("div", { class: "as-command", hidden: true });
+  const toggle = command ? h("button", { class: "btn small ghost", type: "button", "aria-expanded": "false", text: t("Show as command") }) : null;
+  const showCommand = () => {
+    if (!command || shown.hidden) return;
+    const text = command(chosen);
+    put(clear(shown), text ? [h("p", { class: "small muted", text: t("The same decision in a terminal; it asks for your passphrase there.") }), commandLine(text)]
+      : h("p", { class: "small muted", text: t("No aqt command does exactly this.") }));
+  };
+  if (toggle) toggle.addEventListener("click", () => {
+    shown.hidden = !shown.hidden;
+    toggle.setAttribute("aria-expanded", String(!shown.hidden));
+    toggle.textContent = vis(shown.hidden ? t("Show as command") : t("Hide the command"));
+    showCommand();
+  });
+  const consequence = h("p", { class: "consequence" });
+  const sayConsequence = () => put(clear(consequence), title === chosen.label ? null : h("strong", { text: `${chosen.label}: ` }), chosen.consequence || "");
   const pick = (a) => {
     chosen = a;
-    meaningCell.textContent = vis(t(a.meaning)); button.textContent = vis(a.button); button.className = `btn ${a.danger ? "danger" : "primary"}`;
+    button.textContent = vis(a.button); button.className = `btn ${a.danger ? "danger" : "primary"}`;
+    sayConsequence();
+    showCommand();
   };
   const worded = actions.some((a) => a.consequence);
   const choice = worded && actions.length > 1 ? h("div", { class: "choice-list", role: "radiogroup", "aria-label": t("Decision") },
@@ -495,7 +606,7 @@ function decisionPanel({ actions, subject, signers, submit, note, fields, noSign
       });
       return b;
     }))
-    : worded ? h("p", { class: "consequence" }, title === chosen.label ? null : h("strong", { text: `${chosen.label}: ` }), chosen.consequence)
+    : worded ? (sayConsequence(), consequence)
     : actions.length > 1 ? h("div", { class: "chips", role: "radiogroup", "aria-label": t("Decision") },
     actions.map((a) => {
       const b = h("button", { class: "chip-btn", type: "button", role: "radio", "aria-checked": a === chosen ? "true" : "false", "aria-pressed": a === chosen ? "true" : "false", text: a.label });
@@ -505,59 +616,113 @@ function decisionPanel({ actions, subject, signers, submit, note, fields, noSign
       });
       return b;
     })) : null;
-  const reason = h("textarea", { id: `dp-reason-${n}`, required: true, "aria-required": "true", maxlength: "2000" });
-  const pass = h("input", { id: `dp-pass-${n}`, type: "password", autocomplete: "off", spellcheck: "false", "aria-required": "true" });
   const result = h("div", { "aria-live": "polite" });
-  signerSelect.addEventListener("change", showSigner);
-  showSigner();
+  const row = h("div", { class: "actions" }, button, toggle);
   button.addEventListener("click", async () => {
     clear(result);
-    if (!reason.value.trim()) { put(result, h("div", { class: "result stale", text: t("A reason is required.") })); reason.focus(); return; }
-    if (!pass.value) { put(result, h("div", { class: "result stale", text: t("Enter your passphrase.") })); pass.focus(); return; }
-    button.disabled = true;
-    const passphrase = pass.value;
-    pass.value = "";
-    try {
-      const { status, data } = await submit(chosen, { reason: reason.value.trim(), passphrase, signer_id: signerSelect.value });
-      const kind = data.ok ? "ok" : status === 409 ? "stale" : "refused";
-      let text;
-      const said = msgOf(data, "message");
-      if (data.ok) text = `${t("Recorded as {record}", { record: data.record_id || "a record" })}${data.time ? " · " + fmtTime(data.time) : ""}. ${said}`;
-      else if (status === 409) text = `${t("Not signed:")} ${said}`;
-      else text = `${t("Refused:")} ${refusalWords(data.reason_code, data.reason_text) ? refusalWords(data.reason_code, data.reason_text) + ". " : ""}${said}${data.record_id ? ` (${t("refusal recorded as {record}", { record: data.record_id })})` : ""}`;
-      put(result, h("div", { class: `result ${kind}`, role: "status", text }));
-      announce(text);
-      if (data.ok) {
-        form.remove();                       // the decision is made; show what was recorded
-        if (choice) choice.remove();
-        if (fields) fields.remove();
-        if (onDone) onDone(data, chosen);
-        else setTimeout(async () => { await refresh(); route(true); }, 600);
-      }
-      result.scrollIntoView({ block: "nearest" });
-    } catch (error) {
-      put(result, h("div", { class: "result refused", text: String(error.message || error) }));
-    } finally {
-      button.disabled = false;
-    }
+    const answer = await signSheet({ action: chosen, subject, signers, submit, note });
+    if (!answer) { button.focus(); return; }
+    const { data } = answer;
+    const text = `${t("Recorded as {record}", { record: data.record_id || "a record" })}${data.time ? " · " + fmtTime(data.time) : ""}. ${msgOf(data, "message")}`;
+    put(result, h("div", { class: "result ok", role: "status", text }));
+    announce(text);
+    row.remove();                       // the decision is made; show what was recorded
+    shown.remove();
+    if (choice) choice.remove();
+    if (fields) fields.remove();
+    if (onDone) onDone(data, chosen);
+    else setTimeout(async () => { await refresh(); route(true); }, 600);
+    result.scrollIntoView({ block: "nearest" });
   });
-  const form = h("div", {},
-    signers.length > 1 ? h("div", { class: "field" }, h("label", { for: `dp-signer-${n}`, text: t("Who signs") }), signerSelect) : null,
-    h("div", { class: "field" }, h("label", { for: `dp-reason-${n}`, text: t("Reason (required, recorded with the decision)") }), reason),
-    h("div", { class: "field" }, h("label", { for: `dp-pass-${n}`, text: t("Passphrase of your signing key (used once, never stored)") }), pass),
-    note ? h("p", { class: "small muted", text: note }) : null,
-    h("div", { class: "actions" }, button));
-  put(box,
-    choice,
-    fields || null,
-    h("dl", { class: "manifest", "aria-label": t("What will be signed") },
-      h("dt", { text: t("Signer") }), signerCell,
-      h("dt", { text: t("Meaning") }), meaningCell,
-      h("dt", { text: t("Subject") }), h("dd", {}, subject.label, subject.hash ? [" ", hashButton(subject.hash, 16)] : null)),
-    form,
-    result,
-  );
+  put(box, choice, fields || null, note ? h("p", { class: "small muted", text: note }) : null, row, shown, result);
   return box;
+}
+
+// ---- the signing sheet: one dialog for every signature -------------------------------------------------
+// It says in one sentence what is signed (the meaning, the subject and a short summary), shows the ID and
+// asks for a reason and the passphrase. "What exactly is signed?" opens the content and its hash. A wrong
+// passphrase leaves the sheet open with a calm message; the failed attempt is recorded as before. Resolves
+// with the answer of a recorded decision, or null when the person cancels.
+function signSheet({ action, subject, signers, submit, note }) {
+  return new Promise((resolve) => {
+    const n = ++panelCount;
+    const label = subject.label instanceof Node ? subject.label.textContent : String(subject.label ?? "");
+    const select = signers.length > 1 ? h("select", { id: `ss-signer-${n}` }, signers.map((x) => h("option", { value: x.id, text: `${x.name || x.id} (${x.role || t("no role")})` }))) : null;
+    const who = () => signers.find((x) => x.id === (select ? select.value : "")) || signers[0];
+    const reason = h("textarea", { id: `ss-reason-${n}`, required: true, "aria-required": "true", maxlength: "2000", rows: "3" });
+    const pass = h("input", { id: `ss-pass-${n}`, type: "password", autocomplete: "off", spellcheck: "false", "aria-required": "true" });
+    const message = h("div", { "aria-live": "polite" });
+    const sign = h("button", { class: `btn ${action.danger ? "danger" : "primary"}`, type: "button", text: action.button });
+    const cancel = h("button", { class: "btn ghost", type: "button", text: t("Cancel") });
+    const idLine = h("p", { class: "id-line" });
+    const signerCell = h("dd");
+    const reasonCell = h("dd", { class: "keep-lines" });
+    const fill = () => {
+      const x = who();
+      put(clear(idLine), h("code", { text: x.id }), " ", h("span", { class: "muted", text: `${x.name || "?"} · ${x.role || t("no role")}` }));
+      put(clear(signerCell), `${x.name || "?"} · ${x.id} · ${x.role || t("no role")}`);
+      put(clear(reasonCell), reason.value.trim() || "–");
+    };
+    if (select) select.addEventListener("change", fill);
+    reason.addEventListener("input", fill);
+    fill();
+    const g = gloss(action.meaning);
+    const dlg = h("dialog", { class: "sign-sheet", "aria-labelledby": `ss-title-${n}`, "aria-describedby": `ss-what-${n}` },
+      h("h2", { id: `ss-title-${n}`, text: action.label }),
+      h("p", { class: "sign-sentence", id: `ss-what-${n}` }, h("span", { class: "lead", text: t("You sign:") }), " ",
+        g ? termNode(action.meaning) : h("strong", { text: t(action.meaning) }), " ", t("of"), " ", label, subject.summary ? ` (${subject.summary})` : "", "."),
+      action.consequence ? h("p", { class: "small muted", text: action.consequence }) : null,
+      h("div", { class: "field" }, select ? [h("label", { for: select.id, text: t("Who signs") }), select] : [h("span", { class: "label", text: t("Your ID") }), idLine]),
+      h("div", { class: "field" }, h("label", { for: reason.id, text: t("Reason (recorded with your signature)") }), reason),
+      h("div", { class: "field" }, h("label", { for: pass.id, text: t("Passphrase (used once, never stored)") }), pass),
+      h("details", { class: "what-signed" }, h("summary", { text: t("What exactly is signed?") }),
+        h("dl", { class: "manifest" },
+          h("dt", { text: t("Signer") }), signerCell,
+          h("dt", { text: t("Meaning") }), h("dd", {}, g ? `${g.noun} · ` : "", h("code", { text: action.meaning })),
+          h("dt", { text: t("Subject") }), h("dd", { text: label }),
+          h("dt", { text: t("Content hash") }), h("dd", {}, subject.hash ? h("code", { class: "full-hash", text: subject.hash }) : t("none: the record itself is signed")),
+          h("dt", { text: t("Reason") }), reasonCell,
+          h("dt", { text: t("Time") }), h("dd", { text: t("when you press the button, in your time zone") })),
+        note ? h("p", { class: "small muted", text: note }) : null),
+      message,
+      h("div", { class: "actions" }, sign, cancel));
+    let done = false;
+    const finish = (answer) => {
+      if (done) return;
+      done = true;
+      pass.value = "";
+      if (dlg.open) dlg.close();
+      dlg.remove();
+      resolve(answer);
+    };
+    const say = (kind, text) => { put(clear(message), h("div", { class: `result ${kind}`, role: "status", text })); };
+    sign.addEventListener("click", async () => {
+      if (!reason.value.trim()) { say("stale", t("A reason is required.")); reason.focus(); return; }
+      if (!pass.value) { say("stale", t("Enter your passphrase.")); pass.focus(); return; }
+      sign.disabled = true;
+      const passphrase = pass.value;
+      pass.value = "";
+      try {
+        const { status, data } = await submit(action, { reason: reason.value.trim(), passphrase, signer_id: who().id });
+        if (data.ok) { finish({ status, data }); return; }
+        const said = msgOf(data, "message");
+        if (data.reason_code === "auth_failed") say("stale", t("The passphrase did not unlock your key. Type it again; the attempt was recorded."));
+        else if (status === 409) say("stale", `${t("Not signed:")} ${said}`);
+        else say("refused", `${t("Refused:")} ${refusalWords(data.reason_code, data.reason_text) ? refusalWords(data.reason_code, data.reason_text) + ". " : ""}${said}${data.record_id ? ` (${t("refusal recorded as {record}", { record: data.record_id })})` : ""}`);
+        pass.focus();
+      } catch (error) {
+        say("refused", String(error.message || error));
+      } finally {
+        sign.disabled = false;
+      }
+    });
+    pass.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); sign.click(); } });
+    cancel.addEventListener("click", () => finish(null));
+    dlg.addEventListener("cancel", (event) => { event.preventDefault(); finish(null); });
+    document.body.appendChild(dlg);
+    dlg.showModal();
+    reason.focus();
+  });
 }
 
 // ---- router ----------------------------------------------------------------------------------------
@@ -579,27 +744,33 @@ function setTitle(text) {
   document.title = vis(`${text} · ${t("AQT quality desk")}`);
 }
 async function route(keepInspector) {
+  const moved = MOVED[location.pathname];
+  if (moved) history.replaceState(null, "", moved + location.search + location.hash);
   const path = location.pathname;
   const page = path.startsWith("/case/") ? "case" : path.startsWith("/change/") ? "change" : null;
-  const view = page === "case" ? VIEWS[0] : page === "change" ? VIEWS.find((v) => v.id === "changes")
-    : VIEWS.find((v) => v.path === path) || VIEWS[0];
+  const part = path.startsWith("/evidence/") ? EVIDENCE.find((x) => x.id === path.slice("/evidence/".length)) : null;
+  const area = page === "case" ? AREAS[0] : page === "change" ? AREAS[1] : part ? AREAS[3]
+    : path === WELCOME.path ? WELCOME : path === SETTINGS.path ? SETTINGS : AREAS.find((v) => v.path === path) || AREAS[0];
   const changed = S.path !== path;
-  S.view = view.id;
+  S.view = area.id;
   S.page = page;
   S.path = path;
   if (page !== "case") S.caseId = null;
-  setTitle(page === "change" ? t("Changes") : t(view.label));
-  document.querySelector(".shell").classList.toggle("no-insp", !!page || !view.inspector);
+  setTitle(page === "change" ? t("Changes") : part ? `${t("Evidence")}: ${t(part.label)}` : t(area.label));
+  const shell = document.querySelector(".shell");
+  shell.classList.toggle("no-insp", !!page || !(part ? part.inspector : area.inspector));
+  shell.classList.toggle("onboarding", area === WELCOME);
   renderRail();
   const main = clear($("main"));
   put(main, h("div", { class: "empty", text: t("Loading…") }));
   if (keepInspector !== true) placeholder(t("Select an item to see its details."));
   if (changed) { main.scrollTop = 0; window.scrollTo(0, 0); }
   try {
-    await (page === "case" ? renderCase(main) : page === "change" ? renderChangeRoute(main) : RENDER[view.id](main));
+    await (page === "case" ? renderCase(main) : page === "change" ? renderChangeRoute(main) : part ? renderEvidence(main, part) : RENDER[area.id](main));
     if (page && changed && !location.hash) main.focus({ preventScroll: true });
+    if (location.hash.startsWith("#check-")) document.getElementById(location.hash.slice(1))?.scrollIntoView({ block: "center" });
   } catch (error) {
-    put(clear(main), errorBox(error));
+    put(clear(main), part ? evidenceTabs(part) : null, errorBox(error));
   }
 }
 
@@ -618,6 +789,17 @@ function needText(item) {
   const detail = de[1] === null ? msgOf(item, "detail") : de[1] === "@reason" ? (REASONS_DE[item.args.reason_code] || item.detail) : fill(de[1]);
   return [fill(de[0]), detail];
 }
+// The desktop app hands each "queue" event of the core here and shows the system notifications in the words
+// the page gives back in its language (show_notifications); without an answer it uses the core's English.
+const NOTICE = { case_held: "Quarantine holds content from {source}", case_warned: "Quarantine warns about content from {source}" };
+if (APP) window.aqtQueue = (seq, body) => {
+  const cases = {};
+  for (const item of body.new || []) {
+    try { cases[item.id] = NOTICE[item.key] ? t(NOTICE[item.key], item.args) : needText(item)[0]; } catch (e) { /* the core's English */ }
+  }
+  const words = { cases, many: t("{n} new cases need you", { n: (body.new || []).length }), review: t("Review it in Agent Quality Toolkit"), show: t("Show the case") };
+  APP.invoke("show_notifications", { seq, words }).catch(() => {});
+};
 // The page of a case: /case/<id> (the id is readable: "quarantine:Q7SEGGW", "plan:0:s01" ...).
 function casePath(item) { return `/case/${encodeURIComponent(item.id).replace(/%3A/gi, ":")}`; }
 // How long a case has been waiting ("waiting for 3 h"), or "" when its start is unknown.
@@ -639,19 +821,19 @@ async function renderHome(main) {
       h("strong", { text: t("Everything in order") }),
       h("p", { class: "trail-line" }, st(kind, line)),
       h("p", { class: "small muted", text: t("Last check {time}.", { time: fmtTime(data.checked_at) }) }),
-      h("p", { class: "small" }, h("a", { href: "/health", onclick: (e) => { e.preventDefault(); go("/health"); }, text: t("Health of the trail and the tools") })))));
+      h("p", { class: "small" }, link(t("Health of the trail and the tools"), "/settings")))));
     return;
   }
   const queue = h("ol", { class: "queue", "aria-label": t("Needs you") });
   data.needs.forEach((item, index) => {
-    const target = VIEWS.find((v) => v.id === item.view);
+    const where = VIEW_WORDS[item.view];
     const [title, detail] = needText(item);
     const since = sinceText(item);
     const button = h("button", { class: "case-line", type: "button", "data-index": String(index) },
       st(SEVERITY_KIND[item.severity] || "neutral", t(item.severity)),
       h("span", { class: "what" }, h("strong", { text: title }), detail ? h("span", { text: detail }) : null),
       h("span", { class: "when" }, since ? h("span", { text: since }) : null,
-        h("span", { class: "where", text: target ? t(target.label) : "" })));
+        h("span", { class: "where", text: where ? t(where) : "" })));
     button.addEventListener("click", () => { S.queueAt = index; go(casePath(item)); });
     put(queue, h("li", {}, button));
   });
@@ -661,15 +843,15 @@ async function renderHome(main) {
       h("span", { class: "keys", text: t("Keys: j and k move, Enter opens, n opens the next case.") })),
     queue,
     h("p", { class: "trail-line small" }, st(kind, line), " ",
-      h("a", { href: "/health", onclick: (e) => { e.preventDefault(); go("/health"); }, text: t("Health") }))));
+      link(t("Settings"), "/settings"))));
   const list = queueButtons();
   if (S.queueAt !== undefined && list.length) list[Math.min(S.queueAt, list.length - 1)].focus({ preventScroll: false });
 }
 
-// ---- Health: trail status, ALCOA++, tool health, refusals ---------------------------------------------
-async function renderHealth(main) {
-  const data = S.overview || (await refresh());
-  clear(main);
+// ---- Health (in Settings): trail status, ALCOA++, tool health, refusals -----------------------------------
+function healthSections(data) {
+  const out = [];
+  const main = { put: (...x) => out.push(...x) };
   const status = data.status;
   const check = status.check || {};
   const words = { intact: t("Intact"), broken: t("Broken from seq {seq}", { seq: num(check.first_bad_seq) }), problems: t("Problems found"), changed: t("Changed since the last check"),
@@ -686,7 +868,7 @@ async function renderHealth(main) {
      [t("Test mode"), status.test_mode ? stWord("warn", t("On")) : t("Off")],
      [t("Review parameters"), profileWord(status.review_profile)]]
       .map(([k, v]) => h("div", {}, h("dt", { text: k }), h("dd", {}, v))));
-  put(main, section([`${t("Trail status")} `, h("span", { class: "hint" }, verifyBtn)], band,
+  main.put(section([`${t("Trail status")} `, h("span", { class: "hint" }, verifyBtn)], band,
     status.state === "broken" ? h("p", { class: "small", text: `${t("Verifier:")} ${msgOf(check, "summary")}` }) : null));
 
   const strip = h("div", { class: "alcoa" });
@@ -699,18 +881,19 @@ async function renderHealth(main) {
       put(strip, chip);
     }
   } else put(strip, h("span", { class: "muted", text: status.verifying ? t("Computed after the verification finishes…") : t("Not computed yet: run Verify now.") }));
-  put(main, section("ALCOA++", strip));
+  main.put(section("ALCOA++", strip));
 
   const tools = h("div", { class: "tools" }, data.tools.map((x) => h("div", {},
     h("div", {}, h("strong", { text: x.package }), " ", x.installed ? stWord(x.problem ? "warn" : "pass", x.problem ? t("problem") : t("installed")) : stWord("neutral", t("not installed"))),
     h("div", { class: "small muted", text: x.installed ? (x.problem || t("last record {ago}", { ago: x.last_record ? ago(x.last_record) : t("none") })) : x.install }))));
-  put(main, section(t("Tool health"), tools));
+  main.put(section(t("Tool health"), tools));
 
   if (data.refusals.length) {
     const rows = data.refusals.slice().reverse().map((r) => ({ data: r, cells: [h("td", { class: "small time", text: fmtTime(r.time) }), r.type, h("td", { class: "mono small hide-narrow", text: r.actor.id }), refusalWords(r.reason_code, r.reason_text) ? `${refusalWords(r.reason_code, r.reason_text)} (${r.reason_code})` : r.reason_code || ""] }));
-    const x = table([t("Time"), t("Type"), th(t("Claimed actor"), "hide-narrow"), t("Reason code")], rows, (r) => go(`/trail?type=*.refused#${r.id}`));
-    put(main, section(t("Refusals in the last 24 h"), x.table));
+    const x = table([t("Time"), t("Type"), th(t("Claimed actor"), "hide-narrow"), t("Reason code")], rows, (r) => go(`/evidence/trail?type=*.refused#${r.id}`));
+    main.put(section(t("Refusals in the last 24 h"), x.table));
   }
+  return out;
 }
 
 async function refresh(force) {
@@ -718,7 +901,7 @@ async function refresh(force) {
   S.overview = data;
   renderRail();
   renderTopbar();
-  if (force && (S.view === "home" || S.view === "health") && !S.page) route();
+  if (force && (S.view === "home" || S.view === "settings") && !S.page) route();
   return data;
 }
 let verifyTimer = null;
@@ -863,7 +1046,7 @@ const CASES = {
       title: t("Quarantine case {id}", { id: c.case_id }),
       stop: ["person", c.state === "warned" ? t("Waits for you: confirm the content as harmless or declare a threat") : t("Waits for you: release the content or declare a threat")],
       settled: ["held", "warned"].includes(c.state) ? null : stWord(c.state),
-      links: [[t("Open in {view}", { view: t("Quarantine") }), `/quarantine?item=${encodeURIComponent(c.case_id)}`]],
+      links: [[t("Open in {view}", { view: t("Held pages") }), `/evidence/quarantine?item=${encodeURIComponent(c.case_id)}`]],
     });
     parts.content.id = "case-content";
     parts.summary.querySelector(".insp-title")?.remove();          // the page title names the case
@@ -905,9 +1088,9 @@ const CASES = {
     if (rest[0] === "overdue") {
       const overdue = data.deviations.filter((d) => d.overdue);
       const f = caseFrame(main, item, { title: t("Overdue deviations"), stop: ["person", t("Waits for the person handling the deviation: record the investigation")],
-        links: [[t("Open in {view}", { view: t("CAPA") }), "/capa?tab=deviations"]] });
+        links: [[t("Open in {view}", { view: t("CAPA") }), "/evidence/capa?tab=deviations"]] });
       f.body(inspSection(t("Deviations"), overdue.length ? h("ul", { class: "evidence-list" }, overdue.map((d) => h("li", {},
-        link(`${d.dev_id} ${d.title}`, `/capa?tab=deviations&item=${encodeURIComponent(d.dev_id)}`), ` · ${t("due")} ${fmtTime(d.due)}`))) : h("p", { class: "muted", text: t("No deviation is overdue.") })));
+        link(`${d.dev_id} ${d.title}`, `/evidence/capa?tab=deviations&item=${encodeURIComponent(d.dev_id)}`), ` · ${t("due")} ${fmtTime(d.due)}`))) : h("p", { class: "muted", text: t("No deviation is overdue.") })));
       f.decide(t("How to resolve"), resolveSteps([[t("Record the investigation in a terminal (5 whys, factors, root cause):"),
         `aqt-capa investigate ${(overdue[0] && overdue[0].dev_id) || "DEV-…"} --why "…" --root-cause "…" --root-category …`]]));
       return;
@@ -915,7 +1098,7 @@ const CASES = {
     const wanted = query().get("candidate");
     const candidate = data.candidates.find((c) => c.candidate_id === wanted) || data.candidates[0];
     const f = caseFrame(main, item, { title: t("CAPA candidates"), stop: ["person", t("Waits for you: accept or dismiss each candidate")],
-      links: [[t("Open in {view}", { view: t("CAPA") }), "/capa?tab=candidates"]] });
+      links: [[t("Open in {view}", { view: t("CAPA") }), "/evidence/capa?tab=candidates"]] });
     if (!candidate) { f.body(empty(t("No open candidates"), t("aqt-capa scan finds candidates in the evidence."))); if (notice) f.decide(t("Decided"), recordedBlock(notice)); return; }
     const x = candidateParts(candidate, data.signers, { onDone: done });
     const others = data.candidates.filter((c) => c !== candidate);
@@ -931,7 +1114,7 @@ const CASES = {
     const status = ov.status;
     const check = status.check || {};
     const code = rest[0];
-    const trailLink = [t("Open in {view}", { view: t("Trail") }), "/trail"];
+    const trailLink = [t("Open in {view}", { view: t("Audit trail") }), "/evidence/trail"];
     const integrity = () => inspSection(t("Integrity"), stWord(status.state), kv([[t("Records"), num(status.records)], [t("Head seq"), num(status.head_seq)],
       [t("Checked"), check.checked_at ? fmtTime(check.checked_at) : t("not yet")], check.first_bad_seq != null ? [t("Broken from seq"), num(check.first_bad_seq)] : null,
       check.reason ? [t("Reason"), msgOf(check, "reason")] : null, status.changed ? [t("Changed"), msgOf(status, "changed")] : null]),
@@ -953,14 +1136,14 @@ const CASES = {
       f.decide(t("How to resolve"), resolveSteps([[t("Read the full report with the records it names:"), "aqt-trail alcoa"]]));
     } else if (code === "refusals") {
       const f = caseFrame(main, item, { title: t("Refused decision attempts"), stop: ["person", t("Waits for a look: who tried to decide, and why")],
-        links: [[t("Open in {view}", { view: t("Trail") }), "/trail?type=*.refused"]] });
+        links: [[t("Open in {view}", { view: t("Audit trail") }), "/evidence/trail?type=*.refused"]] });
       const rows = ov.refusals.slice().reverse().map((r) => ({ data: r, cells: [h("td", { class: "small time", text: fmtTime(r.time) }), r.type, h("td", { class: "mono small", text: r.actor.id }),
         refusalWords(r.reason_code, r.reason_text) ? `${refusalWords(r.reason_code, r.reason_text)} (${r.reason_code})` : r.reason_code || ""] }));
-      f.body(inspSection(t("Refusals in the last 24 h"), table([t("Time"), t("Type"), t("Claimed actor"), t("Reason code")], rows, (r) => go(`/trail?type=*.refused#${r.id}`)).table));
+      f.body(inspSection(t("Refusals in the last 24 h"), table([t("Time"), t("Type"), t("Claimed actor"), t("Reason code")], rows, (r) => go(`/evidence/trail?type=*.refused#${r.id}`)).table));
       f.decide(t("How to resolve"), h("p", { text: t("Nothing to sign: each attempt is already recorded. If an agent tried to decide, check its instructions; repeated attempts become CAPA candidates.") }));
     } else if (code === "review_due") {
       const profile = status.review_profile || {};
-      const f = caseFrame(main, item, { title: t("Audit-trail review"), stop: ["person", t("Waits for you: review the audit trail and sign the review")], links: [[t("Open in {view}", { view: t("Trail") }), "/trail?panel=review"]] });
+      const f = caseFrame(main, item, { title: t("Audit-trail review"), stop: ["person", t("Waits for you: review the audit trail and sign the review")], links: [[t("Open in {view}", { view: t("Audit trail") }), "/evidence/trail?panel=review"]] });
       f.body(inspSection(t("Audit-trail review"), kv([[t("Last review"), status.last_review ? `${fmtTime(status.last_review)} (${ago(status.last_review)})` : t("none")],
         [t("Records"), num(status.records)], [t("Profile"), [profile.name || "?", " · ", profileWord(profile)]]]), profileNotes(profile, status.test_mode)));
       if (notice) { f.decide(t("Decided"), recordedBlock(notice)); return; }
@@ -984,9 +1167,15 @@ const CASES = {
         test_mode: [t("Waits for a fix in trail.toml"), [t("Remove the line test_tsa = true from the [anchor] section of trail.toml.")]],
         review_params: [t("Waits for a fix in trail.toml"), [t("Check the [review] section of trail.toml and remove the values you did not set.")]],
       }[code] || [t("Waits for a fix"), [t("See the Health view for details.")]];
-      const f = caseFrame(main, item, { title: t("Trail"), stop: ["fix", fixes[0]], links: [[t("Health"), "/health"]] });
+      const f = caseFrame(main, item, { title: t("Trail"), stop: ["fix", fixes[0]], links: [[t("Settings"), "/settings"]] });
       f.body(code === "review_params" || code === "test_mode" ? inspSection(t("Review parameters"), profileNotes(status.review_profile, status.test_mode)) : integrity());
-      f.decide(t("How to resolve"), resolveSteps([fixes[1]]));
+      // the one fix as a button where the app can do it; the command stays beside it
+      const step = { trail_missing: null, writer_down: "writer", spooled: "spool" }[code];
+      const canDo = S.mode && S.mode.decisions && (code === "trail_missing" || (step && S.setup && (S.setup.checks || []).some((c) => c.id === step && c.can_apply)));
+      f.decide(t("How to resolve"), canDo ? h("div", { class: "actions fix-first" }, h("button", { class: "btn primary", type: "button",
+        text: code === "trail_missing" ? t("Open the setup") : t(FIX_WORDS[step][0]),
+        onclick: async (e) => { if (!step) { go("/welcome"); return; } e.target.disabled = true; await applyStep(step); route(); } })) : null,
+        resolveSteps([fixes[1]]));
     }
   },
 
@@ -995,7 +1184,7 @@ const CASES = {
     const subject = rest.join(":");
     const q = data.qualifications.find((x) => x.subject_id === subject);
     const f = caseFrame(main, item, { title: t("Qualification of {subject}", { subject }), stop: ["fix", t("Waits for requalification")],
-      links: [[t("Open in {view}", { view: t("Qualifications") }), "/qualifications"]] });
+      links: [[t("Open in {view}", { view: t("Qualifications") }), "/evidence/qualifications"]] });
     if (q) f.body(inspSection(t("Qualification"), stWord(q.state), kv([[t("Kind"), codeWord("validate.kind.", q.kind)], [t("Decision"), t(q.decision)], [t("Conclusion"), codeWord("validate.conclusion.", q.conclusion)],
       [t("Valid until"), fmtTime(q.valid_until)], [t("Approved by"), `${q.approver_name || ""} ${q.approver || ""}`], [t("Triggers"), triggerWords(q.triggers) || t("none recorded")], [t("Record"), h("code", { text: q.record })]])));
     f.decide(t("How to resolve"), resolveSteps([[t("Run the validation again under the locked protocol and qualify the new run, in your own terminal:"),
@@ -1146,6 +1335,13 @@ async function renderChange(main, { project, planId, item, notice, done, fresh }
 function observedText(o) {
   return [o.via || "?", o.harness, (o.process_chain || []).join(" ← "), o.chain_status ? `(${o.chain_status})` : null].filter(Boolean).join(" · ");
 }
+// The short summary of a change for the signing sheet: gate, checks, reviews.
+function releaseSummary(p) {
+  const fresh = (p.receipts || []).filter((r) => r.state === "ok").length;
+  const reviews = (p.review_records || []).filter((r) => r.counts).length;
+  return [`${t("Gate")} ${p.decision || "–"}`, (p.receipts || []).length ? t("{n} of {total} checks fresh", { n: fresh, total: p.receipts.length }) : null,
+    t("reviews that count: {n}", { n: reviews })].filter(Boolean).join(", ");
+}
 function releaseSection(step, d, p, { onDone, notice }) {
   const release = p.release;
   const fin = p.finish_record || {};
@@ -1197,10 +1393,11 @@ function releaseSection(step, d, p, { onDone, notice }) {
       title: t("Sign released"),
       actions: [{ id: "release", label: t("Sign released"), meaning: "released", button: t("Sign and release the change"),
         consequence: t("You sign the finished change as released. The signature is bound to its change.finish record and that record's hash; the gate is checked again before anything is signed.") }],
-      signers, subject: { label: !fin.commit ? t("change {plan}, finish record {record}, head before the change {before}, HEAD {head}", { plan: p.plan_id, record: p.finish, before: fin.head || "–", head: p.head || "–" })
+      signers, subject: { summary: releaseSummary(p), label: !fin.commit ? t("change {plan}, finish record {record}, head before the change {before}, HEAD {head}", { plan: p.plan_id, record: p.finish, before: fin.head || "–", head: p.head || "–" })
         : sameHead ? t("change {plan}, finish record {record}, commit {commit}", { plan: p.plan_id, record: p.finish, commit: fin.commit })
           : t("change {plan}, finish record {record}, commit {commit}, HEAD {head}", { plan: p.plan_id, record: p.finish, commit: fin.commit, head: p.head || "–" }), hash: release.sha256 },
       noSigners: pol.roles.length ? t("No registered signer may sign this release: [policy.released] allows the roles {list}.", { list: pol.roles.join(", ") }) : null,
+      command: () => `aqt signoff sign --record ${sq(p.finish)} --meaning released --reason "…"`,
       onDone, submit: (x, values) => post(changeApi(d.project, p.plan_id, "/release"), { ...values, record: p.finish, sha256: release.sha256, path: p.path }),
     }));
   } else if (release.state !== "released") parts.push(h("p", { class: "small muted", text: t("Sign released is offered when the gate is GO.") }));
@@ -1363,6 +1560,7 @@ function reviewPanel(sheet, { onDone } = {}) {
     noSigners: (sheet.signers || []).length ? t("Every registered signer acted in this period. The review needs an independent person who did not act in it.") : null,
     subject: { label: t("worksheet {id}, seq {from}–{to}", { id: sheet.id, from: scope.from_seq, to: scope.to_seq }), hash: scope.head },
     note: t("Independence: people who acted in the period may not sign its review."),
+    command: () => `aqt trail review sign ${sq(sheet.path)} --reviewer <${t("your ID")}> ${Object.entries(dispositions).map(([k, el]) => `--disposition ${sq(`${k}=${el.value}`)}`).join(" ") || "--disposition all=ok"} --reason "…"`,
     submit: (a, values) => post(`/api/trail/review/${encodeURIComponent(sheet.id)}/sign`, {
       ...values, head: scope.head, worksheet_sha256: sheet.worksheet_sha256,
       dispositions: Object.fromEntries(Object.entries(dispositions).map(([k, el]) => [k, el.value])),
@@ -1490,6 +1688,7 @@ function trustForm(domain, signers) {
     decisionPanel({
       actions: [{ id: "trust", label: t("Trust source"), meaning: "approved", button: t("Sign and trust") }],
       signers, fields, subject: { label },
+      command: () => `aqt quarantine trust-source ${sq(domainInput.value.trim() || "<domain>")} --expires ${sq(expires.value || "<YYYY-MM-DD>")}${subdomains.checked ? " --subdomains" : ""} --reason "…"`,
       submit: (a, values) => post("/api/quarantine/sources/trust", { ...values, domain: domainInput.value.trim(), expires: expires.value, subdomains: subdomains.checked }),
     }));
 }
@@ -1501,6 +1700,7 @@ function openSource(s, signers) {
     s.active ? decisionPanel({
       actions: [{ id: "revoke", label: t("Revoke trust"), meaning: "rejected", button: t("Sign and revoke trust"), danger: true }],
       signers, subject: { label: t("trust in {domain} ({record})", { domain: s.domain, record: s.record }) },
+      command: () => `aqt quarantine trust-source ${sq(s.domain)} --revoke --reason "…"`,
       submit: (a, values) => post("/api/quarantine/sources/revoke", { ...values, domain: s.domain, record: s.record }),
     }) : null);
 }
@@ -1543,8 +1743,10 @@ function quarantineParts(c, { full, open, onDone }) {
     consequence: c.reached_model ? t("Records the case as a threat. The agent already received the content; that cannot be taken back.")
       : t("The content stays withheld from the agent, and the case is recorded as a threat.") });
   const panel = actions.length ? decisionPanel({
-    actions, signers: c.signers, subject: { label: t("case {id}, content", { id: c.case_id }), hash: c.content_sha256 },
+    actions, signers: c.signers, subject: { label: t("case {id}, content", { id: c.case_id }), hash: c.content_sha256,
+      summary: [c.domain || c.tool || null, t("score {n} ppm", { n: num(c.score_ppm) })].filter(Boolean).join(", ") },
     note: c.state === "threat" ? t("This case was declared a threat; releasing it overrules that decision.") : null, onDone,
+    command: (a) => a.id === "release" ? `aqt quarantine release ${sq(c.case_id)}${c.state === "threat" ? " --overrule-threat" : ""} --reason "…"` : `aqt quarantine declare-threat ${sq(c.case_id)} --reason "…"`,
     submit: (a, values) => post(`/api/quarantine/${encodeURIComponent(c.case_id)}/${a.id}`, { ...values, content_sha256: c.content_sha256, overrule_threat: c.state === "threat" }),
   }) : null;
   return {
@@ -1553,8 +1755,8 @@ function quarantineParts(c, { full, open, onDone }) {
         [t("Detectors"), c.detectors.map((d) => `${d.id} ${d.version}: ${num(d.score_ppm)} ppm`).join("; ") || "–"],
         [t("Thresholds"), `${c.thresholds.version || "?"} ${c.thresholds.calibrated ? t("calibrated") : t("NOT calibrated (defaults)")}`],
         [t("Opened"), fmtTime(c.opened)], [t("Reached model"), c.reached_model ? t("yes") : t("no")], [t("Content"), hashButton(c.content_sha256)], [t("Record"), h("code", { text: c.opened_record })]]),
-      c.domain ? h("p", { class: "small" }, h("a", { href: `/quarantine?tab=sources&trust=${encodeURIComponent(c.domain)}`, onclick: (e) => { e.preventDefault(); go(`/quarantine?tab=sources&trust=${encodeURIComponent(c.domain)}`); }, text: t("Trust {domain} for later content…", { domain: c.domain }) })) : null),
-    evidence: c.evidence.length ? inspSection(t("Evidence"), h("ul", { class: "evidence-list" }, c.evidence.map((e) => h("li", {}, h("strong", { text: e.label }), ` (${e.detector}): ${detectorReason(e.reason)} `, h("code", { text: e.excerpt }))))) : null,
+      c.domain ? h("p", { class: "small" }, link(t("Trust {domain} for later content…", { domain: c.domain }), `/evidence/quarantine?tab=sources&trust=${encodeURIComponent(c.domain)}`)) : null),
+    evidence: c.evidence.length ? inspSection(t("Detector findings"), h("ul", { class: "evidence-list" }, c.evidence.map((e) => h("li", {}, h("strong", { text: e.label }), ` (${e.detector}): ${detectorReason(e.reason)} `, h("code", { text: e.excerpt }))))) : null,
     content: inspSection(t("Content"), content),
     journal: c.journal_problems && c.journal_problems.length ? inspSection(t("Journal lines ignored for this case"),
       c.journal_problems.map((p) => h("p", { class: "small flag break", text: p }))) : null,
@@ -1597,7 +1799,7 @@ async function renderChanges(main) {
     return;
   }
   if (!data.installed["aqt-change"]) { put(main, empty(t("aqt-change is not installed"), installOf("aqt-change"))); return; }
-  if (!data.projects.length) { put(main, empty(t("No projects configured"), t("Add repository roots to ~/.config/aqt/ui.toml:") + '  [changes] projects = ["~/code/project"]')); return; }
+  if (!data.projects.length) { put(main, h("div", { class: "empty" }, h("strong", { text: t("No project connected yet") }), h("span", { text: t("Changes appear here once a project is connected.") }), " ", link(t("Connect a project…"), "/projects"))); return; }
   for (const project of data.projects) {
     const box = section(h("span", { class: "path", text: project.root }));
     if (project.error) put(box, h("div", { class: "error-box", text: project.error }));
@@ -1653,6 +1855,7 @@ function gateParts(p, root, signers, { onDone }) {
       actions: [{ id: "approve", label: t("Approve plan"), meaning: "approved", button: t("Sign and approve plan"),
         consequence: t("You sign this version of the plan. The agent works within its scope; a later change of its scope or checks makes the approval stale.") }],
       signers, subject: { label: t("plan {plan}, version {record}", { plan: p.plan_id, record: a.record }), hash: a.sha256 },
+      command: () => `aqt signoff sign --record ${sq(a.record)} --meaning approved --reason "…"`,
       submit: (x, values) => post("/api/changes/plans/approve", { ...values, root, plan_id: p.plan_id, record: a.record, sha256: a.sha256 }),
     }) : null,
   };
@@ -1680,6 +1883,7 @@ function actionParts(a, signers, { onDone }) {
       { id: "reject", label: t("Reject"), meaning: "rejected", button: t("Sign and reject"), danger: true,
         consequence: t("This version will not run. The agent has to prepare a new version.") }],
       signers, subject: { label: t("action {id} v{version}", { id: a.id, version: a.version }), hash: a.action_sha256 }, onDone,
+      command: (choice) => `aqt signoff ${choice.id} ${sq(a.id)} --hash ${sq(a.action_sha256)} --reason "…"`,
       submit: (choice, values) => post(`/api/changes/actions/${encodeURIComponent(a.id)}/${choice.id}`, { ...values, expected_hash: a.action_sha256 }),
     }) : null,
   };
@@ -1762,6 +1966,7 @@ function candidateParts(x, signers, { onDone }) {
       { id: "dismiss", label: t("Dismiss"), meaning: "dismissed", button: t("Dismiss candidate"), danger: true,
         consequence: t("Closes the candidate with your reason; no deviation is opened.") }],
       signers, subject: { label: t("candidate {id}", { id: x.candidate_id }) }, note: t(CAPA_NOTE), onDone,
+      command: (a) => `aqt capa candidate ${a.id} ${sq(x.candidate_id)} --reason "…"`,
       submit: (a, values) => post(`/api/capa/candidates/${encodeURIComponent(x.candidate_id)}/${a.id}`, values),
     }),
   };
@@ -1775,6 +1980,7 @@ async function openDeviation(devId) {
     signers: d.signers.filter((s) => s.id !== a.implementer),
     noSigners: t("Only the person who implemented the action is registered; approval needs another person."),
     subject: { label: t("implementation of {id} ({path})", { id: a.action_id, path: a.path }), hash: a.implemented_hash },
+    command: () => `aqt capa action approve ${sq(a.action_id)} --reason "…"`,
     note: t("Signs the implementation record (aqt-signoff, meaning approved). The effectiveness check starts with this approval."),
     submit: (x, values) => post(`/api/capa/actions/${encodeURIComponent(a.action_id)}/approve`, { ...values, expected_hash: a.implemented_hash }),
   }));
@@ -1786,6 +1992,7 @@ async function openDeviation(devId) {
       title: t("Close the deviation"),
       actions: [{ id: "close", label: t("Close"), meaning: "closed", button: t("Close deviation") }],
       signers: d.signers, fields, subject: { label: t("deviation {id} as of record {record}", { id: dev.dev_id, record: d.version || "–" }) },
+      command: () => `aqt capa close ${sq(dev.dev_id)}${noAction.checked ? " --no-action" : ""} --reason "…"`,
       note: t("Closing needs a recorded investigation and, with actions, a passed effectiveness check. ") + t(CAPA_NOTE),
       submit: (x, values) => post(`/api/capa/${encodeURIComponent(dev.dev_id)}/close`, { ...values, version: d.version, no_action: noAction.checked }),
     });
@@ -1827,8 +2034,536 @@ async function renderQualifications(main) {
     h("p", { class: "small muted", text: t("Requalification triggers are shown as recorded; aqt-validate check in a terminal evaluates and records new ones.") })));
 }
 
-const RENDER = { home: renderHome, health: renderHealth, trail: renderTrail, quarantine: renderQuarantine, changes: renderChanges,
-  signatures: renderSignatures, capa: renderCapa, qualifications: renderQualifications };
+// ---- Evidence: the records of every tool, one section each --------------------------------------------
+const EVIDENCE_RENDER = { trail: renderTrail, signatures: renderSignatures, quarantine: renderQuarantine, capa: renderCapa,
+  qualifications: renderQualifications, export: renderExport };
+function evidenceTabs(part) {
+  return h("nav", { class: "area-tabs", "aria-label": t("Evidence") }, EVIDENCE.map((x) => {
+    const g = x.tip ? gloss(x.tip) : null;
+    return h("a", { href: `/evidence/${x.id}`, "aria-current": x === part ? "page" : null, title: g ? `${g.term}: ${g.tip}` : null,
+      onclick: (e) => { e.preventDefault(); go(`/evidence/${x.id}`); } }, t(x.label));
+  }));
+}
+async function renderEvidence(main, part) {
+  await EVIDENCE_RENDER[part.id](main);
+  main.prepend(evidenceTabs(part));
+}
+async function renderExport(main) {
+  clear(main);
+  put(main,
+    section(t("Audit trail bundle"), h("p", { class: "lede", text: t("A verification bundle: the trail, checkpoints, public keys and instructions, for an auditor to check offline. Creating it records nothing.") }),
+      downloadButton("/api/trail/export", "aqt-trail-bundle.tar.gz", t("Download bundle (.tar.gz)"), "btn primary")),
+    section(t("Signature manifests"), h("p", { class: "lede", text: t("Every signature can be printed as a manifest with printed name, meaning, time and reason. Verify a file, record or hash under Signatures, or open a change, then download its manifest.") }),
+      link(t("Open Signatures"), "/evidence/signatures")),
+    S.installed.aqt_capa ? section(t("Deviations and CAPA"), h("p", { class: "lede", text: t("The trend summary of deviations and corrective actions, as Markdown.") }),
+      downloadButton("/api/capa/trends", "capa-trends.md", t("Download the trend summary (Markdown)"))) : null);
+}
+
+// ---- Settings: is everything running, who am I, language, the aqt command, the glossary ----------------
+// The checks of aqt status in everyday words (the explanation beside them is the tool's own sentence).
+const CHECK_WORDS = { packages: "Toolkit packages", command: "The aqt command", "trail.init": "Audit trail", service: "Background service", writer: "Trail writer",
+  spool: "Waiting records", sink: "Where records go", signer: "Your signing identity", "signoff.config": "Signing settings",
+  "trail.config": "Review settings", "trail.intact": "Trail integrity", vectors: "Self-test", egress: "Outbound checkpoint (optional)" };
+// The fix of each step the app can apply: [button, what it does].
+const FIX_WORDS = {
+  "trail.init": ["Create the trail", "Creates the trail folder and its service key. Nothing else changes."],
+  service: ["Install and start the service", "Writes a user service that starts the writer at login, and starts it now."],
+  writer: ["Restart the writer", "Starts the background service that writes the trail."],
+  spool: ["Move the records into the trail", "Appends the records that waited in the spool, after a gap marker."],
+  "signoff.config": ["Write the signing settings", "Writes signoff.toml with your default signer and time zone. An existing file is never replaced."],
+  "trail.config": ["Write the review settings", "Writes trail.toml with your time zone and working hours for the review. An existing file is never replaced."],
+};
+const RESULT_KIND = { ok: "pass", warn: "warn", fail: "fail", skip: "neutral" };
+const RESULT_WORDS = { ok: "in order", warn: "needs a look", fail: "needs a fix", skip: "not used here" };
+function checkRow(row, { words, fixes, onFix } = {}) {
+  const title = t((words || CHECK_WORDS)[row.id] || row.id);
+  const problem = row.result === "warn" || row.result === "fail";
+  const fix = (fixes || FIX_WORDS)[row.id];
+  const out = h("div", { "aria-live": "polite" });
+  let action = null;
+  if (problem && row.can_apply && fix && S.mode && S.mode.decisions && onFix) {
+    const button = h("button", { class: "btn small primary", type: "button", text: t(fix[0]) });
+    button.addEventListener("click", async () => { button.disabled = true; await onFix(row, out); button.disabled = false; });
+    action = h("div", { class: "fix" }, button, h("span", { class: "small muted", text: t(fix[1]) }));
+  } else if (problem && row.id === "signer" && S.mode && S.mode.decisions && !(S.setup && S.setup.signer)) {
+    action = h("div", { class: "fix" }, h("button", { class: "btn small primary", type: "button", text: t("Set up your identity"), onclick: () => go("/welcome") }));
+  } else if (problem && row.fix) {        // a command to run, or advice in words
+    action = /^(aqt|aqt-[a-z]+|systemctl|journalctl|git|uv|pip|pipx|cd|echo)\b/.test(row.fix)
+      ? h("div", { class: "fix" }, h("span", { class: "small muted", text: t("In a terminal:") }), commandLine(row.fix))
+      : h("p", { class: "small" }, h("strong", { text: `${t("What to do:")} ` }), row.fix);
+  }
+  return h("li", { class: `check-row ${row.result}`, id: `check-${row.id}` },
+    st(RESULT_KIND[row.result] || "neutral", t(RESULT_WORDS[row.result] || row.result)),
+    h("div", { class: "check-what" }, h("strong", { text: title }), h("span", { class: "small muted break", text: row.explanation }), action, out));
+}
+async function renderSettings(main) {
+  const data = S.overview || (await refresh());
+  let setup = null;
+  let problem = null;
+  try { setup = await loadSetup(); } catch (error) { problem = error; }
+  clear(main);
+  const page = h("div", { class: "settings" });
+  put(main, page);
+  // 1. is everything running? aqt status, each problem with its one fix
+  if (setup) {
+    const rows = setup.checks.slice().sort((a, b) => ({ fail: 0, warn: 1, ok: 2, skip: 3 })[a.result] - ({ fail: 0, warn: 1, ok: 2, skip: 3 })[b.result]);
+    const open = rows.filter((r) => r.result === "fail" || r.result === "warn").length;
+    const onFix = async (row, out) => {
+      const { data: answer } = await applyStep(row.id);
+      if (!answer.ok) put(clear(out), h("div", { class: "result refused", text: `${t("Not done:")} ${answer.error || (answer.check && answer.check.explanation) || answer.message || ""}` }));
+    };
+    const problems = rows.filter((r) => r.result === "fail" || r.result === "warn");
+    const fine = rows.filter((r) => !problems.includes(r));
+    put(page, section(t("Is everything running?"),
+      h("p", { class: "lede" }, open ? t("{n} thing(s) need a look. Each has its fix.", { n: open }) : t("Everything in order."), " ",
+        h("span", { class: "small muted" }, t("The same list as"), " ", h("code", { text: "aqt status" }), ".")),
+      problems.length ? h("ul", { class: "checks" }, problems.map((row) => checkRow(row, { onFix }))) : null,
+      h("details", { class: "all-checks", open: !!location.hash.startsWith("#check-") && !problems.some((r) => `#check-${r.id}` === location.hash) },
+        h("summary", { text: t("Show the {n} checks that are in order", { n: fine.length }) }),
+        h("ul", { class: "checks" }, fine.map((row) => checkRow(row, { onFix }))))));
+  } else put(page, section(t("Is everything running?"), errorBox(problem)));
+  // 2. who you are
+  put(page, await identitySection(setup));
+  // 3. the audit trail and the tools
+  put(page, healthSections(data));
+  // 4. language
+  const radios = h("div", { class: "radio-row", role: "radiogroup", "aria-label": t("Language") }, [["en", "English"], ["de", "Deutsch"]].map(([value, words]) =>
+    h("label", { class: "radio" }, h("input", { type: "radio", name: "settings-lang", value, checked: LANG === value, onchange: () => setLang(value) }), words)));
+  put(page, section(t("Language"), radios, h("p", { class: "small muted", text: t("Labels change at once. Records and the tools' own messages keep the words they were written in.") })));
+  // 5. the app's own settings (desktop app only) and the aqt command
+  put(page, await appSection());
+  put(page, section(t("Use the aqt command in a terminal"), commandSection(setup)));
+  // 6. glossary
+  put(page, section(t("Words used here"), glossaryList()));
+}
+async function identitySection(setup) {
+  const box = section(t("Who you are"));
+  let rows = [];
+  try { rows = S.installed.aqt_signoff ? (await api("/api/signatures")).signers.filter((x) => x.active_key) : []; } catch (e) { rows = []; }
+  if (!rows.length) {
+    put(box, h("p", { class: "lede", text: t("No signing identity is set up yet. You need one to sign decisions.") }),
+      S.mode && S.mode.decisions ? h("button", { class: "btn primary", type: "button", text: t("Set up your identity"), onclick: () => go("/welcome") }) : null);
+    return box;
+  }
+  put(box, h("ul", { class: "people" }, rows.map((x) => h("li", {}, h("strong", { text: x.name }), " ", h("code", { text: x.id }),
+    h("span", { class: "muted", text: ` · ${x.role}` }), h("span", { class: "small muted break", text: ` · ${t("key")} ${x.active_key}` })))),
+  h("p", { class: "small muted" }, t("Your ID stands in every signature you make and is never reused."), " ", t("Another person enrols in their own terminal:"), " ", h("code", { text: "aqt signoff init" })));
+  return box;
+}
+function commandSection(setup) {
+  const where = (setup && setup.command) || {};
+  return [h("p", { class: "lede", text: t("Everything the app does, the aqt command does too, for agents, scripts and anyone who likes the terminal. Both write to the same audit trail.") }),
+    kv([[t("On your PATH"), where.on_path ? h("code", { text: where.on_path }) : t("not yet")], where.this ? [t("This app's command"), h("code", { text: where.this })] : null]),
+    commandLine("aqt status"), commandLine("aqt project init <folder>"), commandLine("aqt --help")];
+}
+// ---- the app's own settings, kept by the desktop shell (desktop_settings): start at login, the tray, and in
+// an AppImage the aqt command and aqt:// links. They act at once and can be switched back.
+async function desktopSettings(change) {
+  return APP.invoke("desktop_settings", change ? { change } : {});
+}
+function appSettingRows(d, { keys, onChange }) {
+  const can = !!(S.mode && S.mode.decisions);
+  const out = h("div", { "aria-live": "polite" });
+  const fail = (error) => put(clear(out), h("div", { class: "result refused", text: String(error.message || error) }));
+  const rows = [];
+  const words = { autostart: [t("Start in the background at login"), null],
+    close_to_tray: [t("Keep running in the tray when the window is closed"), d.tray ? null : t("No tray icon shows on this desktop, so closing the window quits the app.")] };
+  for (const key of keys.filter((k) => words[k])) {
+    const input = h("input", { type: "checkbox", id: `app-${key}`, checked: !!d[key], disabled: !can });
+    input.addEventListener("change", async () => {
+      input.disabled = true;
+      try { const fresh = await desktopSettings({ [key]: input.checked }); input.checked = !!fresh[key]; announce(t("Saved")); if (onChange) onChange(fresh); }
+      catch (error) { input.checked = !input.checked; fail(error); }
+      finally { input.disabled = !can; }
+    });
+    rows.push(h("div", { class: "check" }, input, h("label", { for: input.id }, words[key][0], words[key][1] ? h("span", { class: "small muted", text: ` ${words[key][1]}` }) : null)));
+  }
+  // AppImage only: there is something to install
+  const install = (key, done, button) => {
+    if (!keys.includes(key) || !d.appimage) return null;
+    if (d[key]) return h("p", { class: "small" }, st("pass", done));
+    const b = h("button", { class: "btn small", type: "button", text: button, disabled: !can });
+    b.addEventListener("click", async () => { b.disabled = true; try { const fresh = await desktopSettings({ [key]: true }); put(b.parentNode, st(fresh[key] ? "pass" : "warn", fresh[key] ? done : t("Not done:"))); b.remove(); } catch (error) { b.disabled = false; fail(error); } });
+    return h("p", { class: "small" }, b);
+  };
+  rows.push(install("aqt_command", t("The aqt command is installed in ~/.local/bin."), t("Install the aqt command")),
+    install("links", t("aqt:// links open this app."), t("Register aqt:// links")));
+  return [...rows, can ? null : h("p", { class: "small muted", text: t("Read-only: these settings cannot be changed here.") }), out];
+}
+async function appSection() {
+  if (!APP) return null;
+  let d;
+  try { d = await desktopSettings(); } catch (error) { return section(t("This app"), errorBox(error)); }
+  return section(t("This app"), appSettingRows(d, { keys: ["autostart", "close_to_tray", "aqt_command", "links"] }));
+}
+function glossaryList() {
+  return h("dl", { class: "glossary" }, Object.keys(GLOSSARY).map((key) => {
+    const g = gloss(key);
+    return [h("dt", {}, g.word, g.term.toLowerCase() !== g.word.toLowerCase() ? h("span", { class: "gmp", text: ` (${g.term})` }) : null), h("dd", { text: g.tip })];
+  }));
+}
+
+// ---- Projects: the folders AQT watches ------------------------------------------------------------------
+const PROJECT_WORDS = { project: "Git repository", "claude.hooks": "Agent hooks", "claude.deny": "Blocked decision commands",
+  instructions: "Agent instructions", "change.settings": "Change control settings", "ui.project": "Listed in AQT",
+  "git.hook": "Commit message check (optional)", committed: "Committed to git" };
+const PROJECT_DOES = {
+  "claude.hooks": "Claude Code reports each step of the agent to the audit trail, and fetched web pages pass the quarantine.",
+  "claude.deny": "The agent may not run AQT's decision commands or edit AQT's folders.",
+  instructions: "A short block in CLAUDE.md or AGENTS.md tells the agent how to work under AQT.",
+  "change.settings": "A plan needs your signed approval, and checks count only when the audit trail confirms them.",
+  "ui.project": "AQT shows this project's plans and changes. This is what connects the folder.",
+  "git.hook": "Git checks the AQT lines in commit messages.",
+};
+async function renderProjects(main) {
+  const data = await api("/api/projects");
+  clear(main);
+  const page = h("div", { class: "projects" });
+  const flow = h("div", { class: "connect-box" });
+  const start = h("button", { class: "btn primary", type: "button", text: t("Connect a project…"), disabled: !(S.mode && S.mode.decisions) });
+  start.addEventListener("click", () => { start.hidden = true; connectFlow(flow, { onDone: () => route(), onLater: () => { clear(flow); start.hidden = false; start.focus(); } }); });
+  put(main, page);
+  put(page, h("header", { class: "area-head" }, h("p", { class: "lede", text: t("The folders AQT watches. Agents that work in them report to AQT through hooks; their changes appear under Changes.") }),
+    S.mode && S.mode.decisions ? start : h("p", { class: "small muted", text: t("Read-only: connecting a project is not possible here.") })), flow);
+  if (!data.projects.length) put(page, empty(t("No project connected yet"), t("Connect a project folder. AQT shows what it will add, file by file, before anything is written.")));
+  for (const project of data.projects) {
+    const problems = project.checks.filter((c) => c.result === "warn" || c.result === "fail");
+    const head = h("h2", {}, h("span", { class: "path", text: project.root }), " ",
+      project.missing ? st("fail", t("folder not found")) : problems.length ? st(problems.some((c) => c.result === "fail") ? "fail" : "warn", t("{n} thing(s) to do", { n: problems.length })) : st("pass", t("set up")));
+    const box = h("section", { class: "section project" }, head);
+    if (project.missing) put(box, h("p", { class: "muted", text: project.error || t("The folder does not exist any more.") }));
+    else {
+      put(box, h("ul", { class: "checks compact" }, project.checks.filter((c) => c.result !== "skip").map((row) => checkRow(row, { words: PROJECT_WORDS, fixes: {} }))));
+      if (problems.some((c) => c.can_apply) && S.mode && S.mode.decisions) {
+        const again = h("div", { class: "connect-box" });
+        put(box, h("div", { class: "actions" }, h("button", { class: "btn small", type: "button", text: t("Add what is missing…"),
+          onclick: (e) => { e.target.hidden = true; connectFlow(again, { path: project.root, onDone: () => route(), onLater: () => { clear(again); e.target.hidden = false; } }); } })), again);
+      }
+    }
+    put(page, box);
+  }
+  put(page, h("p", { class: "small muted section", text: t("Disconnecting a project is not available yet: remove its line from [changes] projects in {file}.", { file: data.config }) }));
+}
+
+// The connect flow (Projects and the first-run setup): choose a folder, see each change per file, leave out
+// what you do not want, connect. Every changed file is backed up first; nothing is committed.
+function connectFlow(box, { path, onDone, onLater, laterLabel }) {
+  clear(box);
+  const out = h("div", { class: "preview" });
+  const pathInput = h("input", { id: "project-path", type: "text", class: "grow", spellcheck: "false", placeholder: "/home/you/code/project", value: path || "" });
+  const show = async (value) => {
+    clear(out);
+    if (!value) return;
+    pathInput.value = value;
+    put(out, h("p", { class: "muted", text: t("Looking at the folder…") }));
+    try { previewList(out, await api(`/api/projects/preview?path=${encodeURIComponent(value)}`), { onDone, onLater, laterLabel }); }
+    catch (error) { put(clear(out), errorBox(error)); }
+  };
+  const pick = APP ? h("button", { class: "btn primary", type: "button", text: t("Choose folder…"), onclick: async () => {
+    let picked = null;
+    try { picked = await APP.invoke("pick_folder"); } catch (error) { put(clear(out), h("div", { class: "result refused", text: String(error) })); return; }
+    if (picked) show(picked);
+  } }) : null;
+  const look = h("button", { class: `btn ${APP ? "" : "primary"}`, type: "button", text: t("Show what changes"), onclick: () => show(pathInput.value.trim()) });
+  pathInput.addEventListener("keydown", (e) => { if (e.key === "Enter") show(pathInput.value.trim()); });
+  put(box, h("div", { class: "folder-row" }, pick,
+    h("label", { for: "project-path", class: APP ? "or" : "", text: APP ? t("or type the path") : t("Project folder (full path)") }), pathInput, look,
+    onLater ? h("button", { class: "btn ghost", type: "button", text: laterLabel || t("Later"), onclick: onLater }) : null), out);
+  if (path) show(path);
+  else (pick || pathInput).focus();
+}
+function previewList(out, data, { onDone, onLater, laterLabel }) {
+  clear(out);
+  const boxes = {};
+  const items = data.items.map((item) => {
+    const todo = item.can_apply;
+    const locked = item.id === "ui.project";
+    const box = h("input", { type: "checkbox", id: `pi-${item.id}`, checked: todo, disabled: !todo || locked });
+    if (todo) boxes[item.id] = box;
+    const state = todo ? null : item.result === "ok" ? st("pass", t("already in place")) : item.result === "skip" ? st("neutral", t("not used here")) : st("warn", t("yours to do"));
+    return h("li", { class: `item${todo ? "" : " done"}` }, box,
+      h("div", {}, h("label", { for: box.id }, h("strong", { text: t(PROJECT_WORDS[item.id] || item.id) }), " ", item.file ? h("code", { class: "muted", text: item.file }) : null, " ", state),
+        h("p", { class: "small", text: t(PROJECT_DOES[item.id] || "") }),
+        !todo && item.result !== "ok" && item.result !== "skip" ? h("p", { class: "small muted break", text: item.explanation }) : null,
+        locked && todo ? h("p", { class: "small muted", text: t("Always part of connecting.") }) : null,
+        todo && item.backup ? h("p", { class: "small muted", text: t("The file exists: a backup copy is saved first.") }) : null,
+        todo && item.preview ? h("details", {}, h("summary", { text: t("Show what is added") }), h("pre", { class: "json", text: item.preview })) : null));
+  });
+  const result = h("div", { "aria-live": "polite" });
+  const connect = h("button", { class: "btn primary", type: "button", text: data.connected && !Object.keys(boxes).length ? t("Nothing to add") : t("Connect project"), disabled: !Object.keys(boxes).length });
+  connect.addEventListener("click", async () => {
+    const chosen = Object.entries(boxes).filter(([, el]) => el.checked).map(([id]) => id);
+    if (!chosen.length) { put(clear(result), h("div", { class: "result stale", text: t("Choose at least one item.") })); return; }
+    connect.disabled = true;
+    const { status, data: done } = await post("/api/projects/connect", { path: data.root, items: chosen });
+    connect.disabled = false;
+    if (status !== 200) { put(clear(result), h("div", { class: "result refused", text: `${t("Not connected:")} ${refusalWords(done.reason_code, done.reason_text) || ""} ${msgOf(done, "message")}` })); return; }
+    const errors = Object.entries(done.errors || {});
+    put(clear(out), h("div", { class: `result ${errors.length ? "stale" : "ok"}`, role: "status" },
+      h("p", { class: "recorded-title" }, st(errors.length ? "warn" : "pass", errors.length ? t("Connected with problems") : t("Connected: {root}", { root: done.root }))),
+      errors.length ? h("ul", { class: "evidence-list" }, errors.map(([id, error]) => h("li", {}, h("strong", { text: t(PROJECT_WORDS[id] || id) }), `: ${error}`))) : null,
+      done.said.length ? h("ul", { class: "evidence-list small" }, done.said.map((line) => h("li", { text: line }))) : null,
+      h("p", { class: "small muted", text: t("Backups: {dir}. Nothing was committed; commit the new files when you are ready.", { dir: done.backup_dir }) })));
+    announce(errors.length ? t("Connected with problems") : t("Connected: {root}", { root: done.root }));
+    await refresh().catch(() => null);
+    if (onDone) put(out, h("div", { class: "actions" }, h("button", { class: "btn primary", type: "button", text: t("Continue"), onclick: () => onDone(done) })));
+  });
+  put(out, h("p", { class: "lede" }, t("What connecting adds to"), " ", h("code", { text: data.root }), data.git ? "" : ` (${t("not a git repository: change control is skipped")})`),
+    h("ul", { class: "items" }, items),
+    h("p", { class: "small muted", text: t("Before a file is changed, a backup copy is saved in {dir}. Nothing is committed.", { dir: data.backup_dir }) }),
+    h("div", { class: "actions" }, connect, onLater ? h("button", { class: "btn ghost", type: "button", text: laterLabel || t("Later"), onclick: onLater }) : null), result,
+    h("details", { class: "as-command-box" }, h("summary", { text: t("Show as command") }), commandLine(`aqt project init ${sq(data.root)}`)));
+}
+
+// ---- First-run setup (/welcome): six steps ---------------------------------------------------------------
+// Welcome and language, who you are, your passphrase, the audit trail with its background writer, the first
+// project, done. Steps 2 and 3 only collect and check; the signing key is made in step 4 after the trail
+// exists (as aqt setup orders it), so its enrolment record lands in the trail. Read-only: explained, no action.
+const STEP_NAMES = ["Welcome", "Who you are", "Your passphrase", "Audit trail", "First project", "Done"];
+const W = { step: 1, reached: 1, name: "", role: "", other: "", custom: "", customOpen: false, id: "", check: null };
+let pendingPass = "";      // the passphrase between step 3 and the signing key in step 4: page memory only
+const ROLES = [["developer", "Developer"], ["quality-manager", "Quality manager"]];
+const SUBSTEPS = [["trail.init", "Create the audit trail"], ["service", "Install the background service"], ["writer", "Start the writer"],
+  ["spool", "Move waiting records into the trail"], ["enrol", "Create your signing key"], ["signoff.config", "Save your signing settings"],
+  ["trail.config", "Save your review settings"]];
+
+async function renderWelcome(main) {
+  let setup;
+  try { setup = await loadSetup(); } catch (error) {       // e.g. aqt-cli is not installed: say how, and a way out
+    put(clear(main), h("div", { class: "onboard-wrap" }, errorBox(error), h("div", { class: "actions" },
+      h("button", { class: "btn", type: "button", text: t("Open Needs you"), onclick: () => go("/") }))));
+    return;
+  }
+  clear(main);
+  const list = h("ol", { class: "steps", "aria-label": t("Setup steps") });
+  const body = h("section", { class: "step-body", "aria-labelledby": "step-title" });
+  put(main, h("div", { class: "onboard-wrap" }, h("p", { class: "onboard-brand" }, "Agent Quality Toolkit", h("span", { class: "muted", text: ` · ${t("Set up AQT")}` })),
+    h("div", { class: "onboard" }, list, body)));
+  const readOnly = !S.mode || !S.mode.decisions;
+  const enrolled = () => !!(S.setup && S.setup.signer);
+  const doneStep = (n) => (n === 2 || n === 3 ? enrolled() || W.reached > n : n === 4 ? !(S.setup && S.setup.needed) : W.reached > n);
+  const goStep = (n) => { W.step = n; W.reached = Math.max(W.reached, n); draw(); document.getElementById("step-title")?.focus(); };
+  const title = (words) => h("h2", { id: "step-title", tabindex: "-1", text: words });
+  const nav = (...buttons) => h("div", { class: "actions step-actions" }, ...buttons);
+  const back = (n) => h("button", { class: "btn ghost", type: "button", text: t("Back"), onclick: () => goStep(n) });
+  const drawList = () => {
+    put(clear(list), STEP_NAMES.map((name, i) => {
+      const n = i + 1;
+      const state = n === W.step ? "current" : doneStep(n) ? "done" : "todo";
+      const mark = h("span", { class: "step-mark", "aria-hidden": "true", text: state === "done" ? "✓" : String(n) });
+      const words = h("span", { class: "step-name", text: t(name) });
+      const reachable = !readOnly && n <= W.reached && n !== W.step;
+      return h("li", { class: `step ${state}`, "aria-current": state === "current" ? "step" : null },
+        reachable ? h("button", { type: "button", onclick: () => goStep(n) }, mark, words) : h("span", { class: "step-static" }, mark, words),
+        state === "done" ? h("span", { class: "sr-only", text: t("done") }) : null);
+    }));
+  };
+  const steps = {
+    1: () => [title(t("Welcome")),
+      h("p", { class: "lede", text: t("AQT watches what your AI coding agents do and keeps a tamper-evident record of it.") }),
+      h("p", { text: t("When something needs a person (a held web page, a plan to approve, a change to release), it waits for you. You decide here and sign each decision with your passphrase.") }),
+      h("p", { text: t("Setting up takes about five minutes: who you are, your passphrase, the audit trail and your first project. Nothing leaves this computer.") }),
+      h("fieldset", { class: "radio-row" }, h("legend", { text: t("Language") }), [["en", "English"], ["de", "Deutsch"]].map(([value, words]) =>
+        h("label", { class: "radio" }, h("input", { type: "radio", name: "ob-lang", value, checked: LANG === value, onchange: () => setLang(value) }), words))),
+      nav(h("button", { class: "btn primary", type: "button", text: t("Set up"), onclick: () => goStep(enrolled() ? 4 : 2) }),
+        h("button", { class: "btn ghost", type: "button", text: t("Set up later"), onclick: () => go("/") }))],
+    2: () => (enrolled() ? [title(t("Who you are")), h("p", { class: "lede", text: t("You already have a signing identity: {ids}.", { ids: S.setup.signers.join(", ") }) }),
+      nav(h("button", { class: "btn primary", type: "button", text: t("Continue"), onclick: () => goStep(4) }), back(1))] : whoStep()),
+    3: () => (enrolled() ? [title(t("Your passphrase")), h("p", { class: "lede", text: t("Your signing key exists already; its passphrase stays as it is.") }),
+      nav(h("button", { class: "btn primary", type: "button", text: t("Continue"), onclick: () => goStep(4) }), back(2))] : passStep()),
+    4: () => trailStep(),
+    5: () => projectStep(),
+    6: () => doneStepBody(),
+  };
+  function whoStep() {
+    const name = h("input", { id: "ob-name", type: "text", autocomplete: "name", value: W.name, "aria-describedby": "ob-name-hint" });
+    const other = h("input", { id: "ob-role-other", type: "text", value: W.other, "aria-label": t("Your role, in your words"), placeholder: t("for example Reviewer") });
+    const roleRadios = [...ROLES, ["", "Other"]].map(([value, words]) => {
+      const checked = value ? W.role === value : !!W.role && !ROLES.some(([v]) => v === W.role);
+      return h("label", { class: "radio" }, h("input", { type: "radio", name: "ob-role", value, checked, onchange: () => { W.role = value || other.value.trim(); if (!value) other.focus(); update(); } }), t(words));
+    });
+    other.addEventListener("input", () => { W.other = other.value; roleRadios[2].querySelector("input").checked = true; W.role = other.value.trim(); update(); });
+    const idCode = h("code", { class: "id-big", text: W.id || "human:…" });
+    const custom = h("input", { id: "ob-custom", type: "text", spellcheck: "false", value: W.custom || W.id, "aria-describedby": "ob-id-msg" });
+    const customBox = h("div", { class: "field", hidden: !W.customOpen }, h("label", { for: "ob-custom", text: t("Your ID (lower case letters, digits, . _ or -)") }), custom);
+    const customize = h("button", { class: "btn small ghost", type: "button", "aria-expanded": String(W.customOpen), text: t("Customise") });
+    const message = h("p", { id: "ob-id-msg", class: "small", "aria-live": "polite" });
+    const next = h("button", { class: "btn primary", type: "button", text: t("Continue"), disabled: true, onclick: () => goStep(3) });
+    customize.addEventListener("click", () => { W.customOpen = !W.customOpen; customBox.hidden = !W.customOpen; customize.setAttribute("aria-expanded", String(W.customOpen)); if (W.customOpen) { custom.value = W.custom || W.id.replace(/^human:/, ""); custom.focus(); } else { W.custom = ""; update(); } });
+    let timer = null;
+    let asked = 0;
+    async function check() {
+      const ticket = ++asked;
+      const q = new URLSearchParams({ name: W.name, id: W.customOpen ? W.custom : "" });
+      let answer = null;
+      try { answer = await api(`/api/setup/signer-id?${q}`); } catch (error) { put(clear(message), h("span", { class: "flag", text: String(error.message || error) })); return; }
+      if (ticket !== asked) return;              // a newer check is on its way
+      W.check = answer;
+      W.id = answer.id;
+      idCode.textContent = vis(answer.id || "human:…");
+      clear(message);
+      if (!answer.id) put(message, h("span", { class: "muted", text: t("Type your name: the ID is made from it.") }));
+      else if (answer.taken) put(message, st("fail", t("This ID is already used. IDs are never reused: change it under Customise.")));
+      else if (!answer.valid) put(message, st("warn", t("Only lower case letters, digits, . _ and - after human:. For example {id}.", { id: answer.suggestion || "human:alice" })));
+      else put(message, st("pass", t("This ID can be used.")));
+      next.disabled = !(answer.valid && W.name.trim() && W.role.trim());
+    }
+    function update() {
+      W.name = name.value;
+      W.custom = custom.value;
+      next.disabled = true;
+      clearTimeout(timer);
+      timer = setTimeout(check, 200);
+    }
+    name.addEventListener("input", update);
+    custom.addEventListener("input", update);
+    setTimeout(() => { name.focus(); if (W.name) check(); }, 0);
+    return [title(t("Who are you?")),
+      h("p", { class: "lede", text: t("Your name and role appear with every signature you make.") }),
+      h("div", { class: "field" }, h("label", { for: "ob-name", text: t("Your name, as it appears on signatures") }), name,
+        h("span", { id: "ob-name-hint", class: "small muted", text: t("For example Alice Example.") })),
+      h("fieldset", { class: "radio-row roles" }, h("legend", { text: t("Your role") }), roleRadios, other),
+      h("div", { class: "id-box" }, h("p", { class: "id-line" }, h("span", { text: `${t("Your ID:")} ` }), idCode, " ", customize), customBox, message,
+        h("p", { class: "small muted", text: t("Your ID stands in every signature you make. It is never given to anyone else, also not later.") })),
+      nav(next, back(1))];
+  }
+  function passStep() {
+    const minimum = (S.setup && S.setup.passphrase_min) || 12;
+    const one = h("input", { id: "ob-pass", type: "password", autocomplete: "new-password", spellcheck: "false", "aria-describedby": "ob-pass-hint" });
+    const two = h("input", { id: "ob-pass2", type: "password", autocomplete: "new-password", spellcheck: "false" });
+    const hint = h("p", { id: "ob-pass-hint", class: "small", "aria-live": "polite" });
+    const next = h("button", { class: "btn primary", type: "button", text: t("Continue"), disabled: true });
+    const judge = () => {
+      const a = one.value;
+      clear(hint);
+      let ok = false;
+      if (!a) put(hint, h("span", { class: "muted", text: t("At least {n} characters. Several words work well.", { n: minimum }) }));
+      else if (a.length < minimum) put(hint, st("warn", t("Too short: at least {n} characters ({m} so far).", { n: minimum, m: a.length })));
+      else if (two.value && two.value !== a) put(hint, st("fail", t("The two entries differ.")));
+      else {
+        ok = !!two.value;
+        put(hint, st("pass", a.length >= 20 || /\S+\s+\S+\s+\S+/.test(a) ? t("Strong.") : t("Long enough. Longer is stronger.")),
+          two.value ? null : h("span", { class: "muted", text: ` ${t("Now type it again.")}` }));
+      }
+      next.disabled = !ok;
+    };
+    one.addEventListener("input", judge);
+    two.addEventListener("input", judge);
+    const proceed = () => { if (next.disabled) return; pendingPass = one.value; one.value = ""; two.value = ""; goStep(4); };
+    next.addEventListener("click", proceed);
+    two.addEventListener("keydown", (e) => { if (e.key === "Enter") proceed(); });
+    setTimeout(() => { one.focus(); judge(); }, 0);
+    return [title(t("Your passphrase")),
+      h("p", { class: "lede", text: t("It unlocks your signing key. AQT asks for it at every signature.") }),
+      h("div", { class: "field" }, h("label", { for: "ob-pass", text: t("Passphrase") }), one),
+      h("div", { class: "field" }, h("label", { for: "ob-pass2", text: t("Type it again") }), two), hint,
+      h("ul", { class: "plain-list" }, h("li", { text: t("It is never stored, not even by this app.") }), h("li", { text: t("Without it, nobody can sign in your name.") }),
+        h("li", { text: t("If you lose it, you set up a new identity. Your earlier signatures stay valid.") })),
+      nav(next, back(2))];
+  }
+  function trailStep() {
+    const rows = Object.fromEntries((S.setup.checks || []).map((c) => [c.id, c]));
+    const subs = SUBSTEPS.filter(([id]) => id !== "spool" || (rows.spool && rows.spool.result !== "ok")).map(([id, label]) => {
+      const row = rows[id];
+      // done when its check is in order; everything else is applied (a step that does not apply here, such as a
+      // service without systemd, answers "skip" then)
+      const state = id === "enrol" ? (enrolled() ? "done" : "todo") : row && row.result === "ok" ? "done" : "todo";
+      return { id, label, state, detail: "", fix: "" };
+    });
+    const listEl = h("ol", { class: "substeps", "aria-live": "polite" });
+    const drawSubs = () => put(clear(listEl), subs.map((x) => h("li", { class: `sub ${x.state}` },
+      h("span", { class: "sub-mark", "aria-hidden": "true", text: { done: "✓", skipped: "–", failed: "✕", running: "…", todo: "○" }[x.state] }),
+      h("div", {}, h("strong", { text: t(x.label) }), h("span", { class: "sr-only", text: ` ${t({ done: "done", skipped: "not used here", failed: "failed", running: "running", todo: "to do" }[x.state])}` }),
+        x.detail ? h("p", { class: "small muted break", text: x.detail }) : null,
+        x.fix ? h("div", { class: "fix" }, h("span", { class: "small muted", text: t("In a terminal:") }), commandLine(x.fix)) : null,
+        x.extra || null))));
+    const allDone = () => subs.every((x) => x.state === "done" || x.state === "skipped");
+    const go4 = h("button", { class: "btn primary", type: "button", text: allDone() ? t("Continue") : t("Set up and start") });
+    const run = async () => {
+      if (allDone()) { goStep(5); return; }
+      go4.disabled = true;
+      for (const x of subs) {
+        if (x.state === "done" || x.state === "skipped") continue;
+        Object.assign(x, { state: "running", detail: "", fix: "", extra: null });
+        drawSubs();
+        if (x.id === "enrol") {
+          if (!pendingPass) {
+            Object.assign(x, { state: "failed", detail: t("Type your passphrase first: it is not kept after a reload."), extra: h("button", { class: "btn small", type: "button", text: t("Back to the passphrase"), onclick: () => goStep(3) }) });
+            break;
+          }
+          const { status, data } = await post("/api/setup/enrol", { name: W.name.trim(), role: W.role.trim(), signer_id: W.id, passphrase: pendingPass });
+          if (status === 200 && data.ok) {
+            pendingPass = "";
+            Object.assign(x, { state: "done", detail: data.counts ? t("{id}: your key counts now.", { id: data.signer_id }) : t("{id}: your key counts once another enrolled signer approves it.", { id: data.signer_id }) });
+            continue;
+          }
+          const back2 = status === 400 ? h("button", { class: "btn small", type: "button", text: t("Change name or ID"), onclick: () => goStep(2) }) : null;
+          Object.assign(x, { state: "failed", detail: `${refusalWords(data.reason_code, data.reason_text) ? refusalWords(data.reason_code, data.reason_text) + ". " : ""}${msgOf(data, "message")}`, extra: back2 });
+          break;
+        }
+        const { status, data } = await post("/api/setup/apply", { check: x.id });
+        const row = data.check || {};
+        if (status === 200 && data.ok) { Object.assign(x, { state: row.result === "skip" ? "skipped" : "done", detail: row.result === "skip" ? row.explanation : "" }); continue; }
+        Object.assign(x, { state: "failed", detail: [data.error, row.explanation || msgOf(data, "message")].filter(Boolean).join(". "), fix: row.fix || "" });
+        break;
+      }
+      drawSubs();
+      await Promise.all([loadSetup().catch(() => null), refresh().catch(() => null)]);
+      go4.disabled = false;
+      go4.textContent = vis(allDone() ? t("Continue") : t("Try again"));
+      drawList();
+      if (allDone()) { announce(t("The audit trail runs and your signing key is ready.")); go4.focus(); }
+    };
+    go4.addEventListener("click", run);
+    drawSubs();
+    return [title(t("Audit trail")),
+      h("p", { class: "lede" }, t("AQT keeps a tamper-evident record of what agents and people do:"), " ", termNode("trail"), ". ",
+        t("A small background service writes it, also when the app is closed.")),
+      S.setup.service ? null : h("p", { class: "note-box", text: t("This computer has no systemd user session, so AQT cannot install the background service here. Start the writer yourself when the step asks for it; it must keep running.") }),
+      listEl, nav(go4, back(enrolled() ? 1 : 3))];
+  }
+  function projectStep() {
+    const box = h("div", { class: "connect-box" });
+    setTimeout(() => connectFlow(box, { onDone: () => goStep(6), onLater: () => goStep(6), laterLabel: t("Later") }), 0);
+    return [title(t("First project")),
+      h("p", { class: "lede", text: t("Choose the folder of a project your agents work in. AQT shows, file by file, what it adds before anything is written.") }),
+      box];
+  }
+  function doneStepBody() {
+    const p = pillState();
+    const app = h("div", { class: "app-settings" });
+    if (APP) (async () => {
+      let d;
+      try { d = await desktopSettings(); } catch (error) { return; }
+      if (!W.autostartOffered) {          // pre-checked: start in the background at login (switch it off here)
+        W.autostartOffered = true;
+        if (!d.autostart) { try { d = await desktopSettings({ autostart: true }); } catch (error) { /* shown unchecked */ } }
+      }
+      put(clear(app), appSettingRows(d, { keys: ["autostart", "aqt_command"] }));
+    })();
+    return [title(p.kind === "pass" ? t("Everything is set up") : t("Almost done")),
+      h("p", { class: "status-line" }, st(p.kind, p.text), p.fix && p.path ? [" ", link(p.fix, p.path)] : null),
+      h("p", { class: "lede", text: t("Start your agent as usual in your project. When something needs your decision, AQT shows it under Needs you.") }),
+      app,
+      h("details", { class: "as-command-box" }, h("summary", { text: t("Use the aqt command in a terminal") }), commandSection(S.setup)),
+      nav(h("button", { class: "btn primary", type: "button", text: t("Open Needs you"), onclick: () => go("/") }))];
+  }
+  function draw() {
+    drawList();
+    if (readOnly) {
+      put(clear(body), title(t("AQT cannot be set up from here")),
+        h("p", { class: "lede", text: t("Setting up writes your keys and settings, so only you can do it.") }),
+        h("div", { class: "off" }, h("strong", { text: `${t("Read-only")}. ` }), S.mode ? S.mode.reason : ""),
+        h("p", { text: t("Start AQT yourself, outside any agent session, and open the setup again.") }),
+        nav(h("button", { class: "btn ghost", type: "button", text: t("Look around read-only"), onclick: () => go("/") })));
+      return;
+    }
+    put(clear(body), steps[W.step]());
+  }
+  draw();
+}
+
+const RENDER = { home: renderHome, changes: renderChanges, projects: renderProjects, settings: renderSettings, welcome: renderWelcome };
 
 // ---- start ---------------------------------------------------------------------------------------------
 async function start() {
@@ -1851,7 +2586,11 @@ async function start() {
     put(clear($("main")), errorBox(error));
     return;
   }
+  // not set up yet (no trail or no signer): the window opens on the setup; deep links still open their page
+  if (S.overview.setup && S.overview.setup.needed && location.pathname === "/") history.replaceState(null, "", WELCOME.path);
   route();
+  loadSetup().catch(() => null);
+  setInterval(() => { loadSetup().catch(() => null); }, 300000);
   setInterval(() => { refresh().catch(() => {}); }, 15000);
   const status = S.overview && S.overview.status;
   if (status && status.verifying) pollVerify();

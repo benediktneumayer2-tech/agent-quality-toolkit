@@ -351,3 +351,17 @@ def test_every_decision_from_a_process_under_an_agent_is_refused_and_recorded(na
     refusal = next(r for r in trail_records(trail)[before:] if r["type"] == refusal_type)
     assert "process:claude" in refusal["data"]["agent_markers"]
     assert PASSPHRASE.encode() not in raw
+
+
+def test_gate_from_the_frozen_runtime_runs_the_runtime_itself(project, monkeypatch):
+    """The desktop app's runtime has no aqt-change program on PATH or beside it: it runs aqt -m aqt_change.cli."""
+    import subprocess
+    import sys
+    from aqt_ui.views import changes
+    calls, real = [], subprocess.run
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")                # git, but no aqt-change
+    monkeypatch.setattr(changes.subprocess, "run", lambda argv, **kw: calls.append(argv) or real(argv, **kw))
+    gate = changes.gate_cli(project, "plans/s01.md")
+    assert calls == [[sys.executable, "-I", "-m", "aqt_change.cli", "gate", "plans/s01.md"]]
+    assert gate["plan_id"] == "s01" and gate["decision"] in ("GO", "NO-GO", "MANUAL_VERIFY_REQUIRED")

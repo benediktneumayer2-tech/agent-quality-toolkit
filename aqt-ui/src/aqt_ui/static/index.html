@@ -17,18 +17,19 @@
     <div class="broken-bar" id="broken" role="alert" hidden></div>
     <div class="writer-bar" id="writer" role="status" hidden></div>
     <header class="topbar">
-      <button class="btn small menu-btn" id="menu-btn" aria-expanded="false" aria-controls="nav">Views</button>
+      <button class="btn small menu-btn" id="menu-btn" aria-expanded="false" aria-controls="rail">Menu</button>
       <h1 id="title">Needs you</h1>
-      <span class="pill" id="trail-pill">Trail: loading</span>
       <span class="spacer"></span>
-      <span class="badge" id="mode-badge">Mode: loading</span>
+      <span class="badge off" id="mode-badge" hidden>Read-only</span>
+      <div class="status" id="status-pill" role="status" aria-label="Status"></div>
       <select class="lang" id="lang" aria-label="Language"><option value="en">English</option><option value="de">Deutsch</option></select>
       <button class="btn small ghost" id="refresh" type="button">Refresh</button>
     </header>
   </div>
-  <nav class="rail" id="rail" aria-label="Views">
+  <nav class="rail" id="rail" aria-label="Areas">
     <div class="brand">Agent Quality Toolkit<small id="brand-sub">quality desk, this machine only</small></div>
     <ul class="nav" id="nav"></ul>
+    <ul class="nav nav-settings" id="nav-settings"></ul>
     <div class="rail-foot" id="railfoot"></div>
   </nav>
   <main class="center" id="main" tabindex="-1"></main>

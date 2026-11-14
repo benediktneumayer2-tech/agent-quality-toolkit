@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -396,9 +397,10 @@ def cmd_doctor(args) -> int:
         waiting = store.outbox_size()
         check("outbox", "ok" if not waiting else "warn",
               "empty" if not waiting else f"{waiting} record(s) waiting; run aqt-quarantine flush")
+        hook = re.compile(r"aqt[- ]quarantine hook claude-code")         # aqt-quarantine or aqt quarantine
         installed = [str(path) for path in (Path.home() / ".claude/settings.json", Path.cwd() / ".claude/settings.json",
                                             Path.cwd() / ".claude/settings.local.json")
-                     if path.exists() and "aqt-quarantine hook claude-code" in path.read_text(errors="replace")]
+                     if path.exists() and hook.search(path.read_text(errors="replace"))]
         check("claude code hooks", "ok" if installed else "warn",
               ", ".join(installed) if installed else "hook not found in settings; see aqt-quarantine hooks print")
     context = detect_agent_context()
