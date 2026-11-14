@@ -429,6 +429,8 @@ def command_name() -> str:
 def _command_fix(mine: Path | None) -> str:
     if getattr(sys, "frozen", False) and os.environ.get("APPIMAGE"):
         return f"in the app: Settings, install the aqt command (or: ln -s {_quote(str(mine))} ~/.local/bin/aqt)"
+    if getattr(sys, "frozen", False) and platform.IS_MACOS:     # the runtime inside the .app
+        return f"ln -s {_quote(str(mine))} ~/.local/bin/aqt (with ~/.local/bin on PATH)"
     if getattr(sys, "frozen", False):
         return f"put {_quote(str(mine))} on PATH (the .deb package installs it as /usr/bin/aqt)"
     return f"add {_quote(str(Path(sys.executable).parent))} to PATH"
