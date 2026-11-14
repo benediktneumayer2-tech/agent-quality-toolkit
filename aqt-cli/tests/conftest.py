@@ -13,8 +13,10 @@ from aqt_cli import checks
 PASSPHRASE = "correct-horse-battery-1"
 _SESSION_HOME: str | None = None
 
-# aqt setup installs the writer as a systemd user service only on Linux (launchd and Windows follow)
+# aqt setup installs the writer as a systemd user service on Linux and as a logon task on Windows (launchd follows)
 LINUX_SYSTEMD = pytest.mark.skipif(not platform.IS_LINUX, reason="systemd user services exist only on Linux")
+WINDOWS_TASK = pytest.mark.skipif(not platform.IS_WINDOWS, reason="logon tasks of the Task Scheduler exist only "
+                                                                   "on Windows")
 
 
 def pytest_configure(config):
@@ -22,6 +24,9 @@ def pytest_configure(config):
     global _SESSION_HOME
     _SESSION_HOME = tempfile.mkdtemp(prefix="aqt-home-")
     os.environ["HOME"] = _SESSION_HOME
+    if os.name == "nt":   # Windows takes the home and the AQT folders from these
+        for name, sub in (("USERPROFILE", ""), ("APPDATA", "appdata"), ("LOCALAPPDATA", "localappdata")):
+            os.environ[name] = os.path.join(_SESSION_HOME, sub)
     for name, sub in (("XDG_STATE_HOME", "state"), ("XDG_CONFIG_HOME", "config")):
         os.environ[name] = os.path.join(_SESSION_HOME, sub)
     os.environ.pop("XDG_RUNTIME_DIR", None)
@@ -55,13 +60,47 @@ class FakeSystemd:
         return 0, ""
 
 
+class FakeSchtasks:
+    """Stands in for Windows' ``schtasks``: keeps registered task definitions; ``/Run`` launches a real
+    writer in a thread when asked. Unavailable (every call fails) until ``available`` is set."""
+
+    def __init__(self):
+        self.available = False
+        self.tasks: dict[str, str] = {}
+        self.calls: list[tuple] = []
+        self.on_run = None
+
+    def __call__(self, *args):
+        self.calls.append(args)
+        if not self.available:
+            return 1, "ERROR: Access is denied."
+        verb, name = args[0], args[2]
+        if verb != "/Create" and name not in self.tasks:
+            return 1, "ERROR: The system cannot find the file specified."
+        if verb == "/Query":
+            return 0, self.tasks[name]
+        if verb == "/Create":
+            if name in self.tasks:
+                return 1, "ERROR: Cannot create a file when that file already exists."
+            self.tasks[name] = Path(args[4]).read_text(encoding="utf-16")
+        if verb == "/Change" and "/ENABLE" in args:
+            self.tasks[name] = self.tasks[name].replace("<Enabled>false</Enabled>\n    <Execution",
+                                                        "<Enabled>true</Enabled>\n    <Execution")
+        if verb == "/Run" and self.on_run:
+            self.on_run()
+        return 0, "SUCCESS"
+
+
 @pytest.fixture(autouse=True)
 def env(tmp_path, monkeypatch):
     """Isolated HOME/XDG dirs, a short runtime dir (AF_UNIX path limit), a fixed time zone, no
     AQT_* overrides, and a fake systemctl: the real one is never called."""
-    runtime = Path(tempfile.mkdtemp(prefix="aqt", dir="/tmp" if len(str(tmp_path)) > 60 else None))
+    runtime = Path(tempfile.mkdtemp(prefix="aqt", dir="/tmp" if os.name == "posix" and len(str(tmp_path)) > 60
+                                    else None))
     (tmp_path / "home").mkdir()
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    if os.name == "nt":
+        monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
@@ -70,6 +109,7 @@ def env(tmp_path, monkeypatch):
         monkeypatch.delenv(name)
     fake = FakeSystemd()
     monkeypatch.setattr(checks, "systemctl_user", fake)
+    monkeypatch.setattr(checks, "schtasks", FakeSchtasks())     # the real Task Scheduler is never touched
     yield tmp_path
     shutil.rmtree(runtime, ignore_errors=True)
 
@@ -77,6 +117,11 @@ def env(tmp_path, monkeypatch):
 @pytest.fixture
 def systemd():
     return checks.systemctl_user
+
+
+@pytest.fixture
+def schtasks():
+    return checks.schtasks
 
 
 @pytest.fixture

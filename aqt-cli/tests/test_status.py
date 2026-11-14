@@ -222,6 +222,7 @@ def test_egress_line_never_fails_the_verdict(monkeypatch):
 
 def test_off_linux_the_service_and_the_box_are_reported_as_not_available(monkeypatch):
     monkeypatch.setattr(platform, "IS_LINUX", False)
+    monkeypatch.setattr(platform, "IS_WINDOWS", False)
     monkeypatch.setattr(platform, "SYSTEM_NAME", "macOS")
     monkeypatch.setattr(checks, "_egress_status", lambda: {"version": "0.2", "ca": False, "box": False,
                                                             "box_detail": "the egress box is not available on macOS",

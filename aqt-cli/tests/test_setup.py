@@ -70,7 +70,8 @@ def test_without_systemd_or_a_person_setup_does_the_rest_and_says_what_is_left(s
     assert runner.calls[0] == ("trail", ["init"]) and load_config().meta_path.exists()
     assert not any(name == "signoff" for name, _ in runner.calls)       # no person at the keyboard
     assert any(line.startswith("signer: skipped: needs you") for line in said)
-    assert any(line.startswith("writer: yours to do: ") and "aqt-trail serve" in line for line in said)
+    assert any(line.startswith("writer: yours to do: ") and "aqt-trail" in line and line.endswith(" serve")
+               for line in said)
     assert not checks.unit_path().exists() and not load_settings().config_path.exists()
     assert (config_dir() / "trail.toml").exists()
 

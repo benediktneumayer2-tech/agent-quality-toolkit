@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Windows: `aqt setup` registers the writer as the logon task `aqt-trail` (Task Scheduler: at your logon, your
+  normal rights, no time limit, started again every five minutes when it is not running; `pythonw.exe` or the
+  app's `aqtw.exe`, so no console window) and never replaces an existing one; `aqt status` checks that it
+  exists, is enabled and starts a program that exists.
 - `aqt status` on macOS and Windows: the writer service and the egress box say that they are not available on this
   system and why (systemd and bubblewrap are Linux only), as a skipped line instead of a warning with a Linux fix.
   The AQT configuration folder comes from `aqt_evidence.platform` (unchanged on Linux).

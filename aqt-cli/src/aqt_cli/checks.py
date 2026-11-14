@@ -72,6 +72,27 @@ def systemctl_user(*args: str) -> tuple[int, str]:
     return done.returncode, done.stdout.strip() or done.stderr.strip()
 
 
+def _decode(data: bytes) -> str:
+    """schtasks writes UTF-16 for /XML and the console's code page otherwise."""
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")) or data[1:2] == b"\x00":
+        return data.decode("utf-16", "replace")
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return data.decode("oem" if platform.IS_WINDOWS else "latin-1", "replace")
+
+
+def schtasks(*args: str) -> tuple[int, str]:
+    """Run Windows' ``schtasks ARGS``; returns (exit code, stdout or else stderr)."""
+    if not shutil.which("schtasks"):
+        return 127, "schtasks not found"
+    try:
+        done = subprocess.run(["schtasks", *args], capture_output=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return 127, str(error)
+    return done.returncode, (_decode(done.stdout).strip() or _decode(done.stderr).strip())
+
+
 @dataclass
 class Context:
     """What the checks and steps need from the outside; tests replace the runners."""
@@ -82,6 +103,7 @@ class Context:
     name: str | None = None
     role: str | None = None
     systemctl: Callable[..., tuple[int, str]] | None = None   # default: systemctl_user
+    schtasks: Callable[..., tuple[int, str]] | None = None    # default: schtasks (Windows)
     run_tool: Callable[[str, list[str]], int] | None = None   # default: tools.run_tool
     ask: Callable[[str], str] = input
     say: Callable[[str], None] = print
@@ -90,6 +112,9 @@ class Context:
 
     def systemd(self, *args: str) -> tuple[int, str]:
         return (self.systemctl or systemctl_user)(*args)
+
+    def task(self, *args: str) -> tuple[int, str]:
+        return (self.schtasks or schtasks)(*args)
 
     def tool(self, name: str, argv: list[str]) -> int:
         return (self.run_tool or tools.run_tool)(name, argv)
@@ -165,7 +190,7 @@ def unit_path() -> Path:
 
 def trail_command() -> list[str]:
     """The ``aqt-trail`` of the environment ``aqt`` runs in."""
-    beside = Path(sys.executable).parent / "aqt-trail"
+    beside = Path(sys.executable).parent / ("aqt-trail.exe" if platform.IS_WINDOWS else "aqt-trail")
     if beside.exists():
         return [str(beside)]
     found = shutil.which("aqt-trail")
@@ -202,9 +227,141 @@ def _unit_executable(unit: Path) -> str | None:
 
 
 def _start_fix(ctx: Context, config) -> str:
+    if platform.IS_WINDOWS and query_task(ctx):
+        return f"schtasks /Run /TN {TASK}"
     if ctx.systemd_available() and unit_path().exists():
         return "systemctl --user start aqt-trail"
     return serve_command()
+
+
+# -- Windows: the writer as a logon task (Task Scheduler) --------------------------------------
+TASK = "aqt-trail"
+_TASK_NS = "{http://schemas.microsoft.com/windows/2004/02/mit/task}"
+
+
+def task_command() -> list[str]:
+    """What the logon task runs: the writer for this trail, without a console window (``pythonw.exe``
+    beside ``python.exe``, ``aqtw.exe`` beside the app's ``aqt.exe``). The task has no environment of
+    its own, so the trail folder (and a configuration file) are passed as arguments."""
+    executable = Path(sys.executable)
+    quiet = executable.with_name(f"{executable.stem}w{executable.suffix}")
+    from aqt_trail.config import config_dir
+    config = _trail()
+    command = [str(quiet if quiet.exists() else executable), "-m", "aqt_trail.cli", "--state", str(config.state)]
+    if (config_dir() / "trail.toml").exists():
+        command += ["--config", str(config_dir() / "trail.toml")]
+    return [*command, "serve"]
+
+
+def task_xml(command: list[str], user: str) -> str:
+    """The task definition: at the user's logon, with the user's normal rights while logged on, no
+    time limit, one instance; started again every 5 minutes when it is not running, and up to three
+    times a minute apart when it fails to start."""
+    from subprocess import list2cmdline
+    from xml.sax.saxutils import escape
+    return f"""<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>aqt-trail audit-trail writer (user mode). Written by aqt setup, which never replaces it.</Description>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+      <UserId>{escape(user)}</UserId>
+      <Repetition><Interval>PT5M</Interval><StopAtDurationEnd>false</StopAtDurationEnd></Repetition>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>{escape(user)}</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <IdleSettings><StopOnIdleEnd>false</StopOnIdleEnd><RestartOnIdle>false</RestartOnIdle></IdleSettings>
+    <Enabled>true</Enabled>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <RestartOnFailure><Interval>PT1M</Interval><Count>3</Count></RestartOnFailure>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>{escape(command[0])}</Command>
+      <Arguments>{escape(list2cmdline(command[1:]))}</Arguments>
+    </Exec>
+  </Actions>
+</Task>
+"""
+
+
+def query_task(ctx: Context) -> dict | None:
+    """The registered logon task (``enabled``, ``command``, ``arguments``), or None when there is none."""
+    import xml.etree.ElementTree as ElementTree
+    code, output = ctx.task("/Query", "/TN", TASK, "/XML")
+    if code != 0 or "<" not in output:
+        return None
+    try:
+        root = ElementTree.fromstring(output[output.index("<"):].encode("utf-8").replace(
+            b'encoding="UTF-16"', b'encoding="UTF-8"'))
+    except ElementTree.ParseError:
+        return None
+    task = root if root.tag == f"{_TASK_NS}Task" else root.find(f".//{_TASK_NS}Task")
+    if task is None:
+        return None
+    enabled = task.findtext(f"{_TASK_NS}Settings/{_TASK_NS}Enabled", "true").strip().lower() != "false"
+    return {"enabled": enabled, "command": task.findtext(f".//{_TASK_NS}Exec/{_TASK_NS}Command", "").strip(),
+            "arguments": task.findtext(f".//{_TASK_NS}Exec/{_TASK_NS}Arguments", "").strip()}
+
+
+def _check_task(ctx: Context) -> Result:
+    task = query_task(ctx)
+    if task is None:
+        return Result(WARN, f"no logon task {TASK}: the writer does not start when you log on", "aqt setup")
+    command = task["command"]
+    if command and not Path(command).exists():
+        return Result(WARN, f"the logon task {TASK} starts {command}, which does not exist",
+                      f"schtasks /Delete /TN {TASK} /F, then: aqt setup", can_apply=False)
+    if not task["enabled"]:
+        return Result(WARN, f"the logon task {TASK} is disabled", f"schtasks /Change /TN {TASK} /ENABLE")
+    return Result(OK, f"logon task {TASK} enabled, starts {command} {task['arguments']}".rstrip(),
+                  data={"task": TASK, **task})
+
+
+def _step_task(ctx: Context) -> None:
+    import tempfile
+    if not _trail().meta_path.exists():
+        raise StepSkipped("create the trail first (aqt-trail init)")
+    task = query_task(ctx)
+    if task is None:
+        folder = Path(tempfile.mkdtemp(prefix="aqt-task-"))
+        try:
+            definition = folder / "aqt-trail.xml"
+            definition.write_text(task_xml(task_command(), str(platform.user_id())), encoding="utf-16")
+            code, output = ctx.task("/Create", "/TN", TASK, "/XML", str(definition))
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
+        if code != 0:
+            raise StepFailed(f"schtasks /Create /TN {TASK}: {output}")
+        ctx.say(f"registered the logon task {TASK}: the writer starts when you log on")
+    elif not task["enabled"]:
+        code, output = ctx.task("/Change", "/TN", TASK, "/ENABLE")
+        if code != 0:
+            raise StepFailed(f"schtasks /Change /TN {TASK} /ENABLE: {output}")
+    if not _writer_head(_trail()):
+        _run_task(ctx)
+
+
+def _run_task(ctx: Context) -> None:
+    code, output = ctx.task("/Run", "/TN", TASK)
+    if code != 0:
+        raise StepFailed(f"schtasks /Run /TN {TASK}: {output}")
+    if not _wait_for_writer(ctx, _trail()):
+        raise StepFailed(f"the logon task started, but the writer does not answer yet; see "
+                         f"{_trail().state / 'writer.log'}")
 
 
 def detect_timezone() -> str:
@@ -311,9 +468,9 @@ def step_trail_init(ctx: Context) -> None:
 
 
 def service_unavailable() -> str | None:
-    """None where ``aqt setup`` can install the writer as a user service (Linux: systemd), else why not.
-    A launchd agent (macOS) and a logon task (Windows) will plug in here."""
-    if platform.IS_LINUX:
+    """None where ``aqt setup`` can install the writer as a user service (Linux: systemd; Windows: a logon
+    task of the Task Scheduler), else why not. A launchd agent (macOS) will plug in here."""
+    if platform.IS_LINUX or platform.IS_WINDOWS:
         return None
     return platform.not_available("the writer as a background service", "it is installed with systemd, which "
                                   "this system does not have; start the writer by hand")
@@ -323,6 +480,8 @@ def check_service(ctx: Context) -> Result:
     unavailable = service_unavailable()
     if unavailable:
         return Result(SKIP, unavailable)
+    if platform.IS_WINDOWS:
+        return _check_task(ctx)
     if not ctx.systemd_available():
         return Result(SKIP, "systemd --user is not available here; the writer is started by hand")
     unit = unit_path()
@@ -342,6 +501,9 @@ def check_service(ctx: Context) -> Result:
 
 
 def step_service(ctx: Context) -> None:
+    if platform.IS_WINDOWS:
+        _step_task(ctx)
+        return
     if not _trail().meta_path.exists():
         raise StepSkipped("create the trail first (aqt-trail init)")
     unit = unit_path()
@@ -363,13 +525,17 @@ def check_writer(ctx: Context) -> Result:
                       data={"socket": str(config.socket_path), "head_seq": head.get("seq")})
     if not config.meta_path.exists():
         return Result(SKIP, "no trail yet")
-    can_start = ctx.systemd_available() and unit_path().exists()
+    can_start = (query_task(ctx) is not None) if platform.IS_WINDOWS else (
+        ctx.systemd_available() and unit_path().exists())
     how = "" if can_start else "; start it in a terminal of its own and keep it running"
     return Result(FAIL, f"no writer answers on {config.socket_path}{how}", _start_fix(ctx, config),
                   can_apply=can_start)
 
 
 def step_writer(ctx: Context) -> None:
+    if platform.IS_WINDOWS:
+        _run_task(ctx)
+        return
     code, output = ctx.systemd("start", "aqt-trail")
     if code != 0:
         raise StepFailed(f"systemctl --user start aqt-trail: {output}")
@@ -722,8 +888,12 @@ def check_egress(ctx: Context) -> Result:
 CHECKS: list[Check] = [
     Check("packages", check_packages),
     Check("trail.init", check_trail_init, step_trail_init, "create the trail (aqt-trail init)"),
-    Check("service", check_service, step_service, f"install and start the systemd user service {UNIT}"),
-    Check("writer", check_writer, step_writer, "start the writer (systemctl --user start aqt-trail)"),
+    Check("service", check_service, step_service,
+          lambda ctx: f"register and start the logon task {TASK} (Task Scheduler)" if platform.IS_WINDOWS
+          else f"install and start the systemd user service {UNIT}"),
+    Check("writer", check_writer, step_writer,
+          lambda ctx: f"start the writer (schtasks /Run /TN {TASK})" if platform.IS_WINDOWS
+          else "start the writer (systemctl --user start aqt-trail)"),
     Check("spool", check_spool, step_spool, "move spooled records into the trail (aqt-trail drain)"),
     Check("sink", check_sink),
     Check("signer", check_signer, step_signer, "enrol your signing identity (aqt-signoff init)", personal=True),
