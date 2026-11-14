@@ -9,6 +9,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 npm ci --no-audit --no-fund --loglevel=error
 bash core/build.sh
+rm -rf src-tauri/target/release/bundle   # a cached target keeps the last version's bundles, which the globs below would match
 BUNDLES=app,dmg
 [ "${1:-}" = "--app" ] && BUNDLES=app
 npx tauri build --config src-tauri/tauri.bundle.conf.json --bundles "$BUNDLES"

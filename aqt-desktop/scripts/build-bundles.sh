@@ -13,6 +13,7 @@ if [ "${1:-}" = "--debug" ]; then
     exit 0
 fi
 bash core/build.sh
+rm -rf src-tauri/target/release/bundle   # a cached target keeps the last version's bundles, which the globs below would match
 npx tauri build --config src-tauri/tauri.bundle.conf.json
 VERSION="$(node -p 'require("./src-tauri/tauri.conf.json").version')"
 PRODUCT="$(node -p 'require("./src-tauri/tauri.conf.json").productName')"
