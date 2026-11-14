@@ -1824,7 +1824,7 @@ function quarantineParts(c, { full, open, onDone }) {
       : t("The content stays withheld from the agent, and the case is recorded as a threat.") });
   const panel = actions.length ? decisionPanel({
     actions, signers: c.signers, subject: { label: t("case {id}, content", { id: c.case_id }), hash: c.content_sha256,
-      summary: [c.domain || c.tool || null, t("score {n} ppm", { n: num(c.score_ppm) })].filter(Boolean).join(", ") },
+      summary: [c.domain || c.tool || null, t("suspicion: {level}", { level: t(suspicionWord(c.score_ppm)) })].filter(Boolean).join(", ") },
     note: c.state === "threat" ? t("This case was declared a threat; releasing it overrules that decision.") : null, onDone,
     command: (a) => a.id === "release" ? `aqt quarantine release ${sq(c.case_id)}${c.state === "threat" ? " --overrule-threat" : ""} --reason "…"` : `aqt quarantine declare-threat ${sq(c.case_id)} --reason "…"`,
     submit: (a, values) => post(`/api/quarantine/${encodeURIComponent(c.case_id)}/${a.id}`, { ...values, content_sha256: c.content_sha256, overrule_threat: c.state === "threat" }),
@@ -1847,6 +1847,8 @@ function quarantineParts(c, { full, open, onDone }) {
     decision: fullFirst ? inspSection(t("Decision"), fullFirst) : panel,
   };
 }
+// How suspicious the detectors found a page, in a word (as the Needs-you entry says it).
+function suspicionWord(ppm) { return ppm >= 800000 ? "high" : ppm >= 400000 ? "medium" : "low"; }
 // A detector's span reason (records keep the English): the catalogue entry it matches.
 function detectorReason(reason) { return msg("quarantine.detector.", null, reason); }
 const ATTEMPT_WORDS = { release: "tried to release", "declare-threat": "tried to declare a threat", "trust-source": "tried to trust a source" };

@@ -123,7 +123,9 @@ def build(app) -> dict:
                          for key, value in sorted(differs.items()))
         needs.append(item("medium", "trail", "Review parameters differ from the built-in defaults",
                           f"trail.toml [review]: {what}. A review prepared here uses and signs them; check that "
-                          "you set them", ref="review", code="review_params", params=what))
+                          "you set them", ref="review", code="review_params", params=what,
+                          changes=", ".join(f"{key}: {_word(value['builtin'])} → {_word(value['value'])}"
+                                            for key, value in sorted(differs.items()))))
     counts["trail"] = sum(1 for n in needs if n["view"] == "trail" and n["severity"] in ("critical", "high"))
 
     # quarantine
