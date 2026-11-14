@@ -188,7 +188,16 @@ def unit_path() -> Path:
 
 
 def trail_command() -> list[str]:
-    """The ``aqt-trail`` of the environment ``aqt`` runs in."""
+    """The ``aqt-trail`` of the environment ``aqt`` runs in. From the desktop app's frozen runtime: ``aqt trail``
+    by a path that stays valid (the ``aqt`` on PATH when it is this one, else the AppImage file in CLI mode),
+    because an AppImage is mounted at a new place on every start."""
+    if getattr(sys, "frozen", False):
+        for name in NAMES:
+            found = shutil.which(name)
+            if is_this(found, name):
+                return [found, "trail"]
+        image = os.environ.get("APPIMAGE")
+        return [image, "--cli", "trail"] if image else [sys.executable, "trail"]
     beside = Path(sys.executable).parent / "aqt-trail"
     if beside.exists():
         return [str(beside)]
@@ -376,6 +385,71 @@ def check_packages(ctx: Context) -> Result:
     text = (f"all {len(versions)} packages installed, version {distinct[0]}" if len(distinct) == 1 else
             "installed: " + ", ".join(f"{dist} {version}" for dist, version in versions.items()))
     return Result(OK, text, data={"versions": versions})
+
+
+# The toolkit's command has two names: aqt-toolkit stands in where another aqt (aqtinstall's) comes first on PATH.
+NAMES = ("aqt", "aqt-toolkit")
+
+
+def this_command(name: str = "aqt") -> Path | None:
+    """The program of this ``aqt`` (or ``aqt-toolkit``): the desktop app's frozen runtime (from an AppImage: the
+    AppImage file, which runs it), else the console script beside this interpreter."""
+    if getattr(sys, "frozen", False):
+        return Path(os.environ.get("APPIMAGE") or sys.executable)
+    beside = Path(sys.executable).parent / (f"{name}.exe" if os.name == "nt" else name)
+    return beside if beside.exists() else None
+
+
+def is_this(path: str | None, name: str = "aqt") -> bool:
+    """Whether the program at ``path`` is this installation's ``name`` (the same file once links are followed)."""
+    mine = this_command(name)
+    return bool(path and mine and Path(path).resolve() == mine.resolve())
+
+
+def is_toolkit(path: str) -> bool:
+    """Whether the program at ``path`` is AQT's command: this one, or another installation of the toolkit."""
+    if is_this(path):
+        return True
+    try:
+        done = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return done.stdout.startswith("agent-quality-toolkit")
+
+
+def command_name() -> str:
+    """The name that hooks call: ``aqt``, or ``aqt-toolkit`` when the first ``aqt`` on PATH is another program
+    (aqtinstall's) or missing while ``aqt-toolkit`` is there."""
+    found = shutil.which("aqt")
+    if found and is_toolkit(found):
+        return "aqt"
+    return "aqt-toolkit" if found or shutil.which("aqt-toolkit") else "aqt"
+
+
+def _command_fix(mine: Path | None) -> str:
+    if getattr(sys, "frozen", False) and os.environ.get("APPIMAGE"):
+        return f"in the app: Settings, install the aqt command (or: ln -s {_quote(str(mine))} ~/.local/bin/aqt)"
+    if getattr(sys, "frozen", False):
+        return f"put {_quote(str(mine))} on PATH (the .deb package installs it as /usr/bin/aqt)"
+    return f"add {_quote(str(Path(sys.executable).parent))} to PATH"
+
+
+def check_command(ctx: Context) -> Result:
+    """Which AQT command agents run: hooks call ``aqt`` (or ``aqt-toolkit``, see ``command_name``) from PATH."""
+    name = command_name()
+    found = shutil.which(name)
+    mine = this_command(name)
+    data = {"name": name, "path": found, "this": str(mine) if mine else None, "aqt": shutil.which("aqt")}
+    other = f"; the first aqt on PATH ({data['aqt']}) is another program" if name == "aqt-toolkit" and data["aqt"] else ""
+    if not found:
+        return Result(WARN, f"no {name} command on PATH{other}: the hooks aqt project init writes cannot run",
+                      _command_fix(mine), data=data, can_apply=False)
+    if is_this(found, name):
+        return Result(OK, f"agents run this AQT as {name} ({found}){other}", data=data)
+    return Result(WARN, f"agents run another {name}: {found} comes first on PATH, not this one "
+                        f"({mine or sys.executable}){other}",
+                  f"remove or move the other {name}, or reorder PATH, if this one should run", data=data,
+                  can_apply=False)
 
 
 def check_trail_init(ctx: Context) -> Result:
@@ -854,6 +928,7 @@ def check_egress(ctx: Context) -> Result:
 
 CHECKS: list[Check] = [
     Check("packages", check_packages),
+    Check("command", check_command),
     Check("trail.init", check_trail_init, step_trail_init, "create the trail (aqt-trail init)"),
     Check("service", check_service, step_service,
           lambda ctx: f"install and load the LaunchAgent {LABEL}" if platform.IS_MACOS

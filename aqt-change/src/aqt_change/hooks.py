@@ -28,7 +28,7 @@ SNIPPET = {
         "SubagentStop": [{"hooks": [{"type": "command", "command": "aqt-change hook claude-code"}]}],
     }
 }
-GIT_SHIM = "#!/bin/sh\n# installed by aqt-change: checks AQT-* commit trailers\nexec {python} -m aqt_change.cli hook commit-msg \"$1\"\n"
+GIT_SHIM = "#!/bin/sh\n# installed by aqt-change: checks AQT-* commit trailers\nexec {program} hook commit-msg \"$1\"\n"
 
 
 def _strings(value) -> list[str]:
@@ -140,7 +140,10 @@ def commit_msg(ledger: Ledger, message_file: str, require: bool = False) -> tupl
     return 0, ""
 
 
-def install_git_hook(ledger: Ledger) -> Path:
+def install_git_hook(ledger: Ledger, name: str = "aqt") -> Path:
+    """Write the commit-msg hook. It runs this interpreter with ``-m aqt_change.cli``; from the desktop app's
+    frozen runtime, whose path can change (an AppImage is mounted at a new place on every start), it runs the
+    stable command ``aqt change`` from PATH instead (``name``: ``aqt-toolkit`` where another aqt comes first)."""
     if not ledger.git:
         raise ChangeError("git_required", "not a Git repository", exit_code=2)
     hooks = ledger.git.hooks_dir()
@@ -149,7 +152,10 @@ def install_git_hook(ledger: Ledger) -> Path:
         raise ChangeError("hook_exists", f"{target} already exists; add 'aqt-change hook commit-msg \"$1\"' to it "
                           "yourself", exit_code=1)
     hooks.mkdir(parents=True, exist_ok=True)
-    target.write_text(GIT_SHIM.format(python=shlex.quote(sys.executable)), encoding="utf-8")
+    if name not in ("aqt", "aqt-toolkit"):
+        raise ValueError(f"not a name of the AQT command: {name!r}")
+    program = f"{name} change" if getattr(sys, "frozen", False) else f"{shlex.quote(sys.executable)} -m aqt_change.cli"
+    target.write_text(GIT_SHIM.format(program=program), encoding="utf-8")
     target.chmod(target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     return target
 

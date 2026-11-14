@@ -1,5 +1,6 @@
 import os
 import shutil
+import sys
 import tempfile
 import threading
 from pathlib import Path
@@ -98,6 +99,9 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("TZ", "Europe/Vienna")
     for name in [name for name in os.environ if name.startswith("AQT_")]:
         monkeypatch.delenv(name)
+    monkeypatch.delenv("APPIMAGE", raising=False)
+    # this environment's aqt comes first on PATH, as after an install (the "command" check)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(Path(sys.executable).parent), os.environ.get("PATH", "")]))
     fake = FakeSystemd()
     monkeypatch.setattr(checks, "systemctl_user", fake)
     monkeypatch.setattr(checks, "launchctl_run", FakeLaunchctl())

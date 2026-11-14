@@ -2,9 +2,11 @@
 
 ## Unreleased
 
+- `install_git_hook(ledger, name="aqt")`: the frozen runtime's commit-msg hook runs `aqt-toolkit change` when asked to.
 - `examples/quickstart.sh` runs with BSD `sed` (macOS) too.
 - The configuration folder, and the lock of the records mirror, come from `aqt_evidence.platform` (unchanged on
   Linux; macOS and Windows get their own folders).
+- The commit-msg hook written from the desktop app's frozen runtime runs `aqt change hook commit-msg` from `PATH`, not the runtime's own path, which changes with every start of an AppImage.
 
 ## 0.2.0 — 2026-11-13
 

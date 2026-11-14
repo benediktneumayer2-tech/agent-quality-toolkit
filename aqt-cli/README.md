@@ -6,6 +6,7 @@ Part of the **Agent Quality Toolkit (AQT)**: quality management for AI coding ag
 - `aqt status` answers in one screen whether everything is in order, and gives the fix for each problem.
 - `aqt project init` sets up one repository where agents work: the Claude Code hooks and deny rules, a short block of agent instructions, aqt-change's project settings. `aqt project status` shows what is in place there. Both are safe to rerun; init never commits.
 - `aqt <tool> …` runs any tool, for example `aqt trail verify` or `aqt ui`.
+- `aqt open <case-or-link>` shows a case in the AQT desktop app, e.g. `aqt open quarantine:Q7SEGGW` or `aqt open aqt://change/0/api-v2`. It only opens the view.
 
 ## The problem
 
@@ -55,6 +56,7 @@ Each check has a result (`ok`, `warn`, `fail` or `skip`), a one-line explanation
 | Check | Tests | Step in `aqt setup` |
 |---|---|---|
 | `packages` | the eight packages and aqt-ui are installed (with versions) | – (prints the command that adds the missing ones) |
+| `command` (warn) | the first `aqt` on `PATH` is this one, which hooks and agents will run; names the other one otherwise | – (prints how to put this one on `PATH`) |
 | `trail.init` | the trail state exists | `aqt-trail init` |
 | `service` | Linux: the systemd user unit is installed and enabled (skipped without `systemd --user`). macOS: the LaunchAgent is installed and loaded (`launchctl print gui/$UID/io.github.benediktneumayer2tech.aqt.trail`) | Linux: writes `~/.config/systemd/user/aqt-trail.service` with the `aqt-trail` of this environment, then `systemctl --user enable --now aqt-trail`. macOS: writes `~/Library/LaunchAgents/io.github.benediktneumayer2tech.aqt.trail.plist` (KeepAlive, output to `trail-writer.log` in the AQT state folder), then `launchctl bootstrap gui/$UID` |
 | `writer` | the writer answers on its socket | `systemctl --user start aqt-trail` (macOS: `launchctl kickstart`); without a service it prints the foreground command |
@@ -88,7 +90,7 @@ Every fix needs a passphrase, so `aqt setup` cannot apply it. Check that the fir
 | Check | Tests | Step in `aqt project init` |
 |---|---|---|
 | `project` | the folder is a git repository (aqt-change needs git; without it, its checks are skipped) | – |
-| `claude.hooks` (fail) | the hooks of aqt-trail, aqt-quarantine and aqt-change (manual 4.8) are in `~/.claude/settings.json`, `.claude/settings.json` or `.claude/settings.local.json`: same event, matcher and command | merges the missing ones, and the missing deny rules, into `.claude/settings.json` (`settings.local.json` with `--local`) |
+| `claude.hooks` (fail) | the hooks of aqt-trail, aqt-quarantine and aqt-change (manual 4.8) are in `~/.claude/settings.json`, `.claude/settings.json` or `.claude/settings.local.json`: same event, matcher and command (written as `aqt <tool> …`, e.g. `aqt trail hook claude-code`; `aqt-<tool> …` counts too) | merges the missing ones, and the missing deny rules, into `.claude/settings.json` (`settings.local.json` with `--local`) |
 | `claude.deny` (warn) | deny rules for every decision command, as `aqt-<tool> <sub>`, `aqt <tool> <sub>` and `aqt-toolkit <tool> <sub>` (below), for `aqt-ui`, for reading the quarantine folder, the trail's `keys/` folder and aqt-sensei's owner token, and for editing the AQT configuration and state folders | the same step |
 | `instructions` (warn) | `CLAUDE.md` and an existing `AGENTS.md` at the root hold the current block between `<!-- aqt:begin -->` and `<!-- aqt:end -->` | replaces an outdated block, appends a missing one, or creates `CLAUDE.md` (Claude Code does not read `AGENTS.md`); the rest of the file stays as it is |
 | `change.settings` | `.aqt/change.toml` parses; warns when `require_trail` is off or `trail_keys` lacks this machine's trail service key | writes it when missing (with `require_trail` and `trail_keys` when the service key is known), never while a plan is in progress |
