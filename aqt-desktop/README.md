@@ -64,9 +64,10 @@ signed; see [Install on macOS](#install-on-macos) for the first start).
     `aqt-toolkit` (Settings: install the aqt command makes both in `~/.local/bin`; a name already taken there,
     e.g. by an `aqt` from pip or uv, is never replaced).
 
-  - on macOS it is `/Applications/Agent Quality Toolkit.app/Contents/Resources/runtime/aqt/aqt`; link it into a
-    folder on `PATH` yourself, e.g. `ln -s "/Applications/Agent Quality Toolkit.app/Contents/Resources/runtime/aqt/aqt"
-    ~/.local/bin/aqt` (the Settings button is for the AppImage only so far).
+  - on macOS it is `Contents/Resources/runtime/aqt/aqt` inside the app. Settings: *Install 'aqt' command* links
+    `/usr/local/bin/aqt` and `/usr/local/bin/aqt-toolkit` to it (on the `PATH` of every macOS shell, so agents'
+    hooks find it), through macOS's administrator prompt, as editors install their command. A name taken by
+    another program is never replaced; a link to an AQT app that moved is renewed.
 
   `aqt project init` writes hooks that call `aqt <tool> ...` from `PATH`, never a path inside the app. When the
   first `aqt` on `PATH` is another program (aqtinstall's), they call `aqt-toolkit <tool> ...` instead.
@@ -144,6 +145,9 @@ The app is not signed with an Apple Developer ID and not notarized, so macOS blo
 
 Later starts open normally. On macOS 14 and earlier, Control-click the app in *Applications*, choose *Open*, then
 *Open* again. Each new version needs this once more.
+
+Start the app from where it lies (*Applications*, or the opened .dmg), not through a path with a symbolic link:
+Tauri then finds no bundled runtime (the window says that the AQT core could not start).
 
 ## Smoke test
 

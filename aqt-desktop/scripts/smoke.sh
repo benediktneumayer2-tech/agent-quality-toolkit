@@ -13,7 +13,9 @@
 #        scripts/smoke.sh --dmg FILE           macOS: copies the .app out of the disk image, then runs it
 # SMOKE_RUNS=n runs it n times in the same HOME: the first run is cold (fresh files and HOME), the rest warm.
 set -euo pipefail
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/aqt-smoke-XXXXXX")"
+# the real path: Tauri finds no bundled resources for an app started through a symbolic link, such as macOS's
+# /var (-> /private/var), where $TMPDIR lies
+WORK="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/aqt-smoke-XXXXXX")" && pwd -P)"
 # WebKit's helper processes may still write their caches for a moment after the app exits: retry the cleanup.
 trap 'for _ in 1 2 3 4 5; do rm -rf "$WORK" 2>/dev/null && break; sleep 1; done' EXIT
 AQT=(); AQT2=(); DISPLAY_RUN=(xvfb-run -a -s "-screen 0 1440x900x24")
