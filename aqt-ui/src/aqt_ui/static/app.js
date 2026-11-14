@@ -2245,7 +2245,7 @@ async function renderSettings(main) {
   if (status.time_stamps === false) {
     const snippet = '[anchor]\ntsa_url = "https://…"';
     put(page, section(t("Recommended"), h("div", { class: "recommend" },
-      h("p", {}, st("info", t("Recommended")), " ", h("strong", { text: t("Set up external time stamps") })),
+      h("p", {}, h("strong", { text: t("Set up external time stamps") })),
       h("p", { class: "lede", text: t("An external time-stamp service (RFC 3161) confirms when the audit trail had a given state, so a later rewrite of the whole trail would show. Which service to trust is your organisation's choice, so AQT does not pick one; only the hash of the trail's newest record is sent to it.") }),
       h("p", { class: "small", text: t("Add these lines to {file}, with the address of your time-stamp service:", { file: status.trail_toml || "trail.toml" }) }),
       h("div", { class: "snippet" }, h("pre", { class: "json", text: snippet }),
